@@ -1,0 +1,44 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { FluentProvider } from '@fluentui/react-components';
+import { PrivacyConsentDialog } from './PrivacyConsentDialog';
+import { sariSariLightTheme } from '../theme/theme';
+import { useAuthStore } from '../state/authStore';
+
+describe('PrivacyConsentDialog', () => {
+  beforeEach(() => {
+    useAuthStore.setState({ consentAccepted: false });
+  });
+
+  const renderDialog = () => {
+    return render(
+      <FluentProvider theme={sariSariLightTheme}>
+        <PrivacyConsentDialog />
+      </FluentProvider>
+    );
+  };
+
+  it('renders consent dialog when consentAccepted is false', () => {
+    renderDialog();
+
+    expect(screen.getByText(/Republic Act No. 10173/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Sumasang-ayon|I Agree/i })).toBeInTheDocument();
+  });
+
+  it('accepting consent updates authStore and hides dialog', () => {
+    const { rerender } = renderDialog();
+
+    const acceptBtn = screen.getByRole('button', { name: /Sumasang-ayon|I Agree/i });
+    fireEvent.click(acceptBtn);
+
+    expect(useAuthStore.getState().consentAccepted).toBe(true);
+
+    rerender(
+      <FluentProvider theme={sariSariLightTheme}>
+        <PrivacyConsentDialog />
+      </FluentProvider>
+    );
+
+    expect(screen.queryByText(/Republic Act No. 10173/i)).not.toBeInTheDocument();
+  });
+});

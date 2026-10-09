@@ -1,0 +1,139 @@
+barcode,product_name,brand,category,package_size,unit,cost_price_php,srp_php,margin_php,stock_quantity,reorder_level,is_tingi
+4800016644026,Lucky Me! Instant Pancit Canton Kalamansi,Monde Nissin,Instant Noodles,80g,sachet,13.25,16.00,2.75,36,12,FALSE
+4800016644040,Lucky Me! Instant Pancit Canton Chili Mansi,Monde Nissin,Instant Noodles,80g,sachet,13.25,16.00,2.75,36,12,FALSE
+4800016644033,Lucky Me! Instant Pancit Canton Extra Hot,Monde Nissin,Instant Noodles,80g,sachet,13.25,16.00,2.75,24,10,FALSE
+4800016644019,Lucky Me! Instant Pancit Canton Original,Monde Nissin,Instant Noodles,80g,sachet,13.25,16.00,2.75,24,10,FALSE
+4800016644057,Lucky Me! Instant Pancit Canton Sweet & Spicy,Monde Nissin,Instant Noodles,80g,sachet,13.25,16.00,2.75,30,12,FALSE
+4800016601012,Lucky Me! Instant Mami Chicken,Monde Nissin,Instant Noodles,55g,sachet,10.50,13.00,2.50,30,10,FALSE
+4800016601029,Lucky Me! Instant Mami Beef,Monde Nissin,Instant Noodles,55g,sachet,10.50,13.00,2.50,30,10,FALSE
+4800016645122,Payless Instant Pancit Canton Extra Big Sweet & Spicy,Universal Robina,Instant Noodles,130g,sachet,16.00,19.00,3.00,20,8,FALSE
+4800016645115,Payless Instant Pancit Canton Extra Big Kalamansi,Universal Robina,Instant Noodles,130g,sachet,16.00,19.00,3.00,20,8,FALSE
+4800016681014,Nissin Cup Noodles Seafood,Monde Nissin,Instant Noodles,40g,cup,21.50,26.00,4.50,12,6,FALSE
+4800016681021,Nissin Cup Noodles Beef,Monde Nissin,Instant Noodles,40g,cup,21.50,26.00,4.50,12,6,FALSE
+4807770270034,Quickchow Instant Mami Beef,Zest-O Corp,Instant Noodles,55g,sachet,9.00,11.00,2.00,24,8,FALSE
+8996001414002,Kopiko Blanca 3-in-1 Coffee,Kopiko,Coffee & Beverages,52g,twin pack,12.20,15.00,2.80,50,15,FALSE
+8996001414019,Kopiko Black 3-in-1 Coffee,Kopiko,Coffee & Beverages,52g,twin pack,12.20,15.00,2.80,40,12,FALSE
+8996001410264,Kopiko Brown 3-in-1 Coffee,Kopiko,Coffee & Beverages,53g,twin pack,12.20,15.00,2.80,40,12,FALSE
+8996001410141,Kopiko Cappuccino with Choco Granules,Kopiko,Coffee & Beverages,25g,sachet,9.50,12.00,2.50,24,8,FALSE
+4800361287661,Nescafe Classic Pure Soluble Coffee,Nestle,Coffee & Beverages,1.9g,sachet,3.25,4.50,1.25,60,20,FALSE
+4800361384025,Nescafe 3-in-1 Original Coffee,Nestle,Coffee & Beverages,56g,twin pack,12.50,15.00,2.50,40,15,FALSE
+4800016024101,Great Taste White 3-in-1 Coffee,Universal Robina,Coffee & Beverages,50g,twin pack,11.80,14.00,2.20,40,12,FALSE
+4800016024125,Great Taste Choco 3-in-1 Coffee,Universal Robina,Coffee & Beverages,50g,twin pack,11.80,14.00,2.20,30,10,FALSE
+4800361341103,Milo Activ-Go Chocolate Powder Drink,Nestle,Coffee & Beverages,24g,sachet,9.25,12.00,2.75,50,15,FALSE
+4800361376846,Bear Brand Fortified Powdered Milk Drink,Nestle,Milk & Dairy,33g,sachet,11.50,14.00,2.50,60,20,FALSE
+4800216411026,Birch Tree Full Cream Milk Powder,Century Pacific,Milk & Dairy,33g,sachet,9.50,12.00,2.50,40,12,FALSE
+4800110023400,Alaska Fortified Powdered Milk Drink,Alaska Milk,Milk & Dairy,30g,sachet,9.75,12.00,2.25,30,10,FALSE
+8996001303108,Energen Cereal Drink Vanilla,Energen,Breakfast & Cereal,80g,twin pack,13.50,17.00,3.50,30,10,FALSE
+8996001303207,Energen Cereal Drink Chocolate,Energen,Breakfast & Cereal,80g,twin pack,13.50,17.00,3.50,30,10,FALSE
+4800024101108,Tang Powdered Juice Orange,Mondelez,Juices & Beverages,20g,sachet,17.50,21.00,3.50,25,8,FALSE
+4800024101207,Tang Powdered Juice Pineapple,Mondelez,Juices & Beverages,20g,sachet,17.50,21.00,3.50,20,8,FALSE
+4800361301017,Nestea Iced Tea Lemon Powder,Nestle,Juices & Beverages,25g,sachet,18.00,22.00,4.00,20,8,FALSE
+4800016111016,C2 Cool & Clean Green Tea Apple,Universal Robina,Beverages,230ml,bottle,13.00,16.00,3.00,24,10,FALSE
+4800016111023,C2 Cool & Clean Green Tea Lemon,Universal Robina,Beverages,230ml,bottle,13.00,16.00,3.00,24,10,FALSE
+4801981100103,Coca-Cola Regular Mismo,Coca-Cola Beverages PH,Beverages,290ml,bottle,16.00,20.00,4.00,36,12,FALSE
+4801981100202,Sprite Mismo,Coca-Cola Beverages PH,Beverages,290ml,bottle,16.00,20.00,4.00,24,8,FALSE
+4801981100301,Royal Tru-Orange Mismo,Coca-Cola Beverages PH,Beverages,290ml,bottle,16.00,20.00,4.00,24,8,FALSE
+4809011743015,Mega Sardines in Tomato Sauce Green,Mega Prime,Canned Goods,155g,can,22.50,26.00,3.50,36,12,FALSE
+4809011743022,Mega Sardines in Tomato Sauce Spicy Red,Mega Prime,Canned Goods,155g,can,22.50,26.00,3.50,30,10,FALSE
+4800216111018,555 Sardines in Tomato Sauce,Century Pacific,Canned Goods,155g,can,21.00,25.00,4.00,36,12,FALSE
+4800216111025,555 Sardines in Tomato Sauce Spicy,Century Pacific,Canned Goods,155g,can,21.00,25.00,4.00,24,8,FALSE
+4800028111011,Ligo Sardines in Tomato Sauce,Ligo,Canned Goods,155g,can,23.00,27.00,4.00,24,8,FALSE
+4800216112107,555 Fried Sardines Escabeche,Century Pacific,Canned Goods,155g,can,26.00,31.00,5.00,15,6,FALSE
+4800216212012,Century Tuna Flakes in Oil,Century Pacific,Canned Goods,155g,can,34.00,40.00,6.00,24,8,FALSE
+4800216212036,Century Tuna Flakes with Calamansi,Century Pacific,Canned Goods,155g,can,34.00,40.00,6.00,20,6,FALSE
+4800216212029,Century Tuna Flakes Hot & Spicy,Century Pacific,Canned Goods,155g,can,34.00,40.00,6.00,24,8,FALSE
+4800216223018,San Marino Corned Tuna,Century Pacific,Canned Goods,150g,can,35.00,41.00,6.00,20,6,FALSE
+4800216211015,Argentina Corned Beef,Century Pacific,Canned Goods,150g,can,37.00,43.00,6.00,24,8,FALSE
+4800088111014,Purefoods Corned Beef,San Miguel Foods,Canned Goods,150g,can,68.00,78.00,10.00,12,4,FALSE
+4800168111019,CDO Karne Norte,CDO Foodsphere,Canned Goods,150g,can,26.00,31.00,5.00,20,6,FALSE
+4800216213019,Argentina Beef Loaf,Century Pacific,Canned Goods,150g,can,23.50,28.00,4.50,20,6,FALSE
+4800194110300,Silver Swan Soy Sauce,Silver Swan,Condiments,100ml,pouch,5.50,7.00,1.50,40,15,FALSE
+4800194120309,Silver Swan Cane Vinegar,Silver Swan,Condiments,100ml,pouch,5.00,6.50,1.50,40,15,FALSE
+4801981110034,Datu Puti Soy Sauce,NutriAsia,Condiments,100ml,pouch,5.75,7.00,1.25,40,15,FALSE
+4801981120033,Datu Puti White Vinegar,NutriAsia,Condiments,100ml,pouch,5.25,6.50,1.25,40,15,FALSE
+4801981130032,Mang Tomas All-Around Sarsa,NutriAsia,Condiments,325g,bottle,34.00,40.00,6.00,15,5,FALSE
+4801981140024,UFC Tomato Sauce,NutriAsia,Condiments,115g,pouch,13.50,16.50,3.00,20,6,FALSE
+4801981140109,UFC Tamis-Anghang Banana Catsup,NutriAsia,Condiments,100g,pouch,10.00,12.50,2.50,25,8,FALSE
+4800361361019,Maggi Magic Sarap All-in-One Seasoning,Nestle,Seasonings,8g,sachet,4.25,6.00,1.75,80,25,FALSE
+4800888151014,Knorr Pork Broth Cube,Unilever,Seasonings,10g,piece,6.00,8.00,2.00,60,20,FALSE
+4800888151021,Knorr Chicken Broth Cube,Unilever,Seasonings,10g,piece,6.00,8.00,2.00,60,20,FALSE
+4800888152011,Knorr Sinigang sa Sampalok Mix Original,Unilever,Seasonings,20g,sachet,14.50,18.00,3.50,30,10,FALSE
+4800055100101,Ajinomoto Monosodium Glutamate Umami Seasoning,Ajinomoto,Seasonings,45g,pack,11.00,14.00,3.00,30,10,FALSE
+4800055120109,Crispy Fry Breading Mix Original,Ajinomoto,Seasonings,62g,pack,14.50,18.00,3.50,25,8,FALSE
+4800055120208,Crispy Fry Breading Mix Spicy,Ajinomoto,Seasonings,62g,pack,14.50,18.00,3.50,20,6,FALSE
+4800111000011,Rebisco Crackers Plain,Rebisco,Biscuits & Bakery,32g,pack,6.00,8.00,2.00,40,15,FALSE
+4800016010012,SkyFlakes Crackers Plain,Monde M.Y. San,Biscuits & Bakery,25g,pack,6.50,8.50,2.00,50,15,FALSE
+4800016011019,Fita Biscuits Plain,Monde M.Y. San,Biscuits & Bakery,30g,pack,6.50,8.50,2.00,40,12,FALSE
+4800111011017,Hansel Mocha Sandwich Biscuit,Rebisco,Biscuits & Bakery,31g,pack,7.00,9.00,2.00,30,10,FALSE
+4800016012016,Magic Creams Chocolate Sandwich,Universal Robina,Biscuits & Bakery,28g,pack,7.00,9.00,2.00,30,10,FALSE
+4800111022013,Fudgee Barr Chocolate Cake Bar,Rebisco,Biscuits & Bakery,38g,piece,8.50,11.00,2.50,30,10,FALSE
+4800111022020,Fudgee Barr Salted Caramel Cake Bar,Rebisco,Biscuits & Bakery,38g,piece,8.50,11.00,2.50,25,8,FALSE
+4806505011018,Lemon Square Cheese Cake,Lemon Square,Biscuits & Bakery,30g,piece,9.00,12.00,3.00,25,8,FALSE
+4800111033019,Choco Mucho Milk Chocolate Bar,Rebisco,Chocolates & Sweets,33g,bar,9.50,12.50,3.00,30,10,FALSE
+4800111033026,Choco Mucho Dark Chocolate Bar,Rebisco,Chocolates & Sweets,33g,bar,9.50,12.50,3.00,25,8,FALSE
+4800016013013,Presto Creams Peanut Butter Sandwich,Universal Robina,Biscuits & Bakery,30g,pack,7.00,9.00,2.00,25,8,FALSE
+4800111044015,Superstix Wafer Sticks Chocolate,Rebisco,Biscuits & Bakery,55g,pack,12.00,15.00,3.00,20,6,FALSE
+4800016053330,Piattos Cheese Potato Crisps,Universal Robina,Snacks & Chips,85g,pack,32.00,38.00,6.00,18,6,FALSE
+4800016053347,Piattos Sour Cream & Onion,Universal Robina,Snacks & Chips,85g,pack,32.00,38.00,6.00,18,6,FALSE
+4800016055105,Nova Country Cheddar Multigrain Chips,Universal Robina,Snacks & Chips,78g,pack,32.00,38.00,6.00,18,6,FALSE
+4800016051107,Chippy Barbecue Corn Chips,Universal Robina,Snacks & Chips,110g,pack,27.00,33.00,6.00,20,6,FALSE
+4800194160015,Oishi Prawn Crackers Plain,Liwayway Marketing,Snacks & Chips,60g,pack,16.50,20.00,3.50,24,8,FALSE
+4800194160022,Oishi Prawn Crackers Spicy,Liwayway Marketing,Snacks & Chips,60g,pack,16.50,20.00,3.50,20,6,FALSE
+4800194160107,Oishi Pillows Chocolate Filled Cracker,Liwayway Marketing,Snacks & Chips,38g,pack,10.00,13.00,3.00,24,8,FALSE
+4800194160206,Oishi Marty's Cracklin' Vegetarian Chicharon,Liwayway Marketing,Snacks & Chips,90g,pack,21.50,26.00,4.50,18,6,FALSE
+4806502110011,Boy Bawang Cornick Garlic,KSK Food Products,Snacks & Chips,100g,pack,16.00,20.00,4.00,24,8,FALSE
+4800042110014,Clover Chips Cheese,Columbia Candy,Snacks & Chips,55g,pack,13.00,16.00,3.00,20,6,FALSE
+4800016054108,V-Cut Potato Chips Cheese,Universal Robina,Snacks & Chips,60g,pack,27.00,33.00,6.00,18,6,FALSE
+4800016056102,Roller Coaster Cheddar Cheese,Universal Robina,Snacks & Chips,85g,pack,28.00,34.00,6.00,18,6,FALSE
+4800016071013,Maxx Menthol Candy Cherry,Universal Robina,Candies & Sweets,1 pc,piece,1.20,2.00,0.80,100,30,FALSE
+8935001701016,Mentos Mint Chewy Dragees,Perfetti Van Melle,Candies & Sweets,37.5g,roll,17.00,22.00,5.00,15,5,FALSE
+4800144110015,Flat Tops Milk Chocolate,Ricoa,Chocolates & Sweets,150g,pack,48.00,58.00,10.00,12,4,FALSE
+4800144110022,Curly Tops Milk Chocolate,Ricoa,Chocolates & Sweets,150g,pack,48.00,58.00,10.00,12,4,FALSE
+4806501100016,Choc-Nut Peanut Milk Chocolate,King Candy,Chocolates & Sweets,16g,pack,18.00,23.00,5.00,20,6,FALSE
+4800016072010,Dynamite Choco Filled Mint Candy,Universal Robina,Candies & Sweets,1 pc,piece,1.20,2.00,0.80,100,30,FALSE
+4800024081011,Halls Mentho-Lyptus Extra Strong,Mondelez,Candies & Sweets,1 pc,piece,1.80,2.50,0.70,100,30,FALSE
+8992741911017,Fox's Crystal Clear Fruits Candy,Nestle / Mayora,Candies & Sweets,90g,pack,32.00,40.00,8.00,10,3,FALSE
+4800888138763,Sunsilk Shampoo Smooth & Manageable Pink,Unilever,Personal Care,13ml,sachet,6.25,8.00,1.75,60,20,FALSE
+4800888138770,Sunsilk Shampoo Strong & Long Green,Unilever,Personal Care,13ml,sachet,6.25,8.00,1.75,50,15,FALSE
+4800888139012,Cream Silk Conditioner Standout Straight Pink,Unilever,Personal Care,11ml,sachet,6.50,8.50,2.00,60,20,FALSE
+4800888139029,Cream Silk Conditioner Hair Fall Defense Green,Unilever,Personal Care,11ml,sachet,6.50,8.50,2.00,50,15,FALSE
+4902430588669,Head & Shoulders Cool Menthol Anti-Dandruff,Procter & Gamble,Personal Care,12ml,sachet,7.00,9.00,2.00,40,15,FALSE
+4800045110011,Palmolive Naturals Shampoo Intensive Moisture Pink,Colgate-Palmolive,Personal Care,15ml,sachet,6.25,8.00,1.75,40,15,FALSE
+4902430401821,Safeguard Pure White Bar Soap,Procter & Gamble,Personal Care,60g,bar,22.00,26.00,4.00,30,10,FALSE
+4902430401838,Safeguard Lemon Fresh Bar Soap,Procter & Gamble,Personal Care,60g,bar,22.00,26.00,4.00,20,8,FALSE
+4800045120010,Palmolive Naturals White Bar Soap with Milk,Colgate-Palmolive,Personal Care,55g,bar,18.00,22.00,4.00,20,6,FALSE
+4800045130019,Colgate Maximum Cavity Protection Great Regular Flavor,Colgate-Palmolive,Personal Care,20g,sachet,8.50,11.00,2.50,40,12,FALSE
+4800888131016,Close Up Deep Action Red Hot Toothpaste,Unilever,Personal Care,20g,sachet,8.50,11.00,2.50,30,10,FALSE
+4902430211017,Whisper Regular Flow Non-Wing Sanitary Pad,Procter & Gamble,Personal Care,1 pc,piece,7.00,9.00,2.00,50,15,FALSE
+4800032110017,Modess Cottony Soft Maxi Regular Non-Wing Pad,Johnson & Johnson,Personal Care,1 pc,piece,6.50,8.50,2.00,50,15,FALSE
+4800888140018,Eskinol Spot-less White Facial Deep Cleanser,Unilever,Personal Care,75ml,bottle,39.00,46.00,7.00,12,4,FALSE
+4800888147055,Surf Powder Blossom Fresh Detergent,Unilever,Laundry Care,60g,sachet,7.50,9.50,2.00,60,20,FALSE
+4800888147062,Surf Powder Cherry Blossom Detergent,Unilever,Laundry Care,60g,sachet,7.50,9.50,2.00,50,15,FALSE
+4902430721011,Ariel Sunrise Fresh Detergent Powder,Procter & Gamble,Laundry Care,66g,sachet,12.00,15.00,3.00,40,12,FALSE
+4902430711012,Tide Perfect Clean Detergent Powder Garden Bloom,Procter & Gamble,Laundry Care,66g,sachet,11.50,14.50,3.00,40,12,FALSE
+4800888148014,Breeze Power Clean Detergent Powder,Unilever,Laundry Care,66g,sachet,11.50,14.50,3.00,30,10,FALSE
+4902430737081,Downy Fabric Conditioner Sunrise Fresh,Procter & Gamble,Laundry Care,25ml,sachet,7.25,9.00,1.75,60,20,FALSE
+4902430737098,Downy Fabric Conditioner Passion,Procter & Gamble,Laundry Care,25ml,sachet,7.25,9.00,1.75,50,15,FALSE
+4800888149011,Surf Fabric Conditioner Charcoal Fresh,Unilever,Laundry Care,25ml,sachet,6.50,8.00,1.50,40,12,FALSE
+4902430741019,Joy Dishwashing Liquid Lemon Refill,Procter & Gamble,Household Care,185ml,pouch,36.00,42.00,6.00,15,5,FALSE
+4902430741026,Joy Dishwashing Liquid Kalamansi,Procter & Gamble,Household Care,20ml,sachet,5.00,6.50,1.50,50,15,FALSE
+4800021110011,Champion Detergent Bar Blue Regular,Peerless Products,Laundry Care,130g,bar,14.00,17.00,3.00,30,10,FALSE
+4800194170014,Zonrox Bleach Original,Green Cross Inc,Household Care,250ml,bottle,21.50,26.00,4.50,15,5,FALSE
+4800088100018,San Miguel Pale Pilsen Beer,San Miguel Brewery,Alcohol & Beverages,320ml,bottle,48.00,55.00,7.00,24,6,FALSE
+4800088100117,Red Horse Beer Extra Strong,San Miguel Brewery,Alcohol & Beverages,500ml,bottle,58.00,68.00,10.00,24,6,FALSE
+4800088100216,San Mig Light Beer,San Miguel Brewery,Alcohol & Beverages,330ml,bottle,50.00,58.00,8.00,24,6,FALSE
+4800088200015,Ginebra San Miguel Bilog,Ginebra San Miguel,Alcohol & Beverages,350ml,bottle,55.00,65.00,10.00,24,6,FALSE
+4800088200114,Ginebra San Miguel Primera Light,Ginebra San Miguel,Alcohol & Beverages,750ml,bottle,115.00,135.00,20.00,12,3,FALSE
+4800008110010,Marlboro Red Flip-Top,Philip Morris Fortune Tobacco,Tobacco,Pack 20s,pack,155.00,175.00,20.00,10,3,FALSE
+4800008110027,Marlboro Gold Flip-Top,Philip Morris Fortune Tobacco,Tobacco,Pack 20s,pack,155.00,175.00,20.00,10,3,FALSE
+4800008210017,Winston Red Box,Japan Tobacco International,Tobacco,Pack 20s,pack,135.00,155.00,20.00,10,3,FALSE
+2000000000015,Fresh Chicken Egg Medium (Tingi),Local Farm,Fresh Produce & Tingi,1 pc,piece,7.00,9.00,2.00,60,15,TRUE
+2000000000022,White Refined Sugar Repacked (Tingi),Local Repack,Staples & Tingi,1/4 kg,pack,18.00,23.00,5.00,30,8,TRUE
+2000000000039,Brown Washed Sugar Repacked (Tingi),Local Repack,Staples & Tingi,1/4 kg,pack,16.00,21.00,5.00,30,8,TRUE
+2000000000046,Cooking Oil Palm Repacked Supot (Tingi),Local Repack,Staples & Tingi,250ml,pouch,19.00,25.00,6.00,25,8,TRUE
+2000000000053,Garlic Bawang Repacked (Tingi),Local Produce,Fresh Produce & Tingi,100g,pack,14.00,18.00,4.00,20,6,TRUE
+2000000000060,Red Onion Sibuyas Repacked (Tingi),Local Produce,Fresh Produce & Tingi,100g,pack,16.00,22.00,6.00,20,6,TRUE
+2000000000077,Tubig na Yelo / Mineral Ice Bag (Tingi),In-house,Staples & Tingi,1 bag,piece,1.50,3.00,1.50,40,10,TRUE
+2000000000084,Dinorado / Sinandomeng Rice 1kg (Tingi),Local Rice Mill,Staples & Tingi,1 kg,kg,48.00,56.00,8.00,50,15,TRUE
+2000000000091,Marlboro Red Single Stick (Tingi),Philip Morris,Tobacco,1 stick,piece,8.50,10.00,1.50,100,20,TRUE
+2000000000107,Winston Red Single Stick (Tingi),Japan Tobacco International,Tobacco,1 stick,piece,7.50,9.00,1.50,100,20,TRUE

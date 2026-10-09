@@ -1,0 +1,1130 @@
+export type Language = 'tl' | 'en';
+
+export interface Translations {
+  common: {
+    appTitle: string;
+    storeSub: string;
+    online: string;
+    offline: string;
+    syncing: string;
+    queued: string;
+    allSynced: string;
+    dlqWarning: string;
+    forceSync: string;
+    themeToggleDark: string;
+    themeToggleLight: string;
+    themeToggleSystem: string;
+    themeModeLight: string;
+    themeModeDark: string;
+    themeModeSystem: string;
+    languageToggle: string;
+    save: string;
+    cancel: string;
+    delete: string;
+    edit: string;
+    close: string;
+    confirm: string;
+    pesos: string;
+  };
+  nav: {
+    dashboard: string;
+    pos: string;
+    inventory: string;
+    utang: string;
+    gcash: string;
+    import: string;
+    settings: string;
+  };
+  pos: {
+    title: string;
+    searchPlaceholder: string;
+    allCategories: string;
+    inStock: string;
+    outOfStock: string;
+    cartTitle: string;
+    emptyCart: string;
+    emptyCartSub: string;
+    totalAmount: string;
+    cashReceived: string;
+    change: string;
+    exactCash: string;
+    completeCashSale: string;
+    chargeToUtang: string;
+    clearCart: string;
+    saleSuccess: string;
+    insufficientCash: string;
+    itemAdded: string;
+    receiptTitle: string;
+    printReceipt: string;
+    newSale: string;
+    qty: string;
+    price: string;
+    subtotal: string;
+    itemsInCart: string;
+    pay: string;
+    itemsList: string;
+    each: string;
+    checkoutConfirm: string;
+    totalDue: string;
+    cashTendered: string;
+    exactAmount: string;
+    changeLabel: string;
+    gcashInstruction: string;
+    gcashRefOptional: string;
+    selectCustomer: string;
+    selectCustomerPlaceholder: string;
+    utangNote: string;
+    cashAmount: string;
+    gcashAmount: string;
+    splitRemaining: string;
+    checkoutBtn: string;
+    completeSaleBtn: string;
+    lowStockBadge: string;
+    stockLabel: string;
+    customerSelectRequired: string;
+    addNewDebtorBtn: string;
+    newDebtorTitle: string;
+    saveAndSelectDebtor: string;
+    debtorNameRequired: string;
+  };
+  utang: {
+    title: string;
+    subtitle: string;
+    totalOutstanding: string;
+    customersCount: string;
+    searchCustomer: string;
+    addNewCustomer: string;
+    customerName: string;
+    customerPhone: string;
+    currentBalance: string;
+    noDebt: string;
+    historyTitle: string;
+    noHistory: string;
+    logPayment: string;
+    addCredit: string;
+    amount: string;
+    notes: string;
+    paymentSuccess: string;
+    creditSuccess: string;
+    customerAdded: string;
+    customerNameLabel: string;
+    customerNamePlaceholder: string;
+    phoneLabel: string;
+    initialDebtLabel: string;
+    saveCustomer: string;
+    noCustomerFound: string;
+    noPhone: string;
+    hasUtang: string;
+    paid: string;
+    currentDebt: string;
+    payButton: string;
+    addDebtButton: string;
+    timelineTitle: string;
+    noTransactions: string;
+    recordPaymentTitle: string;
+    paymentAmountLabel: string;
+    payAll: string;
+    paymentNotesLabel: string;
+    paymentNotesPlaceholder: string;
+    confirmPayment: string;
+    addCreditTitle: string;
+    creditAmountLabel: string;
+    creditNotesLabel: string;
+    creditNotesPlaceholder: string;
+    saveCredit: string;
+  };
+  gcash: {
+    title: string;
+    subtitle: string;
+    cashIn: string;
+    cashOut: string;
+    refNo: string;
+    customerPhone: string;
+    fee: string;
+    amount: string;
+    notes: string;
+    recordTransaction: string;
+    todayCashIn: string;
+    todayCashOut: string;
+    todayFees: string;
+    transactionSuccess: string;
+    recentTransactions: string;
+    noTransactions: string;
+    amountLabel: string;
+    feeLabel: string;
+    feeAuto: string;
+    refNoLabel: string;
+    refNoPlaceholder: string;
+    phoneLabel: string;
+    notesLabel: string;
+    notesPlaceholder: string;
+    totalFromCustomer: string;
+    totalToCustomer: string;
+    saveTransaction: string;
+    historyTitle: string;
+    invalidAmountAlert: string;
+  };
+  dashboard: {
+    title: string;
+    todaySales: string;
+    txnCount: string;
+    totalUtang: string;
+    gcashVolume: string;
+    lowStockTitle: string;
+    lowStockEmpty: string;
+    topProductsTitle: string;
+    topProductsEmpty: string;
+    unitsSold: string;
+    remaining: string;
+    greeting: string;
+    greetingSub: string;
+    quickActions: string;
+    posActionTitle: string;
+    posActionSub: string;
+    gcashActionTitle: string;
+    gcashActionSub: string;
+    utangActionTitle: string;
+    utangActionSub: string;
+    importActionTitle: string;
+    importActionSub: string;
+    todaySummary: string;
+    debtorsWithBalance: string;
+    recentSales: string;
+    goToPos: string;
+    noSalesToday: string;
+  };
+  importPage: {
+    title: string;
+    subtitle: string;
+    downloadTemplate: string;
+    selectFile: string;
+    importButton: string;
+    successMessage: string;
+    uploadPrompt: string;
+    formatHint: string;
+    trySample: string;
+    previewTitle: string;
+    validBadge: string;
+    errorBadge: string;
+    importing: string;
+    importProductsBtn: string;
+    statusCol: string;
+    nameCol: string;
+    priceCol: string;
+    costCol: string;
+    barcodeCol: string;
+    categoryCol: string;
+    stockCol: string;
+    notesCol: string;
+    unnamed: string;
+  };
+  inventory: {
+    title: string;
+    subtitle: string;
+    totalProducts: string;
+    lowStockAlerts: string;
+    inventoryCost: string;
+    retailValue: string;
+    potentialProfit: string;
+    avgMargin: string;
+    searchPlaceholder: string;
+    allCategories: string;
+    filterAll: string;
+    filterLowStock: string;
+    filterOutOfStock: string;
+    filterInStock: string;
+    addProductBtn: string;
+    importCsvBtn: string;
+    colProduct: string;
+    colBarcode: string;
+    colCategory: string;
+    colStock: string;
+    colCost: string;
+    colPrice: string;
+    colMargin: string;
+    colProfit: string;
+    colActions: string;
+    editPrice: string;
+    editProduct: string;
+    deleteProduct: string;
+    quickRestock: string;
+    restockSuccess: string;
+    deleteConfirm: string;
+    deleteSuccess: string;
+    saveSuccess: string;
+    addModalTitle: string;
+    editModalTitle: string;
+    productNameLabel: string;
+    categoryLabel: string;
+    barcodeLabel: string;
+    costLabel: string;
+    priceLabel: string;
+    stockLabel: string;
+    profitPreview: string;
+    marginPreview: string;
+    noProductsFound: string;
+    lowStockBadge: string;
+    outOfStockBadge: string;
+    inStockBadge: string;
+    customRestock: string;
+  };
+  barcode: {
+    scannerTitle: string;
+    scannerDesc: string;
+    openCamera: string;
+    closeCamera: string;
+    cameraError: string;
+    cameraPermissionDenied: string;
+    flashlight: string;
+    switchCamera: string;
+    scanPrompt: string;
+    notFoundTitle: string;
+    notFoundPrompt: string;
+    registerPromptBtn: string;
+    registerModalTitle: string;
+    registeredSuccess: string;
+    barcodeLabel: string;
+    productNameLabel: string;
+    categoryLabel: string;
+    costLabel: string;
+    priceLabel: string;
+    stockLabel: string;
+    saveAndAddToCart: string;
+    saveProduct: string;
+    addedToCart: string;
+  };
+  settings: {
+    title: string;
+    subtitle: string;
+    themeSection: string;
+    themeDesc: string;
+    themeLight: string;
+    themeDark: string;
+    themeSystem: string;
+    languageSection: string;
+    languageDesc: string;
+    taglish: string;
+    english: string;
+    syncSection: string;
+    forceSyncBtn: string;
+    pullCatalogBtn: string;
+    resetSeedBtn: string;
+    storageSection: string;
+    usedStorage: string;
+    persistentStorage: string;
+    persistentActive: string;
+    persistentInactive: string;
+    deviceInfoSection: string;
+    deviceId: string;
+    tenantId: string;
+    userId: string;
+    dangerZone: string;
+    wipeDatabaseBtn: string;
+    resetSeedConfirm: string;
+    wipeConfirm: string;
+    resetSuccess: string;
+    storeNameLabel: string;
+    pendingSync: string;
+    dlqTitle: string;
+    dlqClearBtn: string;
+    dlqDesc: string;
+    retryBtn: string;
+    dataManagement: string;
+    pullSuccessAlert: string;
+    printerSection: string;
+    printerDesc: string;
+    printerPaperWidth: string;
+    printerTestBtn: string;
+    printerTestSuccess: string;
+  };
+  receipt: {
+    watermark: string;
+    receiptTitle: string;
+    dateLabel: string;
+    txnLabel: string;
+    totalLabel: string;
+    paymentMethodLabel: string;
+    tenderedLabel: string;
+    changeLabel: string;
+    customerLabel: string;
+    remainingDebtLabel: string;
+    thankYou: string;
+    shareTitle: string;
+    copyReceipt: string;
+    copied: string;
+    printReceipt: string;
+    printing: string;
+    printSuccess: string;
+    bluetoothPrint: string;
+    bluetoothConnecting: string;
+    bluetoothError: string;
+    bluetoothNotSupported: string;
+    paperWidthLabel: string;
+    paperWidth58: string;
+    paperWidth80: string;
+    printerDeviceLabel: string;
+  };
+  banner: {
+    offlineTitle: string;
+    offlineDesc: string;
+  };
+  privacy: {
+    title: string;
+    description: string;
+    acceptBtn: string;
+    declineBtn: string;
+  };
+}
+
+export const translations: Record<Language, Translations> = {
+  tl: {
+    common: {
+      appTitle: 'Fluent Tindahan',
+      storeSub: 'Aling Nena\'s Tindahan & GCash',
+      online: 'Online',
+      offline: 'Naka-Offline',
+      syncing: 'Nagsi-sync...',
+      queued: 'pila',
+      allSynced: 'Lahat ay naka-sync sa cloud',
+      dlqWarning: 'mga bagsak na item sa Dead Letter queue',
+      forceSync: 'Puwersahing mag-sync ngayon',
+      themeToggleDark: 'Lumipat sa Dark theme',
+      themeToggleLight: 'Lumipat sa Light theme',
+      themeToggleSystem: 'Lumipat sa Ayon sa Sistema (System)',
+      themeModeLight: 'Maliwanag (Light)',
+      themeModeDark: 'Madilim (Dark)',
+      themeModeSystem: 'Ayon sa Sistema (System)',
+      languageToggle: 'Palitan ang Wika (English)',
+      save: 'I-save',
+      cancel: 'Kanselahin',
+      delete: 'Burahin',
+      edit: 'Baguhin',
+      close: 'Isara',
+      confirm: 'Kumpirmahin',
+      pesos: '₱'
+    },
+    nav: {
+      dashboard: 'Dashboard',
+      pos: 'Benta (POS)',
+      inventory: 'Imbentaryo',
+      utang: 'Utang',
+      gcash: 'GCash',
+      import: 'Import',
+      settings: 'Sync'
+    },
+    pos: {
+      title: 'Tindahan Point of Sale',
+      searchPlaceholder: 'Mag-scan ng barcode o maghanap ng produkto...',
+      allCategories: 'Lahat',
+      inStock: 'stock',
+      outOfStock: 'Ubos na',
+      cartTitle: 'Kasalukuyang Resibo',
+      emptyCart: 'Walang laman ang basket',
+      emptyCartSub: 'Pumili ng mga paninda sa kaliwa upang magdagdag sa resibo.',
+      totalAmount: 'Kabuuang Halaga',
+      cashReceived: 'Bayad na Pera',
+      change: 'Sukli',
+      exactCash: 'Eksakto',
+      completeCashSale: 'Bayaran (Cash)',
+      chargeToUtang: 'Ilista sa Utang',
+      clearCart: 'I-clear',
+      saleSuccess: 'Benta matagumpay na naitala!',
+      insufficientCash: 'Kulang ang ibinayad na pera!',
+      itemAdded: 'Naidagdag sa basket',
+      receiptTitle: 'Resibo ng Tindahan',
+      printReceipt: 'I-print ang Resibo',
+      newSale: 'Bagong Transaksyon',
+      qty: 'Dami',
+      price: 'Presyo',
+      subtotal: 'Kabuo',
+      itemsInCart: 'sa cart',
+      pay: 'Bayad',
+      itemsList: 'Listahan ng Bibilhin',
+      each: 'bawat isa',
+      checkoutConfirm: 'Kumpirmahin ang Bayad (Checkout)',
+      totalDue: 'Kabuuang Babayaran',
+      cashTendered: 'Bayad ng Kostumer (Cash Tendered):',
+      exactAmount: 'Eksaktong Halaga',
+      changeLabel: 'Sukli (Change):',
+      gcashInstruction: 'I-scan ng customer ang Tindahan GCash QR o magpadala sa iyong registered number.',
+      gcashRefOptional: 'Ref. Number ng GCash (opsyonal):',
+      selectCustomer: 'Pumili ng Suki (Debtor):',
+      selectCustomerPlaceholder: '-- Pumili ng Suki --',
+      utangNote: 'Maitatala ito sa account ng suki at madaragdag sa kanyang kasalukuyang utang.',
+      cashAmount: 'Halaga sa Cash:',
+      gcashAmount: 'Halaga sa GCash:',
+      splitRemaining: 'Kulang / Sukli:',
+      checkoutBtn: 'Mag-Checkout',
+      completeSaleBtn: 'Kumpletuhin ang Benta',
+      lowStockBadge: 'Mababa',
+      stockLabel: 'Stock',
+      customerSelectRequired: 'Pakiusap pumili ng suki para sa bibilhing pautang.',
+      addNewDebtorBtn: 'Magdagdag ng Suki',
+      newDebtorTitle: 'Magrehistro ng Bagong Suki',
+      saveAndSelectDebtor: 'I-save at Piliin',
+      debtorNameRequired: 'Pakiusap ilagay ang pangalan ng suki.'
+    },
+    utang: {
+      title: 'Talaan ng Utang ng mga Suki',
+      subtitle: 'Subaybayan ang listahan ng pautang at mag-record ng hulog o bayad nang offline.',
+      totalOutstanding: 'Kabuuang Utang sa Tindahan',
+      customersCount: 'Mga May Utang',
+      searchCustomer: 'Hanapin ang pangalan ng suki...',
+      addNewCustomer: 'Magdagdag ng Bagong Suki',
+      customerName: 'Pangalan ng Customer',
+      customerPhone: 'Numero ng Telepono',
+      currentBalance: 'Balanse ng Utang',
+      noDebt: 'Walang utang (Bayad)',
+      historyTitle: 'Kasaysayan ng Utang at Bayad',
+      noHistory: 'Wala pang naitalang transaksyon para sa suki na ito.',
+      logPayment: 'Magbayad ng Utang',
+      addCredit: 'Magpatong ng Utang',
+      amount: 'Halaga (₱)',
+      notes: 'Mga Tala / Detalye (opsyonal)',
+      paymentSuccess: 'Matagumpay na naitala ang bayad!',
+      creditSuccess: 'Matagumpay na nailista ang dagdag na utang!',
+      customerAdded: 'Matagumpay na naidagdag ang suki!',
+      customerNameLabel: 'Pangalan ng Suki:*',
+      customerNamePlaceholder: 'Hal. Aling Maria',
+      phoneLabel: 'Cellphone Number:',
+      initialDebtLabel: 'Simulang Utang (Initial Balance - opsyonal):',
+      saveCustomer: 'I-save ang Suki',
+      noCustomerFound: 'Walang natagpuang suki. Magdagdag sa pamamagitan ng "Bagong Suki".',
+      noPhone: 'Walang numero',
+      hasUtang: 'May Utang',
+      paid: 'Bayad Na',
+      currentDebt: 'Kasalukuyang Utang',
+      payButton: 'Magbayad (Pay)',
+      addDebtButton: 'Dagdagan ng Utang',
+      timelineTitle: 'Kasaysayan ng Transaksyon (Timeline)',
+      noTransactions: 'Walang tala ng transaksyon.',
+      recordPaymentTitle: 'Magtala ng Bayad ni',
+      paymentAmountLabel: 'Halaga ng Bayad (₱):',
+      payAll: 'Bayaran Lahat',
+      paymentNotesLabel: 'Tala / Notes (opsyonal):',
+      paymentNotesPlaceholder: 'Hal. Bayad sa GCash o cash',
+      confirmPayment: 'Kumpirmahin ang Bayad',
+      addCreditTitle: 'Magdagdag ng Utang kay',
+      creditAmountLabel: 'Halaga ng Utang (₱):',
+      creditNotesLabel: 'Tala / Mga Kinuha (Notes):',
+      creditNotesPlaceholder: 'Hal. 2 sardinas, 1 bigas',
+      saveCredit: 'Itala ang Utang'
+    },
+    gcash: {
+      title: 'GCash Padala at Pera Hub',
+      subtitle: 'Mag-record ng Cash-In at Cash-Out kahit walang internet. Awtomatikong magsi-sync sa cloud.',
+      cashIn: 'Cash In (Pasok sa GCash)',
+      cashOut: 'Cash Out (Bigay ng Pera)',
+      refNo: 'Reference No. (Huling 4 o buong reference)',
+      customerPhone: 'Numero ng Telepono ng Customer',
+      fee: 'Kaltas / Singil (Service Fee ₱)',
+      amount: 'Halaga ng Transaksyon (₱)',
+      notes: 'Mga Tala (opsyonal)',
+      recordTransaction: 'I-record ang Transaksyon',
+      todayCashIn: 'Kabuuang Cash-In Ngayong Araw',
+      todayCashOut: 'Kabuuang Cash-Out Ngayong Araw',
+      todayFees: 'Kita sa Service Fees',
+      transactionSuccess: 'GCash transaksyon matagumpay na naitala!',
+      recentTransactions: 'Kamakailang mga Transaksyon',
+      noTransactions: 'Wala pang naitalang transaksyon ngayong araw.',
+      amountLabel: 'Halaga (Amount ₱):*',
+      feeLabel: 'Kaltas / Singil na Fee (₱):',
+      feeAuto: 'Awtomatiko',
+      refNoLabel: 'Reference Number:*',
+      refNoPlaceholder: 'Hal. 901238471201',
+      phoneLabel: 'Cellphone ng Customer:',
+      notesLabel: 'Tala / Pangalan ng Receiver (Notes):',
+      notesPlaceholder: 'Opsyonal na tala',
+      totalFromCustomer: 'Kabuuang Kukunin sa Customer:',
+      totalToCustomer: 'Kabuuang Ibibigay sa Customer:',
+      saveTransaction: 'I-save ang Transaksyon',
+      historyTitle: 'Kasaysayan ng GCash Ngayong Araw',
+      invalidAmountAlert: 'Maglagay ng wastong halaga.'
+    },
+    dashboard: {
+      title: 'Pangkalahatang Dashboard ng Tindahan',
+      todaySales: 'Benta Ngayong Araw',
+      txnCount: 'Dami ng Transaksyon',
+      totalUtang: 'Kabuuang Utang na Sisingilin',
+      gcashVolume: 'GCash Kabuuang Halaga',
+      lowStockTitle: 'Mga Paubos nang Paninda (Mababa sa 5)',
+      lowStockEmpty: 'Lahat ng produkto ay may sapat pang imbentaryo.',
+      topProductsTitle: 'Pinakamabiling mga Paninda',
+      topProductsEmpty: 'Wala pang benta na naitala.',
+      unitsSold: 'piraso nabenta',
+      remaining: 'natitira',
+      greeting: 'Magandang Araw! 👋',
+      greetingSub: 'Handa na ang iyong tindahan para sa araw na ito.',
+      quickActions: 'Mga Pangunahing Gawain (Quick Actions)',
+      posActionTitle: 'Bagong Benta (POS)',
+      posActionSub: 'Scan o pumili ng produkto',
+      gcashActionTitle: 'GCash Transaction',
+      gcashActionSub: 'Cash-In / Cash-Out',
+      utangActionTitle: 'Listahan ng Utang',
+      utangActionSub: 'Tingnan ang mga suki',
+      importActionTitle: 'Import Inventory',
+      importActionSub: 'Magbasa ng CSV file',
+      todaySummary: 'Kabuuang Benta Ngayong Araw',
+      debtorsWithBalance: 'suki na may balanse',
+      recentSales: 'Huling Benta (Recent Sales)',
+      goToPos: 'Pumunta sa POS',
+      noSalesToday: 'Wala pang benta ngayong araw. Simulan ang unang benta sa POS!'
+    },
+    importPage: {
+      title: 'Mag-import ng Imbentaryo (CSV)',
+      subtitle: 'Mabilisang mag-upload ng iyong listahan ng mga paninda, SRP, at dami mula sa spreadsheet.',
+      downloadTemplate: 'I-download ang Sample Template',
+      selectFile: 'Pumili ng CSV File',
+      importButton: 'Simulan ang Pag-import',
+      successMessage: 'Matagumpay na nai-import ang mga produkto!',
+      uploadPrompt: 'Piliin o I-drag ang iyong CSV Inventory File',
+      formatHint: 'Format: name, price, cost, barcode, category, stockQty',
+      trySample: 'Subukan gamit ang Sample Sari-Sari CSV',
+      previewTitle: 'Preview at Pagpapatunay',
+      validBadge: 'Wasto (Valid)',
+      errorBadge: 'May Mali (Errors)',
+      importing: 'Nag-i-import...',
+      importProductsBtn: 'I-import ang mga Produkto',
+      statusCol: 'Katayuan',
+      nameCol: 'Pangalan',
+      priceCol: 'Presyo',
+      costCol: 'Puhunan',
+      barcodeCol: 'Barcode',
+      categoryCol: 'Kategorya',
+      stockCol: 'Stock',
+      notesCol: 'Puna',
+      unnamed: '(Walang Pangalan)'
+    },
+    inventory: {
+      title: 'Talaan ng Imbentaryo at Stocks',
+      subtitle: 'Subaybayan ang dami ng paninda, baguhin ang presyo, suriin ang kita at margin, at mag-restock.',
+      totalProducts: 'Kabuuang Paninda',
+      lowStockAlerts: 'Paubos na Paninda (≤ 5)',
+      inventoryCost: 'Kabuuang Puhunan',
+      retailValue: 'Kabuuang Benta',
+      potentialProfit: 'Inaasahang Kita',
+      avgMargin: 'Karaniwang Margin',
+      searchPlaceholder: 'Maghanap ayon sa pangalan o barcode...',
+      allCategories: 'Lahat ng Kategorya',
+      filterAll: 'Lahat ng Stock',
+      filterLowStock: '⚠️ Paubos na (≤ 5)',
+      filterOutOfStock: '❌ Ubos na (0)',
+      filterInStock: '✅ May Stock (> 5)',
+      addProductBtn: 'Magdagdag ng Produkto',
+      importCsvBtn: 'Mag-import ng CSV',
+      colProduct: 'Produkto',
+      colBarcode: 'Barcode',
+      colCategory: 'Kategorya',
+      colStock: 'Dami ng Stock',
+      colCost: 'Puhunan (Cost)',
+      colPrice: 'Tinda (SRP)',
+      colMargin: 'Margin %',
+      colProfit: 'Kita / piraso',
+      colActions: 'Mga Aksyon',
+      editPrice: 'Baguhin ang Presyo',
+      editProduct: 'Baguhin ang Produkto',
+      deleteProduct: 'Burahin ang Produkto',
+      quickRestock: 'Mabilisang Restock',
+      restockSuccess: 'Matagumpay na nadagdagan ang stock!',
+      deleteConfirm: 'Sigurado ka bang nais mong burahin ang produktong ito?',
+      deleteSuccess: 'Matagumpay na nabura ang produkto!',
+      saveSuccess: 'Matagumpay na nai-save ang produkto!',
+      addModalTitle: 'Magdagdag ng Bagong Produkto',
+      editModalTitle: 'Baguhin ang Detalye ng Produkto',
+      productNameLabel: 'Pangalan ng Produkto:*',
+      categoryLabel: 'Kategorya:*',
+      barcodeLabel: 'Barcode (Opsyonal):',
+      costLabel: 'Puhunan (Cost Price ₱):*',
+      priceLabel: 'Presyo ng Tinda (SRP ₱):*',
+      stockLabel: 'Kasalukuyang Stock:*',
+      profitPreview: 'Tinatayang Kita bawat piraso:',
+      marginPreview: 'Profit Margin:',
+      noProductsFound: 'Walang natagpuang produkto na tumutugma sa filter.',
+      lowStockBadge: 'Paubos na',
+      outOfStockBadge: 'Ubos na',
+      inStockBadge: 'May Stock',
+      customRestock: 'Magdagdag ng Stock'
+    },
+    barcode: {
+      scannerTitle: 'Kamera Barcode Scanner',
+      scannerDesc: 'Itapat ang barcode ng paninda sa loob ng kahon upang awtomatikong ma-scan.',
+      openCamera: 'Buksan ang Scanner',
+      closeCamera: 'Isara ang Scanner',
+      cameraError: 'Hindi mabuksan ang camera. Pakisuri ang browser camera permissions.',
+      cameraPermissionDenied: 'Kailangan ng pahintulot sa camera upang ma-scan ang barcode.',
+      flashlight: 'Flashlight',
+      switchCamera: 'Palitan ang Kamera',
+      scanPrompt: 'Itapat ang barcode dito...',
+      notFoundTitle: 'Hindi Nahanap ang Barcode',
+      notFoundPrompt: 'Hindi pa rehistrado ang barcode na ito sa iyong tindahan. Nais mo ba itong irehistro bilang bagong produkto?',
+      registerPromptBtn: 'Oo, Irehistro ang Produkto',
+      registerModalTitle: 'Mabilisang Pagrehistro ng Produkto',
+      registeredSuccess: 'Matagumpay na narehistro ang bagong produkto!',
+      barcodeLabel: 'Nai-scan na Barcode:',
+      productNameLabel: 'Pangalan ng Produkto:*',
+      categoryLabel: 'Kategorya:*',
+      costLabel: 'Puhunan (Cost Price ₱):*',
+      priceLabel: 'Presyo ng Tinda (SRP ₱):*',
+      stockLabel: 'Panimulang Stock:*',
+      saveAndAddToCart: 'I-save at Idagdag sa Cart',
+      saveProduct: 'I-save ang Produkto',
+      addedToCart: 'Naidagdag na sa Cart!'
+    },
+    settings: {
+      title: 'Sync & Offline Settings',
+      subtitle: 'Pamahalaan ang offline synchronization, wika, lokal na database, at storage quota.',
+      themeSection: 'Tema ng Interface (Theme)',
+      themeDesc: 'Pumili ng hitsura ng interface: Maliwanag, Madilim, o awtomatikong sumusunod sa setting ng iyong device.',
+      themeLight: '☀️ Maliwanag (Light)',
+      themeDark: '🌙 Madilim (Dark)',
+      themeSystem: '💻 Ayon sa Sistema (System)',
+      languageSection: 'Wika ng Sistema (Language)',
+      languageDesc: 'Pumili sa pagitan ng Taglish (Filipino) o English para sa buong interface.',
+      taglish: '🇵🇭 Taglish (Filipino)',
+      english: '🇺🇸 English',
+      syncSection: 'Cloud Synchronization & Queue',
+      forceSyncBtn: 'Puwersahing Mag-Sync Ngayon',
+      pullCatalogBtn: 'Hilahin ang Produkto mula sa Cloud',
+      resetSeedBtn: 'I-reset ang Local Sample Inventory (Seeder)',
+      storageSection: 'Lokal na IndexedDB Storage',
+      usedStorage: 'Nagamit na Local Storage',
+      persistentStorage: 'Persistent Storage Status',
+      persistentActive: 'Aktibo (Protektado sa auto-eviction ng browser)',
+      persistentInactive: 'Hindi Aktibo',
+      deviceInfoSection: 'Impormasyon ng Tindahan at Device',
+      deviceId: 'Device Hardware ID',
+      tenantId: 'Tindahan Tenant ID',
+      userId: 'User ID ng May-ari',
+      dangerZone: 'Delikadong Aksyon (Data Wipe)',
+      wipeDatabaseBtn: 'I-wipe ang Data at Mag-Logout',
+      resetSeedConfirm: 'Nais mo bang i-reset at i-seed muli ang 138 sari-sari store inventory catalog?',
+      wipeConfirm: 'BABALA: Ito ay mag-wawipe ng lahat ng lokal na data sa teleponong ito at magla-logout. Sigurado ka ba?',
+      resetSuccess: 'Na-reset at na-seed muli ang local tindahan database!',
+      storeNameLabel: 'Pangalan ng Tindahan:',
+      pendingSync: 'Nakabinbing Sync Operations:',
+      dlqTitle: 'Dead Letter Queue (Mga Bagsak na Sync):',
+      dlqClearBtn: 'Linisin ang DLQ',
+      dlqDesc: 'Ang mga transaksyong paulit-ulit na bumagsak ay inihihiwalay rito upang hindi maipit ang sync.',
+      retryBtn: 'Subukan Muli',
+      dataManagement: 'Pamamahala ng Datos (Data Management)',
+      pullSuccessAlert: 'Nai-download ang mga produkto mula sa cloud database.',
+      printerSection: 'Resibo at Printer Device',
+      printerDesc: 'I-configure ang sukat ng papel ng thermal receipt printer (58mm o 80mm) at subukan ang pag-print.',
+      printerPaperWidth: 'Lapad ng Papel (Paper Width)',
+      printerTestBtn: 'Subukang Mag-Print (Test Print)',
+      printerTestSuccess: 'Naipadala ang test receipt sa printer!'
+    },
+    receipt: {
+      watermark: 'HINDI OPISYAL NA RESIBO\nPARA SA PAGKILALA LAMANG',
+      receiptTitle: 'Resibo ng Benta (Sales Receipt)',
+      dateLabel: 'Petsa:',
+      txnLabel: 'Transaksyon:',
+      totalLabel: 'KABUUAN (TOTAL):',
+      paymentMethodLabel: 'Paraan ng Bayad:',
+      tenderedLabel: 'Bayad:',
+      changeLabel: 'Sukli:',
+      customerLabel: 'Suki / Utang:',
+      remainingDebtLabel: 'Natitirang Utang:',
+      thankYou: 'Maraming salamat sa inyong pagbili! 🙏',
+      shareTitle: 'Resibo',
+      copyReceipt: 'Kopyahin ang Resibo',
+      copied: 'Nakopya na!',
+      printReceipt: 'I-print ang Resibo',
+      printing: 'Nagpi-print...',
+      printSuccess: 'Na-print na ang resibo!',
+      bluetoothPrint: 'Bluetooth Thermal',
+      bluetoothConnecting: 'Kumokonekta sa Bluetooth printer...',
+      bluetoothError: 'Hindi makakonekta sa Bluetooth printer.',
+      bluetoothNotSupported: 'Hindi suportado ang Web Bluetooth sa browser na ito.',
+      paperWidthLabel: 'Sukat ng Papel:',
+      paperWidth58: '58mm (Mini POS)',
+      paperWidth80: '80mm (Standard POS)',
+      printerDeviceLabel: 'Receipt Printer Device:'
+    },
+    banner: {
+      offlineTitle: 'Naka-offline Ka Ngayon',
+      offlineDesc: 'Lahat ng benta, utang, at GCash log ay ligtas na nakatago sa iyong device at kusang magsi-sync pag nagka-signal.'
+    },
+    privacy: {
+      title: 'Paunawa sa Pagkapribado ng Datos (RA 10173)',
+      description: 'Sumusunod ang Fluent Tindahan sa Philippine Data Privacy Act of 2012. Ang iyong mga talaan ng benta, suki, at GCash ay ligtas na nakatago sa iyong lokal na device.',
+      acceptBtn: 'Sumasang-ayon Ako',
+      declineBtn: 'Tanggihan'
+    }
+  },
+  en: {
+    common: {
+      appTitle: 'Fluent Tindahan',
+      storeSub: 'Aling Nena\'s Tindahan & GCash',
+      online: 'Online',
+      offline: 'Offline',
+      syncing: 'Syncing...',
+      queued: 'queued',
+      allSynced: 'All data synced with cloud',
+      dlqWarning: 'failed items in Dead Letter queue',
+      forceSync: 'Force sync now',
+      themeToggleDark: 'Switch to Dark theme',
+      themeToggleLight: 'Switch to Light theme',
+      themeToggleSystem: 'Switch to System Default',
+      themeModeLight: 'Light Theme',
+      themeModeDark: 'Dark Theme',
+      themeModeSystem: 'System Default Theme',
+      languageToggle: 'Change Language (Taglish)',
+      save: 'Save',
+      cancel: 'Cancel',
+      delete: 'Delete',
+      edit: 'Edit',
+      close: 'Close',
+      confirm: 'Confirm',
+      pesos: '₱'
+    },
+    nav: {
+      dashboard: 'Dashboard',
+      pos: 'Store (POS)',
+      inventory: 'Inventory',
+      utang: 'Credit Ledger',
+      gcash: 'GCash Hub',
+      import: 'Import CSV',
+      settings: 'Settings'
+    },
+    pos: {
+      title: 'Point of Sale',
+      searchPlaceholder: 'Scan barcode or search product name...',
+      allCategories: 'All',
+      inStock: 'stock',
+      outOfStock: 'Out of stock',
+      cartTitle: 'Current Receipt',
+      emptyCart: 'Cart is empty',
+      emptyCartSub: 'Select items on the left to add them to the sale receipt.',
+      totalAmount: 'Total Amount',
+      cashReceived: 'Cash Received',
+      change: 'Change',
+      exactCash: 'Exact',
+      completeCashSale: 'Complete Sale (Cash)',
+      chargeToUtang: 'Charge to Credit (Utang)',
+      clearCart: 'Clear Cart',
+      saleSuccess: 'Sale successfully recorded!',
+      insufficientCash: 'Cash received is less than total amount!',
+      itemAdded: 'Added to cart',
+      receiptTitle: 'Store Receipt',
+      printReceipt: 'Print Receipt',
+      newSale: 'New Transaction',
+      qty: 'Qty',
+      price: 'Price',
+      subtotal: 'Subtotal',
+      itemsInCart: 'in cart',
+      pay: 'Checkout',
+      itemsList: 'Items in Cart',
+      each: 'each',
+      checkoutConfirm: 'Confirm Payment (Checkout)',
+      totalDue: 'Total Amount Due',
+      cashTendered: 'Cash Tendered by Customer:',
+      exactAmount: 'Exact Amount',
+      changeLabel: 'Change:',
+      gcashInstruction: 'Customer can scan store GCash QR or send to your registered number.',
+      gcashRefOptional: 'GCash Reference No. (optional):',
+      selectCustomer: 'Select Debtor (Customer):',
+      selectCustomerPlaceholder: '-- Select Customer --',
+      utangNote: 'This will be billed to the customer\'s account and added to their credit balance.',
+      cashAmount: 'Cash Amount:',
+      gcashAmount: 'GCash Amount:',
+      splitRemaining: 'Shortage / Change:',
+      checkoutBtn: 'Checkout',
+      completeSaleBtn: 'Complete Sale',
+      lowStockBadge: 'Low',
+      stockLabel: 'Stock',
+      customerSelectRequired: 'Please select a customer for credit (utang) purchase.',
+      addNewDebtorBtn: 'Add New Debtor',
+      newDebtorTitle: 'Register New Debtor',
+      saveAndSelectDebtor: 'Save & Select',
+      debtorNameRequired: 'Please enter customer name.'
+    },
+    utang: {
+      title: 'Customer Credit & Utang Ledger',
+      subtitle: 'Track customer credit lines and log payments or debts completely offline.',
+      totalOutstanding: 'Total Outstanding Credit',
+      customersCount: 'Active Debtors',
+      searchCustomer: 'Search customer name...',
+      addNewCustomer: 'Add New Customer',
+      customerName: 'Customer Name',
+      customerPhone: 'Phone Number',
+      currentBalance: 'Outstanding Balance',
+      noDebt: 'No Debt (Paid)',
+      historyTitle: 'Credit & Payment History',
+      noHistory: 'No transactions recorded for this customer yet.',
+      logPayment: 'Log Payment',
+      addCredit: 'Add Credit Charge',
+      amount: 'Amount (₱)',
+      notes: 'Notes / Details (optional)',
+      paymentSuccess: 'Payment recorded successfully!',
+      creditSuccess: 'Credit charge recorded successfully!',
+      customerAdded: 'Customer successfully added!',
+      customerNameLabel: 'Customer Name:*',
+      customerNamePlaceholder: 'e.g. Maria Santos',
+      phoneLabel: 'Mobile Number:',
+      initialDebtLabel: 'Initial Credit Balance (optional):',
+      saveCustomer: 'Save Customer',
+      noCustomerFound: 'No customer found. Add one using "Add New Customer".',
+      noPhone: 'No phone number',
+      hasUtang: 'Has Credit Balance',
+      paid: 'Fully Paid',
+      currentDebt: 'Current Credit Balance',
+      payButton: 'Record Payment',
+      addDebtButton: 'Add Credit Charge',
+      timelineTitle: 'Transaction Timeline',
+      noTransactions: 'No transaction records found.',
+      recordPaymentTitle: 'Record Payment for',
+      paymentAmountLabel: 'Payment Amount (₱):',
+      payAll: 'Pay Full Balance',
+      paymentNotesLabel: 'Notes (optional):',
+      paymentNotesPlaceholder: 'e.g. Paid in cash or GCash',
+      confirmPayment: 'Confirm Payment',
+      addCreditTitle: 'Add Credit for',
+      creditAmountLabel: 'Credit Amount (₱):',
+      creditNotesLabel: 'Items Taken / Notes:',
+      creditNotesPlaceholder: 'e.g. 2 sardines, 1 rice',
+      saveCredit: 'Record Credit'
+    },
+    gcash: {
+      title: 'GCash Remittance & Pera Hub',
+      subtitle: 'Record Cash-In and Cash-Out even without internet connection. Automatically syncs when online.',
+      cashIn: 'Cash In (Send to GCash)',
+      cashOut: 'Cash Out (Disburse Cash)',
+      refNo: 'Reference No. (Full or last 4 digits)',
+      customerPhone: 'Customer Mobile Number',
+      fee: 'Service Fee (₱)',
+      amount: 'Transaction Amount (₱)',
+      notes: 'Notes (optional)',
+      recordTransaction: 'Record Transaction',
+      todayCashIn: "Today's Total Cash-In",
+      todayCashOut: "Today's Total Cash-Out",
+      todayFees: 'Service Fees Earned',
+      transactionSuccess: 'GCash transaction recorded successfully!',
+      recentTransactions: 'Recent Transactions',
+      noTransactions: 'No transactions recorded today yet.',
+      amountLabel: 'Amount (₱):*',
+      feeLabel: 'Service Fee (₱):',
+      feeAuto: 'Automatic',
+      refNoLabel: 'Reference Number:*',
+      refNoPlaceholder: 'e.g. 901238471201',
+      phoneLabel: 'Customer Mobile Number:',
+      notesLabel: 'Notes / Receiver Name:',
+      notesPlaceholder: 'Optional notes',
+      totalFromCustomer: 'Total to Collect from Customer:',
+      totalToCustomer: 'Total to Disburse to Customer:',
+      saveTransaction: 'Save Transaction',
+      historyTitle: "Today's GCash History",
+      invalidAmountAlert: 'Please enter a valid amount.'
+    },
+    dashboard: {
+      title: 'Store Performance Dashboard',
+      todaySales: "Today's Sales",
+      txnCount: 'Transactions Count',
+      totalUtang: 'Total Outstanding Credit',
+      gcashVolume: 'GCash Volume',
+      lowStockTitle: 'Low Stock Alerts (Below 5 units)',
+      lowStockEmpty: 'All products currently have healthy inventory levels.',
+      topProductsTitle: 'Top Selling Products',
+      topProductsEmpty: 'No sales recorded yet.',
+      unitsSold: 'units sold',
+      remaining: 'left',
+      greeting: 'Good Day! 👋',
+      greetingSub: 'Your store is ready for today.',
+      quickActions: 'Quick Actions',
+      posActionTitle: 'New Sale (POS)',
+      posActionSub: 'Scan or select a product',
+      gcashActionTitle: 'GCash Transaction',
+      gcashActionSub: 'Cash-In / Cash-Out',
+      utangActionTitle: 'Credit Ledger',
+      utangActionSub: 'View active debtors',
+      importActionTitle: 'Import Inventory',
+      importActionSub: 'Upload CSV file',
+      todaySummary: "Today's Summary",
+      debtorsWithBalance: 'debtors with balance',
+      recentSales: 'Recent Sales',
+      goToPos: 'Go to POS',
+      noSalesToday: 'No sales recorded today yet. Start your first sale in POS!'
+    },
+    importPage: {
+      title: 'Import Inventory (CSV)',
+      subtitle: 'Bulk upload products, prices, and stock quantities from a spreadsheet.',
+      downloadTemplate: 'Download Sample Template',
+      selectFile: 'Select CSV File',
+      importButton: 'Start CSV Import',
+      successMessage: 'Products successfully imported!',
+      uploadPrompt: 'Select or Drag your CSV Inventory File',
+      formatHint: 'Format: name, price, cost, barcode, category, stockQty',
+      trySample: 'Try with Sample Sari-Sari CSV',
+      previewTitle: 'Preview and Validation',
+      validBadge: 'Valid',
+      errorBadge: 'Errors',
+      importing: 'Importing...',
+      importProductsBtn: 'Import Products',
+      statusCol: 'Status',
+      nameCol: 'Product Name',
+      priceCol: 'Selling Price',
+      costCol: 'Cost Price',
+      barcodeCol: 'Barcode',
+      categoryCol: 'Category',
+      stockCol: 'Stock Qty',
+      notesCol: 'Remarks / Errors',
+      unnamed: '(Unnamed)'
+    },
+    inventory: {
+      title: 'Inventory & Stock Management',
+      subtitle: 'Monitor stock levels, edit prices, inspect profit margins, and restock supplies.',
+      totalProducts: 'Total Products',
+      lowStockAlerts: 'Low Stock Alerts (≤ 5)',
+      inventoryCost: 'Total Cost Value',
+      retailValue: 'Total Retail Value',
+      potentialProfit: 'Projected Gross Profit',
+      avgMargin: 'Average Margin',
+      searchPlaceholder: 'Search by product name or barcode...',
+      allCategories: 'All Categories',
+      filterAll: 'All Stock',
+      filterLowStock: '⚠️ Low Stock (≤ 5)',
+      filterOutOfStock: '❌ Out of Stock (0)',
+      filterInStock: '✅ In Stock (> 5)',
+      addProductBtn: 'Add Product',
+      importCsvBtn: 'Import CSV',
+      colProduct: 'Product',
+      colBarcode: 'Barcode',
+      colCategory: 'Category',
+      colStock: 'Stock Level',
+      colCost: 'Cost Price',
+      colPrice: 'Retail Price (SRP)',
+      colMargin: 'Margin %',
+      colProfit: 'Profit / unit',
+      colActions: 'Actions',
+      editPrice: 'Edit Price',
+      editProduct: 'Edit Product',
+      deleteProduct: 'Delete Product',
+      quickRestock: 'Quick Restock',
+      restockSuccess: 'Stock successfully updated!',
+      deleteConfirm: 'Are you sure you want to delete this product?',
+      deleteSuccess: 'Product deleted successfully!',
+      saveSuccess: 'Product saved successfully!',
+      addModalTitle: 'Add New Product',
+      editModalTitle: 'Edit Product Details',
+      productNameLabel: 'Product Name:*',
+      categoryLabel: 'Category:*',
+      barcodeLabel: 'Barcode (Optional):',
+      costLabel: 'Cost Price (₱):*',
+      priceLabel: 'Retail Price (SRP ₱):*',
+      stockLabel: 'Current Stock Qty:*',
+      profitPreview: 'Estimated Profit per unit:',
+      marginPreview: 'Profit Margin:',
+      noProductsFound: 'No products found matching the criteria.',
+      lowStockBadge: 'Low Stock',
+      outOfStockBadge: 'Out of Stock',
+      inStockBadge: 'In Stock',
+      customRestock: 'Add Stock'
+    },
+    barcode: {
+      scannerTitle: 'Camera Barcode Scanner',
+      scannerDesc: 'Point the product barcode inside the viewfinder box to scan automatically.',
+      openCamera: 'Open Scanner',
+      closeCamera: 'Close Scanner',
+      cameraError: 'Unable to access camera. Please check browser camera permissions.',
+      cameraPermissionDenied: 'Camera permission is required to scan barcodes.',
+      flashlight: 'Flashlight',
+      switchCamera: 'Switch Camera',
+      scanPrompt: 'Align barcode inside viewfinder...',
+      notFoundTitle: 'Barcode Not Found',
+      notFoundPrompt: 'This barcode is not registered in your store yet. Would you like to register it as a new product?',
+      registerPromptBtn: 'Yes, Register Product',
+      registerModalTitle: 'Quick Product Registration',
+      registeredSuccess: 'Product successfully registered!',
+      barcodeLabel: 'Scanned Barcode:',
+      productNameLabel: 'Product Name:*',
+      categoryLabel: 'Category:*',
+      costLabel: 'Cost Price (₱):*',
+      priceLabel: 'Retail Price (SRP ₱):*',
+      stockLabel: 'Initial Stock:*',
+      saveAndAddToCart: 'Save & Add to Cart',
+      saveProduct: 'Save Product',
+      addedToCart: 'Added to Cart!'
+    },
+    settings: {
+      title: 'Sync & Offline Settings',
+      subtitle: 'Manage background sync, system language, local database, and storage quotas.',
+      themeSection: 'Interface Theme',
+      themeDesc: 'Choose interface appearance: Light, Dark, or automatically follow system settings.',
+      themeLight: '☀️ Light',
+      themeDark: '🌙 Dark',
+      themeSystem: '💻 System Default',
+      languageSection: 'System Language',
+      languageDesc: 'Choose between Taglish (Filipino) and English for the entire user interface.',
+      taglish: '🇵🇭 Taglish (Filipino)',
+      english: '🇺🇸 English',
+      syncSection: 'Cloud Synchronization & Queue',
+      forceSyncBtn: 'Force Cloud Sync Now',
+      pullCatalogBtn: 'Pull Products from Cloud',
+      resetSeedBtn: 'Reset Local Demo Inventory (Seeder)',
+      storageSection: 'Local IndexedDB Storage',
+      usedStorage: 'Local Storage Used',
+      persistentStorage: 'Persistent Storage Status',
+      persistentActive: 'Active (Protected from browser auto-eviction)',
+      persistentInactive: 'Inactive',
+      deviceInfoSection: 'Store & Device Details',
+      deviceId: 'Device Hardware ID',
+      tenantId: 'Store Tenant ID',
+      userId: 'Owner User ID',
+      dangerZone: 'Dangerous Actions (Data Wipe)',
+      wipeDatabaseBtn: 'Wipe Local Data & Sign Out',
+      resetSeedConfirm: 'Do you want to reset and re-seed the 138 sari-sari store inventory catalog?',
+      wipeConfirm: 'WARNING: This will wipe all local data on this device and sign you out. Are you sure?',
+      resetSuccess: 'Local store database reset and re-seeded!',
+      storeNameLabel: 'Store Name:',
+      pendingSync: 'Pending Sync Operations:',
+      dlqTitle: 'Dead Letter Queue (Poison Pills):',
+      dlqClearBtn: 'Clear DLQ',
+      dlqDesc: 'Items that failed sync multiple times are isolated here to prevent blocking the queue.',
+      retryBtn: 'Retry',
+      dataManagement: 'Data Management',
+      pullSuccessAlert: 'Products successfully downloaded from cloud database.',
+      printerSection: 'Receipt & Printer Device',
+      printerDesc: 'Configure thermal receipt printer paper width (58mm or 80mm) and test printer device.',
+      printerPaperWidth: 'Paper Width',
+      printerTestBtn: 'Print Test Receipt',
+      printerTestSuccess: 'Test receipt sent to printer!'
+    },
+    receipt: {
+      watermark: 'NOT AN OFFICIAL RECEIPT\nFOR ACKNOWLEDGMENT ONLY',
+      receiptTitle: 'Sales Receipt',
+      dateLabel: 'Date:',
+      txnLabel: 'Transaction:',
+      totalLabel: 'TOTAL:',
+      paymentMethodLabel: 'Payment Method:',
+      tenderedLabel: 'Cash Tendered:',
+      changeLabel: 'Change:',
+      customerLabel: 'Customer / Credit:',
+      remainingDebtLabel: 'Remaining Balance:',
+      thankYou: 'Thank you for your purchase! 🙏',
+      shareTitle: 'Receipt',
+      copyReceipt: 'Copy Receipt',
+      copied: 'Copied!',
+      printReceipt: 'Print Receipt',
+      printing: 'Printing...',
+      printSuccess: 'Receipt printed successfully!',
+      bluetoothPrint: 'Bluetooth Thermal',
+      bluetoothConnecting: 'Connecting to Bluetooth printer...',
+      bluetoothError: 'Failed to connect to Bluetooth printer.',
+      bluetoothNotSupported: 'Web Bluetooth is not supported on this browser.',
+      paperWidthLabel: 'Paper Width:',
+      paperWidth58: '58mm (Mini POS)',
+      paperWidth80: '80mm (Standard POS)',
+      printerDeviceLabel: 'Receipt Printer Device:'
+    },
+    banner: {
+      offlineTitle: 'You are Currently Offline',
+      offlineDesc: 'All sales, utang, and GCash logs are stored securely on your device and will sync automatically once reconnected.'
+    },
+    privacy: {
+      title: 'Data Privacy Notice (RA 10173)',
+      description: 'Fluent Tindahan complies with the Philippine Data Privacy Act of 2012. Your sales, customer, and GCash records are kept securely on your local device.',
+      acceptBtn: 'I Agree',
+      declineBtn: 'Decline'
+    }
+  }
+};

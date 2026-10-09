@@ -1,0 +1,11 @@
+D:\Projects\fluent-tindahan\backend\src\FluentTindahan.Domain\bin\Debug\net8.0\FluentTindahan.Domain.deps.json
+D:\Projects\fluent-tindahan\backend\src\FluentTindahan.Domain\bin\Debug\net8.0\FluentTindahan.Domain.dll
+D:\Projects\fluent-tindahan\backend\src\FluentTindahan.Domain\bin\Debug\net8.0\FluentTindahan.Domain.pdb
+D:\Projects\fluent-tindahan\backend\src\FluentTindahan.Domain\obj\Debug\net8.0\FluentTindahan.Domain.GeneratedMSBuildEditorConfig.editorconfig
+D:\Projects\fluent-tindahan\backend\src\FluentTindahan.Domain\obj\Debug\net8.0\FluentTindahan.Domain.AssemblyInfoInputs.cache
+D:\Projects\fluent-tindahan\backend\src\FluentTindahan.Domain\obj\Debug\net8.0\FluentTindahan.Domain.AssemblyInfo.cs
+D:\Projects\fluent-tindahan\backend\src\FluentTindahan.Domain\obj\Debug\net8.0\FluentTindahan.Domain.csproj.CoreCompileInputs.cache
+D:\Projects\fluent-tindahan\backend\src\FluentTindahan.Domain\obj\Debug\net8.0\FluentTindahan.Domain.dll
+D:\Projects\fluent-tindahan\backend\src\FluentTindahan.Domain\obj\Debug\net8.0\refint\FluentTindahan.Domain.dll
+D:\Projects\fluent-tindahan\backend\src\FluentTindahan.Domain\obj\Debug\net8.0\FluentTindahan.Domain.pdb
+D:\Projects\fluent-tindahan\backend\src\FluentTindahan.Domain\obj\Debug\net8.0\ref\FluentTindahan.Domain.dll

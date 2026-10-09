@@ -1,0 +1,261 @@
+import React, { useState } from 'react';
+import {
+  makeStyles,
+  tokens,
+  shorthands,
+  Text,
+  Button,
+  Card,
+  Badge,
+  Divider,
+  MessageBar,
+  MessageBarTitle,
+  MessageBarBody
+} from '@fluentui/react-components';
+import {
+  ArrowUploadRegular,
+  DocumentTableRegular,
+  CheckmarkCircleRegular,
+  DismissCircleRegular
+} from '@fluentui/react-icons';
+import { parseProductsCsv, importProductsToDexieAndSync, type ParsedProductPreview } from '../services/csvImporter';
+import { useTranslation } from '../state/languageStore';
+
+const useStyles = makeStyles({
+  container: {
+    ...shorthands.padding(tokens.spacingVerticalM, tokens.spacingHorizontalM),
+    maxWidth: '1080px',
+    marginLeft: 'auto',
+    marginRight: 'auto',
+    paddingBottom: '100px'
+  },
+  card: {
+    ...shorthands.padding(tokens.spacingVerticalM, tokens.spacingHorizontalM),
+    marginBottom: tokens.spacingVerticalM
+  },
+  uploadArea: {
+    ...shorthands.border('2px', 'dashed', tokens.colorNeutralStroke1),
+    ...shorthands.borderRadius(tokens.borderRadiusMedium),
+    ...shorthands.padding(tokens.spacingVerticalL, tokens.spacingHorizontalM),
+    textAlign: 'center',
+    cursor: 'pointer',
+    backgroundColor: tokens.colorNeutralBackground2,
+    transitionProperty: 'background-color, border-color',
+    transitionDuration: tokens.durationNormal,
+    '&:hover': {
+      backgroundColor: tokens.colorNeutralBackground1Hover,
+      ...shorthands.borderColor(tokens.colorBrandStroke1)
+    }
+  },
+  tableWrapper: {
+    overflowX: 'auto',
+    marginTop: tokens.spacingVerticalM,
+    maxHeight: '400px',
+    overflowY: 'auto'
+  },
+  table: {
+    width: '100%',
+    fontSize: tokens.fontSizeBase200
+  },
+  th: {
+    textAlign: 'left',
+    ...shorthands.padding(tokens.spacingVerticalS, tokens.spacingHorizontalS),
+    backgroundColor: tokens.colorNeutralBackground3,
+    ...shorthands.borderBottom('2px', 'solid', tokens.colorNeutralStroke1),
+    position: 'sticky',
+    top: 0
+  },
+  td: {
+    ...shorthands.padding(tokens.spacingVerticalS, tokens.spacingHorizontalS),
+    ...shorthands.borderBottom('1px', 'solid', tokens.colorNeutralStroke2)
+  },
+  errorRow: {
+    backgroundColor: '#FFF0F0'
+  }
+});
+
+const SAMPLE_CSV = `name,price,cost,barcode,category,stockQty
+Chippy Barbecue 110g,38.00,32.00,4800016111222,Snacks,25
+Piattos Cheese 85g,36.00,30.00,4800016111333,Snacks,30
+C2 Green Tea Apple 500ml,25.00,20.00,4800016111444,Beverages,20
+Tide Detergent Bar with Downy 380g,28.00,23.50,4902430222111,Laundry,40
+Surf Powder Sun Fresh 65g,12.00,9.50,4800018333222,Laundry,50
+Nissin Cup Noodles Seafood 40g,22.00,18.00,4800016777888,Instant Noodles,30
+Maggi Magic Sarap 8g,6.00,4.80,4800361222333,Seasoning,100
+Nescafe Classic Stick 2g,5.00,3.80,4800361333444,Beverages,120
+Pancit Canton Invalid Test,abc,10,12345,Instant Noodles,10`;
+
+export const ImportPage: React.FC = () => {
+  const styles = useStyles();
+  const { t, language } = useTranslation();
+  const [previews, setPreviews] = useState<ParsedProductPreview[]>([]);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importResult, setImportResult] = useState<string | null>(null);
+
+  const handleFileUpload = async (file: File) => {
+    try {
+      const parsed = await parseProductsCsv(file);
+      setPreviews(parsed);
+      setImportResult(null);
+    } catch (err: any) {
+      alert(`Error reading file: ${err.message}`);
+    }
+  };
+
+  const handleLoadSample = async () => {
+    const parsed = await parseProductsCsv(SAMPLE_CSV);
+    setPreviews(parsed);
+    setImportResult(null);
+  };
+
+  const validCount = previews.filter((p) => p.isValid).length;
+  const errorCount = previews.filter((p) => !p.isValid).length;
+
+  const handleImport = async () => {
+    if (validCount === 0) return;
+    setIsImporting(true);
+
+    try {
+      const imported = await importProductsToDexieAndSync(previews);
+      setImportResult(
+        language === 'tl'
+          ? `Matagumpay na na-import ang ${imported} produkto sa iyong offline store at nakapila para i-sync.`
+          : `Successfully imported ${imported} products to your offline store and queued for sync.`
+      );
+      setPreviews([]);
+    } catch (err: any) {
+      alert(`Import failed: ${err.message}`);
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  return (
+    <div className={styles.container}>
+      <div style={{ marginBottom: tokens.spacingVerticalM }}>
+        <Text size={500} weight="bold">{t.importPage.title}</Text>
+        <Text size={300} style={{ color: tokens.colorNeutralForeground3, display: 'block' }}>
+          {t.importPage.subtitle}
+        </Text>
+      </div>
+
+      {importResult && (
+        <MessageBar intent="success" style={{ marginBottom: '16px' }}>
+          <MessageBarTitle>{language === 'tl' ? 'Import Tagumpay!' : 'Import Succeeded!'}</MessageBarTitle>
+          <MessageBarBody>{importResult}</MessageBarBody>
+        </MessageBar>
+      )}
+
+      {/* Upload Box */}
+      <Card className={styles.card}>
+        <div
+          className={styles.uploadArea}
+          onClick={() => document.getElementById('csvFileInput')?.click()}
+        >
+          <input
+            id="csvFileInput"
+            type="file"
+            accept=".csv,text/csv"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              if (e.target.files && e.target.files[0]) {
+                handleFileUpload(e.target.files[0]);
+              }
+            }}
+          />
+          <ArrowUploadRegular fontSize={40} color={tokens.colorBrandForeground1} />
+          <Text weight="bold" size={400} style={{ display: 'block', marginTop: '8px' }}>
+            {t.importPage.uploadPrompt}
+          </Text>
+          <Text size={200} style={{ color: tokens.colorNeutralForeground3, display: 'block' }}>
+            {t.importPage.formatHint}
+          </Text>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '12px' }}>
+          <Button
+            appearance="subtle"
+            size="small"
+            icon={<DocumentTableRegular />}
+            onClick={handleLoadSample}
+          >
+            {t.importPage.trySample}
+          </Button>
+        </div>
+      </Card>
+
+      {/* Preview Grid */}
+      {previews.length > 0 && (
+        <Card className={styles.card}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <Text weight="bold" size={400}>{t.importPage.previewTitle} ({previews.length})</Text>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                <Badge appearance="tint" color="success">
+                  {validCount} {t.importPage.validBadge}
+                </Badge>
+                {errorCount > 0 && (
+                  <Badge appearance="tint" color="danger">
+                    {errorCount} {t.importPage.errorBadge}
+                  </Badge>
+                )}
+              </div>
+            </div>
+
+            <Button
+              appearance="primary"
+              icon={<CheckmarkCircleRegular />}
+              disabled={validCount === 0 || isImporting}
+              onClick={handleImport}
+            >
+              {isImporting ? t.importPage.importing : `${t.importPage.importProductsBtn} (${validCount})`}
+            </Button>
+          </div>
+
+          <Divider style={{ margin: '12px 0' }} />
+
+          <div className={styles.tableWrapper}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th className={styles.th}>{t.importPage.statusCol}</th>
+                  <th className={styles.th}>{t.importPage.nameCol}</th>
+                  <th className={styles.th}>{t.importPage.priceCol}</th>
+                  <th className={styles.th}>{t.importPage.costCol}</th>
+                  <th className={styles.th}>{t.importPage.barcodeCol}</th>
+                  <th className={styles.th}>{t.importPage.categoryCol}</th>
+                  <th className={styles.th}>{t.importPage.stockCol}</th>
+                  <th className={styles.th}>{t.importPage.notesCol}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {previews.map((item, idx) => (
+                  <tr key={idx} className={item.isValid ? undefined : styles.errorRow}>
+                    <td className={styles.td}>
+                      {item.isValid ? (
+                        <CheckmarkCircleRegular color={tokens.colorPaletteGreenForeground1} />
+                      ) : (
+                        <DismissCircleRegular color={tokens.colorPaletteRedForeground1} />
+                      )}
+                    </td>
+                    <td className={styles.td}>
+                      <strong>{item.name || t.importPage.unnamed}</strong>
+                    </td>
+                    <td className={styles.td}>₱{item.price.toFixed(2)}</td>
+                    <td className={styles.td}>₱{item.cost.toFixed(2)}</td>
+                    <td className={styles.td}>{item.barcode || '-'}</td>
+                    <td className={styles.td}>{item.category}</td>
+                    <td className={styles.td}>{item.stockQty}</td>
+                    <td className={styles.td} style={{ color: item.isValid ? 'inherit' : tokens.colorPaletteRedForeground1 }}>
+                      {item.errors.join(', ') || 'OK'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+};
