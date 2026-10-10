@@ -1184,6 +1184,151 @@ public class BillingTests
     }
 
     [Fact]
+    public async Task ProcessBatchSyncCommand_ProductDelete_SoftDeletesAndDoesNotDoubleDecrementCounters()
+    {
+        using var context = CreateInMemoryDbContext();
+        var tenantId = _currentUserServiceMock.Object.TenantId;
+
+        var activeProductId = Guid.NewGuid();
+        var placeholderProductId = Guid.NewGuid();
+        var saleId = Guid.NewGuid();
+
+        // 1 active product
+        var activeProd = new Product
+        {
+            Id = activeProductId,
+            TenantId = tenantId,
+            Name = "Active Kopiko",
+            Price = 12m,
+            IsDeleted = false,
+            UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-10)
+        };
+        // 1 placeholder product (already soft-deleted)
+        var placeholderProd = new Product
+        {
+            Id = placeholderProductId,
+            TenantId = tenantId,
+            Name = "Deleted Placeholder",
+            Price = 20m,
+            IsDeleted = true,
+            UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-10)
+        };
+        // 48 other active products to reach 49 active products before batch
+        context.Products.Add(activeProd);
+        context.Products.Add(placeholderProd);
+        for (int i = 0; i < 48; i++)
+        {
+            context.Products.Add(new Product
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantId,
+                Name = $"Product {i}",
+                Price = 10m,
+                IsDeleted = false,
+                UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-10)
+            });
+        }
+
+        // Add a sale referencing activeProd
+        var sale = new Sale
+        {
+            Id = saleId,
+            TenantId = tenantId,
+            TotalAmount = 12m,
+            Date = DateTimeOffset.UtcNow.AddMinutes(-5),
+            PaymentMethod = "Cash",
+            Items = new List<SaleItem>
+            {
+                new SaleItem
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = tenantId,
+                    SaleId = saleId,
+                    ProductId = activeProductId,
+                    Qty = 1,
+                    UnitPrice = 12m,
+                    Subtotal = 12m
+                }
+            }
+        };
+        context.Sales.Add(sale);
+        await context.SaveChangesAsync();
+
+        var handler = new ProcessBatchSyncCommandHandler(
+            context,
+            _currentUserServiceMock.Object,
+            NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+
+        var deleteTimestamp = DateTimeOffset.UtcNow;
+        var batch = new BatchSyncRequestDto
+        {
+            DeviceId = Guid.NewGuid(),
+            Operations = new List<SyncOperationDto>
+            {
+                // Delete active product
+                new SyncOperationDto
+                {
+                    SyncId = "del_active",
+                    Entity = "Product",
+                    Action = "Delete",
+                    Timestamp = deleteTimestamp,
+                    Payload = System.Text.Json.JsonDocument.Parse($$"""{ "id": "{{activeProductId}}" }""").RootElement
+                },
+                // Delete already soft-deleted placeholder product
+                new SyncOperationDto
+                {
+                    SyncId = "del_placeholder",
+                    Entity = "Product",
+                    Action = "Delete",
+                    Timestamp = deleteTimestamp,
+                    Payload = System.Text.Json.JsonDocument.Parse($$"""{ "id": "{{placeholderProductId}}" }""").RootElement
+                },
+                // Add a new product (succeeds as 50th product, then del_active decrements to 49, placeholder does not decrement to 48)
+                new SyncOperationDto
+                {
+                    SyncId = "add_new",
+                    Entity = "Product",
+                    Action = "Insert",
+                    Timestamp = deleteTimestamp,
+                    Payload = System.Text.Json.JsonDocument.Parse($$"""
+                    {
+                        "id": "{{Guid.NewGuid()}}",
+                        "name": "New Product Under Limit",
+                        "price": 15.0
+                    }
+                    """).RootElement
+                }
+            }
+        };
+
+        var response = await handler.Handle(new ProcessBatchSyncCommand(batch), CancellationToken.None);
+
+        response.Results.Should().HaveCount(3);
+        response.Results[0].Status.Should().Be("Success");
+        response.Results[1].Status.Should().Be("Success");
+        response.Results[2].Status.Should().Be("Success");
+
+        // Verify active product is now soft-deleted
+        var standardQuery = await context.Products.FirstOrDefaultAsync(p => p.Id == activeProductId);
+        standardQuery.Should().BeNull();
+
+        var rawActive = await context.Products.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == activeProductId);
+        rawActive.Should().NotBeNull();
+        rawActive!.IsDeleted.Should().BeTrue();
+        rawActive.UpdatedAt.Should().Be(deleteTimestamp);
+
+        // Verify sale and sale items still exist and reference activeProductId without error
+        var preservedSale = await context.Sales.Include(s => s.Items).FirstOrDefaultAsync(s => s.Id == saleId);
+        preservedSale.Should().NotBeNull();
+        preservedSale!.Items.Should().HaveCount(1);
+        preservedSale.Items.First().ProductId.Should().Be(activeProductId);
+
+        // Active products count in DB is exactly 49 now (48 initial + 1 added - 1 active deleted; placeholder was already deleted)
+        var totalActive = await context.Products.CountAsync();
+        totalActive.Should().Be(49);
+    }
+
+    [Fact]
     public void VerifyWebhookSignature_ValidSignatureInDevelopment_ReturnsTrue()
     {
         var fixedTime = DateTimeOffset.UtcNow;

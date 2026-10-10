@@ -212,9 +212,11 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
         {
             if (existing != null)
             {
-                _context.Products.Remove(existing);
+                var wasDeleted = existing.IsDeleted;
+                existing.IsDeleted = true;
+                existing.UpdatedAt = op.Timestamp;
                 await _context.SaveChangesAsync(cancellationToken);
-                if (counters.ProductCount.HasValue && counters.ProductCount > 0)
+                if (!wasDeleted && counters.ProductCount.HasValue && counters.ProductCount > 0)
                 {
                     counters.ProductCount--;
                 }
