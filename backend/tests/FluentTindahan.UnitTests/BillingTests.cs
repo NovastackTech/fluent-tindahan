@@ -762,11 +762,16 @@ public class BillingTests
         savedSale!.TotalAmount.Should().Be(50.0m);
         savedSale.Items.Should().HaveCount(1);
 
-        // Verify placeholder product was created with snapshot data
-        var placeholderProd = await context.Products.FirstOrDefaultAsync(p => p.Id == missingProductId);
+        // Verify placeholder product was created with snapshot data and marked IsDeleted
+        var placeholderProd = await context.Products.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == missingProductId);
         placeholderProd.Should().NotBeNull();
         placeholderProd!.Name.Should().Be("Old Shampoo Sachet");
         placeholderProd.Price.Should().Be(50.0m);
+        placeholderProd.IsDeleted.Should().BeTrue();
+
+        // Normal query filter hides placeholder product from inventory catalog
+        var visibleProd = await context.Products.FirstOrDefaultAsync(p => p.Id == missingProductId);
+        visibleProd.Should().BeNull();
     }
 
     [Fact]
@@ -1023,6 +1028,159 @@ public class BillingTests
         var savedTxn = await context.GCashTransactions.FirstOrDefaultAsync(g => g.Id == oldTxnId);
         savedTxn.Should().NotBeNull();
         savedTxn!.Amount.Should().Be(200.0m);
+    }
+
+    [Fact]
+    public async Task ProcessBatchSyncCommand_BlankSyncIdAndDuplicates_ShouldPreserveOriginalIndicesAndReportSuccess()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new ProcessBatchSyncCommandHandler(
+            context,
+            _currentUserServiceMock.Object,
+            NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+
+        var cust1Id = Guid.NewGuid();
+        var cust2Id = Guid.NewGuid();
+        var cust3Id = Guid.NewGuid();
+
+        var opBlank1 = new SyncOperationDto
+        {
+            SyncId = "", // Blank
+            Entity = "Customer",
+            Action = "Insert",
+            Timestamp = DateTimeOffset.UtcNow,
+            Payload = System.Text.Json.JsonDocument.Parse($$"""
+            {
+                "id": "{{cust1Id}}",
+                "name": "Customer With Blank SyncId 1",
+                "phone": "09111111111"
+            }
+            """).RootElement
+        };
+
+        var opDuplicateA = new SyncOperationDto
+        {
+            SyncId = "duplicate_sync_id",
+            Entity = "Customer",
+            Action = "Insert",
+            Timestamp = DateTimeOffset.UtcNow,
+            Payload = System.Text.Json.JsonDocument.Parse($$"""
+            {
+                "id": "{{cust2Id}}",
+                "name": "Customer With Duplicate SyncId A",
+                "phone": "09222222222"
+            }
+            """).RootElement
+        };
+
+        var opDuplicateB = new SyncOperationDto
+        {
+            SyncId = "duplicate_sync_id",
+            Entity = "Customer",
+            Action = "Insert",
+            Timestamp = DateTimeOffset.UtcNow,
+            Payload = System.Text.Json.JsonDocument.Parse($$"""
+            {
+                "id": "{{cust3Id}}",
+                "name": "Customer With Duplicate SyncId B",
+                "phone": "09333333333"
+            }
+            """).RootElement
+        };
+
+        var result = await handler.Handle(
+            new ProcessBatchSyncCommand(new BatchSyncRequestDto
+            {
+                DeviceId = Guid.NewGuid(),
+                Operations = new List<SyncOperationDto> { opBlank1, opDuplicateA, opDuplicateB }
+            }),
+            CancellationToken.None);
+
+        result.Results.Should().HaveCount(3);
+        // Index 0: blank SyncId must succeed and preserve empty SyncId
+        result.Results[0].SyncId.Should().Be("");
+        result.Results[0].Status.Should().Be("Success");
+
+        // Index 1 and 2: duplicate SyncIds must both succeed in original index order
+        result.Results[1].SyncId.Should().Be("duplicate_sync_id");
+        result.Results[1].Status.Should().Be("Success");
+
+        result.Results[2].SyncId.Should().Be("duplicate_sync_id");
+        result.Results[2].Status.Should().Be("Success");
+
+        (await context.Customers.CountAsync()).Should().Be(3);
+    }
+
+    [Fact]
+    public async Task ProcessBatchSyncCommand_DeleteThenReinsert_ShouldPreserveOrderAndDeleteBeforeInsert()
+    {
+        using var context = CreateInMemoryDbContext();
+        var tenantId = _currentUserServiceMock.Object.TenantId;
+        var productId = Guid.NewGuid();
+
+        // Seed existing product
+        context.Products.Add(new Product
+        {
+            Id = productId,
+            TenantId = tenantId,
+            Name = "Original Product",
+            Price = 50m,
+            UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-10)
+        });
+        await context.SaveChangesAsync();
+
+        var handler = new ProcessBatchSyncCommandHandler(
+            context,
+            _currentUserServiceMock.Object,
+            NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+
+        var deleteOp = new SyncOperationDto
+        {
+            SyncId = "sync_delete_first",
+            Entity = "Product",
+            Action = "Delete",
+            Timestamp = DateTimeOffset.UtcNow.AddMinutes(-5),
+            Payload = System.Text.Json.JsonDocument.Parse($$"""
+            {
+                "id": "{{productId}}"
+            }
+            """).RootElement
+        };
+
+        var reinsertOp = new SyncOperationDto
+        {
+            SyncId = "sync_reinsert_second",
+            Entity = "Product",
+            Action = "Insert",
+            Timestamp = DateTimeOffset.UtcNow,
+            Payload = System.Text.Json.JsonDocument.Parse($$"""
+            {
+                "id": "{{productId}}",
+                "name": "Recreated Product",
+                "price": 60.0
+            }
+            """).RootElement
+        };
+
+        // Send Delete followed by Insert for the exact same product ID
+        var result = await handler.Handle(
+            new ProcessBatchSyncCommand(new BatchSyncRequestDto
+            {
+                DeviceId = Guid.NewGuid(),
+                Operations = new List<SyncOperationDto> { deleteOp, reinsertOp }
+            }),
+            CancellationToken.None);
+
+        result.Results.Should().HaveCount(2);
+        result.Results[0].Status.Should().Be("Success");
+        result.Results[1].Status.Should().Be("Success");
+
+        // Product must be active and updated (not deleted!) because Delete ran BEFORE Insert
+        var finalProduct = await context.Products.FirstOrDefaultAsync(p => p.Id == productId);
+        finalProduct.Should().NotBeNull();
+        finalProduct!.Name.Should().Be("Recreated Product");
+        finalProduct.Price.Should().Be(60.0m);
+        finalProduct.IsDeleted.Should().BeFalse();
     }
 
     [Fact]

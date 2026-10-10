@@ -93,6 +93,7 @@ public class AppDbContext : DbContext, IApplicationDbContext
             builder.Property(p => p.Cost).HasPrecision(12, 2);
             builder.Property(p => p.Barcode).HasMaxLength(100);
             builder.Property(p => p.Category).HasMaxLength(100);
+            builder.Property(p => p.IsDeleted).HasDefaultValue(false);
 
             builder.HasIndex(p => p.TenantId);
             builder.HasIndex(p => new { p.TenantId, p.Barcode });
@@ -250,9 +251,9 @@ public class AppDbContext : DbContext, IApplicationDbContext
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
-        // Global Query Filters for multi-tenancy isolation
+        // Global Query Filters for multi-tenancy isolation and soft delete
         ConfigureTenantFilter<User>(modelBuilder);
-        ConfigureTenantFilter<Product>(modelBuilder);
+        modelBuilder.Entity<Product>().HasQueryFilter(p => p.TenantId == _currentUserService.TenantId && !p.IsDeleted);
         ConfigureTenantFilter<Customer>(modelBuilder);
         ConfigureTenantFilter<UtangLedger>(modelBuilder);
         ConfigureTenantFilter<Sale>(modelBuilder);

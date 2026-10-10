@@ -194,12 +194,13 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
 
       set({ isLoading: true, error: null });
       try {
+        let apiCallSucceeded = false;
         try {
           await apiClient.post('/billing/mock-pay', {
             targetTier: targetTier === 'TindahanPro' ? 1 : 2,
             cycle: cycle === 'Weekly' ? 0 : 1
           });
-          await get().refreshSubscription();
+          apiCallSucceeded = true;
         } catch (apiErr) {
           // In development environments without a live backend (e.g. offline dev or unit tests),
           // simulate the upgrade locally so dev workflow and tests continue working.
@@ -223,11 +224,15 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
             tier: targetTier,
             subscriptionEndDate: newEndDate,
             isActive: true,
-            daysRemaining: durationDays,
-            isLoading: false
+            daysRemaining: durationDays
           });
         }
-        set({ isUpgradeModalOpen: false });
+
+        if (apiCallSucceeded) {
+          await get().refreshSubscription();
+        }
+
+        set({ isUpgradeModalOpen: false, isLoading: false });
       } catch (err: any) {
         set({ isLoading: false, error: err?.response?.data?.message || err.message });
         throw err;

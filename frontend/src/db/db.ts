@@ -76,6 +76,7 @@ export interface SyncQueueRecord {
   status: 'Pending' | 'InFlight' | 'Failed';
   retryCount: number;
   errorMessage?: string;
+  queueOrder?: number;
 }
 
 export interface DeadLetterRecord {

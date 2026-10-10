@@ -255,6 +255,75 @@ describe('syncEngine', () => {
     ]);
   });
 
+  it('preserves delete-then-reinsert order for the same entity id and does not move reinserted delete to end', async () => {
+    // Op 1: Delete Product p-1
+    await enqueueSync('Product', 'Delete', { id: 'p-1' });
+    // Op 2: Insert Product p-1 (undo/re-add)
+    await enqueueSync('Product', 'Insert', { id: 'p-1', name: 'Kape Recreated' });
+    // Op 3: Delete Product p-2 (terminal delete)
+    await enqueueSync('Product', 'Delete', { id: 'p-2' });
+
+    let sentOperations: any[] = [];
+    (apiClient.post as any).mockImplementationOnce(async (_url: string, payload: any) => {
+      sentOperations = payload.operations;
+      return {
+        data: {
+          results: sentOperations.map((op: any) => ({ syncId: op.syncId, status: 'Success' }))
+        }
+      };
+    });
+
+    const result = await processSyncQueue();
+    expect(result.processed).toBe(3);
+
+    // Reinserted Delete for p-1 must be before Insert for p-1!
+    // Terminal delete for p-2 is pushed to the end.
+    expect(sentOperations.map((op: any) => `${op.action}:${op.payload.id}`)).toEqual([
+      'Delete:p-1',
+      'Insert:p-1',
+      'Delete:p-2'
+    ]);
+  });
+
+  it('uses queue order as tie-break when operations have identical timestamps', async () => {
+    const fixedIso = '2026-10-10T12:00:00.000Z';
+    // Add two items with the exact same timestamp
+    await db.syncQueue.add({
+      id: 'sync-1',
+      entity: 'Product',
+      action: 'Insert',
+      timestamp: fixedIso,
+      payload: { id: 'p-10' },
+      status: 'Pending',
+      retryCount: 0,
+      queueOrder: 1
+    });
+    await db.syncQueue.add({
+      id: 'sync-2',
+      entity: 'Product',
+      action: 'Insert',
+      timestamp: fixedIso,
+      payload: { id: 'p-20' },
+      status: 'Pending',
+      retryCount: 0,
+      queueOrder: 2
+    });
+
+    let sentOperations: any[] = [];
+    (apiClient.post as any).mockImplementationOnce(async (_url: string, payload: any) => {
+      sentOperations = payload.operations;
+      return {
+        data: {
+          results: sentOperations.map((op: any) => ({ syncId: op.syncId, status: 'Success' }))
+        }
+      };
+    });
+
+    const result = await processSyncQueue();
+    expect(result.processed).toBe(2);
+    expect(sentOperations.map((op: any) => op.payload.id)).toEqual(['p-10', 'p-20']);
+  });
+
   it('initSyncEngine attaches online and offline event handlers', () => {
     expect(() => initSyncEngine()).not.toThrow();
 

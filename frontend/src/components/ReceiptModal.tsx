@@ -227,6 +227,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ open, onClose, data 
       open={open}
       modalType="modal"
       onOpenChange={(_, data) => {
+        // Backdrop dismissal is intentionally blocked to prevent accidental closure on touchscreens;
+        // Escape key remains active for standard desktop POS keyboard accessibility.
         if (!data.open && data.type !== 'backdropClick') {
           onClose();
         }

@@ -32,18 +32,28 @@ export const OfflineSyncBanner: React.FC = () => {
   const { isOnline, isSyncing, pendingCount, deadLetterCount, lastErrorMessage } = useSyncStore();
   const { t } = useTranslation();
 
+  const [isRetrying, setIsRetrying] = React.useState(false);
+
   if (isOnline && pendingCount === 0 && deadLetterCount === 0 && !lastErrorMessage) {
     return null;
   }
 
   const handleRetryAllDeadLetter = async () => {
+    if (isRetrying) return;
+    setIsRetrying(true);
     try {
       const items = await db.deadLetterQueue.toArray();
       for (const item of items) {
-        await retryDeadLetterItem(item.id);
+        try {
+          await retryDeadLetterItem(item.id);
+        } catch (itemErr) {
+          console.error(`Failed to retry dead letter item ${item.id}:`, itemErr);
+        }
       }
     } catch (err) {
-      console.error('Failed to retry dead letter items:', err);
+      console.error('Failed to load dead letter items for retry:', err);
+    } finally {
+      setIsRetrying(false);
     }
   };
 
@@ -92,9 +102,10 @@ export const OfflineSyncBanner: React.FC = () => {
                 size="small"
                 appearance="subtle"
                 icon={<ArrowClockwiseRegular />}
+                disabled={isRetrying}
                 onClick={handleRetryAllDeadLetter}
               >
-                {t.settings.retryBtn || 'Subukang Muli'}
+                {isRetrying ? (t.common.syncing || 'Sumusubok...') : (t.settings.retryBtn || 'Subukang Muli')}
               </Button>
             }
           />

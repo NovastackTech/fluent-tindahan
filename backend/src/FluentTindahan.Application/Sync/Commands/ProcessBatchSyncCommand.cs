@@ -49,23 +49,43 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
         var effectiveTier = isExpired ? PlanTier.Libre : (tenant?.Tier ?? PlanTier.Libre);
         var counters = new BatchSyncCounters();
 
-        // Stable dependency ordering: Customers, Products, Sales, UtangLedgers, GCash, Deletes last
+        // Identify entity IDs that have a subsequent Insert/Update in the same batch
+        var reinsertedIds = new HashSet<(string Entity, Guid Id)>();
+        var seenDeletes = new HashSet<(string Entity, Guid Id)>();
+        foreach (var op in operations)
+        {
+            var entity = op.Entity?.Trim().ToLowerInvariant() ?? "";
+            var action = op.Action?.Trim().ToLowerInvariant() ?? "insert";
+            if (TryExtractId(op.Payload, out var id) && id != Guid.Empty)
+            {
+                if (action == "delete")
+                {
+                    seenDeletes.Add((entity, id));
+                }
+                else if (seenDeletes.Contains((entity, id)))
+                {
+                    reinsertedIds.Add((entity, id));
+                }
+            }
+        }
+
+        // Stable dependency ordering: Customers, Products, Sales, UtangLedgers, GCash, Deletes last (unless reinserted)
         var orderedOperations = operations
             .Select((op, index) => (Op: op, OriginalIndex: index))
-            .OrderBy(x => GetEntityPrecedence(x.Op))
+            .OrderBy(x => GetEntityPrecedence(x.Op, reinsertedIds))
             .ThenBy(x => x.OriginalIndex)
             .ToList();
 
-        var resultsMap = new Dictionary<string, SyncItemResultDto>();
+        var resultsByIndex = new SyncItemResultDto[operations.Count];
 
         foreach (var item in orderedOperations)
         {
             var op = item.Op;
-            var syncId = string.IsNullOrWhiteSpace(op.SyncId) ? Guid.NewGuid().ToString() : op.SyncId;
+            var syncId = op.SyncId ?? "";
             try
             {
                 var status = await ProcessOperationAsync(op, tenantId, effectiveTier, counters, cancellationToken);
-                resultsMap[syncId] = new SyncItemResultDto
+                resultsByIndex[item.OriginalIndex] = new SyncItemResultDto
                 {
                     SyncId = syncId,
                     Status = status
@@ -90,7 +110,7 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
                 }
 
                 _logger.LogWarning(ex, "Failed to process sync operation {SyncId} for entity {Entity}", syncId, op.Entity);
-                resultsMap[syncId] = new SyncItemResultDto
+                resultsByIndex[item.OriginalIndex] = new SyncItemResultDto
                 {
                     SyncId = syncId,
                     Status = "Failed",
@@ -99,11 +119,7 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
             }
         }
 
-        var results = operations.Select(op =>
-        {
-            var sId = string.IsNullOrWhiteSpace(op.SyncId) ? "" : op.SyncId;
-            return resultsMap.TryGetValue(sId, out var res) ? res : new SyncItemResultDto { SyncId = sId, Status = "Failed", Error = "Unknown error" };
-        }).ToList();
+        var results = resultsByIndex.ToList();
 
         return new BatchSyncResultDto
         {
@@ -121,12 +137,11 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
         public HashSet<Guid> RejectedCustomerIds { get; } = new();
     }
 
-    private static int GetEntityPrecedence(SyncOperationDto op)
+    private static int GetEntityPrecedence(SyncOperationDto op, HashSet<(string Entity, Guid Id)> reinsertedIds)
     {
-        var entity = op.Entity?.Trim().ToLowerInvariant();
+        var entity = op.Entity?.Trim().ToLowerInvariant() ?? "";
         var action = op.Action?.Trim().ToLowerInvariant() ?? "insert";
-        if (action == "delete") return 10;
-        return entity switch
+        var basePrecedence = entity switch
         {
             "customer" => 1,
             "product" => 2,
@@ -135,6 +150,17 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
             "gcashtxn" or "gcash" => 5,
             _ => 6
         };
+
+        if (action == "delete")
+        {
+            if (TryExtractId(op.Payload, out var id) && reinsertedIds.Contains((entity, id)))
+            {
+                return basePrecedence;
+            }
+            return 10;
+        }
+
+        return basePrecedence;
     }
 
     private static bool TryExtractId(JsonElement payload, out Guid id)
@@ -202,13 +228,14 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
             {
                 // Count once per batch to avoid N+1 queries during large sync batches, incrementing locally
                 counters.ProductCount ??= await _context.Products.IgnoreQueryFilters()
-                    .CountAsync(p => p.TenantId == tenantId, cancellationToken);
+                    .CountAsync(p => p.TenantId == tenantId && !p.IsDeleted, cancellationToken);
 
                 if (counters.ProductCount >= 50)
                 {
                     throw new InvalidOperationException("Libre plan limit exceeded: Maximum 50 products allowed. Upgrade to Tindahan Pro for unlimited catalog capacity.");
                 }
             }
+
             var product = new Product
             {
                 Id = raw.Id,
@@ -219,7 +246,8 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
                 Barcode = raw.Barcode,
                 Category = raw.Category,
                 StockQty = raw.StockQty,
-                UpdatedAt = op.Timestamp
+                UpdatedAt = op.Timestamp,
+                IsDeleted = false
             };
             _context.Products.Add(product);
             await _context.SaveChangesAsync(cancellationToken);
@@ -238,6 +266,8 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
             return "ConflictIgnored";
         }
 
+        // If existing product was previously an archived/deleted placeholder, restore it
+        existing.IsDeleted = false;
         existing.Name = raw.Name ?? existing.Name;
         existing.Price = raw.Price;
         existing.Cost = raw.Cost;
@@ -438,8 +468,9 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
                 if (missingProductIds.Count > 0)
                 {
                     // The product row is gone (deleted from another device or by earlier op).
-                    // Preserve the sale and its line-item snapshot (name, price) by creating a placeholder product
-                    // so the database FK_SaleItems_Products_ProductId constraint is satisfied and sales totals don't drift.
+                    // Preserve the sale and its line-item snapshot (name, price) by creating an archived/deleted placeholder product
+                    // so the database FK_SaleItems_Products_ProductId constraint is satisfied, sales totals don't drift,
+                    // and the placeholder does not count against Libre plan product limits.
                     foreach (var missingId in missingProductIds)
                     {
                         var matchingItem = raw.Items.FirstOrDefault(i => i.ProductId == missingId);
@@ -453,11 +484,12 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
                             Price = matchingItem?.UnitPrice ?? 0m,
                             Cost = 0m,
                             StockQty = 0,
-                            UpdatedAt = op.Timestamp
+                            UpdatedAt = op.Timestamp,
+                            IsDeleted = true
                         };
                         _context.Products.Add(placeholder);
                     }
-                    await _context.SaveChangesAsync(cancellationToken);
+                    // Placeholders are committed atomically with the sale below in the same SaveChanges call.
                 }
             }
         }

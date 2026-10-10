@@ -43,10 +43,13 @@ describe('OfflineSyncBanner', () => {
     expect(screen.getByRole('button', { name: /Puwersahing mag-sync|Force Sync/i })).toBeInTheDocument();
   });
 
-  it('renders dead letter queue alert when deadLetterCount > 0', () => {
+  it('renders dead letter queue alert when deadLetterCount > 0 and handles retry click', async () => {
     useSyncStore.setState({ isOnline: true, deadLetterCount: 2 });
     renderBanner();
 
     expect(screen.getByText(/Dead Letter Queue \(2\)/i)).toBeInTheDocument();
+    const retryBtn = screen.getByRole('button', { name: /Subukan(g)? Muli|Retry/i });
+    expect(retryBtn).toBeInTheDocument();
+    expect(retryBtn).not.toBeDisabled();
   });
 });

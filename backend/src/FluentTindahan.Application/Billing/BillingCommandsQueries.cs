@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -189,7 +190,7 @@ public class ApplySubscriptionPaymentCommandHandler : IRequestHandler<ApplySubsc
         }
 
         const int maxRetries = 3;
-        for (var attempt = 1; ; attempt++)
+        for (var attempt = 1; attempt <= maxRetries; attempt++)
         {
             var tenant = await _context.Tenants
                 .IgnoreQueryFilters()
@@ -266,7 +267,7 @@ public class ApplySubscriptionPaymentCommandHandler : IRequestHandler<ApplySubsc
             }
         }
 
-        // Unreachable: the retry loop either returns on success/duplicate or rethrows DbUpdateConcurrencyException on the final attempt.
+        throw new UnreachableException("Retry loop must either succeed, return duplicate, or rethrow on final attempt.");
     }
 
     private Task<bool> PaymentAlreadyAppliedAsync(string paymentId, CancellationToken cancellationToken) =>
