@@ -41,6 +41,8 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type ProductRecord, type CustomerRecord } from '../db/db';
 import { useCartStore } from '../state/cartStore';
 import { useAuthStore } from '../state/authStore';
+import { usePwaStore } from '../state/pwaStore';
+import { notifySaleFinished } from '../pwa/registerServiceWorker';
 import { enqueueSync } from '../sync/syncEngine';
 import { ReceiptModal, type ReceiptData } from '../components/ReceiptModal';
 import { BarcodeScannerModal } from '../components/BarcodeScannerModal';
@@ -405,61 +407,86 @@ export const POSPage: React.FC = () => {
       return;
     }
 
-    const saleId = crypto.randomUUID();
-    const now = new Date().toISOString();
+    usePwaStore.getState().setIsSaleInProgress(true);
+    try {
+      const saleId = crypto.randomUUID();
+      const now = new Date().toISOString();
 
-    const selectedCust =
-      customers.find((c) => c.id === customerId) ||
-      (customerId ? await db.customers.get(customerId) : undefined);
+      const selectedCust =
+        customers.find((c) => c.id === customerId) ||
+        (customerId ? await db.customers.get(customerId) : undefined);
 
-    const saleRecord = {
-      id: saleId,
-      tenantId,
-      totalAmount,
-      paymentMethod,
-      date: now,
-      userId,
-      customerId: customerId || undefined,
-      cashReceived: paymentMethod === 'Cash' ? cashReceived : undefined,
-      changeGiven: paymentMethod === 'Cash' ? changeAmount : undefined
-    };
+      const saleRecord = {
+        id: saleId,
+        tenantId,
+        totalAmount,
+        paymentMethod,
+        date: now,
+        userId,
+        customerId: customerId || undefined,
+        cashReceived: paymentMethod === 'Cash' ? cashReceived : undefined,
+        changeGiven: paymentMethod === 'Cash' ? changeAmount : undefined
+      };
 
-    const saleItemRecords = cartItems.map((item) => ({
-      id: crypto.randomUUID(),
-      tenantId,
-      saleId,
-      productId: item.productId,
-      productName: item.name,
-      qty: item.qty,
-      unitPrice: item.price,
-      subtotal: item.subtotal
-    }));
+      const saleItemRecords = cartItems.map((item) => ({
+        id: crypto.randomUUID(),
+        tenantId,
+        saleId,
+        productId: item.productId,
+        productName: item.name,
+        qty: item.qty,
+        unitPrice: item.price,
+        subtotal: item.subtotal
+      }));
 
-    let utangId: string | null = null;
-    if (paymentMethod === 'Utang' && customerId) {
-      utangId = crypto.randomUUID();
-    }
-
-    // Save directly to Dexie
-    await db.transaction('rw', db.sales, db.saleItems, db.utangLedger, db.customers, db.products, async () => {
-      await db.sales.add(saleRecord);
-      await db.saleItems.bulkAdd(saleItemRecords);
-
-      // Deduct stock in Dexie
-      for (const item of cartItems) {
-        const prod = await db.products.get(item.productId);
-        if (prod && prod.stockQty !== undefined) {
-          await db.products.update(item.productId, {
-            stockQty: Math.max(0, prod.stockQty - item.qty)
-          });
-        }
+      let utangId: string | null = null;
+      if (paymentMethod === 'Utang' && customerId) {
+        utangId = crypto.randomUUID();
       }
 
-      // If Utang, append to UtangLedger and update customer balance
+      // Save directly to Dexie
+      await db.transaction('rw', db.sales, db.saleItems, db.utangLedger, db.customers, db.products, async () => {
+        await db.sales.add(saleRecord);
+        await db.saleItems.bulkAdd(saleItemRecords);
+
+        // Deduct stock in Dexie
+        for (const item of cartItems) {
+          const prod = await db.products.get(item.productId);
+          if (prod && prod.stockQty !== undefined) {
+            await db.products.update(item.productId, {
+              stockQty: Math.max(0, prod.stockQty - item.qty)
+            });
+          }
+        }
+
+        // If Utang, append to UtangLedger and update customer balance
+        if (utangId && customerId) {
+          await db.utangLedger.add({
+            id: utangId,
+            tenantId,
+            customerId,
+            amount: totalAmount,
+            type: 'Credit',
+            date: now,
+            refSaleId: saleId,
+            notes: `Benta POS #${saleId.slice(0, 6)}`
+          });
+
+          const cust = await db.customers.get(customerId);
+          if (cust) {
+            const newBal = (cust.totalUtangBalance || 0) + totalAmount;
+            await db.customers.update(customerId, {
+              totalUtangBalance: newBal,
+              updatedAt: now
+            });
+          }
+        }
+      });
+
+      // Sync UtangLedger if Utang sale
       if (utangId && customerId) {
-        await db.utangLedger.add({
+        await enqueueSync('UtangLedger', 'Insert', {
           id: utangId,
-          tenantId,
           customerId,
           amount: totalAmount,
           type: 'Credit',
@@ -467,75 +494,56 @@ export const POSPage: React.FC = () => {
           refSaleId: saleId,
           notes: `Benta POS #${saleId.slice(0, 6)}`
         });
-
-        const cust = await db.customers.get(customerId);
-        if (cust) {
-          const newBal = (cust.totalUtangBalance || 0) + totalAmount;
-          await db.customers.update(customerId, {
-            totalUtangBalance: newBal,
-            updatedAt: now
-          });
-        }
       }
-    });
 
-    // Sync UtangLedger if Utang sale
-    if (utangId && customerId) {
-      await enqueueSync('UtangLedger', 'Insert', {
-        id: utangId,
-        customerId,
-        amount: totalAmount,
-        type: 'Credit',
+      // Enqueue Sale into sync queue
+      await enqueueSync('Sale', 'Insert', {
+        id: saleId,
+        totalAmount,
+        paymentMethod,
         date: now,
-        refSaleId: saleId,
-        notes: `Benta POS #${saleId.slice(0, 6)}`
+        userId,
+        customerId: customerId || undefined,
+        cashReceived: paymentMethod === 'Cash' ? cashReceived : undefined,
+        changeGiven: paymentMethod === 'Cash' ? changeAmount : undefined,
+        items: cartItems.map((i) => ({
+          id: crypto.randomUUID(),
+          productId: i.productId,
+          qty: i.qty,
+          unitPrice: i.price,
+          subtotal: i.subtotal
+        }))
       });
+
+      // Prepare receipt data and mark receipt active
+      usePwaStore.getState().setHasActiveReceipt(true);
+      setReceiptData({
+        saleId,
+        date: now,
+        items: cartItems.map((i) => ({
+          name: i.name,
+          qty: i.qty,
+          price: i.price,
+          subtotal: i.subtotal
+        })),
+        totalAmount,
+        paymentMethod,
+        cashReceived: paymentMethod === 'Cash' ? cashReceived : undefined,
+        changeGiven: paymentMethod === 'Cash' ? changeAmount : undefined,
+        customerName: selectedCust?.name,
+        customerUtangBalance: selectedCust ? selectedCust.totalUtangBalance + (paymentMethod === 'Utang' ? totalAmount : 0) : undefined
+      });
+
+      clearCart();
+      setIsCheckoutOpen(false);
+      setIsCartOpen(false);
+      setIsAddDebtorOpen(false);
+      setNewDebtorName('');
+      setNewDebtorPhone('');
+      setNewDebtorError(null);
+    } finally {
+      usePwaStore.getState().setIsSaleInProgress(false);
     }
-
-    // Enqueue Sale into sync queue
-    await enqueueSync('Sale', 'Insert', {
-      id: saleId,
-      totalAmount,
-      paymentMethod,
-      date: now,
-      userId,
-      customerId: customerId || undefined,
-      cashReceived: paymentMethod === 'Cash' ? cashReceived : undefined,
-      changeGiven: paymentMethod === 'Cash' ? changeAmount : undefined,
-      items: cartItems.map((i) => ({
-        id: crypto.randomUUID(),
-        productId: i.productId,
-        qty: i.qty,
-        unitPrice: i.price,
-        subtotal: i.subtotal
-      }))
-    });
-
-    // Prepare receipt data
-    setReceiptData({
-      saleId,
-      date: now,
-      items: cartItems.map((i) => ({
-        name: i.name,
-        qty: i.qty,
-        price: i.price,
-        subtotal: i.subtotal
-      })),
-      totalAmount,
-      paymentMethod,
-      cashReceived: paymentMethod === 'Cash' ? cashReceived : undefined,
-      changeGiven: paymentMethod === 'Cash' ? changeAmount : undefined,
-      customerName: selectedCust?.name,
-      customerUtangBalance: selectedCust ? selectedCust.totalUtangBalance + (paymentMethod === 'Utang' ? totalAmount : 0) : undefined
-    });
-
-    clearCart();
-    setIsCheckoutOpen(false);
-    setIsCartOpen(false);
-    setIsAddDebtorOpen(false);
-    setNewDebtorName('');
-    setNewDebtorPhone('');
-    setNewDebtorError(null);
   };
 
   return (
@@ -1035,7 +1043,11 @@ export const POSPage: React.FC = () => {
       {/* Receipt Modal */}
       <ReceiptModal
         open={!!receiptData}
-        onClose={() => setReceiptData(null)}
+        onClose={() => {
+          setReceiptData(null);
+          usePwaStore.getState().setHasActiveReceipt(false);
+          notifySaleFinished();
+        }}
         data={receiptData}
       />
 

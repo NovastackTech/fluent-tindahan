@@ -1,0 +1,11 @@
+# Build output
+bin/
+obj/
+**/bin/
+**/obj/
+
+# Test results
+TestResults/
+**/TestResults/
+*.cobertura.xml
+

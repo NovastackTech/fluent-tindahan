@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { FluentProvider } from '@fluentui/react-components';
 import { Header } from './Header';
@@ -6,12 +6,14 @@ import { sariSariLightTheme } from '../theme/theme';
 import { useAuthStore } from '../state/authStore';
 import { useThemeStore } from '../state/themeStore';
 import { useLanguageStore } from '../state/languageStore';
+import { usePwaStore } from '../state/pwaStore';
 
 describe('Header', () => {
   beforeEach(() => {
     useAuthStore.setState({ businessName: "Aling Nena's Store" });
     useThemeStore.setState({ themeMode: 'light', isDarkMode: false });
     useLanguageStore.setState({ language: 'tl' });
+    usePwaStore.setState({ isInstallable: false, isStandalone: false, isInstalled: false });
   });
 
   const renderHeader = () => {
@@ -60,4 +62,34 @@ describe('Header', () => {
     expect(useThemeStore.getState().themeMode).toBe('light');
     expect(useThemeStore.getState().isDarkMode).toBe(false);
   });
+
+  it('renders PWA install button when app is installable and not in standalone mode', () => {
+    const promptInstallSpy = vi.fn().mockResolvedValue(true);
+    usePwaStore.setState({
+      isInstallable: true,
+      isStandalone: false,
+      promptInstall: promptInstallSpy
+    });
+
+    renderHeader();
+
+    const installBtn = screen.getByRole('button', { name: /I-install ang Fluent Tindahan sa device|Install Fluent Tindahan to device/i });
+    expect(installBtn).toBeInTheDocument();
+
+    fireEvent.click(installBtn);
+    expect(promptInstallSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not render PWA install button when isInstalled is true', () => {
+    usePwaStore.setState({
+      isInstallable: true,
+      isStandalone: false,
+      isInstalled: true
+    });
+
+    renderHeader();
+
+    expect(screen.queryByRole('button', { name: /I-install ang Fluent Tindahan sa device|Install Fluent Tindahan to device/i })).not.toBeInTheDocument();
+  });
 });
+

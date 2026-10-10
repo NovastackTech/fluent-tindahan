@@ -1,0 +1,37 @@
+# .NET Build and Test outputs
+**/bin/
+**/obj/
+**/TestResults/
+**/test-results/
+
+# Visual Studio / IDE / Editors
+.vs/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+
+# Obsidian Vault
+**/.obsidian/
+.obsidian/
+
+# Node & Frontend Build / Test outputs
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+dist-ssr/
+frontend/dev-dist/
+coverage/
+**/coverage/
+*.lcov
+lcov-report/
+*.log
+
+# Test and documentation generated PDFs
+*.pdf
+

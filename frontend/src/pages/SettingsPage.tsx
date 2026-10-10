@@ -20,12 +20,15 @@ import {
   WeatherSunnyRegular,
   WeatherMoonRegular,
   DesktopRegular,
-  PrintRegular
+  PrintRegular,
+  PhoneLaptopRegular,
+  ArrowDownloadRegular
 } from '@fluentui/react-icons';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
 import { useThemeStore } from '../state/themeStore';
 import { usePrinterStore } from '../state/printerStore';
+import { usePwaStore } from '../state/pwaStore';
 import { printThermalReceipt } from '../services/receiptPrinter';
 import {
   useSyncStore,
@@ -72,6 +75,7 @@ export const SettingsPage: React.FC = () => {
   const { t, language, setLanguage } = useTranslation();
   const { themeMode, setThemeMode } = useThemeStore();
   const { paperWidth, setPaperWidth } = usePrinterStore();
+  const { isStandalone, isInstalled, isInstallable, isIos, promptInstall } = usePwaStore();
 
   const handleTestPrint = () => {
     const testData = {
@@ -264,6 +268,52 @@ export const SettingsPage: React.FC = () => {
           <Text size={200}>{t.settings.userId}:</Text>
           <Text size={200} style={{ fontFamily: 'monospace' }}>{userId}</Text>
         </div>
+      </Card>
+
+      {/* Progressive Web App (PWA) System */}
+      <Card className={styles.card}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+          <PhoneLaptopRegular fontSize={20} />
+          <Text weight="bold" size={400}>{t.pwa.pwaSection}</Text>
+        </div>
+        <Text size={200} style={{ color: tokens.colorNeutralForeground3, marginBottom: '12px', display: 'block' }}>
+          {t.pwa.pwaDesc}
+        </Text>
+
+        <div className={styles.infoRow}>
+          <Text size={200}>{t.pwa.appStatus}</Text>
+          <Badge
+            appearance="filled"
+            color={isStandalone ? 'success' : 'informative'}
+          >
+            {isStandalone ? t.pwa.statusInstalled : t.pwa.statusBrowser}
+          </Badge>
+        </div>
+
+        {isInstallable && !isStandalone && !isInstalled && (
+          <div style={{ marginTop: '12px' }}>
+            <Button
+              appearance="primary"
+              icon={<ArrowDownloadRegular />}
+              onClick={() => promptInstall()}
+            >
+              {t.pwa.installBtn}
+            </Button>
+          </div>
+        )}
+
+        {!isInstallable && !isStandalone && !isIos && (
+          <div style={{ marginTop: '12px', fontSize: '12px', color: tokens.colorNeutralForeground2, backgroundColor: tokens.colorNeutralBackground2, padding: '10px', borderRadius: '6px', borderLeft: `3px solid ${tokens.colorBrandStroke1}` }}>
+            <div style={{ marginBottom: '4px' }}>{t.pwa.browserInstallTip}</div>
+            <div style={{ fontSize: '11px', color: tokens.colorNeutralForeground3 }}>{t.pwa.browserInstallNote}</div>
+          </div>
+        )}
+
+        {isIos && !isStandalone && (
+          <div style={{ marginTop: '12px', fontSize: '12px', color: tokens.colorNeutralForeground3, backgroundColor: tokens.colorNeutralBackground2, padding: '8px', borderRadius: '4px' }}>
+            <strong>{t.pwa.iosInstructionsTitle}</strong> {t.pwa.iosInstructionsDesc}
+          </div>
+        )}
       </Card>
 
       {/* Storage and Offline Resilience */}

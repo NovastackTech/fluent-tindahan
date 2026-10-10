@@ -7,6 +7,7 @@ import { useAuthStore } from '../state/authStore';
 import { useLanguageStore } from '../state/languageStore';
 import { useThemeStore } from '../state/themeStore';
 import { useSyncStore } from '../sync/syncEngine';
+import { usePwaStore } from '../state/pwaStore';
 import { db } from '../db/db';
 
 describe('SettingsPage', () => {
@@ -17,6 +18,7 @@ describe('SettingsPage', () => {
     });
     useLanguageStore.setState({ language: 'tl' });
     useThemeStore.setState({ themeMode: 'light', isDarkMode: false });
+    usePwaStore.setState({ isInstallable: false, isStandalone: false, isInstalled: false, isIos: false });
     await db.syncQueue.clear();
     await db.deadLetterQueue.clear();
   });
@@ -149,5 +151,38 @@ describe('SettingsPage', () => {
 
     printSpy.mockRestore();
   });
+
+  it('renders PWA section and allows installing app when installable', () => {
+    const promptInstallSpy = vi.fn().mockResolvedValue(true);
+    usePwaStore.setState({
+      isInstallable: true,
+      isStandalone: false,
+      promptInstall: promptInstallSpy
+    });
+
+    renderSettings();
+
+    expect(screen.getByText(/PWA \(Progressive Web App\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Tumatakbo sa Web Browser|Running in Web Browser/i)).toBeInTheDocument();
+
+    const installBtn = screen.getByRole('button', { name: /I-install ang App|Install App/i });
+    expect(installBtn).toBeInTheDocument();
+
+    fireEvent.click(installBtn);
+    expect(promptInstallSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows standalone installed badge when app is running as installed PWA', () => {
+    usePwaStore.setState({
+      isInstallable: false,
+      isStandalone: true
+    });
+
+    renderSettings();
+
+    expect(screen.getByText(/Naka-install bilang Standalone App|Installed as Standalone PWA/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /I-install ang App|Install App/i })).not.toBeInTheDocument();
+  });
 });
+
 
