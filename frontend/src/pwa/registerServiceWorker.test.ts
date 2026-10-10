@@ -171,6 +171,26 @@ describe('registerServiceWorker', () => {
     expect(registerSW).toHaveBeenCalledTimes(1);
   });
 
+  it('prevents concurrent duplicate registration in React StrictMode when called twice without awaiting', async () => {
+    Object.defineProperty(navigator, 'serviceWorker', {
+      value: {
+        register: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn()
+      },
+      configurable: true,
+      writable: true
+    });
+
+    const p1 = initServiceWorker();
+    const p2 = initServiceWorker();
+
+    await Promise.all([p1, p2]);
+
+    expect(registerSW).toHaveBeenCalledTimes(1);
+  });
+
+
   it('registers periodic check interval and cleans it up via _resetUpdateSWFunctionForTest', async () => {
     vi.useFakeTimers();
     const updateSpy = vi.fn().mockResolvedValue(undefined);

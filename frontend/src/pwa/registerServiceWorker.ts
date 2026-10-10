@@ -2,6 +2,7 @@ import { usePwaStore } from '../state/pwaStore';
 
 let updateSWFunction: ((reloadPage?: boolean) => Promise<void>) | null = null;
 let updateIntervalId: ReturnType<typeof setInterval> | null = null;
+let initPromise: Promise<void> | null = null;
 
 /**
  * Initializes Service Worker registration via vite-plugin-pwa.
@@ -10,46 +11,51 @@ let updateIntervalId: ReturnType<typeof setInterval> | null = null;
  * The virtual:pwa-register module is loaded at runtime; in environments
  * where it is unavailable (e.g. Vitest), the import is gracefully bypassed.
  */
-export async function initServiceWorker(): Promise<void> {
+export function initServiceWorker(): Promise<void> {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
-    return;
+    return Promise.resolve();
   }
 
-  // Guard against duplicate registration in dev (React StrictMode mounts effects twice)
-  if (updateSWFunction) {
-    return;
+  // Guard against duplicate registration in dev (React StrictMode mounts effects twice synchronously)
+  if (initPromise) {
+    return initPromise;
   }
 
-  try {
-    const { registerSW } = await import('virtual:pwa-register');
-    updateSWFunction = registerSW({
-      immediate: true,
-      onNeedRefresh() {
-        usePwaStore.getState().setNeedRefresh(true);
-      },
-      onOfflineReady() {
-        usePwaStore.getState().setOfflineReady(true);
-      },
-      onRegisteredSW(_swUrl: string, registration?: ServiceWorkerRegistration) {
-        if (registration) {
-          if (updateIntervalId) {
-            clearInterval(updateIntervalId);
-          }
-          // Check for service worker updates periodically if online (hourly)
-          updateIntervalId = setInterval(() => {
-            if (typeof navigator !== 'undefined' && navigator.onLine) {
-              registration.update().catch(console.error);
+  initPromise = (async () => {
+    try {
+      const { registerSW } = await import('virtual:pwa-register');
+
+      updateSWFunction = registerSW({
+        immediate: true,
+        onNeedRefresh() {
+          usePwaStore.getState().setNeedRefresh(true);
+        },
+        onOfflineReady() {
+          usePwaStore.getState().setOfflineReady(true);
+        },
+        onRegisteredSW(_swUrl: string, registration?: ServiceWorkerRegistration) {
+          if (registration) {
+            if (updateIntervalId) {
+              clearInterval(updateIntervalId);
             }
-          }, 60 * 60 * 1000);
+            // Check for service worker updates periodically if online (hourly)
+            updateIntervalId = setInterval(() => {
+              if (typeof navigator !== 'undefined' && navigator.onLine) {
+                registration.update().catch(console.error);
+              }
+            }, 60 * 60 * 1000);
+          }
+        },
+        onRegisterError(error: unknown) {
+          console.error('[PWA] Service Worker registration error:', error);
         }
-      },
-      onRegisterError(error: unknown) {
-        console.error('[PWA] Service Worker registration error:', error);
-      }
-    });
-  } catch {
+      });
+    } catch {
     // In Vitest or non-Vite bundled environments, virtual:pwa-register is safely bypassed
   }
+  })();
+
+  return initPromise;
 }
 
 /**
@@ -65,11 +71,12 @@ export async function reloadAppForUpdate(): Promise<void> {
 }
 
 /**
- * Resets internal update function reference and interval for test isolation.
+ * Resets internal update function reference, init promise, and interval for test isolation.
  * @internal
  */
 export function _resetUpdateSWFunctionForTest(): void {
   updateSWFunction = null;
+  initPromise = null;
   if (updateIntervalId) {
     clearInterval(updateIntervalId);
     updateIntervalId = null;
