@@ -10,6 +10,9 @@ using FluentTindahan.Domain.Interfaces;
 using FluentTindahan.Infrastructure;
 using FluentTindahan.Infrastructure.Persistence;
 using FluentTindahan.Infrastructure.Services;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Xunit;
 
 namespace FluentTindahan.UnitTests;
@@ -129,5 +132,32 @@ public class InfrastructureTests
         services.Any(s => s.ServiceType == typeof(ICurrentUserService)).Should().BeTrue();
         services.Any(s => s.ServiceType == typeof(IApplicationDbContext)).Should().BeTrue();
         services.Any(s => s.ServiceType == typeof(AppDbContext)).Should().BeTrue();
+    }
+
+    [Fact]
+    public void AppDbContext_HasNoPendingModelChanges()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql("Host=localhost;Database=test")
+            .Options;
+        var userMock = new Mock<ICurrentUserService>();
+        using var context = new AppDbContext(options, userMock.Object);
+
+        var differ = context.GetService<IMigrationsModelDiffer>();
+        var runtimeInitializer = context.GetService<IModelRuntimeInitializer>();
+        var snapshot = new FluentTindahan.Infrastructure.Persistence.Migrations.AppDbContextModelSnapshot();
+
+        var snapshotModel = snapshot.Model;
+        if (snapshotModel is IConventionModel conventionModel)
+        {
+            snapshotModel = conventionModel.FinalizeModel();
+        }
+        snapshotModel = runtimeInitializer.Initialize(snapshotModel);
+
+        var hasDifferences = differ.HasDifferences(
+            snapshotModel.GetRelationalModel(),
+            context.GetService<IDesignTimeModel>().Model.GetRelationalModel());
+
+        hasDifferences.Should().BeFalse("the database model must match the latest EF Core migrations and snapshot with no pending changes");
     }
 }

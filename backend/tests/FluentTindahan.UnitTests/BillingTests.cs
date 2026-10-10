@@ -1,18 +1,26 @@
+using System.Security.Cryptography;
+using System.Text;
 using FluentAssertions;
+using MediatR;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using FluentTindahan.Application.Billing;
+using FluentTindahan.Application.Common;
 using FluentTindahan.Application.Common.Interfaces;
 using FluentTindahan.Application.Sync.Commands;
 using FluentTindahan.Application.Sync.DTOs;
+using FluentTindahan.Domain.Billing;
 using FluentTindahan.Domain.Entities;
 using FluentTindahan.Domain.Enums;
 using FluentTindahan.Domain.Interfaces;
 using FluentTindahan.Infrastructure.Persistence;
 using FluentTindahan.Infrastructure.Services;
+using FluentTindahan.WebApi.Controllers;
 using Xunit;
 
 namespace FluentTindahan.UnitTests;
@@ -478,5 +486,433 @@ public class BillingTests
         downgradedCount.Should().Be(1);
         var updatedTenant = await context.Tenants.IgnoreQueryFilters().FirstAsync(t => t.Id == expiredTenantId);
         updatedTenant.Tier.Should().Be(PlanTier.Libre);
+    }
+
+    [Fact]
+    public async Task MockPay_InProduction_ReturnsNotFound()
+    {
+        var mediatorMock = new Mock<IMediator>();
+        var envMock = new Mock<IHostEnvironment>();
+        envMock.Setup(e => e.EnvironmentName).Returns("Production");
+
+        var controller = new BillingController(
+            mediatorMock.Object,
+            _currentUserServiceMock.Object,
+            envMock.Object,
+            NullLogger<BillingController>.Instance);
+
+        var response = await controller.MockPay(
+            new BillingController.MockPayRequest(PlanTier.TindahanPro, BillingCycle.Monthly),
+            CancellationToken.None);
+
+        response.Result.Should().BeOfType<NotFoundResult>();
+    }
+
+    [Fact]
+    public async Task MockPay_InDevelopment_ExecutesPayment()
+    {
+        var mediatorMock = new Mock<IMediator>();
+        mediatorMock.Setup(m => m.Send(It.IsAny<ApplySubscriptionPaymentCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new WebhookProcessResultDto(PaymentWebhookOutcome.Processed, "Success", _testTenantId, PlanTier.TindahanPro, DateTimeOffset.UtcNow.AddDays(30)));
+
+        var envMock = new Mock<IHostEnvironment>();
+        envMock.Setup(e => e.EnvironmentName).Returns("Development");
+
+        var controller = new BillingController(
+            mediatorMock.Object,
+            _currentUserServiceMock.Object,
+            envMock.Object,
+            NullLogger<BillingController>.Instance);
+
+        var response = await controller.MockPay(
+            new BillingController.MockPayRequest(PlanTier.TindahanPro, BillingCycle.Monthly),
+            CancellationToken.None);
+
+        response.Result.Should().BeOfType<OkObjectResult>();
+    }
+
+    [Fact]
+    public async Task ProcessBatchSyncCommand_LibreTier_GCashUpdateAllowedAtMonthlyLimit()
+    {
+        using var context = CreateInMemoryDbContext();
+        var existingTxnId = Guid.NewGuid();
+        var startOfMonth = ManilaTime.StartOfCurrentMonthUtc();
+
+        // Seed 30 GCash transactions for the current month (max limit for Libre)
+        context.GCashTransactions.Add(new GCashTxn
+        {
+            Id = existingTxnId,
+            TenantId = _testTenantId,
+            Type = "CashIn",
+            Amount = 500m,
+            Fee = 10m,
+            RefNo = "GC-001",
+            Date = startOfMonth.AddDays(1)
+        });
+
+        for (int i = 2; i <= 30; i++)
+        {
+            context.GCashTransactions.Add(new GCashTxn
+            {
+                Id = Guid.NewGuid(),
+                TenantId = _testTenantId,
+                Type = "CashIn",
+                Amount = 100m,
+                Fee = 5m,
+                RefNo = $"GC-{i:D3}",
+                Date = startOfMonth.AddDays(1)
+            });
+        }
+        await context.SaveChangesAsync();
+
+        var handler = new ProcessBatchSyncCommandHandler(
+            context,
+            _currentUserServiceMock.Object,
+            NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+
+        // Update/replay existing transaction
+        var updateOp = new SyncOperationDto
+        {
+            SyncId = "sync_gcash_existing",
+            Entity = "GCash",
+            Action = "Update",
+            Timestamp = DateTimeOffset.UtcNow,
+            Payload = System.Text.Json.JsonDocument.Parse($$"""
+            {
+                "id": "{{existingTxnId}}",
+                "type": "CashIn",
+                "amount": 500.0,
+                "fee": 15.0,
+                "refNo": "GC-001-UPDATED"
+            }
+            """).RootElement
+        };
+
+        var result = await handler.Handle(
+            new ProcessBatchSyncCommand(new BatchSyncRequestDto
+            {
+                DeviceId = Guid.NewGuid(),
+                Operations = new List<SyncOperationDto> { updateOp }
+            }),
+            CancellationToken.None);
+
+        result.Results.Should().HaveCount(1);
+        result.Results[0].Status.Should().Be("Success");
+    }
+
+    [Fact]
+    public async Task ProcessBatchSyncCommand_UtangLedger_CustomerNotFound_FailsCleanly()
+    {
+        using var context = CreateInMemoryDbContext();
+        var missingCustomerId = Guid.NewGuid();
+
+        var handler = new ProcessBatchSyncCommandHandler(
+            context,
+            _currentUserServiceMock.Object,
+            NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+
+        var op = new SyncOperationDto
+        {
+            SyncId = "sync_utang_missing_cust",
+            Entity = "UtangLedger",
+            Action = "Insert",
+            Timestamp = DateTimeOffset.UtcNow,
+            Payload = System.Text.Json.JsonDocument.Parse($$"""
+            {
+                "id": "{{Guid.NewGuid()}}",
+                "customerId": "{{missingCustomerId}}",
+                "amount": 100.0,
+                "type": "Credit",
+                "notes": "Rejected customer utang"
+            }
+            """).RootElement
+        };
+
+        var result = await handler.Handle(
+            new ProcessBatchSyncCommand(new BatchSyncRequestDto
+            {
+                DeviceId = Guid.NewGuid(),
+                Operations = new List<SyncOperationDto> { op }
+            }),
+            CancellationToken.None);
+
+        result.Results.Should().HaveCount(1);
+        result.Results[0].Status.Should().Be("Failed");
+        result.Results[0].Error.Should().Contain("Customer");
+        result.Results[0].Error.Should().Contain("not found");
+    }
+
+    [Fact]
+    public async Task ProcessBatchSyncCommand_Sale_ProductNotFound_FailsCleanly()
+    {
+        using var context = CreateInMemoryDbContext();
+        var missingProductId = Guid.NewGuid();
+
+        var handler = new ProcessBatchSyncCommandHandler(
+            context,
+            _currentUserServiceMock.Object,
+            NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+
+        var op = new SyncOperationDto
+        {
+            SyncId = "sync_sale_missing_prod",
+            Entity = "Sale",
+            Action = "Insert",
+            Timestamp = DateTimeOffset.UtcNow,
+            Payload = System.Text.Json.JsonDocument.Parse($$"""
+            {
+                "id": "{{Guid.NewGuid()}}",
+                "totalAmount": 50.0,
+                "paymentMethod": "Cash",
+                "items": [
+                    {
+                        "id": "{{Guid.NewGuid()}}",
+                        "productId": "{{missingProductId}}",
+                        "qty": 1,
+                        "unitPrice": 50.0,
+                        "subtotal": 50.0
+                    }
+                ]
+            }
+            """).RootElement
+        };
+
+        var result = await handler.Handle(
+            new ProcessBatchSyncCommand(new BatchSyncRequestDto
+            {
+                DeviceId = Guid.NewGuid(),
+                Operations = new List<SyncOperationDto> { op }
+            }),
+            CancellationToken.None);
+
+        result.Results.Should().HaveCount(1);
+        result.Results[0].Status.Should().Be("Failed");
+        result.Results[0].Error.Should().Contain("Product(s)");
+        result.Results[0].Error.Should().Contain("not found");
+    }
+
+    [Fact]
+    public void VerifyWebhookSignature_ValidSignatureInDevelopment_ReturnsTrue()
+    {
+        var fixedTime = DateTimeOffset.UtcNow;
+        var timeProvider = new MutableTimeProvider(fixedTime);
+        var secret = "whsec_test_secret_key_12345";
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["PayMongo:WebhookSecret"] = secret
+            })
+            .Build();
+
+        var envMock = new Mock<IHostEnvironment>();
+        envMock.Setup(e => e.EnvironmentName).Returns("Development");
+
+        var service = new PayMongoPaymentGatewayService(
+            new HttpClient(),
+            config,
+            envMock.Object,
+            timeProvider,
+            NullLogger<PayMongoPaymentGatewayService>.Instance);
+
+        var payload = "{\"data\":{\"id\":\"evt_123\"}}";
+        var timestamp = fixedTime.ToUnixTimeSeconds();
+        var hash = ComputeHmacSha256Hex(secret, $"{timestamp}.{payload}");
+        var signatureHeader = $"t={timestamp},te={hash}";
+
+        var verified = service.VerifyWebhookSignature(payload, signatureHeader);
+        verified.Should().BeTrue();
+    }
+
+    [Fact]
+    public void VerifyWebhookSignature_StaleTimestamp_ReturnsFalse()
+    {
+        var fixedTime = DateTimeOffset.UtcNow;
+        var timeProvider = new MutableTimeProvider(fixedTime);
+        var secret = "whsec_test_secret_key_12345";
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["PayMongo:WebhookSecret"] = secret
+            })
+            .Build();
+
+        var envMock = new Mock<IHostEnvironment>();
+        envMock.Setup(e => e.EnvironmentName).Returns("Development");
+
+        var service = new PayMongoPaymentGatewayService(
+            new HttpClient(),
+            config,
+            envMock.Object,
+            timeProvider,
+            NullLogger<PayMongoPaymentGatewayService>.Instance);
+
+        var payload = "{\"data\":{\"id\":\"evt_123\"}}";
+        // 6 minutes old (> 5 minute tolerance)
+        var staleTimestamp = fixedTime.AddMinutes(-6).ToUnixTimeSeconds();
+        var hash = ComputeHmacSha256Hex(secret, $"{staleTimestamp}.{payload}");
+        var signatureHeader = $"t={staleTimestamp},te={hash}";
+
+        var verified = service.VerifyWebhookSignature(payload, signatureHeader);
+        verified.Should().BeFalse();
+    }
+
+    [Fact]
+    public void VerifyWebhookSignature_FutureTimestamp_ReturnsFalse()
+    {
+        var fixedTime = DateTimeOffset.UtcNow;
+        var timeProvider = new MutableTimeProvider(fixedTime);
+        var secret = "whsec_test_secret_key_12345";
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["PayMongo:WebhookSecret"] = secret
+            })
+            .Build();
+
+        var envMock = new Mock<IHostEnvironment>();
+        envMock.Setup(e => e.EnvironmentName).Returns("Development");
+
+        var service = new PayMongoPaymentGatewayService(
+            new HttpClient(),
+            config,
+            envMock.Object,
+            timeProvider,
+            NullLogger<PayMongoPaymentGatewayService>.Instance);
+
+        var payload = "{\"data\":{\"id\":\"evt_123\"}}";
+        // 6 minutes in future
+        var futureTimestamp = fixedTime.AddMinutes(6).ToUnixTimeSeconds();
+        var hash = ComputeHmacSha256Hex(secret, $"{futureTimestamp}.{payload}");
+        var signatureHeader = $"t={futureTimestamp},te={hash}";
+
+        var verified = service.VerifyWebhookSignature(payload, signatureHeader);
+        verified.Should().BeFalse();
+    }
+
+    [Fact]
+    public void VerifyWebhookSignature_InvalidHash_ReturnsFalse()
+    {
+        var fixedTime = DateTimeOffset.UtcNow;
+        var timeProvider = new MutableTimeProvider(fixedTime);
+        var secret = "whsec_test_secret_key_12345";
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["PayMongo:WebhookSecret"] = secret
+            })
+            .Build();
+
+        var envMock = new Mock<IHostEnvironment>();
+        envMock.Setup(e => e.EnvironmentName).Returns("Development");
+
+        var service = new PayMongoPaymentGatewayService(
+            new HttpClient(),
+            config,
+            envMock.Object,
+            timeProvider,
+            NullLogger<PayMongoPaymentGatewayService>.Instance);
+
+        var payload = "{\"data\":{\"id\":\"evt_123\"}}";
+        var timestamp = fixedTime.ToUnixTimeSeconds();
+        var wrongHash = ComputeHmacSha256Hex("wrong_secret_key", $"{timestamp}.{payload}");
+        var signatureHeader = $"t={timestamp},te={wrongHash}";
+
+        var verified = service.VerifyWebhookSignature(payload, signatureHeader);
+        verified.Should().BeFalse();
+    }
+
+    [Fact]
+    public void VerifyWebhookSignature_InProduction_RejectsTeSignature()
+    {
+        var fixedTime = DateTimeOffset.UtcNow;
+        var timeProvider = new MutableTimeProvider(fixedTime);
+        var secret = "whsec_prod_secret_key_12345";
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["PayMongo:WebhookSecret"] = secret
+            })
+            .Build();
+
+        var envMock = new Mock<IHostEnvironment>();
+        envMock.Setup(e => e.EnvironmentName).Returns("Production");
+
+        var service = new PayMongoPaymentGatewayService(
+            new HttpClient(),
+            config,
+            envMock.Object,
+            timeProvider,
+            NullLogger<PayMongoPaymentGatewayService>.Instance);
+
+        var payload = "{\"data\":{\"id\":\"evt_prod_123\"}}";
+        var timestamp = fixedTime.ToUnixTimeSeconds();
+        var hash = ComputeHmacSha256Hex(secret, $"{timestamp}.{payload}");
+        // In Production, only 'li' signature is accepted; 'te' must be rejected
+        var signatureHeader = $"t={timestamp},te={hash}";
+
+        var verified = service.VerifyWebhookSignature(payload, signatureHeader);
+        verified.Should().BeFalse();
+    }
+
+    [Fact]
+    public void VerifyWebhookSignature_InProduction_AcceptsLiSignature()
+    {
+        var fixedTime = DateTimeOffset.UtcNow;
+        var timeProvider = new MutableTimeProvider(fixedTime);
+        var secret = "whsec_prod_secret_key_12345";
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["PayMongo:WebhookSecret"] = secret
+            })
+            .Build();
+
+        var envMock = new Mock<IHostEnvironment>();
+        envMock.Setup(e => e.EnvironmentName).Returns("Production");
+
+        var service = new PayMongoPaymentGatewayService(
+            new HttpClient(),
+            config,
+            envMock.Object,
+            timeProvider,
+            NullLogger<PayMongoPaymentGatewayService>.Instance);
+
+        var payload = "{\"data\":{\"id\":\"evt_prod_123\"}}";
+        var timestamp = fixedTime.ToUnixTimeSeconds();
+        var hash = ComputeHmacSha256Hex(secret, $"{timestamp}.{payload}");
+        var signatureHeader = $"t={timestamp},li={hash}";
+
+        var verified = service.VerifyWebhookSignature(payload, signatureHeader);
+        verified.Should().BeTrue();
+    }
+
+    [Fact]
+    public void TierPricing_TryGetPriceCentavos_ReturnsFalseOnInvalidInputsWithoutThrowing()
+    {
+        var libreWeekly = TierPricing.TryGetPriceCentavos(PlanTier.Libre, BillingCycle.Weekly, out var p1);
+        libreWeekly.Should().BeFalse();
+        p1.Should().Be(0);
+
+        var libreMonthly = TierPricing.TryGetPriceCentavos(PlanTier.Libre, BillingCycle.Monthly, out var p2);
+        libreMonthly.Should().BeFalse();
+        p2.Should().Be(0);
+
+        var proWeekly = TierPricing.TryGetPriceCentavos(PlanTier.TindahanPro, BillingCycle.Weekly, out var p3);
+        proWeekly.Should().BeTrue();
+        p3.Should().Be(3_500);
+    }
+
+    private sealed class MutableTimeProvider : TimeProvider
+    {
+        private DateTimeOffset _utcNow;
+        public MutableTimeProvider(DateTimeOffset utcNow) => _utcNow = utcNow;
+        public override DateTimeOffset GetUtcNow() => _utcNow;
+        public void SetUtcNow(DateTimeOffset utcNow) => _utcNow = utcNow;
+    }
+
+    private static string ComputeHmacSha256Hex(string secret, string message)
+    {
+        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));
+        return Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes(message))).ToLowerInvariant();
     }
 }

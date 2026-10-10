@@ -67,6 +67,26 @@ public class SubscriptionMonitorService : BackgroundService
 
         var now = DateTimeOffset.UtcNow;
 
+        if (!db.Database.ProviderName?.Contains("InMemory", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            // Atomically downgrade expired subscriptions in a single SQL UPDATE without loading tracked entities
+            // into memory. The WHERE clause ensures that if a webhook renewed SubscriptionEndDate concurrently,
+            // the row won't match and will NOT be downgraded.
+            var downgradedCount = await db.Tenants
+                .IgnoreQueryFilters()
+                .Where(t => t.Tier != PlanTier.Libre &&
+                            t.SubscriptionEndDate.HasValue &&
+                            t.SubscriptionEndDate.Value < now)
+                .ExecuteUpdateAsync(s => s.SetProperty(t => t.Tier, PlanTier.Libre), cancellationToken);
+
+            if (downgradedCount > 0)
+            {
+                _logger.LogInformation("Successfully downgraded {Count} expired tenant subscriptions to Libre.", downgradedCount);
+            }
+            return downgradedCount;
+        }
+
+        // In-memory fallback for unit testing
         var expiredTenants = await db.Tenants
             .IgnoreQueryFilters()
             .Where(t => t.Tier != PlanTier.Libre &&
@@ -87,7 +107,16 @@ public class SubscriptionMonitorService : BackgroundService
             tenant.Tier = PlanTier.Libre;
         }
 
-        await db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            _logger.LogInformation("Concurrency conflict detected while downgrading subscriptions; leaving concurrent update intact.");
+            return 0;
+        }
+
         _logger.LogInformation("Successfully downgraded {Count} expired tenant subscriptions to Libre.", expiredTenants.Count);
         return expiredTenants.Count;
     }

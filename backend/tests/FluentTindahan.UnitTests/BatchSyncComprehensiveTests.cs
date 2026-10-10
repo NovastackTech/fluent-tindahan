@@ -288,6 +288,17 @@ public class BatchSyncComprehensiveTests
             TotalUtangBalance = 0m,
             UpdatedAt = DateTimeOffset.UtcNow
         });
+
+        var prodId = Guid.NewGuid();
+        context.Products.Add(new Product
+        {
+            Id = prodId,
+            TenantId = _testTenantId,
+            Name = "Pancit Canton",
+            Price = 70m,
+            Cost = 50m,
+            UpdatedAt = DateTimeOffset.UtcNow
+        });
         await context.SaveChangesAsync();
 
         var saleId = Guid.NewGuid();
@@ -318,7 +329,7 @@ public class BatchSyncComprehensiveTests
                                 id = Guid.NewGuid(),
                                 tenantId = _testTenantId,
                                 saleId = saleId,
-                                productId = Guid.NewGuid(),
+                                productId = prodId,
                                 qty = 2,
                                 unitPrice = 70m,
                                 subtotal = 140m

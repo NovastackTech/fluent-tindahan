@@ -199,10 +199,10 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
             targetTier: targetTier === 'TindahanPro' ? 1 : 2,
             cycle: cycle === 'Weekly' ? 0 : 1
           });
-          await get().refreshSubscription();
-        } catch {
+        } catch (apiErr) {
           // In development environments without a live backend (e.g. offline dev or unit tests),
           // simulate the upgrade locally so dev workflow and tests continue working.
+          console.warn('[subscriptionStore] /billing/mock-pay endpoint unreachable or failed; applying local mock upgrade for development.', apiErr);
           const durationDays = cycle === 'Weekly' ? 7 : 30;
           const newEndDate = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString();
 

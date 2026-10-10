@@ -60,6 +60,7 @@ public class AppDbContext : DbContext, IApplicationDbContext
             builder.Property(t => t.Tier).HasConversion<int>().IsRequired();
             builder.Property(t => t.SubscriptionEndDate);
             builder.Property(t => t.ExternalCustomerId).HasMaxLength(128);
+            builder.UseXminAsConcurrencyToken();
         });
 
         // User

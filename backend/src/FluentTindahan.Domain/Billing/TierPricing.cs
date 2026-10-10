@@ -9,28 +9,32 @@ namespace FluentTindahan.Domain.Billing;
 /// </summary>
 public static class TierPricing
 {
-    public static long GetPriceCentavos(PlanTier tier, BillingCycle cycle) => (tier, cycle) switch
-    {
-        (PlanTier.TindahanPro, BillingCycle.Weekly) => 3_500,
-        (PlanTier.TindahanPro, BillingCycle.Monthly) => 12_900,
-        (PlanTier.NegosyoPlus, BillingCycle.Weekly) => 8_900,
-        (PlanTier.NegosyoPlus, BillingCycle.Monthly) => 34_900,
-        _ => throw new InvalidOperationException($"Invalid tier '{tier}' / cycle '{cycle}', or cannot purchase free tier.")
-    };
-
     public static bool TryGetPriceCentavos(PlanTier tier, BillingCycle cycle, out long centavos)
     {
-        try
+        switch (tier, cycle)
         {
-            centavos = GetPriceCentavos(tier, cycle);
-            return true;
-        }
-        catch (InvalidOperationException)
-        {
-            centavos = 0;
-            return false;
+            case (PlanTier.TindahanPro, BillingCycle.Weekly):
+                centavos = 3_500;
+                return true;
+            case (PlanTier.TindahanPro, BillingCycle.Monthly):
+                centavos = 12_900;
+                return true;
+            case (PlanTier.NegosyoPlus, BillingCycle.Weekly):
+                centavos = 8_900;
+                return true;
+            case (PlanTier.NegosyoPlus, BillingCycle.Monthly):
+                centavos = 34_900;
+                return true;
+            default:
+                centavos = 0;
+                return false;
         }
     }
+
+    public static long GetPriceCentavos(PlanTier tier, BillingCycle cycle) =>
+        TryGetPriceCentavos(tier, cycle, out var centavos)
+            ? centavos
+            : throw new InvalidOperationException($"Invalid tier '{tier}' / cycle '{cycle}', or cannot purchase free tier.");
 
     /// <summary>Converts integer centavos to a two-decimal peso amount for display/API responses.</summary>
     public static decimal ToPesos(long centavos) => centavos / 100m;

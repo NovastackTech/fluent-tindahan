@@ -15,5 +15,8 @@ public interface IApplicationDbContext
     DbSet<GCashTxn> GCashTransactions { get; }
     DbSet<PaymentHistory> PaymentHistories { get; }
 
+    Microsoft.EntityFrameworkCore.ChangeTracking.ChangeTracker ChangeTracker { get; }
+    Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<TEntity> Entry<TEntity>(TEntity entity) where TEntity : class;
+
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }

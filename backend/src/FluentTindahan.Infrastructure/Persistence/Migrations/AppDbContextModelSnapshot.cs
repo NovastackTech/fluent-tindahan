@@ -112,6 +112,60 @@ namespace FluentTindahan.Infrastructure.Persistence.Migrations
                     b.ToTable("GCashTransactions", (string)null);
                 });
 
+            modelBuilder.Entity("FluentTindahan.Domain.Entities.PaymentHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<long>("AmountCentavos")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("BillingCycle")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<string>("GatewayReferenceId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.Property<string>("PaymentMethod")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("TierPurchased")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GatewayReferenceId")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "CreatedAt");
+
+                    b.ToTable("PaymentHistories", (string)null);
+                });
+
             modelBuilder.Entity("FluentTindahan.Domain.Entities.Product", b =>
                 {
                     b.Property<Guid>("Id")
@@ -264,10 +318,21 @@ namespace FluentTindahan.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("PlanTier")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
+                    b.Property<string>("ExternalCustomerId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTimeOffset?>("SubscriptionEndDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Tier")
+                        .HasColumnType("integer");
+
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
 
                     b.HasKey("Id");
 
@@ -373,6 +438,17 @@ namespace FluentTindahan.Infrastructure.Persistence.Migrations
                 {
                     b.HasOne("FluentTindahan.Domain.Entities.Tenant", "Tenant")
                         .WithMany("GCashTransactions")
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Tenant");
+                });
+
+            modelBuilder.Entity("FluentTindahan.Domain.Entities.PaymentHistory", b =>
+                {
+                    b.HasOne("FluentTindahan.Domain.Entities.Tenant", "Tenant")
+                        .WithMany("PaymentHistories")
                         .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -496,6 +572,8 @@ namespace FluentTindahan.Infrastructure.Persistence.Migrations
                     b.Navigation("Customers");
 
                     b.Navigation("GCashTransactions");
+
+                    b.Navigation("PaymentHistories");
 
                     b.Navigation("Products");
 

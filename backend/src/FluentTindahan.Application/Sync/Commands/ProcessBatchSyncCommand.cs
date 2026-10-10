@@ -48,13 +48,14 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
         var now = DateTimeOffset.UtcNow;
         var isExpired = tenant != null && tenant.Tier != PlanTier.Libre && tenant.SubscriptionEndDate.HasValue && tenant.SubscriptionEndDate.Value < now;
         var effectiveTier = isExpired ? PlanTier.Libre : (tenant?.Tier ?? PlanTier.Libre);
+        var counters = new BatchSyncCounters();
 
         foreach (var op in operations)
         {
             var syncId = string.IsNullOrWhiteSpace(op.SyncId) ? Guid.NewGuid().ToString() : op.SyncId;
             try
             {
-                var status = await ProcessOperationAsync(op, tenantId, effectiveTier, cancellationToken);
+                var status = await ProcessOperationAsync(op, tenantId, effectiveTier, counters, cancellationToken);
                 results.Add(new SyncItemResultDto
                 {
                     SyncId = syncId,
@@ -63,6 +64,12 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
             }
             catch (Exception ex)
             {
+                // Clear any pending changes on the DbContext so failed entities don't poison subsequent batch operations
+                foreach (var entry in _context.ChangeTracker.Entries().Where(e => e.State == EntityState.Added || e.State == EntityState.Modified || e.State == EntityState.Deleted).ToList())
+                {
+                    entry.State = EntityState.Detached;
+                }
+
                 _logger.LogWarning(ex, "Failed to process sync operation {SyncId} for entity {Entity}", syncId, op.Entity);
                 results.Add(new SyncItemResultDto
                 {
@@ -80,23 +87,30 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
         };
     }
 
-    private async Task<string> ProcessOperationAsync(SyncOperationDto op, Guid tenantId, PlanTier effectiveTier, CancellationToken cancellationToken)
+    private class BatchSyncCounters
+    {
+        public int? ProductCount { get; set; }
+        public int? CustomerCount { get; set; }
+        public int? MonthlyGCashCount { get; set; }
+    }
+
+    private async Task<string> ProcessOperationAsync(SyncOperationDto op, Guid tenantId, PlanTier effectiveTier, BatchSyncCounters counters, CancellationToken cancellationToken)
     {
         var entityType = op.Entity?.Trim().ToLowerInvariant();
         var action = op.Action?.Trim().ToLowerInvariant() ?? "insert";
 
         return entityType switch
         {
-            "product" => await HandleProductAsync(op, tenantId, effectiveTier, action, cancellationToken),
-            "customer" => await HandleCustomerAsync(op, tenantId, effectiveTier, action, cancellationToken),
+            "product" => await HandleProductAsync(op, tenantId, effectiveTier, action, counters, cancellationToken),
+            "customer" => await HandleCustomerAsync(op, tenantId, effectiveTier, action, counters, cancellationToken),
             "utangledger" or "utang" => await HandleUtangLedgerAsync(op, tenantId, action, cancellationToken),
             "sale" => await HandleSaleAsync(op, tenantId, action, cancellationToken),
-            "gcashtxn" or "gcash" => await HandleGCashTxnAsync(op, tenantId, effectiveTier, action, cancellationToken),
+            "gcashtxn" or "gcash" => await HandleGCashTxnAsync(op, tenantId, effectiveTier, action, counters, cancellationToken),
             _ => throw new NotSupportedException($"Entity type '{op.Entity}' is not supported for synchronization.")
         };
     }
 
-    private async Task<string> HandleProductAsync(SyncOperationDto op, Guid tenantId, PlanTier effectiveTier, string action, CancellationToken cancellationToken)
+    private async Task<string> HandleProductAsync(SyncOperationDto op, Guid tenantId, PlanTier effectiveTier, string action, BatchSyncCounters counters, CancellationToken cancellationToken)
     {
         var raw = JsonSerializer.Deserialize<ProductSyncPayload>(op.Payload.GetRawText(), JsonOptions)
             ?? throw new ArgumentException("Product payload is invalid.");
@@ -112,6 +126,10 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
             {
                 _context.Products.Remove(existing);
                 await _context.SaveChangesAsync(cancellationToken);
+                if (counters.ProductCount.HasValue && counters.ProductCount > 0)
+                {
+                    counters.ProductCount--;
+                }
             }
             return "Success";
         }
@@ -120,9 +138,11 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
         {
             if (effectiveTier == PlanTier.Libre)
             {
-                var productCount = await _context.Products.IgnoreQueryFilters()
+                // Count once per batch to avoid N+1 queries during large sync batches, incrementing locally
+                counters.ProductCount ??= await _context.Products.IgnoreQueryFilters()
                     .CountAsync(p => p.TenantId == tenantId, cancellationToken);
-                if (productCount >= 50)
+
+                if (counters.ProductCount >= 50)
                 {
                     throw new InvalidOperationException("Libre plan limit exceeded: Maximum 50 products allowed. Upgrade to Tindahan Pro for unlimited catalog capacity.");
                 }
@@ -141,6 +161,10 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
             };
             _context.Products.Add(product);
             await _context.SaveChangesAsync(cancellationToken);
+            if (counters.ProductCount.HasValue)
+            {
+                counters.ProductCount++;
+            }
             return "Success";
         }
 
@@ -164,7 +188,7 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
         return "Success";
     }
 
-    private async Task<string> HandleCustomerAsync(SyncOperationDto op, Guid tenantId, PlanTier effectiveTier, string action, CancellationToken cancellationToken)
+    private async Task<string> HandleCustomerAsync(SyncOperationDto op, Guid tenantId, PlanTier effectiveTier, string action, BatchSyncCounters counters, CancellationToken cancellationToken)
     {
         var raw = JsonSerializer.Deserialize<CustomerSyncPayload>(op.Payload.GetRawText(), JsonOptions)
             ?? throw new ArgumentException("Customer payload is invalid.");
@@ -180,6 +204,10 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
             {
                 _context.Customers.Remove(existing);
                 await _context.SaveChangesAsync(cancellationToken);
+                if (counters.CustomerCount.HasValue && counters.CustomerCount > 0)
+                {
+                    counters.CustomerCount--;
+                }
             }
             return "Success";
         }
@@ -188,9 +216,11 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
         {
             if (effectiveTier == PlanTier.Libre)
             {
-                var customerCount = await _context.Customers.IgnoreQueryFilters()
+                // Count once per batch to avoid N+1 queries, incrementing locally
+                counters.CustomerCount ??= await _context.Customers.IgnoreQueryFilters()
                     .CountAsync(c => c.TenantId == tenantId, cancellationToken);
-                if (customerCount >= 30)
+
+                if (counters.CustomerCount >= 30)
                 {
                     throw new InvalidOperationException("Libre plan limit exceeded: Maximum 30 debtors allowed. Upgrade to Tindahan Pro for unlimited customer accounts.");
                 }
@@ -206,6 +236,10 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
             };
             _context.Customers.Add(customer);
             await _context.SaveChangesAsync(cancellationToken);
+            if (counters.CustomerCount.HasValue)
+            {
+                counters.CustomerCount++;
+            }
             return "Success";
         }
 
@@ -244,6 +278,15 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
             return "Success";
         }
 
+        // Verify foreign key integrity: reject cleanly if customer was rejected earlier or does not exist
+        var customer = await _context.Customers.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(c => c.Id == raw.CustomerId && c.TenantId == tenantId, cancellationToken);
+
+        if (customer == null)
+        {
+            throw new KeyNotFoundException($"Customer '{raw.CustomerId}' not found for tenant '{tenantId}'. Utang ledger entry cannot be recorded.");
+        }
+
         var entry = new UtangLedger
         {
             Id = raw.Id,
@@ -258,22 +301,15 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
 
         _context.UtangLedgers.Add(entry);
 
-        // Update customer total balance if customer exists
-        var customer = await _context.Customers.IgnoreQueryFilters()
-            .FirstOrDefaultAsync(c => c.Id == raw.CustomerId && c.TenantId == tenantId, cancellationToken);
-
-        if (customer != null)
+        if (entry.Type == "Credit")
         {
-            if (entry.Type == "Credit")
-            {
-                customer.TotalUtangBalance += entry.Amount;
-            }
-            else // Payment
-            {
-                customer.TotalUtangBalance = Math.Max(0, customer.TotalUtangBalance - entry.Amount);
-            }
-            customer.UpdatedAt = DateTimeOffset.UtcNow;
+            customer.TotalUtangBalance += entry.Amount;
         }
+        else // Payment
+        {
+            customer.TotalUtangBalance = Math.Max(0, customer.TotalUtangBalance - entry.Amount);
+        }
+        customer.UpdatedAt = DateTimeOffset.UtcNow;
 
         await _context.SaveChangesAsync(cancellationToken);
         return "Success";
@@ -292,6 +328,36 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
         if (existing != null)
         {
             return "Success"; // idempotent
+        }
+
+        // Verify optional CustomerId exists
+        if (raw.CustomerId.HasValue && raw.CustomerId.Value != Guid.Empty)
+        {
+            var customerExists = await _context.Customers.IgnoreQueryFilters()
+                .AnyAsync(c => c.Id == raw.CustomerId.Value && c.TenantId == tenantId, cancellationToken);
+            if (!customerExists)
+            {
+                throw new KeyNotFoundException($"Customer '{raw.CustomerId.Value}' not found for tenant '{tenantId}'. Sale cannot be recorded.");
+            }
+        }
+
+        // Verify all line item Products exist (fails cleanly if product was rejected earlier by the plan limit)
+        if (raw.Items != null && raw.Items.Count > 0)
+        {
+            var productIds = raw.Items.Select(i => i.ProductId).Where(id => id != Guid.Empty).Distinct().ToList();
+            if (productIds.Count > 0)
+            {
+                var existingProductIds = await _context.Products.IgnoreQueryFilters()
+                    .Where(p => p.TenantId == tenantId && productIds.Contains(p.Id))
+                    .Select(p => p.Id)
+                    .ToListAsync(cancellationToken);
+
+                var missingProductIds = productIds.Except(existingProductIds).ToList();
+                if (missingProductIds.Count > 0)
+                {
+                    throw new KeyNotFoundException($"Product(s) '{string.Join(", ", missingProductIds)}' not found for tenant '{tenantId}'. Sale cannot be recorded.");
+                }
+            }
         }
 
         var sale = new Sale
@@ -329,7 +395,7 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
         return "Success";
     }
 
-    private async Task<string> HandleGCashTxnAsync(SyncOperationDto op, Guid tenantId, PlanTier effectiveTier, string action, CancellationToken cancellationToken)
+    private async Task<string> HandleGCashTxnAsync(SyncOperationDto op, Guid tenantId, PlanTier effectiveTier, string action, BatchSyncCounters counters, CancellationToken cancellationToken)
     {
         var raw = JsonSerializer.Deserialize<GCashTxnSyncPayload>(op.Payload.GetRawText(), JsonOptions)
             ?? throw new ArgumentException("GCashTxn payload is invalid.");
@@ -348,9 +414,10 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
         if (effectiveTier == PlanTier.Libre)
         {
             var startOfMonth = ManilaTime.StartOfCurrentMonthUtc();
-            var gcashCount = await _context.GCashTransactions.IgnoreQueryFilters()
+            counters.MonthlyGCashCount ??= await _context.GCashTransactions.IgnoreQueryFilters()
                 .CountAsync(g => g.TenantId == tenantId && g.Date >= startOfMonth, cancellationToken);
-            if (gcashCount >= 30)
+
+            if (counters.MonthlyGCashCount >= 30)
             {
                 throw new InvalidOperationException("Libre plan limit exceeded: Maximum 30 GCash transactions per month allowed. Upgrade to Tindahan Pro for unlimited logs.");
             }
@@ -371,6 +438,10 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
 
         _context.GCashTransactions.Add(txn);
         await _context.SaveChangesAsync(cancellationToken);
+        if (counters.MonthlyGCashCount.HasValue)
+        {
+            counters.MonthlyGCashCount++;
+        }
         return "Success";
     }
 

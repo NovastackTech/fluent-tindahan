@@ -188,65 +188,85 @@ public class ApplySubscriptionPaymentCommandHandler : IRequestHandler<ApplySubsc
             return new WebhookProcessResultDto(PaymentWebhookOutcome.Duplicate, "Payment already processed.", request.TenantId, null, null);
         }
 
-        var tenant = await _context.Tenants
-            .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(t => t.Id == request.TenantId, cancellationToken);
-
-        if (tenant == null)
+        const int maxRetries = 3;
+        for (var attempt = 1; attempt <= maxRetries; attempt++)
         {
-            _logger.LogWarning("Payment {PaymentId} received for unknown tenant {TenantId}", request.PaymentId, request.TenantId);
-            return Rejected("Unknown tenant.", request.TenantId);
-        }
+            var tenant = await _context.Tenants
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(t => t.Id == request.TenantId, cancellationToken);
 
-        var now = DateTimeOffset.UtcNow;
-        var duration = TierPricing.GetDuration(request.Cycle);
-        var newEndDate = (tenant.SubscriptionEndDate.HasValue && tenant.SubscriptionEndDate.Value > now)
-            ? tenant.SubscriptionEndDate.Value.Add(duration)
-            : now.Add(duration);
-
-        tenant.Tier = request.Tier;
-        tenant.SubscriptionEndDate = newEndDate;
-
-        _context.PaymentHistories.Add(new PaymentHistory
-        {
-            Id = Guid.NewGuid(),
-            TenantId = tenant.Id,
-            AmountCentavos = request.AmountCentavos,
-            Currency = "PHP",
-            TierPurchased = request.Tier,
-            BillingCycle = request.Cycle,
-            GatewayReferenceId = request.PaymentId,
-            PaymentMethod = request.PaymentMethod,
-            Status = "Paid",
-            CreatedAt = now
-        });
-
-        try
-        {
-            // Tenant update + payment row commit atomically in one SaveChanges.
-            await _context.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateException)
-        {
-            // Possibly lost a race with a concurrent retry; the unique index on GatewayReferenceId rejected our insert.
-            if (!await PaymentAlreadyAppliedAsync(request.PaymentId, CancellationToken.None))
+            if (tenant == null)
             {
-                throw;
+                _logger.LogWarning("Payment {PaymentId} received for unknown tenant {TenantId}", request.PaymentId, request.TenantId);
+                return Rejected("Unknown tenant.", request.TenantId);
             }
 
-            _logger.LogInformation("Concurrent duplicate payment {PaymentId} ignored.", request.PaymentId);
-            return new WebhookProcessResultDto(PaymentWebhookOutcome.Duplicate, "Payment already processed.", request.TenantId, null, null);
+            var now = DateTimeOffset.UtcNow;
+            var duration = TierPricing.GetDuration(request.Cycle);
+            var newEndDate = (tenant.SubscriptionEndDate.HasValue && tenant.SubscriptionEndDate.Value > now)
+                ? tenant.SubscriptionEndDate.Value.Add(duration)
+                : now.Add(duration);
+
+            tenant.Tier = request.Tier;
+            tenant.SubscriptionEndDate = newEndDate;
+
+            var paymentHistory = new PaymentHistory
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenant.Id,
+                AmountCentavos = request.AmountCentavos,
+                Currency = "PHP",
+                TierPurchased = request.Tier,
+                BillingCycle = request.Cycle,
+                GatewayReferenceId = request.PaymentId,
+                PaymentMethod = request.PaymentMethod,
+                Status = "Paid",
+                CreatedAt = now
+            };
+            _context.PaymentHistories.Add(paymentHistory);
+
+            try
+            {
+                // Tenant update + payment row commit atomically in one SaveChanges.
+                await _context.SaveChangesAsync(cancellationToken);
+
+                _logger.LogInformation("Tenant {TenantId} upgraded to {Tier} via payment {PaymentId}. New expiration: {EndDate}",
+                    tenant.Id, request.Tier, request.PaymentId, newEndDate);
+
+                return new WebhookProcessResultDto(
+                    PaymentWebhookOutcome.Processed,
+                    "Payment processed and subscription updated.",
+                    tenant.Id,
+                    request.Tier,
+                    newEndDate);
+            }
+            catch (DbUpdateConcurrencyException ex)
+            {
+                _logger.LogWarning(ex, "Concurrency conflict applying payment {PaymentId} to tenant {TenantId} on attempt {Attempt}/{MaxRetries}. Retrying...",
+                    request.PaymentId, request.TenantId, attempt, maxRetries);
+
+                _context.Entry(tenant).State = EntityState.Detached;
+                _context.Entry(paymentHistory).State = EntityState.Detached;
+
+                if (attempt == maxRetries)
+                {
+                    throw;
+                }
+            }
+            catch (DbUpdateException)
+            {
+                // Possibly lost a race with a concurrent retry; the unique index on GatewayReferenceId rejected our insert.
+                if (!await PaymentAlreadyAppliedAsync(request.PaymentId, CancellationToken.None))
+                {
+                    throw;
+                }
+
+                _logger.LogInformation("Concurrent duplicate payment {PaymentId} ignored.", request.PaymentId);
+                return new WebhookProcessResultDto(PaymentWebhookOutcome.Duplicate, "Payment already processed.", request.TenantId, null, null);
+            }
         }
 
-        _logger.LogInformation("Tenant {TenantId} upgraded to {Tier} via payment {PaymentId}. New expiration: {EndDate}",
-            tenant.Id, request.Tier, request.PaymentId, newEndDate);
-
-        return new WebhookProcessResultDto(
-            PaymentWebhookOutcome.Processed,
-            "Payment processed and subscription updated.",
-            tenant.Id,
-            request.Tier,
-            newEndDate);
+        return Rejected("Failed to apply payment due to concurrent conflicts.", request.TenantId);
     }
 
     private Task<bool> PaymentAlreadyAppliedAsync(string paymentId, CancellationToken cancellationToken) =>
@@ -498,7 +518,8 @@ public class GetTenantSubscriptionQueryHandler : IRequestHandler<GetTenantSubscr
         var rawTier = tenant?.Tier ?? PlanTier.Libre;
         var endDate = tenant?.SubscriptionEndDate;
 
-        // If tier is paid but subscriptionEndDate has passed, effective tier is Libre
+        // If tier is paid but subscriptionEndDate has passed, effective tier is Libre.
+        // A null SubscriptionEndDate on a paid tier represents a lifetime plan with no expiration.
         var isExpired = rawTier != PlanTier.Libre && endDate.HasValue && endDate.Value < now;
         var effectiveTier = isExpired ? PlanTier.Libre : rawTier;
         var isActive = effectiveTier != PlanTier.Libre && (!endDate.HasValue || endDate.Value >= now);

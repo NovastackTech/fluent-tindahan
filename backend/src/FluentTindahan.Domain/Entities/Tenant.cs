@@ -14,6 +14,10 @@ public class Tenant
     /// </summary>
     public PlanTier Tier { get; set; } = PlanTier.Libre;
 
+    /// <summary>
+    /// Expiration timestamp for the current subscription.
+    /// When <c>null</c> on a paid tier, represents a lifetime or non-expiring plan.
+    /// </summary>
     public DateTimeOffset? SubscriptionEndDate { get; set; }
     public string? ExternalCustomerId { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
