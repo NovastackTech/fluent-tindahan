@@ -52,6 +52,7 @@ const useStyles = makeStyles({
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
     gap: tokens.spacingHorizontalM,
+    paddingTop: '16px',
     marginBottom: tokens.spacingVerticalL
   },
   tierCard: {
@@ -64,7 +65,8 @@ const useStyles = makeStyles({
     ...shorthands.border('1px', 'solid', tokens.colorNeutralStroke1),
     ...shorthands.borderRadius(tokens.borderRadiusMedium),
     transition: 'all 0.2s ease',
-    position: 'relative'
+    position: 'relative',
+    overflow: 'visible'
   },
   activeTierCard: {
     ...shorthands.border('2px', 'solid', tokens.colorBrandStroke1),
@@ -73,12 +75,15 @@ const useStyles = makeStyles({
   },
   popularTierCard: {
     ...shorthands.border('2px', 'solid', tokens.colorPaletteMarigoldBorder2),
-    boxShadow: tokens.shadow4
+    boxShadow: tokens.shadow4,
+    overflow: 'visible'
   },
   popularBadge: {
     position: 'absolute',
     top: '-12px',
-    right: tokens.spacingHorizontalM
+    right: tokens.spacingHorizontalM,
+    zIndex: 10,
+    boxShadow: tokens.shadow4
   },
   priceSection: {
     marginVertical: tokens.spacingVerticalM,
@@ -230,7 +235,7 @@ export const SubscriptionModal: React.FC = () => {
             {/* Cards Grid */}
             <div className={styles.cardsGrid}>
               {/* LIBRE */}
-              <Card className={`${styles.tierCard} ${currentTier === 'Libre' ? styles.activeTierCard : ''}`}>
+              <Card className={`${styles.tierCard} ${currentTier === 'Libre' ? styles.activeTierCard : ''}`} style={{ overflow: 'visible' }}>
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Text weight="bold" size={500}>Libre</Text>
@@ -293,7 +298,10 @@ export const SubscriptionModal: React.FC = () => {
               </Card>
 
               {/* TINDAHAN PRO */}
-              <Card className={`${styles.tierCard} ${styles.popularTierCard} ${currentTier === 'TindahanPro' ? styles.activeTierCard : ''}`}>
+              <Card
+                className={`${styles.tierCard} ${styles.popularTierCard} ${currentTier === 'TindahanPro' ? styles.activeTierCard : ''}`}
+                style={{ overflow: 'visible' }}
+              >
                 <Badge color="warning" appearance="filled" className={styles.popularBadge} icon={<StarFilled />}>
                   {isTagalog ? 'Pinakasulit / Popular' : 'Most Popular'}
                 </Badge>
@@ -380,7 +388,10 @@ export const SubscriptionModal: React.FC = () => {
               </Card>
 
               {/* NEGOSYO PLUS */}
-              <Card className={`${styles.tierCard} ${currentTier === 'NegosyoPlus' ? styles.activeTierCard : ''}`}>
+              <Card
+                className={`${styles.tierCard} ${currentTier === 'NegosyoPlus' ? styles.activeTierCard : ''}`}
+                style={{ overflow: 'visible' }}
+              >
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Text weight="bold" size={500}>Negosyo Plus</Text>

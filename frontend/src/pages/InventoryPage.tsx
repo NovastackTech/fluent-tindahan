@@ -197,6 +197,22 @@ const useStyles = makeStyles({
     ...shorthands.padding(tokens.spacingVerticalM, tokens.spacingHorizontalM),
     verticalAlign: 'middle'
   },
+  categoryTh: {
+    minWidth: '130px',
+    whiteSpace: 'nowrap'
+  },
+  categoryCell: {
+    whiteSpace: 'nowrap',
+    minWidth: '130px'
+  },
+  categoryBadge: {
+    whiteSpace: 'nowrap',
+    maxWidth: '220px',
+    textOverflow: 'ellipsis',
+    overflowX: 'hidden',
+    display: 'inline-flex',
+    alignItems: 'center'
+  },
   stockBadgeCell: {
     display: 'flex',
     flexDirection: 'column',
@@ -850,7 +866,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
               <thead>
                 <tr>
                   <th className={styles.th}>{t.inventory.colProduct}</th>
-                  <th className={styles.th}>{t.inventory.colCategory}</th>
+                  <th className={`${styles.th} ${styles.categoryTh}`}>{t.inventory.colCategory}</th>
                   <th className={styles.th}>{t.inventory.colStock}</th>
                   <th className={styles.th}>{t.inventory.colCost}</th>
                   <th className={styles.th}>{t.inventory.colPrice}</th>
@@ -888,8 +904,14 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                       </td>
 
                       {/* Category */}
-                      <td className={styles.td}>
-                        <Badge appearance="tint" color="informative" size="small">
+                      <td className={`${styles.td} ${styles.categoryCell}`}>
+                        <Badge
+                          appearance="tint"
+                          color="informative"
+                          size="small"
+                          className={styles.categoryBadge}
+                          title={p.category || 'General'}
+                        >
                           {p.category || 'General'}
                         </Badge>
                       </td>
@@ -1028,7 +1050,13 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                       {p.name}
                     </Text>
                     <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '4px' }}>
-                      <Badge appearance="tint" color="informative" size="small">
+                      <Badge
+                        appearance="tint"
+                        color="informative"
+                        size="small"
+                        className={styles.categoryBadge}
+                        title={p.category || 'General'}
+                      >
                         {p.category || 'General'}
                       </Badge>
                       {p.barcode && (
