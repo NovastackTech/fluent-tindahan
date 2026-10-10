@@ -1,6 +1,8 @@
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using FluentTindahan.Application.Billing;
+using FluentTindahan.Application.Common.Interfaces;
+using FluentTindahan.Domain.Billing;
 using FluentTindahan.Domain.Enums;
 using FluentTindahan.Domain.Interfaces;
 
@@ -12,23 +14,28 @@ public class BillingController : ControllerBase
 {
     private readonly IMediator _mediator;
     private readonly ICurrentUserService _currentUserService;
+    private readonly IHostEnvironment _environment;
     private readonly ILogger<BillingController> _logger;
 
     public BillingController(
         IMediator mediator,
         ICurrentUserService currentUserService,
+        IHostEnvironment environment,
         ILogger<BillingController> logger)
     {
         _mediator = mediator;
         _currentUserService = currentUserService;
+        _environment = environment;
         _logger = logger;
     }
 
+    /// <summary>
+    /// Checkout request. Redirect URLs are intentionally not accepted from the client;
+    /// they are built server-side from <c>PayMongo:FrontendOrigin</c>.
+    /// </summary>
     public record CreateCheckoutRequest(
         PlanTier TargetTier,
-        BillingCycle Cycle = BillingCycle.Monthly,
-        string? SuccessUrl = null,
-        string? CancelUrl = null
+        BillingCycle Cycle = BillingCycle.Monthly
     );
 
     /// <summary>
@@ -37,31 +44,27 @@ public class BillingController : ControllerBase
     [HttpPost("checkout")]
     [ProducesResponseType(typeof(CheckoutSessionResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
     public async Task<ActionResult<CheckoutSessionResponseDto>> CreateCheckout(
         [FromBody] CreateCheckoutRequest request,
         CancellationToken cancellationToken)
     {
-        if (request.TargetTier == PlanTier.Libre)
+        if (request.TargetTier == PlanTier.Libre ||
+            !TierPricing.TryGetPriceCentavos(request.TargetTier, request.Cycle, out _))
         {
-            return BadRequest(new { message = "Cannot checkout Libre tier." });
+            return BadRequest(new { message = "Invalid plan or billing cycle." });
         }
 
         try
         {
-            var command = new CreateCheckoutSessionCommand(
-                request.TargetTier,
-                request.Cycle,
-                request.SuccessUrl,
-                request.CancelUrl
-            );
-
-            var result = await _mediator.Send(command, cancellationToken);
+            var result = await _mediator.Send(new CreateCheckoutSessionCommand(request.TargetTier, request.Cycle), cancellationToken);
             return Ok(result);
         }
-        catch (Exception ex)
+        catch (PaymentGatewayException ex)
         {
+            // PaymentGatewayException messages are client-safe by contract; details are logged in the gateway service.
             _logger.LogError(ex, "Failed to create checkout session.");
-            return BadRequest(new { message = ex.Message });
+            return StatusCode(StatusCodes.Status502BadGateway, new { message = ex.Message });
         }
     }
 
@@ -89,33 +92,37 @@ public class BillingController : ControllerBase
 
     public record MockPayRequest(
         PlanTier TargetTier,
-        BillingCycle Cycle = BillingCycle.Monthly,
-        decimal? Amount = null
+        BillingCycle Cycle = BillingCycle.Monthly
     );
 
     /// <summary>
-    /// Development/Testing helper: Simulates payment completion without calling external gateway.
+    /// DEVELOPMENT ONLY: simulates a successful payment at the canonical plan price.
+    /// Returns 404 in every non-Development environment.
     /// </summary>
     [HttpPost("mock-pay")]
+    [ApiExplorerSettings(IgnoreApi = true)]
     public async Task<ActionResult<WebhookProcessResultDto>> MockPay(
         [FromBody] MockPayRequest request,
         CancellationToken cancellationToken)
     {
-        var tenantId = _currentUserService.TenantId;
-        var amount = request.Amount ?? (request.TargetTier == PlanTier.NegosyoPlus
-            ? (request.Cycle == BillingCycle.Weekly ? 89m : 349m)
-            : (request.Cycle == BillingCycle.Weekly ? 35m : 129m));
-
-        var json = System.Text.Json.JsonSerializer.Serialize(new
+        if (!_environment.IsDevelopment())
         {
-            tenant_id = tenantId.ToString(),
-            tier = request.TargetTier.ToString(),
-            cycle = request.Cycle.ToString(),
-            amount = amount,
-            reference_id = $"mock_tx_{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}"
-        });
+            return NotFound();
+        }
 
-        var result = await _mediator.Send(new ProcessPaymentWebhookCommand(json, "mock"), cancellationToken);
-        return Ok(result);
+        if (!TierPricing.TryGetPriceCentavos(request.TargetTier, request.Cycle, out var priceCentavos))
+        {
+            return BadRequest(new { message = "Invalid plan or billing cycle." });
+        }
+
+        var result = await _mediator.Send(new ApplySubscriptionPaymentCommand(
+            _currentUserService.TenantId,
+            request.TargetTier,
+            request.Cycle,
+            priceCentavos,
+            $"mock_pay_{Guid.NewGuid():N}",
+            "mock"), cancellationToken);
+
+        return result.Success ? Ok(result) : BadRequest(new { message = result.Message });
     }
 }

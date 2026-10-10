@@ -2,6 +2,7 @@ using System.Text.Json;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using FluentTindahan.Application.Common;
 using FluentTindahan.Application.Common.Interfaces;
 using FluentTindahan.Application.Sync.DTOs;
 using FluentTindahan.Domain.Entities;
@@ -335,24 +336,24 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
 
         if (raw.Id == Guid.Empty) raw.Id = Guid.NewGuid();
 
-        if (effectiveTier == PlanTier.Libre)
-        {
-            var now = DateTimeOffset.UtcNow;
-            var startOfMonth = new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, TimeSpan.Zero);
-            var gcashCount = await _context.GCashTransactions.IgnoreQueryFilters()
-                .CountAsync(g => g.TenantId == tenantId && g.Date >= startOfMonth, cancellationToken);
-            if (gcashCount >= 30)
-            {
-                throw new InvalidOperationException("Libre plan limit exceeded: Maximum 30 GCash transactions per month allowed. Upgrade to Tindahan Pro for unlimited logs.");
-            }
-        }
-
         var existing = await _context.GCashTransactions.IgnoreQueryFilters()
             .FirstOrDefaultAsync(g => g.Id == raw.Id && g.TenantId == tenantId, cancellationToken);
 
         if (existing != null)
         {
             return "Success"; // idempotent
+        }
+
+        // Libre cap only applies to brand-new inserts (never to replays/updates of existing rows)
+        if (effectiveTier == PlanTier.Libre)
+        {
+            var startOfMonth = ManilaTime.StartOfCurrentMonthUtc();
+            var gcashCount = await _context.GCashTransactions.IgnoreQueryFilters()
+                .CountAsync(g => g.TenantId == tenantId && g.Date >= startOfMonth, cancellationToken);
+            if (gcashCount >= 30)
+            {
+                throw new InvalidOperationException("Libre plan limit exceeded: Maximum 30 GCash transactions per month allowed. Upgrade to Tindahan Pro for unlimited logs.");
+            }
         }
 
         var txn = new GCashTxn

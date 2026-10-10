@@ -5,6 +5,12 @@ import { useAuthStore } from './authStore';
 
 export type BillingCycle = 'Weekly' | 'Monthly';
 
+/**
+ * Mock payments exist only in Vite dev builds. In production bundles this is statically `false`,
+ * so the mock UI and code path are tree-shaken out and can never unlock paid tiers on the counter.
+ */
+export const IS_MOCK_PAYMENT_ENABLED = import.meta.env.DEV;
+
 export interface TierLimits {
   maxProducts: number;
   maxCustomers: number;
@@ -167,15 +173,10 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
     createCheckoutSession: async (targetTier: PlanTier, cycle: BillingCycle) => {
       set({ isLoading: true, error: null });
       try {
-        const currentOrigin = window.location.origin;
-        const successUrl = `${currentOrigin}/?billing=success&tier=${targetTier}`;
-        const cancelUrl = `${currentOrigin}/?billing=cancel`;
-
+        // Redirect URLs are built server-side from configuration (prevents open redirects).
         const response = await apiClient.post('/billing/checkout', {
           targetTier: targetTier === 'TindahanPro' ? 1 : 2,
-          cycle: cycle === 'Weekly' ? 0 : 1,
-          successUrl,
-          cancelUrl
+          cycle: cycle === 'Weekly' ? 0 : 1
         });
 
         set({ isLoading: false });
@@ -187,6 +188,10 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
     },
 
     simulateMockPayment: async (targetTier: PlanTier, cycle: BillingCycle) => {
+      if (!IS_MOCK_PAYMENT_ENABLED) {
+        throw new Error('Mock payments are only available in development builds.');
+      }
+
       set({ isLoading: true, error: null });
       try {
         try {
@@ -194,32 +199,34 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
             targetTier: targetTier === 'TindahanPro' ? 1 : 2,
             cycle: cycle === 'Weekly' ? 0 : 1
           });
-        } catch (apiErr) {
-          console.warn('[Billing] Offline/mock mode: applying mock payment locally in Dexie', apiErr);
+          await get().refreshSubscription();
+        } catch {
+          // In development environments without a live backend (e.g. offline dev or unit tests),
+          // simulate the upgrade locally so dev workflow and tests continue working.
+          const durationDays = cycle === 'Weekly' ? 7 : 30;
+          const newEndDate = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString();
+
+          useAuthStore.getState().setSubscription(targetTier, newEndDate);
+          const tenantId = useAuthStore.getState().tenantId;
+          if (tenantId) {
+            await db.tenants.put({
+              id: tenantId,
+              businessName: useAuthStore.getState().businessName,
+              tier: targetTier,
+              subscriptionEndDate: newEndDate,
+              updatedAt: new Date().toISOString()
+            });
+          }
+
+          set({
+            tier: targetTier,
+            subscriptionEndDate: newEndDate,
+            isActive: true,
+            daysRemaining: durationDays,
+            isLoading: false
+          });
         }
-
-        // Apply local optimistic update in Dexie and state
-        const durationDays = cycle === 'Weekly' ? 7 : 30;
-        const endDate = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString();
-        const tenantId = useAuthStore.getState().tenantId;
-
-        await db.tenants.put({
-          id: tenantId,
-          businessName: useAuthStore.getState().businessName || 'Tindahan',
-          tier: targetTier,
-          subscriptionEndDate: endDate,
-          updatedAt: new Date().toISOString()
-        });
-
-        useAuthStore.getState().setSubscription(targetTier, endDate);
-        set({
-          tier: targetTier,
-          subscriptionEndDate: endDate,
-          isActive: targetTier !== 'Libre',
-          daysRemaining: durationDays,
-          isUpgradeModalOpen: false,
-          isLoading: false
-        });
+        set({ isUpgradeModalOpen: false });
       } catch (err: any) {
         set({ isLoading: false, error: err?.response?.data?.message || err.message });
         throw err;

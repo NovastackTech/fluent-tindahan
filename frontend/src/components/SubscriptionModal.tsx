@@ -24,7 +24,7 @@ import {
   StarFilled,
   CreditCardPersonRegular
 } from '@fluentui/react-icons';
-import { useSubscriptionStore, type BillingCycle } from '../state/subscriptionStore';
+import { useSubscriptionStore, type BillingCycle, IS_MOCK_PAYMENT_ENABLED } from '../state/subscriptionStore';
 import { type PlanTier } from '../db/db';
 import { useLanguageStore } from '../state/languageStore';
 
@@ -376,14 +376,16 @@ export const SubscriptionModal: React.FC = () => {
                       isTagalog ? 'Mag-upgrade sa Pro' : 'Upgrade to Pro'
                     )}
                   </Button>
-                  <Button
-                    appearance="subtle"
-                    size="small"
-                    icon={<SparkleRegular />}
-                    onClick={() => handleSimulatePayment('TindahanPro')}
-                  >
-                    {isTagalog ? 'Subukan (Simulate Test)' : 'Simulate Test Upgrade'}
-                  </Button>
+                  {IS_MOCK_PAYMENT_ENABLED && (
+                    <Button
+                      appearance="subtle"
+                      size="small"
+                      icon={<SparkleRegular />}
+                      onClick={() => handleSimulatePayment('TindahanPro')}
+                    >
+                      {isTagalog ? 'Subukan (Simulate Test)' : 'Simulate Test Upgrade'}
+                    </Button>
+                  )}
                 </div>
               </Card>
 
@@ -457,14 +459,16 @@ export const SubscriptionModal: React.FC = () => {
                       isTagalog ? 'Mag-upgrade sa Negosyo' : 'Upgrade to Negosyo'
                     )}
                   </Button>
-                  <Button
-                    appearance="subtle"
-                    size="small"
-                    icon={<SparkleRegular />}
-                    onClick={() => handleSimulatePayment('NegosyoPlus')}
-                  >
-                    {isTagalog ? 'Subukan (Simulate Test)' : 'Simulate Test Upgrade'}
-                  </Button>
+                  {IS_MOCK_PAYMENT_ENABLED && (
+                    <Button
+                      appearance="subtle"
+                      size="small"
+                      icon={<SparkleRegular />}
+                      onClick={() => handleSimulatePayment('NegosyoPlus')}
+                    >
+                      {isTagalog ? 'Subukan (Simulate Test)' : 'Simulate Test Upgrade'}
+                    </Button>
+                  )}
                 </div>
               </Card>
             </div>

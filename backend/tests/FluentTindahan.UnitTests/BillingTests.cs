@@ -91,8 +91,6 @@ public class BillingTests
             _testTenantId,
             PlanTier.TindahanPro,
             BillingCycle.Monthly,
-            It.IsAny<string>(),
-            It.IsAny<string>(),
             It.IsAny<CancellationToken>()))
             .ReturnsAsync(new CheckoutSessionResult(
                 CheckoutUrl: "https://checkout.paymongo.com/cs_test123",
@@ -115,31 +113,24 @@ public class BillingTests
     }
 
     [Fact]
-    public async Task ProcessPaymentWebhookCommandHandler_ValidPayload_ShouldUpgradeTenantAndRecordPayment()
+    public async Task ApplySubscriptionPaymentCommandHandler_ValidPayment_ShouldUpgradeTenantAndRecordPayment()
     {
         using var context = CreateInMemoryDbContext();
-        var gatewayMock = new Mock<IPaymentGatewayService>();
-        gatewayMock.Setup(g => g.VerifyWebhookSignature(It.IsAny<string>(), It.IsAny<string>()))
-            .Returns(true);
-
-        var handler = new ProcessPaymentWebhookCommandHandler(
+        var handler = new ApplySubscriptionPaymentCommandHandler(
             context,
-            gatewayMock.Object,
-            NullLogger<ProcessPaymentWebhookCommandHandler>.Instance);
+            NullLogger<ApplySubscriptionPaymentCommandHandler>.Instance);
 
-        var payload = $$"""
-        {
-            "tenant_id": "{{_testTenantId}}",
-            "tier": "TindahanPro",
-            "cycle": "Monthly",
-            "amount": 129.00,
-            "reference_id": "test_ref_001"
-        }
-        """;
+        var command = new ApplySubscriptionPaymentCommand(
+            TenantId: _testTenantId,
+            Tier: PlanTier.TindahanPro,
+            Cycle: BillingCycle.Monthly,
+            AmountCentavos: 12900L,
+            PaymentId: "pay_test_001",
+            PaymentMethod: "gcash");
 
-        var result = await handler.Handle(new ProcessPaymentWebhookCommand(payload, "sig_123"), CancellationToken.None);
+        var result = await handler.Handle(command, CancellationToken.None);
 
-        result.Success.Should().BeTrue();
+        result.Outcome.Should().Be(PaymentWebhookOutcome.Processed);
         result.Tier.Should().Be(PlanTier.TindahanPro);
         result.NewEndDate.Should().BeAfter(DateTimeOffset.UtcNow.AddDays(29));
 
@@ -149,13 +140,13 @@ public class BillingTests
 
         var payments = await context.PaymentHistories.IgnoreQueryFilters().Where(p => p.TenantId == _testTenantId).ToListAsync();
         payments.Should().HaveCount(1);
-        payments[0].Amount.Should().Be(129m);
+        payments[0].AmountCentavos.Should().Be(12900L);
         payments[0].TierPurchased.Should().Be(PlanTier.TindahanPro);
-        payments[0].GatewayReferenceId.Should().Be("test_ref_001");
+        payments[0].GatewayReferenceId.Should().Be("pay_test_001");
     }
 
     [Fact]
-    public async Task ProcessPaymentWebhookCommandHandler_ActiveSubscription_ShouldExtendExistingEndDate()
+    public async Task ApplySubscriptionPaymentCommandHandler_ActiveSubscription_ShouldExtendExistingEndDate()
     {
         using var context = CreateInMemoryDbContext();
         var tenant = await context.Tenants.IgnoreQueryFilters().FirstAsync(t => t.Id == _testTenantId);
@@ -164,30 +155,174 @@ public class BillingTests
         tenant.SubscriptionEndDate = existingEnd;
         await context.SaveChangesAsync();
 
+        var handler = new ApplySubscriptionPaymentCommandHandler(
+            context,
+            NullLogger<ApplySubscriptionPaymentCommandHandler>.Instance);
+
+        var command = new ApplySubscriptionPaymentCommand(
+            TenantId: _testTenantId,
+            Tier: PlanTier.TindahanPro,
+            Cycle: BillingCycle.Weekly,
+            AmountCentavos: 3500L,
+            PaymentId: "pay_test_weekly",
+            PaymentMethod: "gcash");
+
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        result.Outcome.Should().Be(PaymentWebhookOutcome.Processed);
+        result.NewEndDate.Should().BeCloseTo(existingEnd.AddDays(7), precision: TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task ApplySubscriptionPaymentCommandHandler_DuplicatePayment_ShouldReturnDuplicateOutcome()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new ApplySubscriptionPaymentCommandHandler(
+            context,
+            NullLogger<ApplySubscriptionPaymentCommandHandler>.Instance);
+
+        var command = new ApplySubscriptionPaymentCommand(
+            TenantId: _testTenantId,
+            Tier: PlanTier.TindahanPro,
+            Cycle: BillingCycle.Monthly,
+            AmountCentavos: 12900L,
+            PaymentId: "pay_duplicate_001",
+            PaymentMethod: "gcash");
+
+        // First application
+        var firstResult = await handler.Handle(command, CancellationToken.None);
+        firstResult.Outcome.Should().Be(PaymentWebhookOutcome.Processed);
+
+        // Second application (retry)
+        var secondResult = await handler.Handle(command, CancellationToken.None);
+        secondResult.Outcome.Should().Be(PaymentWebhookOutcome.Duplicate);
+
+        var payments = await context.PaymentHistories.IgnoreQueryFilters().Where(p => p.GatewayReferenceId == "pay_duplicate_001").ToListAsync();
+        payments.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task ApplySubscriptionPaymentCommandHandler_AmountMismatch_ShouldReject()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new ApplySubscriptionPaymentCommandHandler(
+            context,
+            NullLogger<ApplySubscriptionPaymentCommandHandler>.Instance);
+
+        var command = new ApplySubscriptionPaymentCommand(
+            TenantId: _testTenantId,
+            Tier: PlanTier.TindahanPro,
+            Cycle: BillingCycle.Monthly,
+            AmountCentavos: 10000L, // Mismatch: 100 pesos instead of 129
+            PaymentId: "pay_bad_amount",
+            PaymentMethod: "gcash");
+
+        var result = await handler.Handle(command, CancellationToken.None);
+        result.Outcome.Should().Be(PaymentWebhookOutcome.Rejected);
+
+        var tenant = await context.Tenants.IgnoreQueryFilters().FirstAsync(t => t.Id == _testTenantId);
+        tenant.Tier.Should().Be(PlanTier.Libre);
+    }
+
+    [Fact]
+    public async Task ProcessPaymentWebhookCommandHandler_InvalidSignature_ShouldReturnInvalidSignature()
+    {
+        var gatewayMock = new Mock<IPaymentGatewayService>();
+        gatewayMock.Setup(g => g.VerifyWebhookSignature(It.IsAny<string>(), It.IsAny<string>()))
+            .Returns(false);
+
+        var senderMock = new Mock<MediatR.ISender>();
+        var handler = new ProcessPaymentWebhookCommandHandler(
+            gatewayMock.Object,
+            senderMock.Object,
+            NullLogger<ProcessPaymentWebhookCommandHandler>.Instance);
+
+        var result = await handler.Handle(new ProcessPaymentWebhookCommand("{}", "bad_sig"), CancellationToken.None);
+        result.Outcome.Should().Be(PaymentWebhookOutcome.InvalidSignature);
+    }
+
+    [Fact]
+    public async Task ProcessPaymentWebhookCommandHandler_IgnoredEventType_ShouldReturnIgnored()
+    {
         var gatewayMock = new Mock<IPaymentGatewayService>();
         gatewayMock.Setup(g => g.VerifyWebhookSignature(It.IsAny<string>(), It.IsAny<string>()))
             .Returns(true);
 
+        var senderMock = new Mock<MediatR.ISender>();
         var handler = new ProcessPaymentWebhookCommandHandler(
-            context,
             gatewayMock.Object,
+            senderMock.Object,
+            NullLogger<ProcessPaymentWebhookCommandHandler>.Instance);
+
+        var payload = """
+        {
+            "data": {
+                "attributes": {
+                    "type": "payment.failed",
+                    "data": {}
+                }
+            }
+        }
+        """;
+
+        var result = await handler.Handle(new ProcessPaymentWebhookCommand(payload, "good_sig"), CancellationToken.None);
+        result.Outcome.Should().Be(PaymentWebhookOutcome.Ignored);
+    }
+
+    [Fact]
+    public async Task ProcessPaymentWebhookCommandHandler_ValidPayMongoEvent_ShouldDispatchApplyPaymentCommand()
+    {
+        var gatewayMock = new Mock<IPaymentGatewayService>();
+        gatewayMock.Setup(g => g.VerifyWebhookSignature(It.IsAny<string>(), It.IsAny<string>()))
+            .Returns(true);
+
+        var senderMock = new Mock<MediatR.ISender>();
+        senderMock.Setup(s => s.Send(It.IsAny<ApplySubscriptionPaymentCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new WebhookProcessResultDto(PaymentWebhookOutcome.Processed, "Success", _testTenantId, PlanTier.TindahanPro, DateTimeOffset.UtcNow.AddDays(30)));
+
+        var handler = new ProcessPaymentWebhookCommandHandler(
+            gatewayMock.Object,
+            senderMock.Object,
             NullLogger<ProcessPaymentWebhookCommandHandler>.Instance);
 
         var payload = $$"""
         {
-            "tenant_id": "{{_testTenantId}}",
-            "tier": "TindahanPro",
-            "cycle": "Weekly",
-            "amount": 35.00,
-            "reference_id": "test_ref_weekly"
+            "data": {
+                "attributes": {
+                    "type": "checkout_session.payment.paid",
+                    "data": {
+                        "id": "cs_test_123",
+                        "attributes": {
+                            "metadata": {
+                                "tenant_id": "{{_testTenantId}}",
+                                "tier": "TindahanPro",
+                                "cycle": "Monthly"
+                            },
+                            "payments": [
+                                {
+                                    "id": "pay_test_xyz",
+                                    "attributes": {
+                                        "amount": 12900,
+                                        "status": "paid",
+                                        "source": { "type": "gcash" }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
         }
         """;
 
-        var result = await handler.Handle(new ProcessPaymentWebhookCommand(payload, "sig_123"), CancellationToken.None);
-
-        result.Success.Should().BeTrue();
-        // Existing end + 7 days
-        result.NewEndDate.Should().BeCloseTo(existingEnd.AddDays(7), precision: TimeSpan.FromSeconds(5));
+        var result = await handler.Handle(new ProcessPaymentWebhookCommand(payload, "good_sig"), CancellationToken.None);
+        result.Outcome.Should().Be(PaymentWebhookOutcome.Processed);
+        senderMock.Verify(s => s.Send(It.Is<ApplySubscriptionPaymentCommand>(c =>
+            c.TenantId == _testTenantId &&
+            c.Tier == PlanTier.TindahanPro &&
+            c.Cycle == BillingCycle.Monthly &&
+            c.AmountCentavos == 12900L &&
+            c.PaymentId == "pay_test_xyz"), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

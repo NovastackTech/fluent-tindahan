@@ -7,7 +7,8 @@ public class PaymentHistory : IMustHaveTenant
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid TenantId { get; set; }
-    public decimal Amount { get; set; }
+    /// <summary>Amount actually paid, in integer centavos (₱129.00 = 12900).</summary>
+    public long AmountCentavos { get; set; }
     public string Currency { get; set; } = "PHP";
     public PlanTier TierPurchased { get; set; }
     public BillingCycle BillingCycle { get; set; } = BillingCycle.Monthly;

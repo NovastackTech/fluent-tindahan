@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using FluentTindahan.Application.Common.Interfaces;
 using FluentTindahan.Domain.Interfaces;
 using FluentTindahan.Infrastructure.Persistence;
@@ -29,6 +30,7 @@ public static class DependencyInjection
 
         services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<AppDbContext>());
 
+        services.TryAddSingleton(TimeProvider.System);
         services.AddHttpClient<IPaymentGatewayService, PayMongoPaymentGatewayService>();
         services.AddHostedService<SubscriptionMonitorService>();
 

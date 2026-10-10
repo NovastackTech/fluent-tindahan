@@ -36,14 +36,33 @@ public class WebhooksController : ControllerBase
             payload.Length, !string.IsNullOrEmpty(signature));
 
         var command = new ProcessPaymentWebhookCommand(payload, signature);
-        var result = await _mediator.Send(command, cancellationToken);
 
-        if (!result.Success)
+        WebhookProcessResultDto result;
+        try
         {
-            _logger.LogWarning("Webhook processing rejected: {Message}", result.Message);
-            return BadRequest(new { message = result.Message });
+            result = await _mediator.Send(command, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // Real failures (DB outage etc.) must be 5xx so PayMongo retries; never leak exception text.
+            _logger.LogError(ex, "Unexpected error while processing PayMongo webhook.");
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = "Internal error." });
         }
 
-        return Ok(new { status = "success", message = result.Message, tier = result.Tier?.ToString(), endDate = result.NewEndDate });
+        switch (result.Outcome)
+        {
+            case PaymentWebhookOutcome.Processed:
+                return Ok(new { status = "processed", tier = result.Tier?.ToString(), endDate = result.NewEndDate });
+            case PaymentWebhookOutcome.Duplicate:
+                return Ok(new { status = "duplicate" });
+            case PaymentWebhookOutcome.Ignored:
+                return Ok(new { status = "ignored" });
+            case PaymentWebhookOutcome.InvalidSignature:
+                _logger.LogWarning("Webhook rejected: invalid signature.");
+                return Unauthorized(new { message = "Invalid signature." });
+            default:
+                _logger.LogWarning("Webhook rejected: {Message}", result.Message);
+                return BadRequest(new { message = result.Message });
+        }
     }
 }

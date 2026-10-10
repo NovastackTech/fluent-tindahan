@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using FluentTindahan.Domain.Entities;
+using FluentTindahan.Domain.Enums;
 using FluentTindahan.Infrastructure.Services;
 
 namespace FluentTindahan.Infrastructure.Persistence;
@@ -19,7 +20,7 @@ public static class DatabaseSeeder
             {
                 Id = tenantId,
                 BusinessName = "Aling Nena's Tindahan & GCash",
-                PlanTier = "SariSariPro",
+                Tier = PlanTier.TindahanPro,
                 CreatedAt = DateTimeOffset.UtcNow
             };
             context.Tenants.Add(tenant);

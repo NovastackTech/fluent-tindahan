@@ -57,7 +57,6 @@ public class AppDbContext : DbContext, IApplicationDbContext
             builder.HasKey(t => t.Id);
             builder.Property(t => t.Id).HasDefaultValueSql("gen_random_uuid()");
             builder.Property(t => t.BusinessName).IsRequired().HasMaxLength(200);
-            builder.Property(t => t.PlanTier).HasMaxLength(50);
             builder.Property(t => t.Tier).HasConversion<int>().IsRequired();
             builder.Property(t => t.SubscriptionEndDate);
             builder.Property(t => t.ExternalCustomerId).HasMaxLength(128);
@@ -231,7 +230,7 @@ public class AppDbContext : DbContext, IApplicationDbContext
             builder.ToTable("PaymentHistories");
             builder.HasKey(p => p.Id);
             builder.Property(p => p.Id).HasDefaultValueSql("gen_random_uuid()");
-            builder.Property(p => p.Amount).HasPrecision(12, 2);
+            builder.Property(p => p.AmountCentavos).IsRequired();
             builder.Property(p => p.Currency).IsRequired().HasMaxLength(10);
             builder.Property(p => p.TierPurchased).HasConversion<int>().IsRequired();
             builder.Property(p => p.BillingCycle).HasConversion<int>().IsRequired();
@@ -241,7 +240,8 @@ public class AppDbContext : DbContext, IApplicationDbContext
 
             builder.HasIndex(p => p.TenantId);
             builder.HasIndex(p => new { p.TenantId, p.CreatedAt });
-            builder.HasIndex(p => p.GatewayReferenceId);
+            // Unique: PayMongo retries webhooks; a duplicate payment id must never extend a subscription twice.
+            builder.HasIndex(p => p.GatewayReferenceId).IsUnique();
 
             builder.HasOne(p => p.Tenant)
                 .WithMany(t => t.PaymentHistories)

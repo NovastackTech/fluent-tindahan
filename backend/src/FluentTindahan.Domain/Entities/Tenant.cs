@@ -7,38 +7,12 @@ public class Tenant
     public Guid Id { get; set; } = Guid.NewGuid();
     public string BusinessName { get; set; } = string.Empty;
 
-    private FluentTindahan.Domain.Enums.PlanTier _tier = FluentTindahan.Domain.Enums.PlanTier.Libre;
-    public FluentTindahan.Domain.Enums.PlanTier Tier
-    {
-        get => _tier;
-        set
-        {
-            _tier = value;
-            _planTier = value.ToString();
-        }
-    }
-
-    private string _planTier = "Free";
-    public string PlanTier
-    {
-        get => _planTier;
-        set
-        {
-            _planTier = value;
-            if (Enum.TryParse<FluentTindahan.Domain.Enums.PlanTier>(value, true, out var parsed))
-            {
-                _tier = parsed;
-            }
-            else if (string.Equals(value, "Free", StringComparison.OrdinalIgnoreCase))
-            {
-                _tier = FluentTindahan.Domain.Enums.PlanTier.Libre;
-            }
-            else if (string.Equals(value, "SariSariPro", StringComparison.OrdinalIgnoreCase))
-            {
-                _tier = FluentTindahan.Domain.Enums.PlanTier.TindahanPro;
-            }
-        }
-    }
+    /// <summary>
+    /// Single source of truth for the subscription tier.
+    /// (The legacy free-text <c>PlanTier</c> column was backfilled into this and dropped
+    /// by the <c>AddBillingSubscriptions</c> migration.)
+    /// </summary>
+    public PlanTier Tier { get; set; } = PlanTier.Libre;
 
     public DateTimeOffset? SubscriptionEndDate { get; set; }
     public string? ExternalCustomerId { get; set; }
