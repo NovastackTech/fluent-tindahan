@@ -189,7 +189,7 @@ public class ApplySubscriptionPaymentCommandHandler : IRequestHandler<ApplySubsc
         }
 
         const int maxRetries = 3;
-        for (var attempt = 1; attempt <= maxRetries; attempt++)
+        for (var attempt = 1; ; attempt++)
         {
             var tenant = await _context.Tenants
                 .IgnoreQueryFilters()
@@ -248,7 +248,7 @@ public class ApplySubscriptionPaymentCommandHandler : IRequestHandler<ApplySubsc
                 _context.Entry(tenant).State = EntityState.Detached;
                 _context.Entry(paymentHistory).State = EntityState.Detached;
 
-                if (attempt == maxRetries)
+                if (attempt >= maxRetries)
                 {
                     throw;
                 }
@@ -266,7 +266,7 @@ public class ApplySubscriptionPaymentCommandHandler : IRequestHandler<ApplySubsc
             }
         }
 
-        return Rejected("Failed to apply payment due to concurrent conflicts.", request.TenantId);
+        // Unreachable: the retry loop either returns on success/duplicate or rethrows DbUpdateConcurrencyException on the final attempt.
     }
 
     private Task<bool> PaymentAlreadyAppliedAsync(string paymentId, CancellationToken cancellationToken) =>

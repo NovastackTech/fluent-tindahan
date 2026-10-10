@@ -199,6 +199,7 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
             targetTier: targetTier === 'TindahanPro' ? 1 : 2,
             cycle: cycle === 'Weekly' ? 0 : 1
           });
+          await get().refreshSubscription();
         } catch (apiErr) {
           // In development environments without a live backend (e.g. offline dev or unit tests),
           // simulate the upgrade locally so dev workflow and tests continue working.

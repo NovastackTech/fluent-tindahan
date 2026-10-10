@@ -88,6 +88,21 @@ export async function processSyncQueue(): Promise<{ processed: number; errors: n
     return { processed: 0, errors: 0 };
   }
 
+  // Ensure dependencies are ordered: Customer -> Product -> Sale -> UtangLedger -> GCashTxn -> Deletes
+  const entityOrder: Record<string, number> = {
+    Customer: 1,
+    Product: 2,
+    Sale: 3,
+    UtangLedger: 4,
+    GCashTxn: 5
+  };
+  pendingItems.sort((a, b) => {
+    const orderA = a.action === 'Delete' ? 10 : (entityOrder[a.entity] ?? 6);
+    const orderB = b.action === 'Delete' ? 10 : (entityOrder[b.entity] ?? 6);
+    if (orderA !== orderB) return orderA - orderB;
+    return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+  });
+
   store.setSyncing(true);
 
   try {

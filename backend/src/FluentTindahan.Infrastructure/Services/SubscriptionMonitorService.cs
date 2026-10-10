@@ -67,7 +67,7 @@ public class SubscriptionMonitorService : BackgroundService
 
         var now = DateTimeOffset.UtcNow;
 
-        if (!db.Database.ProviderName?.Contains("InMemory", StringComparison.OrdinalIgnoreCase) == true)
+        if (db.Database.IsNpgsql())
         {
             // Atomically downgrade expired subscriptions in a single SQL UPDATE without loading tracked entities
             // into memory. The WHERE clause ensures that if a webhook renewed SubscriptionEndDate concurrently,

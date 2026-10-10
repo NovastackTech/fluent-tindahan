@@ -226,6 +226,35 @@ describe('syncEngine', () => {
     expect(useSyncStore.getState().lastErrorMessage).toContain('Network error 500');
   });
 
+  it('orders outbox operations so Customer and Product precede UtangLedger and Sale', async () => {
+    // Enqueue out of order: UtangLedger first, Sale second, Product third, Customer fourth
+    await enqueueSync('UtangLedger', 'Insert', { id: 'u-1', customerId: 'c-1', amount: 50 });
+    await enqueueSync('Sale', 'Insert', { id: 's-1', totalAmount: 50 });
+    await enqueueSync('Product', 'Insert', { id: 'p-1', name: 'Kape' });
+    await enqueueSync('Customer', 'Insert', { id: 'c-1', name: 'Nena' });
+
+    let sentOperations: any[] = [];
+    (apiClient.post as any).mockImplementationOnce(async (_url: string, payload: any) => {
+      sentOperations = payload.operations;
+      return {
+        data: {
+          results: sentOperations.map((op: any) => ({ syncId: op.syncId, status: 'Success' }))
+        }
+      };
+    });
+
+    const result = await processSyncQueue();
+    expect(result.processed).toBe(4);
+
+    // Verify ordering: Customer (1), Product (2), Sale (3), UtangLedger (4)
+    expect(sentOperations.map((op: any) => op.entity)).toEqual([
+      'Customer',
+      'Product',
+      'Sale',
+      'UtangLedger'
+    ]);
+  });
+
   it('initSyncEngine attaches online and offline event handlers', () => {
     expect(() => initSyncEngine()).not.toThrow();
 

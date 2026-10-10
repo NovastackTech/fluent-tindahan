@@ -223,7 +223,15 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ open, onClose, data 
   };
 
   return (
-    <Dialog open={open} onOpenChange={(_, data) => !data.open && onClose()}>
+    <Dialog
+      open={open}
+      modalType="modal"
+      onOpenChange={(_, data) => {
+        if (!data.open && data.type !== 'backdropClick') {
+          onClose();
+        }
+      }}
+    >
       <DialogSurface>
         <DialogBody>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

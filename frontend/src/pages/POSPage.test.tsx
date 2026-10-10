@@ -422,12 +422,14 @@ describe('POSPage', () => {
     expect(reloadMock).not.toHaveBeenCalled();
 
     // 7. Cashier dismisses receipt modal
-    const closeBtn = screen.getByRole('button', { name: /Isara|Close/i });
+    const closeBtn = await screen.findByRole('button', { name: /Isara|Close/i }, { timeout: 4000 });
     fireEvent.click(closeBtn);
 
     // 8. Verify reload is safely triggered AFTER sale was persisted and receipt closed
-    expect(reloadMock).toHaveBeenCalledTimes(1);
-    expect(usePwaStore.getState().reloadDeferred).toBe(false);
+    await waitFor(() => {
+      expect(reloadMock).toHaveBeenCalledTimes(1);
+      expect(usePwaStore.getState().reloadDeferred).toBe(false);
+    }, { timeout: 4000 });
 
     Object.defineProperty(window, 'location', {
       value: originalLocation,

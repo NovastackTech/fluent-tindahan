@@ -489,6 +489,72 @@ public class BillingTests
     }
 
     [Fact]
+    public async Task SubscriptionMonitorService_PostgresExecuteUpdateAsync_ShouldDowngradeExpiredTenant()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("POSTGRES_CONNECTION")
+            ?? "Host=localhost;Port=5432;Database=fluent_tindahan;Username=postgres;Password=jGai.KQjFP@5;";
+
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql(connectionString)
+            .Options;
+
+        using var db = new AppDbContext(options, _currentUserServiceMock.Object);
+        try
+        {
+            if (!await db.Database.CanConnectAsync())
+            {
+                // Skip if Postgres is not reachable
+                return;
+            }
+        }
+        catch
+        {
+            // Skip if connection fails
+            return;
+        }
+
+        var expiredTenantId = Guid.NewGuid();
+        var expiredTenant = new Tenant
+        {
+            Id = expiredTenantId,
+            BusinessName = "Postgres Expired Store",
+            Tier = PlanTier.TindahanPro,
+            SubscriptionEndDate = DateTimeOffset.UtcNow.AddHours(-2)
+        };
+        db.Tenants.Add(expiredTenant);
+        await db.SaveChangesAsync();
+
+        try
+        {
+            var serviceProviderMock = new Mock<IServiceProvider>();
+            serviceProviderMock.Setup(sp => sp.GetService(typeof(AppDbContext))).Returns(db);
+
+            var scopeMock = new Mock<IServiceScope>();
+            scopeMock.Setup(s => s.ServiceProvider).Returns(serviceProviderMock.Object);
+
+            var scopeFactoryMock = new Mock<IServiceScopeFactory>();
+            scopeFactoryMock.Setup(sf => sf.CreateScope()).Returns(scopeMock.Object);
+
+            var config = new ConfigurationBuilder().Build();
+
+            var monitor = new FluentTindahan.Infrastructure.Services.SubscriptionMonitorService(
+                scopeFactoryMock.Object,
+                config,
+                NullLogger<FluentTindahan.Infrastructure.Services.SubscriptionMonitorService>.Instance);
+
+            var downgradedCount = await monitor.CheckAndDowngradeExpiredSubscriptionsAsync();
+
+            downgradedCount.Should().BeGreaterThanOrEqualTo(1);
+            var updatedTenant = await db.Tenants.IgnoreQueryFilters().AsNoTracking().FirstAsync(t => t.Id == expiredTenantId);
+            updatedTenant.Tier.Should().Be(PlanTier.Libre);
+        }
+        finally
+        {
+            await db.Tenants.IgnoreQueryFilters().Where(t => t.Id == expiredTenantId).ExecuteDeleteAsync();
+        }
+    }
+
+    [Fact]
     public async Task MockPay_InProduction_ReturnsNotFound()
     {
         var mediatorMock = new Mock<IMediator>();
@@ -643,10 +709,11 @@ public class BillingTests
     }
 
     [Fact]
-    public async Task ProcessBatchSyncCommand_Sale_ProductNotFound_FailsCleanly()
+    public async Task ProcessBatchSyncCommand_Sale_ProductDeletedOrMissing_KeepsSaleAndCreatesPlaceholder()
     {
         using var context = CreateInMemoryDbContext();
         var missingProductId = Guid.NewGuid();
+        var saleId = Guid.NewGuid();
 
         var handler = new ProcessBatchSyncCommandHandler(
             context,
@@ -661,13 +728,14 @@ public class BillingTests
             Timestamp = DateTimeOffset.UtcNow,
             Payload = System.Text.Json.JsonDocument.Parse($$"""
             {
-                "id": "{{Guid.NewGuid()}}",
+                "id": "{{saleId}}",
                 "totalAmount": 50.0,
                 "paymentMethod": "Cash",
                 "items": [
                     {
                         "id": "{{Guid.NewGuid()}}",
                         "productId": "{{missingProductId}}",
+                        "productName": "Old Shampoo Sachet",
                         "qty": 1,
                         "unitPrice": 50.0,
                         "subtotal": 50.0
@@ -686,9 +754,275 @@ public class BillingTests
             CancellationToken.None);
 
         result.Results.Should().HaveCount(1);
+        result.Results[0].Status.Should().Be("Success");
+
+        // Verify sale is persisted
+        var savedSale = await context.Sales.Include(s => s.Items).FirstOrDefaultAsync(s => s.Id == saleId);
+        savedSale.Should().NotBeNull();
+        savedSale!.TotalAmount.Should().Be(50.0m);
+        savedSale.Items.Should().HaveCount(1);
+
+        // Verify placeholder product was created with snapshot data
+        var placeholderProd = await context.Products.FirstOrDefaultAsync(p => p.Id == missingProductId);
+        placeholderProd.Should().NotBeNull();
+        placeholderProd!.Name.Should().Be("Old Shampoo Sachet");
+        placeholderProd.Price.Should().Be(50.0m);
+    }
+
+    [Fact]
+    public async Task ProcessBatchSyncCommand_Sale_ProductRejectedByLimitInSameBatch_FailsCleanly()
+    {
+        using var context = CreateInMemoryDbContext();
+        var tenantId = _currentUserServiceMock.Object.TenantId;
+
+        // Seed 50 products so Libre limit is reached
+        for (int i = 0; i < 50; i++)
+        {
+            context.Products.Add(new Product
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantId,
+                Name = $"Product {i}",
+                Price = 10m,
+                UpdatedAt = DateTimeOffset.UtcNow
+            });
+        }
+        await context.SaveChangesAsync();
+
+        var handler = new ProcessBatchSyncCommandHandler(
+            context,
+            _currentUserServiceMock.Object,
+            NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+
+        var rejectedProductId = Guid.NewGuid();
+        var productOp = new SyncOperationDto
+        {
+            SyncId = "sync_prod_51",
+            Entity = "Product",
+            Action = "Insert",
+            Timestamp = DateTimeOffset.UtcNow,
+            Payload = System.Text.Json.JsonDocument.Parse($$"""
+            {
+                "id": "{{rejectedProductId}}",
+                "name": "Excess Product 51",
+                "price": 25.0
+            }
+            """).RootElement
+        };
+
+        var saleOp = new SyncOperationDto
+        {
+            SyncId = "sync_sale_with_rejected_prod",
+            Entity = "Sale",
+            Action = "Insert",
+            Timestamp = DateTimeOffset.UtcNow,
+            Payload = System.Text.Json.JsonDocument.Parse($$"""
+            {
+                "id": "{{Guid.NewGuid()}}",
+                "totalAmount": 25.0,
+                "paymentMethod": "Cash",
+                "items": [
+                    {
+                        "id": "{{Guid.NewGuid()}}",
+                        "productId": "{{rejectedProductId}}",
+                        "qty": 1,
+                        "unitPrice": 25.0,
+                        "subtotal": 25.0
+                    }
+                ]
+            }
+            """).RootElement
+        };
+
+        var result = await handler.Handle(
+            new ProcessBatchSyncCommand(new BatchSyncRequestDto
+            {
+                DeviceId = Guid.NewGuid(),
+                Operations = new List<SyncOperationDto> { productOp, saleOp }
+            }),
+            CancellationToken.None);
+
+        result.Results.Should().HaveCount(2);
+        // Product failed due to Libre limit
         result.Results[0].Status.Should().Be("Failed");
-        result.Results[0].Error.Should().Contain("Product(s)");
-        result.Results[0].Error.Should().Contain("not found");
+        result.Results[0].Error.Should().Contain("Libre plan limit exceeded: Maximum 50 products allowed");
+
+        // Sale failed cleanly because the product was rejected in this batch
+        result.Results[1].Status.Should().Be("Failed");
+        result.Results[1].Error.Should().Contain("rejected in this sync batch");
+    }
+
+    [Fact]
+    public async Task ProcessBatchSyncCommand_Sale_CustomerDeletedOrMissing_KeepsSaleWithNullCustomer()
+    {
+        using var context = CreateInMemoryDbContext();
+        var deletedCustomerId = Guid.NewGuid();
+        var saleId = Guid.NewGuid();
+
+        var handler = new ProcessBatchSyncCommandHandler(
+            context,
+            _currentUserServiceMock.Object,
+            NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+
+        var op = new SyncOperationDto
+        {
+            SyncId = "sync_sale_missing_cust",
+            Entity = "Sale",
+            Action = "Insert",
+            Timestamp = DateTimeOffset.UtcNow,
+            Payload = System.Text.Json.JsonDocument.Parse($$"""
+            {
+                "id": "{{saleId}}",
+                "totalAmount": 100.0,
+                "paymentMethod": "Cash",
+                "customerId": "{{deletedCustomerId}}"
+            }
+            """).RootElement
+        };
+
+        var result = await handler.Handle(
+            new ProcessBatchSyncCommand(new BatchSyncRequestDto
+            {
+                DeviceId = Guid.NewGuid(),
+                Operations = new List<SyncOperationDto> { op }
+            }),
+            CancellationToken.None);
+
+        result.Results.Should().HaveCount(1);
+        result.Results[0].Status.Should().Be("Success");
+
+        var savedSale = await context.Sales.FirstOrDefaultAsync(s => s.Id == saleId);
+        savedSale.Should().NotBeNull();
+        savedSale!.CustomerId.Should().BeNull();
+        savedSale.TotalAmount.Should().Be(100.0m);
+    }
+
+    [Fact]
+    public async Task ProcessBatchSyncCommand_BatchOrdering_CustomerProcessedBeforeUtangLedger()
+    {
+        using var context = CreateInMemoryDbContext();
+        var newCustomerId = Guid.NewGuid();
+        var utangLedgerId = Guid.NewGuid();
+
+        var handler = new ProcessBatchSyncCommandHandler(
+            context,
+            _currentUserServiceMock.Object,
+            NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+
+        // Put UtangLedger FIRST and Customer SECOND in the batch operations list to test server-side ordering
+        var utangOp = new SyncOperationDto
+        {
+            SyncId = "sync_utang_first",
+            Entity = "UtangLedger",
+            Action = "Insert",
+            Timestamp = DateTimeOffset.UtcNow,
+            Payload = System.Text.Json.JsonDocument.Parse($$"""
+            {
+                "id": "{{utangLedgerId}}",
+                "customerId": "{{newCustomerId}}",
+                "amount": 75.0,
+                "type": "Credit"
+            }
+            """).RootElement
+        };
+
+        var customerOp = new SyncOperationDto
+        {
+            SyncId = "sync_customer_second",
+            Entity = "Customer",
+            Action = "Insert",
+            Timestamp = DateTimeOffset.UtcNow,
+            Payload = System.Text.Json.JsonDocument.Parse($$"""
+            {
+                "id": "{{newCustomerId}}",
+                "name": "Maria Santos",
+                "phone": "09181234567",
+                "totalUtangBalance": 0.0
+            }
+            """).RootElement
+        };
+
+        var result = await handler.Handle(
+            new ProcessBatchSyncCommand(new BatchSyncRequestDto
+            {
+                DeviceId = Guid.NewGuid(),
+                Operations = new List<SyncOperationDto> { utangOp, customerOp }
+            }),
+            CancellationToken.None);
+
+        result.Results.Should().HaveCount(2);
+        // Both operations must succeed because Customer was ordered before UtangLedger server-side!
+        result.Results.First(r => r.SyncId == "sync_customer_second").Status.Should().Be("Success");
+        result.Results.First(r => r.SyncId == "sync_utang_first").Status.Should().Be("Success");
+
+        var savedCustomer = await context.Customers.FirstOrDefaultAsync(c => c.Id == newCustomerId);
+        savedCustomer.Should().NotBeNull();
+        savedCustomer!.TotalUtangBalance.Should().Be(75.0m);
+    }
+
+    [Fact]
+    public async Task ProcessBatchSyncCommand_GCash_BackDatedInsert_DoesNotCountTowardCurrentMonthLimit()
+    {
+        using var context = CreateInMemoryDbContext();
+        var tenantId = _currentUserServiceMock.Object.TenantId;
+        var startOfMonth = ManilaTime.StartOfCurrentMonthUtc();
+
+        // Seed 30 current-month GCash transactions to saturate the Libre monthly limit
+        for (int i = 0; i < 30; i++)
+        {
+            context.GCashTransactions.Add(new GCashTxn
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantId,
+                Type = "CashIn",
+                Amount = 100m,
+                Fee = 5m,
+                RefNo = $"REF-{i}",
+                Date = startOfMonth.AddDays(1)
+            });
+        }
+        await context.SaveChangesAsync();
+
+        var handler = new ProcessBatchSyncCommandHandler(
+            context,
+            _currentUserServiceMock.Object,
+            NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+
+        // A back-dated transaction from the previous month
+        var oldDate = startOfMonth.AddDays(-5);
+        var oldTxnId = Guid.NewGuid();
+        var backDatedOp = new SyncOperationDto
+        {
+            SyncId = "sync_gcash_backdated",
+            Entity = "GCashTxn",
+            Action = "Insert",
+            Timestamp = DateTimeOffset.UtcNow,
+            Payload = System.Text.Json.JsonDocument.Parse($$"""
+            {
+                "id": "{{oldTxnId}}",
+                "type": "CashIn",
+                "amount": 200.0,
+                "fee": 10.0,
+                "refNo": "REF-OLD-1",
+                "date": "{{oldDate:O}}"
+            }
+            """).RootElement
+        };
+
+        var result = await handler.Handle(
+            new ProcessBatchSyncCommand(new BatchSyncRequestDto
+            {
+                DeviceId = Guid.NewGuid(),
+                Operations = new List<SyncOperationDto> { backDatedOp }
+            }),
+            CancellationToken.None);
+
+        result.Results.Should().HaveCount(1);
+        result.Results[0].Status.Should().Be("Success");
+
+        var savedTxn = await context.GCashTransactions.FirstOrDefaultAsync(g => g.Id == oldTxnId);
+        savedTxn.Should().NotBeNull();
+        savedTxn!.Amount.Should().Be(200.0m);
     }
 
     [Fact]

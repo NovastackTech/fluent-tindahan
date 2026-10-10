@@ -23,6 +23,7 @@ describe('registerServiceWorker', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     if (originalServiceWorker) {
       Object.defineProperty(navigator, 'serviceWorker', {
         value: originalServiceWorker,

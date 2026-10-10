@@ -9,8 +9,9 @@ import {
   MessageBarActions,
   Button
 } from '@fluentui/react-components';
-import { ArrowSyncRegular } from '@fluentui/react-icons';
-import { useSyncStore, processSyncQueue } from '../sync/syncEngine';
+import { ArrowSyncRegular, ArrowClockwiseRegular } from '@fluentui/react-icons';
+import { useSyncStore, processSyncQueue, retryDeadLetterItem } from '../sync/syncEngine';
+import { db } from '../db/db';
 import { useTranslation } from '../state/languageStore';
 
 const useStyles = makeStyles({
@@ -34,6 +35,17 @@ export const OfflineSyncBanner: React.FC = () => {
   if (isOnline && pendingCount === 0 && deadLetterCount === 0 && !lastErrorMessage) {
     return null;
   }
+
+  const handleRetryAllDeadLetter = async () => {
+    try {
+      const items = await db.deadLetterQueue.toArray();
+      for (const item of items) {
+        await retryDeadLetterItem(item.id);
+      }
+    } catch (err) {
+      console.error('Failed to retry dead letter items:', err);
+    }
+  };
 
   return (
     <div className={styles.container}>
@@ -72,7 +84,28 @@ export const OfflineSyncBanner: React.FC = () => {
         <MessageBar intent="error">
           <MessageBarTitle>Dead Letter Queue ({deadLetterCount})</MessageBarTitle>
           <MessageBarBody>
-            {t.common.dlqWarning}
+            {lastErrorMessage || t.common.dlqWarning}
+          </MessageBarBody>
+          <MessageBarActions
+            containerAction={
+              <Button
+                size="small"
+                appearance="subtle"
+                icon={<ArrowClockwiseRegular />}
+                onClick={handleRetryAllDeadLetter}
+              >
+                {t.settings.retryBtn || 'Subukang Muli'}
+              </Button>
+            }
+          />
+        </MessageBar>
+      )}
+
+      {deadLetterCount === 0 && lastErrorMessage && (
+        <MessageBar intent="error">
+          <MessageBarTitle>Sync Error</MessageBarTitle>
+          <MessageBarBody>
+            {lastErrorMessage}
           </MessageBarBody>
         </MessageBar>
       )}
