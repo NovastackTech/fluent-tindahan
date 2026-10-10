@@ -29,6 +29,9 @@ public static class DependencyInjection
 
         services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<AppDbContext>());
 
+        services.AddHttpClient<IPaymentGatewayService, PayMongoPaymentGatewayService>();
+        services.AddHostedService<SubscriptionMonitorService>();
+
         return services;
     }
 }

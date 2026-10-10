@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using FluentTindahan.Application.Common.Interfaces;
 using FluentTindahan.Application.Sync.DTOs;
 using FluentTindahan.Domain.Entities;
+using FluentTindahan.Domain.Enums;
 using FluentTindahan.Domain.Interfaces;
 
 namespace FluentTindahan.Application.Sync.Commands;
@@ -41,12 +42,18 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
         _logger.LogInformation("Processing batch sync for tenant {TenantId}, device {DeviceId}, operations count {Count}",
             tenantId, command.Request.DeviceId, operations.Count);
 
+        var tenant = await _context.Tenants.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
+        var now = DateTimeOffset.UtcNow;
+        var isExpired = tenant != null && tenant.Tier != PlanTier.Libre && tenant.SubscriptionEndDate.HasValue && tenant.SubscriptionEndDate.Value < now;
+        var effectiveTier = isExpired ? PlanTier.Libre : (tenant?.Tier ?? PlanTier.Libre);
+
         foreach (var op in operations)
         {
             var syncId = string.IsNullOrWhiteSpace(op.SyncId) ? Guid.NewGuid().ToString() : op.SyncId;
             try
             {
-                var status = await ProcessOperationAsync(op, tenantId, cancellationToken);
+                var status = await ProcessOperationAsync(op, tenantId, effectiveTier, cancellationToken);
                 results.Add(new SyncItemResultDto
                 {
                     SyncId = syncId,
@@ -72,23 +79,23 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
         };
     }
 
-    private async Task<string> ProcessOperationAsync(SyncOperationDto op, Guid tenantId, CancellationToken cancellationToken)
+    private async Task<string> ProcessOperationAsync(SyncOperationDto op, Guid tenantId, PlanTier effectiveTier, CancellationToken cancellationToken)
     {
         var entityType = op.Entity?.Trim().ToLowerInvariant();
         var action = op.Action?.Trim().ToLowerInvariant() ?? "insert";
 
         return entityType switch
         {
-            "product" => await HandleProductAsync(op, tenantId, action, cancellationToken),
-            "customer" => await HandleCustomerAsync(op, tenantId, action, cancellationToken),
+            "product" => await HandleProductAsync(op, tenantId, effectiveTier, action, cancellationToken),
+            "customer" => await HandleCustomerAsync(op, tenantId, effectiveTier, action, cancellationToken),
             "utangledger" or "utang" => await HandleUtangLedgerAsync(op, tenantId, action, cancellationToken),
             "sale" => await HandleSaleAsync(op, tenantId, action, cancellationToken),
-            "gcashtxn" or "gcash" => await HandleGCashTxnAsync(op, tenantId, action, cancellationToken),
+            "gcashtxn" or "gcash" => await HandleGCashTxnAsync(op, tenantId, effectiveTier, action, cancellationToken),
             _ => throw new NotSupportedException($"Entity type '{op.Entity}' is not supported for synchronization.")
         };
     }
 
-    private async Task<string> HandleProductAsync(SyncOperationDto op, Guid tenantId, string action, CancellationToken cancellationToken)
+    private async Task<string> HandleProductAsync(SyncOperationDto op, Guid tenantId, PlanTier effectiveTier, string action, CancellationToken cancellationToken)
     {
         var raw = JsonSerializer.Deserialize<ProductSyncPayload>(op.Payload.GetRawText(), JsonOptions)
             ?? throw new ArgumentException("Product payload is invalid.");
@@ -110,6 +117,15 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
 
         if (existing == null)
         {
+            if (effectiveTier == PlanTier.Libre)
+            {
+                var productCount = await _context.Products.IgnoreQueryFilters()
+                    .CountAsync(p => p.TenantId == tenantId, cancellationToken);
+                if (productCount >= 50)
+                {
+                    throw new InvalidOperationException("Libre plan limit exceeded: Maximum 50 products allowed. Upgrade to Tindahan Pro for unlimited catalog capacity.");
+                }
+            }
             var product = new Product
             {
                 Id = raw.Id,
@@ -147,7 +163,7 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
         return "Success";
     }
 
-    private async Task<string> HandleCustomerAsync(SyncOperationDto op, Guid tenantId, string action, CancellationToken cancellationToken)
+    private async Task<string> HandleCustomerAsync(SyncOperationDto op, Guid tenantId, PlanTier effectiveTier, string action, CancellationToken cancellationToken)
     {
         var raw = JsonSerializer.Deserialize<CustomerSyncPayload>(op.Payload.GetRawText(), JsonOptions)
             ?? throw new ArgumentException("Customer payload is invalid.");
@@ -169,6 +185,15 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
 
         if (existing == null)
         {
+            if (effectiveTier == PlanTier.Libre)
+            {
+                var customerCount = await _context.Customers.IgnoreQueryFilters()
+                    .CountAsync(c => c.TenantId == tenantId, cancellationToken);
+                if (customerCount >= 30)
+                {
+                    throw new InvalidOperationException("Libre plan limit exceeded: Maximum 30 debtors allowed. Upgrade to Tindahan Pro for unlimited customer accounts.");
+                }
+            }
             var customer = new Customer
             {
                 Id = raw.Id,
@@ -303,12 +328,24 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
         return "Success";
     }
 
-    private async Task<string> HandleGCashTxnAsync(SyncOperationDto op, Guid tenantId, string action, CancellationToken cancellationToken)
+    private async Task<string> HandleGCashTxnAsync(SyncOperationDto op, Guid tenantId, PlanTier effectiveTier, string action, CancellationToken cancellationToken)
     {
         var raw = JsonSerializer.Deserialize<GCashTxnSyncPayload>(op.Payload.GetRawText(), JsonOptions)
             ?? throw new ArgumentException("GCashTxn payload is invalid.");
 
         if (raw.Id == Guid.Empty) raw.Id = Guid.NewGuid();
+
+        if (effectiveTier == PlanTier.Libre)
+        {
+            var now = DateTimeOffset.UtcNow;
+            var startOfMonth = new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, TimeSpan.Zero);
+            var gcashCount = await _context.GCashTransactions.IgnoreQueryFilters()
+                .CountAsync(g => g.TenantId == tenantId && g.Date >= startOfMonth, cancellationToken);
+            if (gcashCount >= 30)
+            {
+                throw new InvalidOperationException("Libre plan limit exceeded: Maximum 30 GCash transactions per month allowed. Upgrade to Tindahan Pro for unlimited logs.");
+            }
+        }
 
         var existing = await _context.GCashTransactions.IgnoreQueryFilters()
             .FirstOrDefaultAsync(g => g.Id == raw.Id && g.TenantId == tenantId, cancellationToken);

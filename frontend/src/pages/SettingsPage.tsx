@@ -22,13 +22,15 @@ import {
   DesktopRegular,
   PrintRegular,
   PhoneLaptopRegular,
-  ArrowDownloadRegular
+  ArrowDownloadRegular,
+  SparkleRegular
 } from '@fluentui/react-icons';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
 import { useThemeStore } from '../state/themeStore';
 import { usePrinterStore } from '../state/printerStore';
 import { usePwaStore } from '../state/pwaStore';
+import { useSubscriptionStore } from '../state/subscriptionStore';
 import { printThermalReceipt } from '../services/receiptPrinter';
 import {
   useSyncStore,
@@ -76,6 +78,7 @@ export const SettingsPage: React.FC = () => {
   const { themeMode, setThemeMode } = useThemeStore();
   const { paperWidth, setPaperWidth } = usePrinterStore();
   const { isStandalone, isInstalled, isInstallable, isIos, promptInstall } = usePwaStore();
+  const { tier, subscriptionEndDate, daysRemaining, openUpgradeModal } = useSubscriptionStore();
 
   const handleTestPrint = () => {
     const testData = {
@@ -249,6 +252,96 @@ export const SettingsPage: React.FC = () => {
         >
           {t.settings.printerTestBtn}
         </Button>
+      </Card>
+
+      {/* SaaS Subscription & Plan Management */}
+      <Card className={styles.card}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <SparkleRegular fontSize={20} color={tokens.colorPaletteGoldForeground2} />
+            <Text weight="bold" size={400}>{t.subscription.planSection}</Text>
+          </div>
+          <Badge
+            appearance="filled"
+            color={tier === 'NegosyoPlus' ? 'important' : tier === 'TindahanPro' ? 'warning' : 'informative'}
+          >
+            {tier === 'NegosyoPlus' ? 'NEGOSYO+' : tier === 'TindahanPro' ? 'PRO' : 'LIBRE'}
+          </Badge>
+        </div>
+
+        <Text size={200} style={{ color: tokens.colorNeutralForeground3, marginBottom: '12px', display: 'block' }}>
+          {t.subscription.planDesc}
+        </Text>
+
+        <div className={styles.infoRow}>
+          <Text size={200}>{t.subscription.currentPlan}</Text>
+          <Text size={200} weight="bold">
+            {tier === 'NegosyoPlus' ? t.subscription.plusTier : tier === 'TindahanPro' ? t.subscription.proTier : t.subscription.libreTier}
+          </Text>
+        </div>
+
+        {tier !== 'Libre' && subscriptionEndDate && (
+          <>
+            <div className={styles.infoRow}>
+              <Text size={200}>{t.subscription.expiresOn}</Text>
+              <Text size={200} style={{ fontFamily: 'monospace' }}>
+                {new Date(subscriptionEndDate).toLocaleDateString()}
+              </Text>
+            </div>
+            {daysRemaining !== null && (
+              <div className={styles.infoRow}>
+                <Text size={200}>{t.subscription.daysRemaining}</Text>
+                <Badge appearance="tint" color={daysRemaining <= 3 ? 'danger' : 'success'}>
+                  {daysRemaining} {daysRemaining === 1 ? 'araw / day' : 'araw / days'}
+                </Badge>
+              </div>
+            )}
+          </>
+        )}
+
+        <Divider style={{ margin: '8px 0' }} />
+
+        <Text size={200} weight="semibold" style={{ marginBottom: '6px', display: 'block' }}>
+          {t.subscription.limitsTitle}
+        </Text>
+
+        <div className={styles.infoRow}>
+          <Text size={200}>{t.subscription.productLimit}</Text>
+          <Text size={200}>
+            {tier === 'Libre' ? '50 max' : t.subscription.unlimited}
+          </Text>
+        </div>
+
+        <div className={styles.infoRow}>
+          <Text size={200}>{t.subscription.debtorLimit}</Text>
+          <Text size={200}>
+            {tier === 'Libre' ? '30 max' : t.subscription.unlimited}
+          </Text>
+        </div>
+
+        <div className={styles.infoRow}>
+          <Text size={200}>{t.subscription.gcashLimit}</Text>
+          <Text size={200}>
+            {tier === 'Libre' ? '30 / buwan (month)' : t.subscription.unlimited}
+          </Text>
+        </div>
+
+        <div className={styles.infoRow}>
+          <Text size={200}>{t.subscription.csvImportStatus}</Text>
+          <Text size={200} style={{ color: tier === 'Libre' ? tokens.colorNeutralForeground4 : tokens.colorPaletteGreenForeground1 }}>
+            {tier === 'Libre' ? t.subscription.lockedForLibre : t.subscription.unlocked}
+          </Text>
+        </div>
+
+        <div style={{ marginTop: '12px' }}>
+          <Button
+            appearance="primary"
+            icon={<SparkleRegular />}
+            onClick={() => openUpgradeModal()}
+          >
+            {tier === 'Libre' ? t.subscription.upgradeBtn : t.subscription.managePlanBtn}
+          </Button>
+        </div>
       </Card>
 
       {/* Account & Multi-tenant isolation */}

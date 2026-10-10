@@ -28,6 +28,7 @@ import { db, type CustomerRecord, type UtangLedgerRecord } from '../db/db';
 import { useAuthStore } from '../state/authStore';
 import { enqueueSync } from '../sync/syncEngine';
 import { useTranslation } from '../state/languageStore';
+import { useSubscriptionStore } from '../state/subscriptionStore';
 
 const useStyles = makeStyles({
   container: {
@@ -65,7 +66,8 @@ const useStyles = makeStyles({
 
 export const UtangPage: React.FC = () => {
   const styles = useStyles();
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
+  const { tier, canAddCustomer, openUpgradeModal } = useSubscriptionStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerRecord | null>(null);
 
@@ -120,6 +122,16 @@ export const UtangPage: React.FC = () => {
   // Create new customer
   const handleCreateCustomer = async () => {
     if (!newCustName.trim()) return;
+
+    if (!canAddCustomer(customers.length)) {
+      alert(
+        language === 'tl'
+          ? 'Naabot na ang limitasyon ng Libreng plano (30 may utang). Mag-upgrade sa Tindahan Pro o Negosyo Plus upang magtala pa.'
+          : 'Limit reached for Libre plan (30 debtors maximum). Please upgrade to Tindahan Pro or Negosyo Plus to add more debtors.'
+      );
+      openUpgradeModal();
+      return;
+    }
 
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -244,12 +256,25 @@ export const UtangPage: React.FC = () => {
           <Text size={500} weight="bold">{t.utang.title}</Text>
           <Text size={300} style={{ color: tokens.colorNeutralForeground3, display: 'block' }}>
             {t.utang.totalOutstanding}: <strong style={{ color: tokens.colorPaletteRedForeground1 }}>₱{totalOutstanding.toFixed(2)}</strong>
+            {' • '}
+            <span>{t.utang.customersCount}: {customers.length}{tier === 'Libre' ? ' / 30 (Libre)' : ''}</span>
           </Text>
         </div>
         <Button
           appearance="primary"
           icon={<PersonAddRegular />}
-          onClick={() => setIsNewCustomerOpen(true)}
+          onClick={() => {
+            if (!canAddCustomer(customers.length)) {
+              alert(
+                language === 'tl'
+                  ? 'Naabot na ang limitasyon ng Libreng plano (30 may utang). Mag-upgrade sa Tindahan Pro o Negosyo Plus upang magtala pa.'
+                  : 'Limit reached for Libre plan (30 debtors maximum). Please upgrade to Tindahan Pro or Negosyo Plus to add more debtors.'
+              );
+              openUpgradeModal();
+              return;
+            }
+            setIsNewCustomerOpen(true);
+          }}
         >
           {t.utang.addNewCustomer}
         </Button>

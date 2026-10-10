@@ -24,6 +24,8 @@ import { useSyncStore, processSyncQueue } from '../sync/syncEngine';
 import { useAuthStore } from '../state/authStore';
 import { useTranslation } from '../state/languageStore';
 import { usePwaStore } from '../state/pwaStore';
+import { useSubscriptionStore } from '../state/subscriptionStore';
+import { SubscriptionModal } from './SubscriptionModal';
 
 const useStyles = makeStyles({
   header: {
@@ -86,6 +88,7 @@ export const Header: React.FC = () => {
   const businessName = useAuthStore((s) => s.businessName);
   const { t, language, toggleLanguage } = useTranslation();
   const { isInstallable, isStandalone, isInstalled, promptInstall } = usePwaStore();
+  const { tier, openUpgradeModal } = useSubscriptionStore();
 
   const handleManualSync = () => {
     if (isOnline) {
@@ -99,7 +102,24 @@ export const Header: React.FC = () => {
         <div className={styles.titleGroup}>
           <div className={styles.logoIcon}>FT</div>
           <div>
-            <Text weight="bold" size={400}>{t.common.appTitle}</Text>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Text weight="bold" size={400}>{t.common.appTitle}</Text>
+              <Button
+                appearance="subtle"
+                size="small"
+                onClick={openUpgradeModal}
+                style={{ padding: '0px 4px', height: '22px', minWidth: 'auto' }}
+                title="View Subscription Plans"
+              >
+                <Badge
+                  color={tier === 'NegosyoPlus' ? 'important' : tier === 'TindahanPro' ? 'warning' : 'informative'}
+                  appearance="filled"
+                  size="small"
+                >
+                  {tier === 'NegosyoPlus' ? 'NEGOSYO+' : tier === 'TindahanPro' ? 'PRO' : 'LIBRE'}
+                </Badge>
+              </Button>
+            </div>
             <span className={styles.storeName}>{businessName || t.common.storeSub}</span>
           </div>
         </div>
@@ -226,6 +246,7 @@ export const Header: React.FC = () => {
           </Tooltip>
         </div>
       </div>
+      <SubscriptionModal />
     </header>
   );
 };

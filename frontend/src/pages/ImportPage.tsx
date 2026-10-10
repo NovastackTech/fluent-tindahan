@@ -20,6 +20,7 @@ import {
 } from '@fluentui/react-icons';
 import { parseProductsCsv, importProductsToDexieAndSync, type ParsedProductPreview } from '../services/csvImporter';
 import { useTranslation } from '../state/languageStore';
+import { useSubscriptionStore } from '../state/subscriptionStore';
 
 const useStyles = makeStyles({
   container: {
@@ -88,6 +89,9 @@ Pancit Canton Invalid Test,abc,10,12345,Instant Noodles,10`;
 export const ImportPage: React.FC = () => {
   const styles = useStyles();
   const { t, language } = useTranslation();
+  const { tier, openUpgradeModal } = useSubscriptionStore();
+  const isCsvLocked = tier === 'Libre';
+
   const [previews, setPreviews] = useState<ParsedProductPreview[]>([]);
   const [isImporting, setIsImporting] = useState(false);
   const [importResult, setImportResult] = useState<string | null>(null);
@@ -113,6 +117,15 @@ export const ImportPage: React.FC = () => {
 
   const handleImport = async () => {
     if (validCount === 0) return;
+    if (isCsvLocked) {
+      openUpgradeModal();
+      alert(
+        language === 'tl'
+          ? 'Kailangan ng Tindahan Pro o Negosyo Plus para ma-import ang mga produkto gamit ang CSV.'
+          : 'Tindahan Pro or Negosyo Plus is required to import products via CSV.'
+      );
+      return;
+    }
     setIsImporting(true);
 
     try {
@@ -138,6 +151,26 @@ export const ImportPage: React.FC = () => {
           {t.importPage.subtitle}
         </Text>
       </div>
+
+      {isCsvLocked && (
+        <MessageBar intent="warning" style={{ marginBottom: '16px' }}>
+          <MessageBarTitle>
+            {language === 'tl' ? 'Pro Feature: CSV Bulk Import' : 'Pro Feature: CSV Bulk Import'}
+          </MessageBarTitle>
+          <MessageBarBody>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+              <span>
+                {language === 'tl'
+                  ? 'Ang CSV Bulk Import ay eksklusibo sa mga naka-Tindahan Pro o Negosyo Plus. Mag-upgrade upang ma-import agad ang buong imbentaryo.'
+                  : 'CSV Bulk Import is exclusive to Tindahan Pro and Negosyo Plus plans. Upgrade to quickly import your full product catalog.'}
+              </span>
+              <Button size="small" appearance="primary" onClick={openUpgradeModal}>
+                {language === 'tl' ? 'Mag-upgrade sa Pro' : 'Upgrade to Pro'}
+              </Button>
+            </div>
+          </MessageBarBody>
+        </MessageBar>
+      )}
 
       {importResult && (
         <MessageBar intent="success" style={{ marginBottom: '16px' }}>

@@ -24,6 +24,7 @@ import { db, type ProductRecord } from '../db/db';
 import { enqueueSync } from '../sync/syncEngine';
 import { useAuthStore } from '../state/authStore';
 import { useTranslation } from '../state/languageStore';
+import { useSubscriptionStore } from '../state/subscriptionStore';
 
 interface QuickRegisterProductDialogProps {
   isOpen: boolean;
@@ -137,6 +138,14 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
     }
     if (priceNum <= 0) {
       alert(t.barcode.priceLabel);
+      return;
+    }
+
+    const currentCount = await db.products.count();
+    const { canAddProduct, openUpgradeModal } = useSubscriptionStore.getState();
+    if (!canAddProduct(currentCount)) {
+      alert('Limit reached for Libre tier (50 products max). Please upgrade to Tindahan Pro or Negosyo Plus.');
+      openUpgradeModal();
       return;
     }
 

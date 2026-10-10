@@ -13,6 +13,7 @@ public interface IApplicationDbContext
     DbSet<Sale> Sales { get; }
     DbSet<SaleItem> SaleItems { get; }
     DbSet<GCashTxn> GCashTransactions { get; }
+    DbSet<PaymentHistory> PaymentHistories { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }

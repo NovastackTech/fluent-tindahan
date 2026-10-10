@@ -39,6 +39,7 @@ import { useTranslation } from '../state/languageStore';
 import { BarcodeScannerModal } from '../components/BarcodeScannerModal';
 import { QuickRegisterProductDialog } from '../components/QuickRegisterProductDialog';
 import { playScanBeep } from '../utils/sound';
+import { useSubscriptionStore } from '../state/subscriptionStore';
 import type { NavTab } from '../components/Navigation';
 
 interface InventoryPageProps {
@@ -304,8 +305,9 @@ const useStyles = makeStyles({
 
 export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
   const styles = useStyles();
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const tenantId = useAuthStore((s) => s.tenantId);
+  const { tier, canAddProduct, openUpgradeModal } = useSubscriptionStore();
 
   // Live Query from local Dexie database
   const products = useLiveQuery(() => db.products.toArray(), []) || [];
@@ -487,6 +489,15 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
 
   // Open Add Product Modal
   const openAddModal = () => {
+    if (!canAddProduct(products.length)) {
+      alert(
+        language === 'tl'
+          ? 'Naabot na ang limitasyon ng Libreng plano (50 produkto). Mag-upgrade sa Tindahan Pro o Negosyo Plus upang magdagdag pa.'
+          : 'Limit reached for Libre plan (50 products maximum). Please upgrade to Tindahan Pro or Negosyo Plus to add more products.'
+      );
+      openUpgradeModal();
+      return;
+    }
     setModalMode('add');
     setEditingProduct(null);
     setFormName('');
@@ -530,6 +541,15 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
 
     try {
       if (modalMode === 'add') {
+        if (!canAddProduct(products.length)) {
+          alert(
+            language === 'tl'
+              ? 'Naabot na ang limitasyon ng Libreng plano (50 produkto). Mag-upgrade sa Tindahan Pro o Negosyo Plus upang magdagdag pa.'
+              : 'Limit reached for Libre plan (50 products maximum). Please upgrade to Tindahan Pro or Negosyo Plus to add more products.'
+          );
+          openUpgradeModal();
+          return;
+        }
         const newProduct: ProductRecord = {
           id: crypto.randomUUID(),
           tenantId,
@@ -648,7 +668,19 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
             <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
               {t.inventory.totalProducts}
             </Text>
-            <div className={styles.metricValue}>{metrics.totalProducts}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div className={styles.metricValue}>
+                {metrics.totalProducts}
+                {tier === 'Libre' && (
+                  <span style={{ fontSize: '14px', fontWeight: 'normal', color: tokens.colorNeutralForeground3 }}> / 50</span>
+                )}
+              </div>
+              {tier === 'Libre' && metrics.totalProducts >= 45 && (
+                <Badge appearance="tint" color="warning" size="small">
+                  {metrics.totalProducts >= 50 ? 'Puno na' : 'Halos Puno'}
+                </Badge>
+              )}
+            </div>
             <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>
               {metrics.inStockCount} {t.inventory.inStockBadge.toLowerCase()} • {metrics.outOfStockCount} {t.inventory.outOfStockBadge.toLowerCase()}
             </Text>
