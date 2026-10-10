@@ -35,6 +35,26 @@ npm run dev -- --host 127.0.0.1 --port 5173
 ```
 - Web Application: `http://localhost:5173`
 
+#### 3. Testing PWA Offline & Service Worker (`vite build && vite preview`)
+By default, the Vite dev server disables the service worker (`devOptions.enabled = false`) to avoid caching issues on `localhost:5173` during active API and sync development.
+
+To test full service worker caching, offline persistence, and install prompts:
+```powershell
+cd frontend
+npm run build
+npm run preview
+```
+- Preview URL: `http://localhost:4173`
+- Open Chrome/Edge DevTools (`F12`) -> **Application** -> **Service Workers** to inspect cache storage and simulate offline mode.
+
+*(Optional)* If you wish to test the service worker during dev mode:
+```powershell
+# PowerShell
+$env:PWA_DEV="true"; npm run dev
+# Linux / macOS
+PWA_DEV=true npm run dev
+```
+
 ---
 
 ## 📦 Features & Data

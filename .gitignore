@@ -1,0 +1,15 @@
+# .NET Build and Test outputs
+**/bin/
+**/obj/
+**/TestResults/
+
+# Visual Studio / IDE
+.vs/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Frontend dev service worker artifacts
+frontend/dev-dist/

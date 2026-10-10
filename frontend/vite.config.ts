@@ -7,10 +7,12 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
       injectRegister: 'auto',
+      // Gated to prevent caching issues on localhost:5173 during normal dev.
+      // Set PWA_DEV=true to test SW in dev mode, or test via 'npm run build && npm run preview'.
       devOptions: {
-        enabled: true
+        enabled: process.env.PWA_DEV === 'true'
       },
       includeAssets: [
         'favicon.ico',
