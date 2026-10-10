@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { initServiceWorker, reloadAppForUpdate, _resetUpdateSWFunctionForTest, _getUpdateIntervalIdForTest } from './registerServiceWorker';
+import {
+  initServiceWorker,
+  reloadAppForUpdate,
+  notifySaleFinished,
+  _resetUpdateSWFunctionForTest,
+  _getUpdateIntervalIdForTest
+} from './registerServiceWorker';
 import { usePwaStore } from '../state/pwaStore';
 import { useCartStore } from '../state/cartStore';
 import { registerSW } from 'virtual:pwa-register';
@@ -148,7 +154,8 @@ describe('registerServiceWorker', () => {
     });
   });
 
-  it('defers reload when cart has items, then reloads automatically as soon as items.length becomes 0', async () => {
+  it('defers reload when cart has items, then reloads automatically after debounce when cart is cleared', async () => {
+    vi.useFakeTimers();
     const originalLocation = window.location;
     const reloadMock = vi.fn();
     Object.defineProperty(window, 'location', {
@@ -174,10 +181,67 @@ describe('registerServiceWorker', () => {
     expect(reloadMock).not.toHaveBeenCalled();
     expect(usePwaStore.getState().reloadDeferred).toBe(true);
 
-    // Sale completes: cart is cleared
+    // Cart is cleared without active sale
     useCartStore.getState().clearCart();
 
-    // Now reload is immediately triggered!
+    // Debounce is in flight (500ms), not reloaded synchronously
+    expect(reloadMock).not.toHaveBeenCalled();
+
+    // Advance 500ms
+    vi.advanceTimersByTime(500);
+
+    // Now reload is safely triggered!
+    expect(reloadMock).toHaveBeenCalledTimes(1);
+    expect(usePwaStore.getState().reloadDeferred).toBe(false);
+
+    Object.defineProperty(window, 'location', {
+      value: originalLocation,
+      configurable: true,
+      writable: true
+    });
+    vi.useRealTimers();
+  });
+
+  it('does not reload while isSaleInProgress or hasActiveReceipt is true, and reloads only after notifySaleFinished', async () => {
+    const originalLocation = window.location;
+    const reloadMock = vi.fn();
+    Object.defineProperty(window, 'location', {
+      value: { ...originalLocation, reload: reloadMock },
+      configurable: true,
+      writable: true
+    });
+
+    useCartStore.getState().addItem({ id: 'p1', name: 'Open Sale Item', price: 50 });
+
+    Object.defineProperty(navigator, 'serviceWorker', {
+      value: { register: vi.fn() },
+      configurable: true,
+      writable: true
+    });
+
+    await initServiceWorker();
+
+    const options = (registerSW as any).mock.calls[0][0];
+    options.onNeedReload();
+    expect(usePwaStore.getState().reloadDeferred).toBe(true);
+
+    // Sale begins: transaction is active and receipt modal is displayed
+    usePwaStore.getState().setIsSaleInProgress(true);
+    usePwaStore.getState().setHasActiveReceipt(true);
+    useCartStore.getState().clearCart();
+
+    // Even though cart was cleared, reload must NOT fire while receipt is active
+    expect(reloadMock).not.toHaveBeenCalled();
+
+    // Dexie write completes, sale is no longer writing
+    usePwaStore.getState().setIsSaleInProgress(false);
+    expect(reloadMock).not.toHaveBeenCalled();
+
+    // Cashier dismisses receipt modal
+    usePwaStore.getState().setHasActiveReceipt(false);
+    notifySaleFinished();
+
+    // Now reload is safely triggered
     expect(reloadMock).toHaveBeenCalledTimes(1);
     expect(usePwaStore.getState().reloadDeferred).toBe(false);
 

@@ -5,11 +5,43 @@ let updateSWFunction: ((reloadPage?: boolean) => Promise<void>) | null = null;
 let updateIntervalId: ReturnType<typeof setInterval> | null = null;
 let initPromise: Promise<void> | null = null;
 let deferredReloadUnsubscribe: (() => void) | null = null;
+let deferredReloadTimer: ReturnType<typeof setTimeout> | null = null;
+
+function executeReload(): void {
+  if (deferredReloadTimer) {
+    clearTimeout(deferredReloadTimer);
+    deferredReloadTimer = null;
+  }
+  if (deferredReloadUnsubscribe) {
+    deferredReloadUnsubscribe();
+    deferredReloadUnsubscribe = null;
+  }
+  usePwaStore.getState().setReloadDeferred(false);
+  if (typeof window !== 'undefined') {
+    window.location.reload();
+  }
+}
 
 /**
- * Defers reload until the active cart is empty (e.g. sale completes or is cleared).
- * Once items.length === 0, immediately triggers window.location.reload()
- * so the page doesn't continue running old JS that could 404 on evicted lazy chunks.
+ * Notifies the PWA coordinator that a sale has completed and the receipt is dismissed.
+ * If an update reload was deferred, triggers the reload once the active sale lifecycle is finished.
+ */
+export function notifySaleFinished(): void {
+  const pwaState = usePwaStore.getState();
+  const cartState = useCartStore.getState();
+  if (
+    pwaState.reloadDeferred &&
+    cartState.items.length === 0 &&
+    !pwaState.isSaleInProgress &&
+    !pwaState.hasActiveReceipt
+  ) {
+    executeReload();
+  }
+}
+
+/**
+ * Defers reload until the active transaction is finished (sale written to Dexie,
+ * receipt dismissed, and cart empty).
  */
 export function triggerDeferredReloadSubscription(): void {
   usePwaStore.getState().setReloadDeferred(true);
@@ -17,14 +49,30 @@ export function triggerDeferredReloadSubscription(): void {
   if (!deferredReloadUnsubscribe) {
     deferredReloadUnsubscribe = useCartStore.subscribe((state) => {
       if (state.items.length === 0) {
-        if (deferredReloadUnsubscribe) {
-          deferredReloadUnsubscribe();
-          deferredReloadUnsubscribe = null;
+        const pwaState = usePwaStore.getState();
+        // If a sale write is currently resolving or receipt modal is visible,
+        // do not reload yet; wait for explicit notifySaleFinished() once receipt is dismissed.
+        if (pwaState.isSaleInProgress || pwaState.hasActiveReceipt) {
+          return;
         }
-        usePwaStore.getState().setReloadDeferred(false);
-        if (typeof window !== 'undefined') {
-          window.location.reload();
+
+        // Defer with setTimeout + re-check rather than reloading synchronously on any empty-cart transition.
+        if (deferredReloadTimer) {
+          clearTimeout(deferredReloadTimer);
         }
+        deferredReloadTimer = setTimeout(() => {
+          deferredReloadTimer = null;
+          const currentPwa = usePwaStore.getState();
+          const currentCart = useCartStore.getState();
+          if (
+            currentPwa.reloadDeferred &&
+            currentCart.items.length === 0 &&
+            !currentPwa.isSaleInProgress &&
+            !currentPwa.hasActiveReceipt
+          ) {
+            executeReload();
+          }
+        }, 500);
       }
     });
   }
@@ -61,8 +109,9 @@ export function initServiceWorker(): Promise<void> {
         },
         onNeedReload() {
           const hasLocalCart = useCartStore.getState().items.length > 0;
-          if (hasLocalCart) {
-            console.warn('[PWA] Service Worker update active, but reload deferred until current cart is completed.');
+          const pwaState = usePwaStore.getState();
+          if (hasLocalCart || pwaState.isSaleInProgress || pwaState.hasActiveReceipt) {
+            console.warn('[PWA] Service Worker update active, but reload deferred until current transaction is completed.');
             triggerDeferredReloadSubscription();
             return;
           }
@@ -118,11 +167,17 @@ export function _resetUpdateSWFunctionForTest(): void {
     clearInterval(updateIntervalId);
     updateIntervalId = null;
   }
+  if (deferredReloadTimer) {
+    clearTimeout(deferredReloadTimer);
+    deferredReloadTimer = null;
+  }
   if (deferredReloadUnsubscribe) {
     deferredReloadUnsubscribe();
     deferredReloadUnsubscribe = null;
   }
   usePwaStore.getState().setReloadDeferred(false);
+  usePwaStore.getState().setIsSaleInProgress(false);
+  usePwaStore.getState().setHasActiveReceipt(false);
 }
 
 /**

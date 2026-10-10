@@ -15,9 +15,13 @@ import { PwaUpdateToast } from './components/PwaUpdateToast';
 import { PrivacyConsentDialog } from './components/PrivacyConsentDialog';
 import { initSyncEngine } from './sync/syncEngine';
 import { seedDexieDatabaseIfNeeded } from './db/seedData';
+import { useCartStore } from './state/cartStore';
 import { usePwaStore, initPwaListeners } from './state/pwaStore';
-import { initServiceWorker } from './pwa/registerServiceWorker';
+import { initServiceWorker, triggerDeferredReloadSubscription } from './pwa/registerServiceWorker';
 import { initPwaTabCoordinator } from './pwa/pwaTabCoordinator';
+
+export const PRELOAD_ERROR_STORAGE_KEY = 'fluent_tindahan_last_preload_reload';
+export const PRELOAD_RELOAD_COOLDOWN_MS = 15000;
 
 // Route-level code splitting for performance on low-end Android devices (Section 1 & 11)
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then(m => ({ default: m.DashboardPage })));
@@ -67,14 +71,6 @@ export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<NavTab>(getInitialNavTab);
 
   const handleTabChange = (newTab: NavTab) => {
-    // If an update was deferred, force a reload directly to the new tab URL
-    // to ensure the new version's chunk is loaded and avoid 404s on evicted caches
-    const reloadDeferred = usePwaStore.getState().reloadDeferred;
-    if (reloadDeferred && typeof window !== 'undefined') {
-      window.location.href = `/?tab=${newTab}`;
-      return;
-    }
-
     setActiveTab(newTab);
     if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
       const url = new URL(window.location.href);
@@ -85,9 +81,36 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     // Graceful recovery if Vite dynamic import chunk fails due to cache update
-    const handlePreloadError = () => {
-      console.warn('[PWA] Vite preload chunk error detected, reloading to fetch latest assets...');
-      window.location.reload();
+    const handlePreloadError = (event: Event) => {
+      event.preventDefault();
+      console.warn('[PWA] Vite dynamic chunk preload error detected.');
+
+      // 1. One-shot / cooldown guard to prevent infinite reload loops
+      const lastReload = typeof window !== 'undefined' && window.sessionStorage
+        ? Number(window.sessionStorage.getItem(PRELOAD_ERROR_STORAGE_KEY) || '0')
+        : 0;
+      const now = Date.now();
+      if (now - lastReload < PRELOAD_RELOAD_COOLDOWN_MS) {
+        console.error('[PWA] Chunk preload failed but reload was already attempted recently; avoiding reload loop.');
+        return;
+      }
+
+      // 2. Skip/defer reload if cart currently has items or sale in progress
+      const hasCart = useCartStore.getState().items.length > 0;
+      const pwaState = usePwaStore.getState();
+      if (hasCart || pwaState.isSaleInProgress || pwaState.hasActiveReceipt) {
+        console.warn('[PWA] Chunk preload error during active cart or sale; deferring reload until transaction completes.');
+        triggerDeferredReloadSubscription();
+        return;
+      }
+
+      // 3. Record reload timestamp in sessionStorage and trigger reload
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        window.sessionStorage.setItem(PRELOAD_ERROR_STORAGE_KEY, String(now));
+      }
+      if (typeof window !== 'undefined') {
+        window.location.reload();
+      }
     };
     window.addEventListener('vite:preloadError', handlePreloadError);
 

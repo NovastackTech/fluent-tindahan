@@ -1,13 +1,16 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { FluentProvider } from '@fluentui/react-components';
 import { POSPage } from './POSPage';
 import { sariSariLightTheme } from '../theme/theme';
 import { db } from '../db/db';
 import { useCartStore } from '../state/cartStore';
+import { usePwaStore } from '../state/pwaStore';
+import { triggerDeferredReloadSubscription, _resetUpdateSWFunctionForTest } from '../pwa/registerServiceWorker';
 
 describe('POSPage', () => {
   beforeEach(async () => {
+    _resetUpdateSWFunctionForTest();
     useCartStore.getState().clearCart();
     await db.products.clear();
     await db.sales.clear();
@@ -366,6 +369,71 @@ describe('POSPage', () => {
     // Form should close, select should be visible again
     expect(screen.queryByText(/Magrehistro ng Bagong Suki|Register New Debtor/i)).not.toBeInTheDocument();
     expect(screen.getByRole('combobox')).toBeInTheDocument();
+  });
+
+  it('persists completed sale in Dexie before triggering reload when update reload is deferred', async () => {
+    const originalLocation = window.location;
+    const reloadMock = vi.fn();
+    Object.defineProperty(window, 'location', {
+      value: { ...originalLocation, reload: reloadMock },
+      configurable: true,
+      writable: true
+    });
+
+    renderPOS();
+
+    await waitFor(() => {
+      expect(screen.getByText('Lucky Me Pancit Canton Kalamansi')).toBeInTheDocument();
+    });
+
+    // 1. Add item to cart
+    fireEvent.click(screen.getByText('Lucky Me Pancit Canton Kalamansi'));
+    expect(useCartStore.getState().items).toHaveLength(1);
+
+    // 2. An update is active: reload is deferred
+    triggerDeferredReloadSubscription();
+    expect(usePwaStore.getState().reloadDeferred).toBe(true);
+
+    // 3. Open checkout dialog
+    const payBtn = screen.getByRole('button', { name: /Bayad|Pay/i });
+    fireEvent.click(payBtn);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    // 4. Complete checkout
+    const completeBtn = screen.getByRole('button', { name: /Kumpletuhin ang Benta|Complete Sale/i });
+    fireEvent.click(completeBtn);
+
+    // 5. Verify that sale is persisted in Dexie
+    await waitFor(async () => {
+      const sales = await db.sales.toArray();
+      expect(sales).toHaveLength(1);
+      expect(sales[0].totalAmount).toBe(16);
+      expect(sales[0].paymentMethod).toBe('Cash');
+    });
+
+    // 6. Verify receipt modal is open and hasActiveReceipt is true
+    await waitFor(() => {
+      const watermarks = screen.getAllByText(/NOT AN OFFICIAL RECEIPT/i);
+      expect(watermarks.length).toBeGreaterThan(0);
+      expect(usePwaStore.getState().hasActiveReceipt).toBe(true);
+    });
+
+    // Reload must NOT have fired while receipt is open!
+    expect(reloadMock).not.toHaveBeenCalled();
+
+    // 7. Cashier dismisses receipt modal
+    const closeBtn = screen.getByRole('button', { name: /Isara|Close/i });
+    fireEvent.click(closeBtn);
+
+    // 8. Verify reload is safely triggered AFTER sale was persisted and receipt closed
+    expect(reloadMock).toHaveBeenCalledTimes(1);
+    expect(usePwaStore.getState().reloadDeferred).toBe(false);
+
+    Object.defineProperty(window, 'location', {
+      value: originalLocation,
+      configurable: true,
+      writable: true
+    });
   });
 });
 

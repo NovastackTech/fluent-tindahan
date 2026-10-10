@@ -20,6 +20,8 @@ export interface PwaState {
   offlineReady: boolean;
   otherTabsHaveCart: boolean;
   reloadDeferred: boolean;
+  isSaleInProgress: boolean;
+  hasActiveReceipt: boolean;
 
   setDeferredPrompt: (e: BeforeInstallPromptEvent | null) => void;
   promptInstall: () => Promise<boolean>;
@@ -28,6 +30,8 @@ export interface PwaState {
   setOfflineReady: (ready: boolean) => void;
   setOtherTabsHaveCart: (have: boolean) => void;
   setReloadDeferred: (deferred: boolean) => void;
+  setIsSaleInProgress: (inProgress: boolean) => void;
+  setHasActiveReceipt: (active: boolean) => void;
   checkEnvironment: () => void;
 }
 
@@ -60,6 +64,8 @@ export const usePwaStore = create<PwaState>((set, get) => ({
   offlineReady: false,
   otherTabsHaveCart: false,
   reloadDeferred: false,
+  isSaleInProgress: false,
+  hasActiveReceipt: false,
 
   setDeferredPrompt: (prompt) => {
     set({
@@ -111,6 +117,8 @@ export const usePwaStore = create<PwaState>((set, get) => ({
   setOfflineReady: (ready) => set({ offlineReady: ready }),
   setOtherTabsHaveCart: (have) => set({ otherTabsHaveCart: have }),
   setReloadDeferred: (deferred) => set({ reloadDeferred: deferred }),
+  setIsSaleInProgress: (inProgress) => set({ isSaleInProgress: inProgress }),
+  setHasActiveReceipt: (active) => set({ hasActiveReceipt: active }),
 
   checkEnvironment: () => {
     const standalone = detectIsStandalone();
