@@ -2,9 +2,8 @@ import '@testing-library/jest-dom';
 import 'fake-indexeddb/auto';
 import { vi, beforeEach } from 'vitest';
 
-// Provide localStorage mock for Vitest jsdom environment
-// (jsdom 29 does not provide localStorage by default)
-const localStorageMock = (() => {
+// Provide storage mocks for Vitest jsdom environment
+const createStorageMock = () => {
   let store: Record<string, string> = {};
   return {
     getItem: (key: string) => store[key] ?? null,
@@ -20,13 +19,23 @@ const localStorageMock = (() => {
     key: (index: number) => Object.keys(store)[index] ?? null,
     get length() { return Object.keys(store).length; }
   };
-})();
+};
+
+const localStorageMock = createStorageMock();
+const sessionStorageMock = createStorageMock();
 
 Object.defineProperty(window, 'localStorage', {
   value: localStorageMock,
   writable: true,
   configurable: true
 });
+
+Object.defineProperty(window, 'sessionStorage', {
+  value: sessionStorageMock,
+  writable: true,
+  configurable: true
+});
+
 
 // Mock matchMedia for FluentUI and desktop responsive checks
 Object.defineProperty(window, 'matchMedia', {
@@ -86,8 +95,10 @@ class MockResizeObserver {
 (window as any).ResizeObserver = MockResizeObserver;
 (globalThis as any).ResizeObserver = MockResizeObserver;
 
-// Clear localStorage and mocks before each test
+// Clear storages and mocks before each test
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
   vi.clearAllMocks();
 });
+

@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+# Coverage
+coverage/
+*.lcov
+lcov-report/
+
+
 # Dev distribution & Service Worker
 dev-dist
 
