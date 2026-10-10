@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("FluentTindahan.WebApi")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+8e041bf72bbc791e31a849b359ac18ee319401bf")]
 [assembly: System.Reflection.AssemblyProductAttribute("FluentTindahan.WebApi")]
 [assembly: System.Reflection.AssemblyTitleAttribute("FluentTindahan.WebApi")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

@@ -16,12 +16,14 @@ import {
   CloudCheckmarkRegular,
   CloudDismissRegular,
   ArrowSyncRegular,
-  GlobeRegular
+  GlobeRegular,
+  ArrowDownloadRegular
 } from '@fluentui/react-icons';
 import { useThemeStore } from '../state/themeStore';
 import { useSyncStore, processSyncQueue } from '../sync/syncEngine';
 import { useAuthStore } from '../state/authStore';
 import { useTranslation } from '../state/languageStore';
+import { usePwaStore } from '../state/pwaStore';
 
 const useStyles = makeStyles({
   header: {
@@ -83,6 +85,7 @@ export const Header: React.FC = () => {
   const { isOnline, isSyncing, pendingCount, deadLetterCount } = useSyncStore();
   const businessName = useAuthStore((s) => s.businessName);
   const { t, language, toggleLanguage } = useTranslation();
+  const { isInstallable, isStandalone, promptInstall } = usePwaStore();
 
   const handleManualSync = () => {
     if (isOnline) {
@@ -175,6 +178,18 @@ export const Header: React.FC = () => {
               {language === 'tl' ? '🇵🇭 TL' : '🇺🇸 EN'}
             </Button>
           </Tooltip>
+
+          {/* PWA Install shortcut button */}
+          {isInstallable && !isStandalone && (
+            <Tooltip content={t.pwa.installHeaderTooltip} relationship="label">
+              <Button
+                appearance="subtle"
+                size="small"
+                icon={<ArrowDownloadRegular primaryFill={tokens.colorPaletteGreenForeground1} />}
+                onClick={() => promptInstall()}
+              />
+            </Tooltip>
+          )}
 
           {/* Theme mode cycle: Light -> Dark -> System -> Light */}
           <Tooltip

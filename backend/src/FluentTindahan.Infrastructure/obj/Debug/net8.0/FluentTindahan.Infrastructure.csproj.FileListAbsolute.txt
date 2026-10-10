@@ -17,3 +17,4 @@ D:\Projects\fluent-tindahan\backend\src\FluentTindahan.Infrastructure\obj\Debug\
 D:\Projects\fluent-tindahan\backend\src\FluentTindahan.Infrastructure\obj\Debug\net8.0\FluentTindahan.Infrastructure.pdb
 D:\Projects\fluent-tindahan\backend\src\FluentTindahan.Infrastructure\obj\Debug\net8.0\FluentTindahan.Infrastructure.genruntimeconfig.cache
 D:\Projects\fluent-tindahan\backend\src\FluentTindahan.Infrastructure\obj\Debug\net8.0\ref\FluentTindahan.Infrastructure.dll
+D:\Projects\fluent-tindahan\backend\src\FluentTindahan.Infrastructure\obj\Debug\net8.0\FluentTindahan.Infrastructure.sourcelink.json

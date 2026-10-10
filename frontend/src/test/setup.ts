@@ -60,6 +60,13 @@ class MockResizeObserver {
 (window as any).ResizeObserver = MockResizeObserver;
 (globalThis as any).ResizeObserver = MockResizeObserver;
 
+// Mock virtual:pwa-register for Vitest
+vi.mock('virtual:pwa-register', () => ({
+  registerSW: vi.fn().mockImplementation((_options) => {
+    return vi.fn().mockResolvedValue(undefined);
+  })
+}));
+
 // Clear localStorage before each test
 beforeEach(() => {
   localStorage.clear();

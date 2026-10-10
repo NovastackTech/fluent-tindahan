@@ -374,6 +374,27 @@ export interface Translations {
     acceptBtn: string;
     declineBtn: string;
   };
+  pwa: {
+    installTitle: string;
+    installDesc: string;
+    installBtn: string;
+    installedBadge: string;
+    installUnavailable: string;
+    dismissBtn: string;
+    iosInstructionsTitle: string;
+    iosInstructionsDesc: string;
+    updateTitle: string;
+    updateDesc: string;
+    updateBtn: string;
+    pwaSection: string;
+    pwaDesc: string;
+    appStatus: string;
+    statusInstalled: string;
+    statusBrowser: string;
+    installHeaderTooltip: string;
+    browserInstallTip: string;
+    browserInstallNote: string;
+  };
 }
 
 export const translations: Record<Language, Translations> = {
@@ -750,6 +771,27 @@ export const translations: Record<Language, Translations> = {
       description: 'Sumusunod ang Fluent Tindahan sa Philippine Data Privacy Act of 2012. Ang iyong mga talaan ng benta, suki, at GCash ay ligtas na nakatago sa iyong lokal na device.',
       acceptBtn: 'Sumasang-ayon Ako',
       declineBtn: 'Tanggihan'
+    },
+    pwa: {
+      installTitle: 'I-install ang Fluent Tindahan App',
+      installDesc: 'Gamitin kahit walang internet! Magkakaroon ng sariling icon sa iyong home screen at mas mabilis magbukas.',
+      installBtn: 'I-install ang App',
+      installedBadge: 'Naka-install na (PWA)',
+      installUnavailable: 'Nasa browser mode o naka-install na',
+      dismissBtn: 'Mamaya na',
+      iosInstructionsTitle: 'Paano I-install sa iPhone/iPad:',
+      iosInstructionsDesc: 'Pindutin ang Share button (📤) sa Safari at piliin ang "Add to Home Screen" (➕).',
+      updateTitle: 'May Bagong Bersyon ng App!',
+      updateDesc: 'May bagong update ang Fluent Tindahan na may mga bagong feature at bilis.',
+      updateBtn: 'I-reload para Mag-update',
+      pwaSection: 'PWA (Progressive Web App)',
+      pwaDesc: 'I-install ang app sa iyong Android, iPhone, o computer para sa buong offline experience.',
+      appStatus: 'Katayuan ng App:',
+      statusInstalled: 'Naka-install bilang Standalone App',
+      statusBrowser: 'Tumatakbo sa Web Browser',
+      installHeaderTooltip: 'I-install ang Fluent Tindahan sa device',
+      browserInstallTip: 'Para i-install: Pindutin ang install icon sa address bar ng iyong browser (itaas-kanan), o buksan ang browser menu (tatlong tuldok ⋮) at piliin ang "Install Fluent Tindahan" o "Add to Home screen".',
+      browserInstallNote: 'Tandaan: Hindi puwedeng mag-install kung nasa Incognito / Private window.'
     }
   },
   en: {
@@ -1125,6 +1167,27 @@ export const translations: Record<Language, Translations> = {
       description: 'Fluent Tindahan complies with the Philippine Data Privacy Act of 2012. Your sales, customer, and GCash records are kept securely on your local device.',
       acceptBtn: 'I Agree',
       declineBtn: 'Decline'
+    },
+    pwa: {
+      installTitle: 'Install Fluent Tindahan App',
+      installDesc: 'Works 100% offline! Get a home screen icon, faster launch times, and full-screen POS experience.',
+      installBtn: 'Install App',
+      installedBadge: 'Installed (PWA)',
+      installUnavailable: 'Running in browser or already installed',
+      dismissBtn: 'Maybe later',
+      iosInstructionsTitle: 'How to install on iOS / iPad:',
+      iosInstructionsDesc: 'Tap the Share icon (📤) in Safari and choose "Add to Home Screen" (➕).',
+      updateTitle: 'New App Version Available!',
+      updateDesc: 'An updated version of Fluent Tindahan is ready with enhancements and performance fixes.',
+      updateBtn: 'Reload & Update',
+      pwaSection: 'Progressive Web App (PWA)',
+      pwaDesc: 'Install the app on your Android phone, iPhone, or PC for a native, offline-ready experience.',
+      appStatus: 'App Environment:',
+      statusInstalled: 'Installed as Standalone PWA',
+      statusBrowser: 'Running in Web Browser',
+      installHeaderTooltip: 'Install Fluent Tindahan to device',
+      browserInstallTip: 'To install: Click the install icon in your browser address bar (top right), or click the browser menu (three dots ⋮) and select "Install Fluent Tindahan" or "Add to Home screen".',
+      browserInstallNote: 'Note: PWA installation is not available in Incognito / Private browsing windows.'
     }
   }
 };

@@ -10,9 +10,13 @@ import { useThemeStore } from './state/themeStore';
 import { Header } from './components/Header';
 import { Navigation, type NavTab } from './components/Navigation';
 import { OfflineSyncBanner } from './components/OfflineSyncBanner';
+import { PwaInstallBanner } from './components/PwaInstallBanner';
+import { PwaUpdateToast } from './components/PwaUpdateToast';
 import { PrivacyConsentDialog } from './components/PrivacyConsentDialog';
 import { initSyncEngine } from './sync/syncEngine';
 import { seedDexieDatabaseIfNeeded } from './db/seedData';
+import { initPwaListeners } from './state/pwaStore';
+import { initServiceWorker } from './pwa/registerServiceWorker';
 
 // Route-level code splitting for performance on low-end Android devices (Section 1 & 11)
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then(m => ({ default: m.DashboardPage })));
@@ -22,6 +26,21 @@ const UtangPage = lazy(() => import('./pages/UtangPage').then(m => ({ default: m
 const GCashPage = lazy(() => import('./pages/GCashPage').then(m => ({ default: m.GCashPage })));
 const ImportPage = lazy(() => import('./pages/ImportPage').then(m => ({ default: m.ImportPage })));
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
+
+export function getInitialNavTab(): NavTab {
+  if (typeof window === 'undefined') return 'dashboard';
+  const params = new URLSearchParams(window.location.search);
+  const tabParam = params.get('tab') as NavTab | null;
+  const validTabs: NavTab[] = ['dashboard', 'pos', 'inventory', 'utang', 'gcash', 'import', 'settings'];
+  if (tabParam && validTabs.includes(tabParam)) {
+    return tabParam;
+  }
+  const path = window.location.pathname.replace(/^\//, '').toLowerCase() as NavTab;
+  if (validTabs.includes(path)) {
+    return path;
+  }
+  return 'dashboard';
+}
 
 const useStyles = makeStyles({
   appContainer: {
@@ -44,7 +63,16 @@ const useStyles = makeStyles({
 export const App: React.FC = () => {
   const styles = useStyles();
   const isDarkMode = useThemeStore((s) => s.isDarkMode);
-  const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
+  const [activeTab, setActiveTab] = useState<NavTab>(getInitialNavTab);
+
+  const handleTabChange = (newTab: NavTab) => {
+    setActiveTab(newTab);
+    if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', newTab);
+      window.history.replaceState(null, '', url.pathname + url.search);
+    }
+  };
 
   useEffect(() => {
     // 1. Initialize local Dexie database seed
@@ -52,12 +80,22 @@ export const App: React.FC = () => {
 
     // 2. Initialize offline sync engine and storage persistence
     initSyncEngine();
+
+    // 3. Initialize PWA event listeners and Service Worker
+    const cleanupPwa = initPwaListeners();
+    initServiceWorker().catch(console.error);
+
+    return () => {
+      cleanupPwa();
+    };
   }, []);
 
   return (
     <FluentProvider theme={isDarkMode ? sariSariDarkTheme : sariSariLightTheme}>
       <div className={styles.appContainer}>
         <Header />
+        <PwaUpdateToast />
+        <PwaInstallBanner />
         <OfflineSyncBanner />
 
         <main className={styles.content}>
@@ -66,9 +104,9 @@ export const App: React.FC = () => {
               <Spinner label="Naglo-load..." size="medium" />
             </div>
           }>
-            {activeTab === 'dashboard' && <DashboardPage onNavigate={setActiveTab} />}
+            {activeTab === 'dashboard' && <DashboardPage onNavigate={handleTabChange} />}
             {activeTab === 'pos' && <POSPage />}
-            {activeTab === 'inventory' && <InventoryPage onNavigate={setActiveTab} />}
+            {activeTab === 'inventory' && <InventoryPage onNavigate={handleTabChange} />}
             {activeTab === 'utang' && <UtangPage />}
             {activeTab === 'gcash' && <GCashPage />}
             {activeTab === 'import' && <ImportPage />}
@@ -76,7 +114,7 @@ export const App: React.FC = () => {
           </Suspense>
         </main>
 
-        <Navigation activeTab={activeTab} onTabChange={setActiveTab} />
+        <Navigation activeTab={activeTab} onTabChange={handleTabChange} />
         <PrivacyConsentDialog />
       </div>
     </FluentProvider>

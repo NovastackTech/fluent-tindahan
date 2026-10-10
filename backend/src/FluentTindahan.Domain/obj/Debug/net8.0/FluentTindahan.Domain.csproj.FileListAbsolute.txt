@@ -9,3 +9,4 @@ D:\Projects\fluent-tindahan\backend\src\FluentTindahan.Domain\obj\Debug\net8.0\F
 D:\Projects\fluent-tindahan\backend\src\FluentTindahan.Domain\obj\Debug\net8.0\refint\FluentTindahan.Domain.dll
 D:\Projects\fluent-tindahan\backend\src\FluentTindahan.Domain\obj\Debug\net8.0\FluentTindahan.Domain.pdb
 D:\Projects\fluent-tindahan\backend\src\FluentTindahan.Domain\obj\Debug\net8.0\ref\FluentTindahan.Domain.dll
+D:\Projects\fluent-tindahan\backend\src\FluentTindahan.Domain\obj\Debug\net8.0\FluentTindahan.Domain.sourcelink.json

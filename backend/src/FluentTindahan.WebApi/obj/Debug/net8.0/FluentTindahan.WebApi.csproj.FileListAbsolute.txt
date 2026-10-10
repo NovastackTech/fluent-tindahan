@@ -131,3 +131,4 @@ D:\Projects\fluent-tindahan\backend\src\FluentTindahan.WebApi\obj\Debug\net8.0\r
 D:\Projects\fluent-tindahan\backend\src\FluentTindahan.WebApi\obj\Debug\net8.0\FluentTindahan.WebApi.pdb
 D:\Projects\fluent-tindahan\backend\src\FluentTindahan.WebApi\obj\Debug\net8.0\FluentTindahan.WebApi.genruntimeconfig.cache
 D:\Projects\fluent-tindahan\backend\src\FluentTindahan.WebApi\obj\Debug\net8.0\ref\FluentTindahan.WebApi.dll
+D:\Projects\fluent-tindahan\backend\src\FluentTindahan.WebApi\obj\Debug\net8.0\FluentTindahan.WebApi.sourcelink.json

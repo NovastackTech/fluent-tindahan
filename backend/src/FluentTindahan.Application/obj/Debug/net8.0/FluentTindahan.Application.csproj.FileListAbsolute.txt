@@ -13,3 +13,4 @@ D:\Projects\fluent-tindahan\backend\src\FluentTindahan.Application\obj\Debug\net
 D:\Projects\fluent-tindahan\backend\src\FluentTindahan.Application\obj\Debug\net8.0\refint\FluentTindahan.Application.dll
 D:\Projects\fluent-tindahan\backend\src\FluentTindahan.Application\obj\Debug\net8.0\FluentTindahan.Application.pdb
 D:\Projects\fluent-tindahan\backend\src\FluentTindahan.Application\obj\Debug\net8.0\ref\FluentTindahan.Application.dll
+D:\Projects\fluent-tindahan\backend\src\FluentTindahan.Application\obj\Debug\net8.0\FluentTindahan.Application.sourcelink.json

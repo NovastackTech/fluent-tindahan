@@ -128,3 +128,4 @@ D:\Projects\fluent-tindahan\backend\tests\FluentTindahan.UnitTests\bin\Debug\net
 D:\Projects\fluent-tindahan\backend\tests\FluentTindahan.UnitTests\bin\Debug\net8.0\Npgsql.EntityFrameworkCore.PostgreSQL.dll
 D:\Projects\fluent-tindahan\backend\tests\FluentTindahan.UnitTests\bin\Debug\net8.0\FluentTindahan.Infrastructure.dll
 D:\Projects\fluent-tindahan\backend\tests\FluentTindahan.UnitTests\bin\Debug\net8.0\FluentTindahan.Infrastructure.pdb
+D:\Projects\fluent-tindahan\backend\tests\FluentTindahan.UnitTests\obj\Debug\net8.0\FluentTindahan.UnitTests.sourcelink.json
