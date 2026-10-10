@@ -15,7 +15,7 @@ import { PwaUpdateToast } from './components/PwaUpdateToast';
 import { PrivacyConsentDialog } from './components/PrivacyConsentDialog';
 import { initSyncEngine } from './sync/syncEngine';
 import { seedDexieDatabaseIfNeeded } from './db/seedData';
-import { initPwaListeners } from './state/pwaStore';
+import { usePwaStore, initPwaListeners } from './state/pwaStore';
 import { initServiceWorker } from './pwa/registerServiceWorker';
 import { initPwaTabCoordinator } from './pwa/pwaTabCoordinator';
 
@@ -67,6 +67,14 @@ export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<NavTab>(getInitialNavTab);
 
   const handleTabChange = (newTab: NavTab) => {
+    // If an update was deferred, force a reload directly to the new tab URL
+    // to ensure the new version's chunk is loaded and avoid 404s on evicted caches
+    const reloadDeferred = usePwaStore.getState().reloadDeferred;
+    if (reloadDeferred && typeof window !== 'undefined') {
+      window.location.href = `/?tab=${newTab}`;
+      return;
+    }
+
     setActiveTab(newTab);
     if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
       const url = new URL(window.location.href);
@@ -76,6 +84,13 @@ export const App: React.FC = () => {
   };
 
   useEffect(() => {
+    // Graceful recovery if Vite dynamic import chunk fails due to cache update
+    const handlePreloadError = () => {
+      console.warn('[PWA] Vite preload chunk error detected, reloading to fetch latest assets...');
+      window.location.reload();
+    };
+    window.addEventListener('vite:preloadError', handlePreloadError);
+
     // 1. Initialize local Dexie database seed
     seedDexieDatabaseIfNeeded().catch(console.error);
 
@@ -88,6 +103,7 @@ export const App: React.FC = () => {
     initServiceWorker().catch(console.error);
 
     return () => {
+      window.removeEventListener('vite:preloadError', handlePreloadError);
       cleanupPwa();
       cleanupTabCoord();
     };

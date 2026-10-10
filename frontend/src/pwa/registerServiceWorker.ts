@@ -4,6 +4,31 @@ import { useCartStore } from '../state/cartStore';
 let updateSWFunction: ((reloadPage?: boolean) => Promise<void>) | null = null;
 let updateIntervalId: ReturnType<typeof setInterval> | null = null;
 let initPromise: Promise<void> | null = null;
+let deferredReloadUnsubscribe: (() => void) | null = null;
+
+/**
+ * Defers reload until the active cart is empty (e.g. sale completes or is cleared).
+ * Once items.length === 0, immediately triggers window.location.reload()
+ * so the page doesn't continue running old JS that could 404 on evicted lazy chunks.
+ */
+export function triggerDeferredReloadSubscription(): void {
+  usePwaStore.getState().setReloadDeferred(true);
+
+  if (!deferredReloadUnsubscribe) {
+    deferredReloadUnsubscribe = useCartStore.subscribe((state) => {
+      if (state.items.length === 0) {
+        if (deferredReloadUnsubscribe) {
+          deferredReloadUnsubscribe();
+          deferredReloadUnsubscribe = null;
+        }
+        usePwaStore.getState().setReloadDeferred(false);
+        if (typeof window !== 'undefined') {
+          window.location.reload();
+        }
+      }
+    });
+  }
+}
 
 /**
  * Initializes Service Worker registration via vite-plugin-pwa.
@@ -37,7 +62,8 @@ export function initServiceWorker(): Promise<void> {
         onNeedReload() {
           const hasLocalCart = useCartStore.getState().items.length > 0;
           if (hasLocalCart) {
-            console.warn('[PWA] Service Worker update active, but reload deferred due to open cart in this tab.');
+            console.warn('[PWA] Service Worker update active, but reload deferred until current cart is completed.');
+            triggerDeferredReloadSubscription();
             return;
           }
           if (typeof window !== 'undefined') {
@@ -62,8 +88,8 @@ export function initServiceWorker(): Promise<void> {
         }
       });
     } catch {
-    // In Vitest or non-Vite bundled environments, virtual:pwa-register is safely bypassed
-  }
+      // In Vitest or non-Vite bundled environments, virtual:pwa-register is safely bypassed
+    }
   })();
 
   return initPromise;
@@ -92,6 +118,19 @@ export function _resetUpdateSWFunctionForTest(): void {
     clearInterval(updateIntervalId);
     updateIntervalId = null;
   }
+  if (deferredReloadUnsubscribe) {
+    deferredReloadUnsubscribe();
+    deferredReloadUnsubscribe = null;
+  }
+  usePwaStore.getState().setReloadDeferred(false);
+}
+
+/**
+ * Returns whether deferred reload subscription is currently active.
+ * @internal
+ */
+export function _isReloadDeferredForTest(): boolean {
+  return Boolean(deferredReloadUnsubscribe);
 }
 
 /**
@@ -101,4 +140,3 @@ export function _resetUpdateSWFunctionForTest(): void {
 export function _getUpdateIntervalIdForTest(): ReturnType<typeof setInterval> | null {
   return updateIntervalId;
 }
-

@@ -19,6 +19,7 @@ export interface PwaState {
   needRefresh: boolean;
   offlineReady: boolean;
   otherTabsHaveCart: boolean;
+  reloadDeferred: boolean;
 
   setDeferredPrompt: (e: BeforeInstallPromptEvent | null) => void;
   promptInstall: () => Promise<boolean>;
@@ -26,6 +27,7 @@ export interface PwaState {
   setNeedRefresh: (need: boolean) => void;
   setOfflineReady: (ready: boolean) => void;
   setOtherTabsHaveCart: (have: boolean) => void;
+  setReloadDeferred: (deferred: boolean) => void;
   checkEnvironment: () => void;
 }
 
@@ -57,6 +59,7 @@ export const usePwaStore = create<PwaState>((set, get) => ({
   needRefresh: false,
   offlineReady: false,
   otherTabsHaveCart: false,
+  reloadDeferred: false,
 
   setDeferredPrompt: (prompt) => {
     set({
@@ -107,6 +110,7 @@ export const usePwaStore = create<PwaState>((set, get) => ({
   setNeedRefresh: (need) => set({ needRefresh: need }),
   setOfflineReady: (ready) => set({ offlineReady: ready }),
   setOtherTabsHaveCart: (have) => set({ otherTabsHaveCart: have }),
+  setReloadDeferred: (deferred) => set({ reloadDeferred: deferred }),
 
   checkEnvironment: () => {
     const standalone = detectIsStandalone();

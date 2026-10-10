@@ -139,6 +139,47 @@ describe('registerServiceWorker', () => {
     options.onNeedReload();
 
     expect(reloadMock).not.toHaveBeenCalled();
+    expect(usePwaStore.getState().reloadDeferred).toBe(true);
+
+    Object.defineProperty(window, 'location', {
+      value: originalLocation,
+      configurable: true,
+      writable: true
+    });
+  });
+
+  it('defers reload when cart has items, then reloads automatically as soon as items.length becomes 0', async () => {
+    const originalLocation = window.location;
+    const reloadMock = vi.fn();
+    Object.defineProperty(window, 'location', {
+      value: { ...originalLocation, reload: reloadMock },
+      configurable: true,
+      writable: true
+    });
+
+    useCartStore.getState().addItem({ id: 'p1', name: 'Open Sale Item', price: 50 });
+
+    Object.defineProperty(navigator, 'serviceWorker', {
+      value: { register: vi.fn() },
+      configurable: true,
+      writable: true
+    });
+
+    await initServiceWorker();
+
+    const options = (registerSW as any).mock.calls[0][0];
+    options.onNeedReload();
+
+    // Not reloaded while items are present
+    expect(reloadMock).not.toHaveBeenCalled();
+    expect(usePwaStore.getState().reloadDeferred).toBe(true);
+
+    // Sale completes: cart is cleared
+    useCartStore.getState().clearCart();
+
+    // Now reload is immediately triggered!
+    expect(reloadMock).toHaveBeenCalledTimes(1);
+    expect(usePwaStore.getState().reloadDeferred).toBe(false);
 
     Object.defineProperty(window, 'location', {
       value: originalLocation,

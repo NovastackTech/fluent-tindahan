@@ -133,6 +133,21 @@ describe('PwaUpdateToast', () => {
     reloadSpy.mockRestore();
   });
 
+  it('displays updateDeferredMsg and disables update button when reloadDeferred is true', () => {
+    usePwaStore.setState({
+      needRefresh: false,
+      reloadDeferred: true
+    });
+
+    renderToast();
+
+    expect(
+      screen.getByText(/Nakahanda na ang update|Update ready. The app will reload automatically/i)
+    ).toBeInTheDocument();
+    const updateBtn = screen.getByRole('button', { name: /I-reload para Mag-update|Reload & Update/i });
+    expect(updateBtn).toBeDisabled();
+  });
+
   it('dismisses toast when clicking dismiss button', () => {
     usePwaStore.setState({ needRefresh: true });
     renderToast();

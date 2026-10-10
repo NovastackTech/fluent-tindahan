@@ -388,6 +388,7 @@ export interface Translations {
     updateBtn: string;
     updateWaitMsg: string;
     updateOtherTabsWaitMsg: string;
+    updateDeferredMsg: string;
     pwaSection: string;
     pwaDesc: string;
     appStatus: string;
@@ -788,6 +789,7 @@ export const translations: Record<Language, Translations> = {
       updateBtn: 'I-reload para Mag-update',
       updateWaitMsg: 'Pakisara muna ang benta bago i-update.',
       updateOtherTabsWaitMsg: 'May bukas na benta sa isa pang tab. Pakitapos o pakisara muna bago mag-update.',
+      updateDeferredMsg: 'Nakahanda na ang update. Awtomatikong magre-reload ang app pagkatapos ng bentang ito.',
       pwaSection: 'PWA (Progressive Web App)',
       pwaDesc: 'I-install ang app sa iyong Android, iPhone, o computer para sa buong offline experience.',
       appStatus: 'Katayuan ng App:',
@@ -1186,6 +1188,7 @@ export const translations: Record<Language, Translations> = {
       updateBtn: 'Reload & Update',
       updateWaitMsg: 'Please complete or clear the cart before updating.',
       updateOtherTabsWaitMsg: 'Another open till tab has an active transaction. Complete or clear it before updating.',
+      updateDeferredMsg: 'Update ready. The app will reload automatically once the current transaction is completed.',
       pwaSection: 'Progressive Web App (PWA)',
       pwaDesc: 'Install the app on your Android phone, iPhone, or PC for a native, offline-ready experience.',
       appStatus: 'App Environment:',
