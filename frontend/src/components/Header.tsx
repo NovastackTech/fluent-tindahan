@@ -85,7 +85,7 @@ export const Header: React.FC = () => {
   const { isOnline, isSyncing, pendingCount, deadLetterCount } = useSyncStore();
   const businessName = useAuthStore((s) => s.businessName);
   const { t, language, toggleLanguage } = useTranslation();
-  const { isInstallable, isStandalone, promptInstall } = usePwaStore();
+  const { isInstallable, isStandalone, isInstalled, promptInstall } = usePwaStore();
 
   const handleManualSync = () => {
     if (isOnline) {
@@ -180,7 +180,7 @@ export const Header: React.FC = () => {
           </Tooltip>
 
           {/* PWA Install shortcut button */}
-          {isInstallable && !isStandalone && (
+          {isInstallable && !isStandalone && !isInstalled && (
             <Tooltip content={t.pwa.installHeaderTooltip} relationship="label">
               <Button
                 appearance="subtle"

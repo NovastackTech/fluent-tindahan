@@ -18,7 +18,7 @@ describe('SettingsPage', () => {
     });
     useLanguageStore.setState({ language: 'tl' });
     useThemeStore.setState({ themeMode: 'light', isDarkMode: false });
-    usePwaStore.setState({ isInstallable: false, isStandalone: false, isIos: false });
+    usePwaStore.setState({ isInstallable: false, isStandalone: false, isInstalled: false, isIos: false });
     await db.syncQueue.clear();
     await db.deadLetterQueue.clear();
   });

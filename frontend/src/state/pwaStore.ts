@@ -11,6 +11,7 @@ export interface BeforeInstallPromptEvent extends Event {
 
 export interface PwaState {
   isStandalone: boolean;
+  isInstalled: boolean;
   isInstallable: boolean;
   isIos: boolean;
   isDismissed: boolean;
@@ -46,6 +47,7 @@ const STORAGE_DISMISSED_KEY = 'fluent_tindahan_pwa_install_dismissed';
 
 export const usePwaStore = create<PwaState>((set, get) => ({
   isStandalone: detectIsStandalone(),
+  isInstalled: false,
   isInstallable: false,
   isIos: detectIsIos() && !detectIsStandalone(),
   isDismissed: typeof localStorage !== 'undefined' && localStorage.getItem(STORAGE_DISMISSED_KEY) === 'true',
@@ -56,7 +58,7 @@ export const usePwaStore = create<PwaState>((set, get) => ({
   setDeferredPrompt: (prompt) => {
     set({
       deferredPrompt: prompt,
-      isInstallable: Boolean(prompt) && !get().isStandalone
+      isInstallable: Boolean(prompt) && !get().isStandalone && !get().isInstalled
     });
   },
 
@@ -71,15 +73,23 @@ export const usePwaStore = create<PwaState>((set, get) => ({
         set({
           isInstallable: false,
           deferredPrompt: null,
-          isStandalone: true
+          isInstalled: true
         });
         return true;
       } else {
         get().dismissPrompt();
+        set({
+          isInstallable: false,
+          deferredPrompt: null
+        });
         return false;
       }
     } catch (err) {
       console.error('Error during PWA installation prompt:', err);
+      set({
+        isInstallable: false,
+        deferredPrompt: null
+      });
       return false;
     }
   },
@@ -100,7 +110,7 @@ export const usePwaStore = create<PwaState>((set, get) => ({
     set({
       isStandalone: standalone,
       isIos: ios,
-      isInstallable: Boolean(get().deferredPrompt) && !standalone
+      isInstallable: Boolean(get().deferredPrompt) && !standalone && !get().isInstalled
     });
   }
 }));
@@ -119,7 +129,7 @@ export function initPwaListeners(): () => void {
 
   const handleAppInstalled = () => {
     usePwaStore.setState({
-      isStandalone: true,
+      isInstalled: true,
       isInstallable: false,
       deferredPrompt: null
     });

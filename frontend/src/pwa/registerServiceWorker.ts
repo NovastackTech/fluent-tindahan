@@ -1,13 +1,22 @@
 import { usePwaStore } from '../state/pwaStore';
 
 let updateSWFunction: ((reloadPage?: boolean) => Promise<void>) | null = null;
+let updateIntervalId: ReturnType<typeof setInterval> | null = null;
 
 /**
  * Initializes Service Worker registration via vite-plugin-pwa.
- * Gracefully handles environments where service workers or virtual modules are unsupported.
+ *
+ * Uses registerType: 'prompt' mode (configured in vite.config.ts).
+ * The virtual:pwa-register module is loaded at runtime; in environments
+ * where it is unavailable (e.g. Vitest), the import is gracefully bypassed.
  */
 export async function initServiceWorker(): Promise<void> {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
+    return;
+  }
+
+  // Guard against duplicate registration in dev (React StrictMode mounts effects twice)
+  if (updateSWFunction) {
     return;
   }
 
@@ -23,8 +32,11 @@ export async function initServiceWorker(): Promise<void> {
       },
       onRegisteredSW(_swUrl: string, registration?: ServiceWorkerRegistration) {
         if (registration) {
-          // Check for service worker updates periodically if online
-          setInterval(() => {
+          if (updateIntervalId) {
+            clearInterval(updateIntervalId);
+          }
+          // Check for service worker updates periodically if online (hourly)
+          updateIntervalId = setInterval(() => {
             if (typeof navigator !== 'undefined' && navigator.onLine) {
               registration.update().catch(console.error);
             }
@@ -42,6 +54,7 @@ export async function initServiceWorker(): Promise<void> {
 
 /**
  * Invokes the Service Worker update reload.
+ * Called by PwaUpdateToast when the cashier taps "Reload & Update".
  */
 export async function reloadAppForUpdate(): Promise<void> {
   if (updateSWFunction) {
@@ -50,3 +63,24 @@ export async function reloadAppForUpdate(): Promise<void> {
     window.location.reload();
   }
 }
+
+/**
+ * Resets internal update function reference and interval for test isolation.
+ * @internal
+ */
+export function _resetUpdateSWFunctionForTest(): void {
+  updateSWFunction = null;
+  if (updateIntervalId) {
+    clearInterval(updateIntervalId);
+    updateIntervalId = null;
+  }
+}
+
+/**
+ * Returns the current periodic update interval ID (if any).
+ * @internal
+ */
+export function _getUpdateIntervalIdForTest(): ReturnType<typeof setInterval> | null {
+  return updateIntervalId;
+}
+

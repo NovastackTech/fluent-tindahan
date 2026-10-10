@@ -2,6 +2,32 @@ import '@testing-library/jest-dom';
 import 'fake-indexeddb/auto';
 import { vi, beforeEach } from 'vitest';
 
+// Provide localStorage mock for Vitest jsdom environment
+// (jsdom 29 does not provide localStorage by default)
+const localStorageMock = (() => {
+  let store: Record<string, string> = {};
+  return {
+    getItem: (key: string) => store[key] ?? null,
+    setItem: (key: string, value: string) => {
+      store[key] = value.toString();
+    },
+    removeItem: (key: string) => {
+      delete store[key];
+    },
+    clear: () => {
+      store = {};
+    },
+    key: (index: number) => Object.keys(store)[index] ?? null,
+    get length() { return Object.keys(store).length; }
+  };
+})();
+
+Object.defineProperty(window, 'localStorage', {
+  value: localStorageMock,
+  writable: true,
+  configurable: true
+});
+
 // Mock matchMedia for FluentUI and desktop responsive checks
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
@@ -60,14 +86,7 @@ class MockResizeObserver {
 (window as any).ResizeObserver = MockResizeObserver;
 (globalThis as any).ResizeObserver = MockResizeObserver;
 
-// Mock virtual:pwa-register for Vitest
-vi.mock('virtual:pwa-register', () => ({
-  registerSW: vi.fn().mockImplementation((_options) => {
-    return vi.fn().mockResolvedValue(undefined);
-  })
-}));
-
-// Clear localStorage before each test
+// Clear localStorage and mocks before each test
 beforeEach(() => {
   localStorage.clear();
   vi.clearAllMocks();

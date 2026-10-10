@@ -10,6 +10,7 @@ describe('App', () => {
     usePwaStore.setState({
       isInstallable: false,
       isStandalone: false,
+      isInstalled: false,
       needRefresh: false,
       isDismissed: false
     });

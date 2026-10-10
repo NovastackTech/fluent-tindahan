@@ -6,6 +6,7 @@ describe('pwaStore', () => {
     localStorage.clear();
     usePwaStore.setState({
       isStandalone: false,
+      isInstalled: false,
       isInstallable: false,
       isIos: false,
       isDismissed: false,
@@ -79,7 +80,8 @@ describe('pwaStore', () => {
     expect(result).toBe(true);
 
     const state = usePwaStore.getState();
-    expect(state.isStandalone).toBe(true);
+    expect(state.isStandalone).toBe(false);
+    expect(state.isInstalled).toBe(true);
     expect(state.isInstallable).toBe(false);
     expect(state.deferredPrompt).toBeNull();
   });
@@ -100,7 +102,28 @@ describe('pwaStore', () => {
 
     const state = usePwaStore.getState();
     expect(state.isDismissed).toBe(true);
+    expect(state.isInstallable).toBe(false);
+    expect(state.deferredPrompt).toBeNull();
+    expect(state.isStandalone).toBe(false);
     expect(localStorage.getItem('fluent_tindahan_pwa_install_dismissed')).toBe('true');
+  });
+
+  it('handles promptInstall error by clearing deferredPrompt and setting isInstallable to false', async () => {
+    const promptFn = vi.fn().mockRejectedValue(new Error('Prompt error'));
+    const mockPrompt = {
+      platforms: ['web'],
+      userChoice: Promise.resolve({ outcome: 'dismissed' as const, platform: 'web' }),
+      prompt: promptFn
+    } as unknown as BeforeInstallPromptEvent;
+
+    usePwaStore.getState().setDeferredPrompt(mockPrompt);
+
+    const result = await usePwaStore.getState().promptInstall();
+    expect(result).toBe(false);
+
+    const state = usePwaStore.getState();
+    expect(state.isInstallable).toBe(false);
+    expect(state.deferredPrompt).toBeNull();
   });
 
   it('dismissPrompt marks dismissed in state and localStorage', () => {
@@ -120,7 +143,8 @@ describe('pwaStore', () => {
     expect(usePwaStore.getState().isInstallable).toBe(true);
 
     window.dispatchEvent(new Event('appinstalled'));
-    expect(usePwaStore.getState().isStandalone).toBe(true);
+    expect(usePwaStore.getState().isInstalled).toBe(true);
+    expect(usePwaStore.getState().isStandalone).toBe(false);
     expect(usePwaStore.getState().isInstallable).toBe(false);
 
     cleanup();

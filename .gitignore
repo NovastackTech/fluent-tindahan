@@ -13,3 +13,6 @@
 
 # Frontend dev service worker artifacts
 frontend/dev-dist/
+
+# Test and documentation generated PDFs
+*.pdf

@@ -1,9 +1,13 @@
 """
 PWA Asset Generator for Fluent Tindahan
 Generates high-resolution, pixel-perfect, crisp icons and rich install screenshots.
+
+Requires Pillow (PIL): pip install Pillow
+Usage: python scripts/generate_pwa_assets.py
 """
 import os
 import math
+from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 def create_fluent_tindahan_icon(size=512, is_maskable=False):
@@ -282,9 +286,9 @@ def create_screenshots(output_dir):
     wide.save(os.path.join(output_dir, "screenshot-wide.png"), "PNG")
 
 def main():
-    public_dir = os.path.abspath(r"d:\Projects\fluent-tindahan\frontend\public")
+    public_dir = Path(__file__).resolve().parents[1] / 'frontend' / 'public'
     os.makedirs(public_dir, exist_ok=True)
-    screenshots_dir = os.path.join(public_dir, "screenshots")
+    screenshots_dir = public_dir / "screenshots"
     os.makedirs(screenshots_dir, exist_ok=True)
 
     print(f"Generating PWA assets in {public_dir}...")
@@ -329,9 +333,14 @@ def main():
     )
     print("[OK] Created favicon.ico")
 
-    # 6. Screenshots
-    create_screenshots(screenshots_dir)
-    print("[OK] Created rich install screenshots (narrow & wide)")
+    # 6. Screenshots (preserved if real captures already exist)
+    narrow_p = screenshots_dir / "screenshot-narrow.png"
+    wide_p = screenshots_dir / "screenshot-wide.png"
+    if not narrow_p.exists() or not wide_p.exists():
+        create_screenshots(screenshots_dir)
+        print("[OK] Created install screenshots fallback (narrow & wide)")
+    else:
+        print("[OK] Real UI screenshots preserved (narrow & wide)")
 
 if __name__ == "__main__":
     main()

@@ -75,7 +75,7 @@ export const SettingsPage: React.FC = () => {
   const { t, language, setLanguage } = useTranslation();
   const { themeMode, setThemeMode } = useThemeStore();
   const { paperWidth, setPaperWidth } = usePrinterStore();
-  const { isStandalone, isInstallable, isIos, promptInstall } = usePwaStore();
+  const { isStandalone, isInstalled, isInstallable, isIos, promptInstall } = usePwaStore();
 
   const handleTestPrint = () => {
     const testData = {
@@ -290,7 +290,7 @@ export const SettingsPage: React.FC = () => {
           </Badge>
         </div>
 
-        {isInstallable && !isStandalone && (
+        {isInstallable && !isStandalone && !isInstalled && (
           <div style={{ marginTop: '12px' }}>
             <Button
               appearance="primary"

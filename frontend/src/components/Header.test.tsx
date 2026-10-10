@@ -13,7 +13,7 @@ describe('Header', () => {
     useAuthStore.setState({ businessName: "Aling Nena's Store" });
     useThemeStore.setState({ themeMode: 'light', isDarkMode: false });
     useLanguageStore.setState({ language: 'tl' });
-    usePwaStore.setState({ isInstallable: false, isStandalone: false });
+    usePwaStore.setState({ isInstallable: false, isStandalone: false, isInstalled: false });
   });
 
   const renderHeader = () => {
@@ -78,6 +78,18 @@ describe('Header', () => {
 
     fireEvent.click(installBtn);
     expect(promptInstallSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not render PWA install button when isInstalled is true', () => {
+    usePwaStore.setState({
+      isInstallable: true,
+      isStandalone: false,
+      isInstalled: true
+    });
+
+    renderHeader();
+
+    expect(screen.queryByRole('button', { name: /I-install ang Fluent Tindahan sa device|Install Fluent Tindahan to device/i })).not.toBeInTheDocument();
   });
 });
 

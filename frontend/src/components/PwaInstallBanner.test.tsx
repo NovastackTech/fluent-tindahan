@@ -10,6 +10,7 @@ describe('PwaInstallBanner', () => {
     localStorage.clear();
     usePwaStore.setState({
       isStandalone: false,
+      isInstalled: false,
       isInstallable: false,
       isIos: false,
       isDismissed: false,
@@ -33,6 +34,13 @@ describe('PwaInstallBanner', () => {
 
   it('renders nothing when already in standalone mode', () => {
     usePwaStore.setState({ isStandalone: true, isInstallable: true });
+    const { container } = renderBanner();
+    expect(container.firstChild).toBeEmptyDOMElement();
+    expect(screen.queryByText(/I-install ang Fluent Tindahan App|Install Fluent Tindahan App/i)).not.toBeInTheDocument();
+  });
+
+  it('renders nothing when already installed', () => {
+    usePwaStore.setState({ isInstalled: true, isInstallable: true });
     const { container } = renderBanner();
     expect(container.firstChild).toBeEmptyDOMElement();
     expect(screen.queryByText(/I-install ang Fluent Tindahan App|Install Fluent Tindahan App/i)).not.toBeInTheDocument();

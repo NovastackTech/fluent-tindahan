@@ -47,10 +47,10 @@ const useStyles = makeStyles({
 export const PwaInstallBanner: React.FC = () => {
   const styles = useStyles();
   const { t } = useTranslation();
-  const { isStandalone, isInstallable, isIos, isDismissed, promptInstall, dismissPrompt } = usePwaStore();
+  const { isStandalone, isInstalled, isInstallable, isIos, isDismissed, promptInstall, dismissPrompt } = usePwaStore();
 
-  // If already running as installed standalone app or merchant dismissed prompt, don't show
-  if (isStandalone || isDismissed || (!isInstallable && !isIos)) {
+  // If already running as standalone app, marked installed, or merchant dismissed prompt, don't show
+  if (isStandalone || isInstalled || isDismissed || (!isInstallable && !isIos)) {
     return null;
   }
 

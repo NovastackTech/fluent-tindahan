@@ -28,14 +28,14 @@ export default defineConfig({
         'screenshots/screenshot-wide.png'
       ],
       manifest: {
-        id: 'fluent-tindahan-pos',
+        id: '/',
         name: 'Fluent Tindahan - Sari-Sari & GCash POS',
         short_name: 'Fluent Tindahan',
         description: 'Offline-First PWA POS designed for Philippine sari-sari stores, GCash agents, and small retailers.',
         theme_color: '#0f7b51',
         background_color: '#f8faf9',
         display: 'standalone',
-        display_override: ['window-controls-overlay', 'standalone', 'minimal-ui'],
+        display_override: ['standalone', 'minimal-ui'],
         orientation: 'any',
         start_url: '/',
         scope: '/',
@@ -76,7 +76,7 @@ export default defineConfig({
           },
           {
             src: '/favicon.svg',
-            sizes: '512x512',
+            sizes: 'any',
             type: 'image/svg+xml',
             purpose: 'any'
           }
