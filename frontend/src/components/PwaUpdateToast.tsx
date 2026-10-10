@@ -43,15 +43,18 @@ const useStyles = makeStyles({
 export const PwaUpdateToast: React.FC = () => {
   const styles = useStyles();
   const { t } = useTranslation();
-  const { needRefresh, setNeedRefresh } = usePwaStore();
+  const { needRefresh, setNeedRefresh, otherTabsHaveCart } = usePwaStore();
   const cartItemCount = useCartStore((s) => s.items.length);
 
   if (!needRefresh) {
     return null;
   }
 
+  const hasLocalItems = cartItemCount > 0;
+  const isBlocked = hasLocalItems || otherTabsHaveCart;
+
   const handleUpdate = async () => {
-    if (cartItemCount > 0) {
+    if (isBlocked) {
       return;
     }
     await reloadAppForUpdate();
@@ -61,7 +64,9 @@ export const PwaUpdateToast: React.FC = () => {
     setNeedRefresh(false);
   };
 
-  const hasItems = cartItemCount > 0;
+  const warningMessage = hasLocalItems
+    ? t.pwa.updateWaitMsg
+    : (otherTabsHaveCart ? t.pwa.updateOtherTabsWaitMsg : null);
 
   return (
     <div className={styles.container}>
@@ -75,10 +80,10 @@ export const PwaUpdateToast: React.FC = () => {
         </MessageBarTitle>
         <MessageBarBody>
           {t.pwa.updateDesc}
-          {hasItems && (
+          {warningMessage && (
             <div className={styles.warningRow}>
               <WarningRegular />
-              {t.pwa.updateWaitMsg}
+              {warningMessage}
             </div>
           )}
         </MessageBarBody>
@@ -90,8 +95,8 @@ export const PwaUpdateToast: React.FC = () => {
                 appearance="primary"
                 icon={<ArrowClockwiseRegular />}
                 onClick={handleUpdate}
-                disabled={hasItems}
-                title={hasItems ? t.pwa.updateWaitMsg : undefined}
+                disabled={isBlocked}
+                title={warningMessage || undefined}
               >
                 {t.pwa.updateBtn}
               </Button>

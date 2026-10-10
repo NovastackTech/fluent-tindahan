@@ -387,6 +387,7 @@ export interface Translations {
     updateDesc: string;
     updateBtn: string;
     updateWaitMsg: string;
+    updateOtherTabsWaitMsg: string;
     pwaSection: string;
     pwaDesc: string;
     appStatus: string;
@@ -786,6 +787,7 @@ export const translations: Record<Language, Translations> = {
       updateDesc: 'May bagong update ang Fluent Tindahan na may mga bagong feature at bilis.',
       updateBtn: 'I-reload para Mag-update',
       updateWaitMsg: 'Pakisara muna ang benta bago i-update.',
+      updateOtherTabsWaitMsg: 'May bukas na benta sa isa pang tab. Pakitapos o pakisara muna bago mag-update.',
       pwaSection: 'PWA (Progressive Web App)',
       pwaDesc: 'I-install ang app sa iyong Android, iPhone, o computer para sa buong offline experience.',
       appStatus: 'Katayuan ng App:',
@@ -1183,6 +1185,7 @@ export const translations: Record<Language, Translations> = {
       updateDesc: 'An updated version of Fluent Tindahan is ready with enhancements and performance fixes.',
       updateBtn: 'Reload & Update',
       updateWaitMsg: 'Please complete or clear the cart before updating.',
+      updateOtherTabsWaitMsg: 'Another open till tab has an active transaction. Complete or clear it before updating.',
       pwaSection: 'Progressive Web App (PWA)',
       pwaDesc: 'Install the app on your Android phone, iPhone, or PC for a native, offline-ready experience.',
       appStatus: 'App Environment:',

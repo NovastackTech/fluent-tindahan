@@ -111,6 +111,28 @@ describe('PwaUpdateToast', () => {
     expect(screen.queryByText(/Pakisara muna ang benta bago i-update|Please complete or clear the cart before updating/i)).not.toBeInTheDocument();
   });
 
+  it('disables update button and shows other-tab warning when another tab reports an open cart', () => {
+    const reloadSpy = vi.spyOn(pwaRegister, 'reloadAppForUpdate').mockResolvedValue(undefined);
+    usePwaStore.setState({
+      needRefresh: true,
+      otherTabsHaveCart: true
+    });
+    // Local cart is empty
+    useCartStore.getState().clearCart();
+
+    renderToast();
+
+    const updateBtn = screen.getByRole('button', { name: /I-reload para Mag-update|Reload & Update/i });
+    expect(updateBtn).toBeDisabled();
+    expect(
+      screen.getByText(/May bukas na benta sa isa pang tab|Another open till tab has an active transaction/i)
+    ).toBeInTheDocument();
+
+    fireEvent.click(updateBtn);
+    expect(reloadSpy).not.toHaveBeenCalled();
+    reloadSpy.mockRestore();
+  });
+
   it('dismisses toast when clicking dismiss button', () => {
     usePwaStore.setState({ needRefresh: true });
     renderToast();

@@ -12,6 +12,7 @@ export interface RegisterSWOptions {
   immediate?: boolean;
   onNeedRefresh?: () => void;
   onOfflineReady?: () => void;
+  onNeedReload?: () => void;
   onRegisteredSW?: (swScriptUrl: string, registration: ServiceWorkerRegistration | undefined) => void;
   onRegisterError?: (error: unknown) => void;
 }

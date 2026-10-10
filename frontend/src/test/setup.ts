@@ -36,6 +36,56 @@ Object.defineProperty(window, 'sessionStorage', {
   configurable: true
 });
 
+// Provide BroadcastChannel mock for multi-tab coordination in jsdom
+export class MockBroadcastChannel {
+  name: string;
+  static channels: Map<string, Set<MockBroadcastChannel>> = new Map();
+  onmessage: ((event: MessageEvent) => void) | null = null;
+  private listeners: Map<string, Set<EventListener>> = new Map();
+
+  constructor(name: string) {
+    this.name = name;
+    if (!MockBroadcastChannel.channels.has(name)) {
+      MockBroadcastChannel.channels.set(name, new Set());
+    }
+    MockBroadcastChannel.channels.get(name)!.add(this);
+  }
+
+  postMessage(data: any) {
+    const peers = MockBroadcastChannel.channels.get(this.name);
+    if (!peers) return;
+    for (const peer of peers) {
+      if (peer !== this) {
+        const event = new MessageEvent('message', { data });
+        peer.onmessage?.(event);
+        peer.listeners.get('message')?.forEach((listener) => listener(event));
+      }
+    }
+  }
+
+  addEventListener(type: string, listener: EventListener) {
+    if (!this.listeners.has(type)) {
+      this.listeners.set(type, new Set());
+    }
+    this.listeners.get(type)!.add(listener);
+  }
+
+  removeEventListener(type: string, listener: EventListener) {
+    this.listeners.get(type)?.delete(listener);
+  }
+
+  close() {
+    MockBroadcastChannel.channels.get(this.name)?.delete(this);
+    this.listeners.clear();
+  }
+
+  static resetAll() {
+    MockBroadcastChannel.channels.clear();
+  }
+}
+
+(window as any).BroadcastChannel = MockBroadcastChannel;
+(globalThis as any).BroadcastChannel = MockBroadcastChannel;
 
 // Mock matchMedia for FluentUI and desktop responsive checks
 Object.defineProperty(window, 'matchMedia', {
@@ -99,6 +149,8 @@ class MockResizeObserver {
 beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
+  MockBroadcastChannel.resetAll();
   vi.clearAllMocks();
 });
+
 

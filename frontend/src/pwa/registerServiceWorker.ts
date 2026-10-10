@@ -1,4 +1,5 @@
 import { usePwaStore } from '../state/pwaStore';
+import { useCartStore } from '../state/cartStore';
 
 let updateSWFunction: ((reloadPage?: boolean) => Promise<void>) | null = null;
 let updateIntervalId: ReturnType<typeof setInterval> | null = null;
@@ -32,6 +33,16 @@ export function initServiceWorker(): Promise<void> {
         },
         onOfflineReady() {
           usePwaStore.getState().setOfflineReady(true);
+        },
+        onNeedReload() {
+          const hasLocalCart = useCartStore.getState().items.length > 0;
+          if (hasLocalCart) {
+            console.warn('[PWA] Service Worker update active, but reload deferred due to open cart in this tab.');
+            return;
+          }
+          if (typeof window !== 'undefined') {
+            window.location.reload();
+          }
         },
         onRegisteredSW(_swUrl: string, registration?: ServiceWorkerRegistration) {
           if (registration) {

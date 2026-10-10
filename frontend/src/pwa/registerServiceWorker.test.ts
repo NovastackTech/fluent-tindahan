@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { initServiceWorker, reloadAppForUpdate, _resetUpdateSWFunctionForTest, _getUpdateIntervalIdForTest } from './registerServiceWorker';
 import { usePwaStore } from '../state/pwaStore';
+import { useCartStore } from '../state/cartStore';
 import { registerSW } from 'virtual:pwa-register';
 
 describe('registerServiceWorker', () => {
@@ -111,6 +112,70 @@ describe('registerServiceWorker', () => {
     );
 
     consoleSpy.mockRestore();
+  });
+
+  it('does not reload page via onNeedReload when active cart has items', async () => {
+    const originalLocation = window.location;
+    const reloadMock = vi.fn();
+    Object.defineProperty(window, 'location', {
+      value: { ...originalLocation, reload: reloadMock },
+      configurable: true,
+      writable: true
+    });
+
+    useCartStore.getState().addItem({ id: 'p1', name: 'Open Sale Item', price: 50 });
+
+    Object.defineProperty(navigator, 'serviceWorker', {
+      value: { register: vi.fn() },
+      configurable: true,
+      writable: true
+    });
+
+    await initServiceWorker();
+
+    const options = (registerSW as any).mock.calls[0][0];
+    expect(options.onNeedReload).toBeDefined();
+
+    options.onNeedReload();
+
+    expect(reloadMock).not.toHaveBeenCalled();
+
+    Object.defineProperty(window, 'location', {
+      value: originalLocation,
+      configurable: true,
+      writable: true
+    });
+  });
+
+  it('reloads page via onNeedReload when cart is empty', async () => {
+    const originalLocation = window.location;
+    const reloadMock = vi.fn();
+    Object.defineProperty(window, 'location', {
+      value: { ...originalLocation, reload: reloadMock },
+      configurable: true,
+      writable: true
+    });
+
+    useCartStore.getState().clearCart();
+
+    Object.defineProperty(navigator, 'serviceWorker', {
+      value: { register: vi.fn() },
+      configurable: true,
+      writable: true
+    });
+
+    await initServiceWorker();
+
+    const options = (registerSW as any).mock.calls[0][0];
+    options.onNeedReload();
+
+    expect(reloadMock).toHaveBeenCalledTimes(1);
+
+    Object.defineProperty(window, 'location', {
+      value: originalLocation,
+      configurable: true,
+      writable: true
+    });
   });
 
   it('calls updateSW(true) when reloadAppForUpdate is executed', async () => {

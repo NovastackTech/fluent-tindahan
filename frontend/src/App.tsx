@@ -17,6 +17,7 @@ import { initSyncEngine } from './sync/syncEngine';
 import { seedDexieDatabaseIfNeeded } from './db/seedData';
 import { initPwaListeners } from './state/pwaStore';
 import { initServiceWorker } from './pwa/registerServiceWorker';
+import { initPwaTabCoordinator } from './pwa/pwaTabCoordinator';
 
 // Route-level code splitting for performance on low-end Android devices (Section 1 & 11)
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then(m => ({ default: m.DashboardPage })));
@@ -81,12 +82,14 @@ export const App: React.FC = () => {
     // 2. Initialize offline sync engine and storage persistence
     initSyncEngine();
 
-    // 3. Initialize PWA event listeners and Service Worker
+    // 3. Initialize PWA event listeners, multi-tab coordination, and Service Worker
     const cleanupPwa = initPwaListeners();
+    const cleanupTabCoord = initPwaTabCoordinator();
     initServiceWorker().catch(console.error);
 
     return () => {
       cleanupPwa();
+      cleanupTabCoord();
     };
   }, []);
 
