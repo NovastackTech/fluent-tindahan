@@ -191,7 +191,12 @@ export const GCashPage: React.FC = () => {
           .where('[tenantId+refNoNorm]')
           .equals([tenantId, refNorm])
           .first();
-        if (existing) return false;
+        const legacyDuplicate = existing || await db.gcashTxns
+          .where('tenantId')
+          .equals(tenantId)
+          .filter((txn) => !txn.refNoNorm && normalizeRef(txn.refNo) === refNorm)
+          .first();
+        if (legacyDuplicate) return false;
         await db.gcashTxns.add(record);
         await addSyncRecord('GCashTxn', 'Insert', record);
         return true;

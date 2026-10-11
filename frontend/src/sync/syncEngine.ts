@@ -266,7 +266,16 @@ export async function processSyncQueue(): Promise<{ processed: number; conflicts
     return { processed: successCount, conflicts: conflictCount, errors: failCount };
   } catch (err: any) {
     console.error('Batch sync network/server failure:', err);
-    store.setLastErrorMessage(err.message || 'Hindi makakonekta sa server');
+    const status = err?.response?.status;
+    const serverMessage = err?.response?.data?.message;
+    const errorMessage = serverMessage || (
+      status === 401
+        ? 'Sync was rejected because this device has no valid tenant session. Pending changes remain on this device.'
+        : status >= 500
+          ? `Sync server error (${status}). Pending changes remain on this device.`
+          : err.message || 'Hindi makakonekta sa server'
+    );
+    store.setLastErrorMessage(errorMessage);
     return { processed: 0, conflicts: 0, errors: pendingItems.length };
   } finally {
     store.setSyncing(false);

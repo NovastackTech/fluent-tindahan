@@ -257,6 +257,32 @@ describe('GCashPage', () => {
     alertMock.mockRestore();
   });
 
+  it('rejects a duplicate reference when the existing legacy row lacks refNoNorm', async () => {
+    const alertMock = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    await db.gcashTxns.add({
+      id: 'g-legacy-duplicate',
+      tenantId: '11111111-1111-1111-1111-111111111111',
+      type: 'CashIn',
+      amount: 1000,
+      fee: 15,
+      refNo: '901238471201',
+      date: new Date().toISOString()
+    });
+
+    renderGCash();
+
+    fireEvent.change(screen.getAllByRole('spinbutton')[0], { target: { value: '100' } });
+    fireEvent.change(screen.getAllByRole('textbox')[0], { target: { value: '901238471201' } });
+    fireEvent.click(screen.getByRole('button', { name: /Itala ang GCash|Record GCash|Cash-In/i }));
+
+    await waitFor(() => {
+      expect(alertMock).toHaveBeenCalledWith(expect.stringMatching(/Ginamit na|already been used/i));
+    });
+    expect(await db.gcashTxns.count()).toBe(1);
+    expect(await db.syncQueue.count()).toBe(0);
+    alertMock.mockRestore();
+  });
+
   it('allows same reference number for a different tenant due to compound indexing', async () => {
     // Record exists under different tenant
     await db.gcashTxns.add({

@@ -240,15 +240,20 @@ describe('syncEngine', () => {
   });
 
   it('handles server network failure during processSyncQueue gracefully', async () => {
-    await enqueueSync('Customer', 'Insert', { id: 'c-99' });
+    const syncId = await enqueueSync('Customer', 'Insert', { id: 'c-99' });
 
-    (apiClient.post as any).mockRejectedValueOnce(new Error('Network error 500'));
+    (apiClient.post as any).mockRejectedValueOnce({
+      message: 'Request failed with status code 500',
+      response: { status: 500, data: { message: 'Database temporarily unavailable' } }
+    });
 
     const result = await processSyncQueue();
 
     expect(result.processed).toBe(0);
     expect(result.errors).toBe(1);
-    expect(useSyncStore.getState().lastErrorMessage).toContain('Network error 500');
+    expect(useSyncStore.getState().lastErrorMessage).toBe('Database temporarily unavailable');
+    expect(await db.syncQueue.get(syncId)).toBeDefined();
+    expect(await db.deadLetterQueue.get(syncId)).toBeUndefined();
   });
 
   it('orders outbox operations so Customer and Product precede UtangLedger and Sale', async () => {
