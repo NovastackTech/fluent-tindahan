@@ -67,6 +67,10 @@ export interface GCashTxnRecord {
   customerPhone?: string;
   date: string;
   notes?: string;
+  /** Flagged if sync detected a duplicate reference number conflict across devices. */
+  needsAttention?: boolean;
+  syncStatus?: 'Synced' | 'DuplicateRef' | 'Conflict' | 'Failed';
+  conflictReason?: string;
 }
 
 export interface SyncQueueRecord {
@@ -140,6 +144,20 @@ export class FluentTindahanDatabase extends Dexie {
           .toCollection()
           .modify((row: GCashTxnRecord) => {
             row.refNoNorm = normalizeRef(row.refNo);
+          })
+      );
+    this.version(3)
+      .stores({
+        gcashTxns: 'id, tenantId, type, date, refNo, refNoNorm, [tenantId+refNoNorm]'
+      })
+      .upgrade((tx) =>
+        tx
+          .table('gcashTxns')
+          .toCollection()
+          .modify((row: GCashTxnRecord) => {
+            if (!row.refNoNorm) {
+              row.refNoNorm = normalizeRef(row.refNo);
+            }
           })
       );
   }

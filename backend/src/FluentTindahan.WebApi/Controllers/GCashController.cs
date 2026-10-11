@@ -23,9 +23,23 @@ public class GCashController : ControllerBase
     }
 
     [HttpPost]
+    [ProducesResponseType(typeof(GCashTxnDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<GCashTxnDto>> Record([FromBody] RecordGCashTxnCommand command, CancellationToken cancellationToken)
     {
-        var result = await _mediator.Send(command, cancellationToken);
-        return Ok(result);
+        try
+        {
+            var result = await _mediator.Send(command, cancellationToken);
+            return Ok(result);
+        }
+        catch (DuplicateGCashRefException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException ex) when (RecordGCashTxnCommandHandler.IsUniqueIndexViolation(ex))
+        {
+            return Conflict(new { message = $"Duplicate GCash reference number '{command.RefNo?.Trim()}' for this tenant." });
+        }
     }
 }
+

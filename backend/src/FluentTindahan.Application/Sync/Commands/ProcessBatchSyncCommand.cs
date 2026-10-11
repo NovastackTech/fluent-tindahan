@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using FluentTindahan.Application.Common;
 using FluentTindahan.Application.Common.Interfaces;
+using FluentTindahan.Application.GCash;
 using FluentTindahan.Application.Sync.DTOs;
 using FluentTindahan.Domain.Billing;
 using FluentTindahan.Domain.Entities;
@@ -91,10 +92,19 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
             try
             {
                 var status = await ProcessOperationAsync(op, tenantId, effectiveTier, counters, cancellationToken);
+                string? error = null;
+                if (status == "DuplicateRef" || status == "Conflict")
+                {
+                    error = TryExtractRefNo(op.Payload, out var refStr) && !string.IsNullOrWhiteSpace(refStr)
+                        ? $"Duplicate GCash reference number '{refStr.Trim()}' for this tenant."
+                        : "Duplicate GCash reference number for this tenant.";
+                }
+
                 resultsByIndex[item.OriginalIndex] = new SyncItemResultDto
                 {
                     SyncId = syncId,
-                    Status = status
+                    Status = status,
+                    Error = error
                 };
             }
             catch (Exception ex)
@@ -103,6 +113,30 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
                 foreach (var entry in _context.ChangeTracker.Entries().Where(e => e.State == EntityState.Added || e.State == EntityState.Modified || e.State == EntityState.Deleted).ToList())
                 {
                     entry.State = EntityState.Detached;
+                }
+
+                if (ex is DuplicateGCashRefException dupEx)
+                {
+                    _logger.LogWarning(ex, "Duplicate GCash ref for sync operation {SyncId}", syncId);
+                    resultsByIndex[item.OriginalIndex] = new SyncItemResultDto
+                    {
+                        SyncId = syncId,
+                        Status = "DuplicateRef",
+                        Error = dupEx.Message
+                    };
+                    continue;
+                }
+
+                if (ex is DbUpdateException dbEx && RecordGCashTxnCommandHandler.IsUniqueIndexViolation(dbEx))
+                {
+                    _logger.LogWarning(ex, "Unique constraint violation on sync operation {SyncId}", syncId);
+                    resultsByIndex[item.OriginalIndex] = new SyncItemResultDto
+                    {
+                        SyncId = syncId,
+                        Status = "DuplicateRef",
+                        Error = "Duplicate GCash reference number for this tenant."
+                    };
+                    continue;
                 }
 
                 var entityType = op.Entity?.Trim().ToLowerInvariant();
@@ -129,7 +163,7 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
 
         return new BatchSyncResultDto
         {
-            ProcessedCount = results.Count(r => r.Status == "Success" || r.Status == "ConflictIgnored"),
+            ProcessedCount = results.Count(r => r.Status == "Success" || r.Status == "ConflictIgnored" || r.Status == "DuplicateRef" || r.Status == "Conflict"),
             Results = results
         };
     }
@@ -182,6 +216,23 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
                     {
                         return true;
                     }
+                }
+            }
+        }
+        return false;
+    }
+
+    private static bool TryExtractRefNo(JsonElement payload, out string? refNo)
+    {
+        refNo = null;
+        if (payload.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var prop in payload.EnumerateObject())
+            {
+                if (string.Equals(prop.Name, "refNo", StringComparison.OrdinalIgnoreCase))
+                {
+                    refNo = prop.Value.GetString();
+                    return true;
                 }
             }
         }
@@ -623,7 +674,8 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
                 .AnyAsync(g => g.TenantId == tenantId && g.RefNoNorm == refNorm, cancellationToken);
             if (duplicateRef)
             {
-                throw new InvalidOperationException($"Duplicate GCash reference number '{raw.RefNo!.Trim()}' for this tenant.");
+                _logger.LogWarning("Duplicate GCash reference number '{RefNo}' detected during batch sync for tenant {TenantId}. Returning DuplicateRef conflict status.", raw.RefNo?.Trim(), tenantId);
+                return "DuplicateRef";
             }
         }
 
@@ -650,13 +702,24 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
             Amount = raw.Amount,
             Fee = raw.Fee,
             RefNo = raw.RefNo ?? string.Empty,
+            RefNoNorm = refNorm,
             CustomerPhone = raw.CustomerPhone,
             Date = txnDate,
             Notes = raw.Notes
         };
 
         _context.GCashTransactions.Add(txn);
-        await _context.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (RecordGCashTxnCommandHandler.IsUniqueIndexViolation(ex))
+        {
+            _context.Entry(txn).State = EntityState.Detached;
+            _logger.LogWarning(ex, "DbUpdateException on unique index for GCash ref '{RefNo}' during batch sync for tenant {TenantId}. Returning DuplicateRef conflict status.", raw.RefNo?.Trim(), tenantId);
+            return "DuplicateRef";
+        }
+
         if (counters.MonthlyGCashCount.HasValue && txnDate >= startOfMonth)
         {
             counters.MonthlyGCashCount++;

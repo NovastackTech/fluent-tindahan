@@ -145,5 +145,63 @@ describe('GCashPage', () => {
 
     alertMock.mockRestore();
   });
+
+  it('allows same reference number for a different tenant due to compound indexing', async () => {
+    // Record exists under different tenant
+    await db.gcashTxns.add({
+      id: 'g-tenant-other',
+      tenantId: '99999999-9999-9999-9999-999999999999',
+      type: 'CashIn',
+      amount: 500,
+      fee: 10,
+      refNo: 'REF-SHARED-123',
+      refNoNorm: 'ref-shared-123',
+      date: new Date().toISOString()
+    });
+
+    renderGCash();
+
+    const spinInputs = screen.getAllByRole('spinbutton');
+    fireEvent.change(spinInputs[0], { target: { value: '500' } });
+
+    const textInputs = screen.getAllByRole('textbox');
+    fireEvent.change(textInputs[0], { target: { value: 'REF-SHARED-123' } });
+
+    const submitBtn = screen.getByRole('button', { name: /Itala ang GCash|Record GCash|Cash-In/i });
+    fireEvent.click(submitBtn);
+
+    await waitFor(async () => {
+      const currentTenantTxns = await db.gcashTxns
+        .where('tenantId')
+        .equals('11111111-1111-1111-1111-111111111111')
+        .toArray();
+      expect(currentTenantTxns).toHaveLength(1);
+      expect(currentTenantTxns[0].refNo).toBe('REF-SHARED-123');
+    });
+  });
+
+  it('renders duplicate ref attention badge when transaction is flagged with needsAttention', async () => {
+    await db.gcashTxns.add({
+      id: 'g-flagged-1',
+      tenantId: '11111111-1111-1111-1111-111111111111',
+      type: 'CashIn',
+      amount: 800,
+      fee: 15,
+      refNo: 'REF-FLAGGED-777',
+      refNoNorm: 'ref-flagged-777',
+      date: new Date().toISOString(),
+      needsAttention: true,
+      syncStatus: 'DuplicateRef',
+      conflictReason: "Duplicate GCash reference number 'REF-FLAGGED-777' for this tenant."
+    });
+
+    renderGCash();
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/REF-FLAGGED-777/i).length).toBeGreaterThan(0);
+      expect(screen.getByTestId('duplicate-ref-badge')).toBeInTheDocument();
+      expect(screen.getByText(/Duplicate GCash reference number 'REF-FLAGGED-777'/i)).toBeInTheDocument();
+    });
+  });
 });
 

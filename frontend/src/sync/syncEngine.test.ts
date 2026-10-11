@@ -24,6 +24,7 @@ describe('syncEngine', () => {
     await db.syncQueue.clear();
     await db.deadLetterQueue.clear();
     await db.products.clear();
+    await db.gcashTxns.clear();
     useSyncStore.setState({
       isOnline: true,
       isSyncing: false,
@@ -322,6 +323,61 @@ describe('syncEngine', () => {
     const result = await processSyncQueue();
     expect(result.processed).toBe(2);
     expect(sentOperations.map((op: any) => op.payload.id)).toEqual(['p-10', 'p-20']);
+  });
+
+  it('processSyncQueue handles DuplicateRef status by clearing queue and flagging local GCashTxn row with needsAttention', async () => {
+    const txnId = 'gcash-dup-test-1';
+    await db.gcashTxns.add({
+      id: txnId,
+      tenantId: 't-1',
+      type: 'CashIn',
+      amount: 1000,
+      fee: 15,
+      refNo: 'REF-DUP-999',
+      refNoNorm: 'ref-dup-999',
+      date: new Date().toISOString()
+    });
+
+    const syncId = await enqueueSync('GCashTxn', 'Insert', {
+      id: txnId,
+      tenantId: 't-1',
+      type: 'CashIn',
+      amount: 1000,
+      fee: 15,
+      refNo: 'REF-DUP-999',
+      date: new Date().toISOString()
+    });
+
+    (apiClient.post as any).mockResolvedValueOnce({
+      data: {
+        processedCount: 1,
+        results: [
+          {
+            syncId,
+            status: 'DuplicateRef',
+            error: "Duplicate GCash reference number 'REF-DUP-999' for this tenant."
+          }
+        ]
+      }
+    });
+
+    const result = await processSyncQueue();
+
+    expect(result.processed).toBe(1);
+    expect(result.errors).toBe(0);
+
+    // Queue is cleared (not kept or retried until dead letter)
+    const remaining = await db.syncQueue.toArray();
+    expect(remaining).toHaveLength(0);
+
+    // Local row is flagged with needsAttention and conflict reason
+    const updatedTxn = await db.gcashTxns.get(txnId);
+    expect(updatedTxn?.needsAttention).toBe(true);
+    expect(updatedTxn?.syncStatus).toBe('DuplicateRef');
+    expect(updatedTxn?.conflictReason).toContain('Duplicate GCash reference number');
+
+    // Sync store message is updated
+    expect(useSyncStore.getState().lastErrorMessage).toContain('Duplicate GCash reference number');
   });
 
   it('initSyncEngine attaches online and offline event handlers', () => {

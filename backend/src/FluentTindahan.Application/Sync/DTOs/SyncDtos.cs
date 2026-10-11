@@ -26,6 +26,6 @@ public class BatchSyncResultDto
 public class SyncItemResultDto
 {
     public string SyncId { get; set; } = string.Empty;
-    public string Status { get; set; } = "Success"; // "Success", "Failed", "ConflictIgnored"
+    public string Status { get; set; } = "Success"; // "Success", "Failed", "ConflictIgnored", "DuplicateRef", "Conflict"
     public string? Error { get; set; }
 }

@@ -210,6 +210,7 @@ public static class DatabaseSeeder
                     Amount = 1000.00m,
                     Fee = 15.00m,
                     RefNo = "901238471201",
+                    RefNoNorm = GCashTxn.NormalizeRef("901238471201"),
                     CustomerPhone = "09175551234",
                     Date = DateTimeOffset.UtcNow.AddHours(-3),
                     Notes = "Express send cash in"
@@ -222,6 +223,7 @@ public static class DatabaseSeeder
                     Amount = 500.00m,
                     Fee = 10.00m,
                     RefNo = "901238992341",
+                    RefNoNorm = GCashTxn.NormalizeRef("901238992341"),
                     CustomerPhone = "09287779911",
                     Date = DateTimeOffset.UtcNow.AddHours(-1),
                     Notes = "Cash out payout"

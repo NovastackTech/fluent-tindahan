@@ -148,7 +148,10 @@ export const GCashPage: React.FC = () => {
 
       // Atomic lookup + insert + sync enqueue: concurrent submits cannot both pass the check
       const inserted = await db.transaction('rw', db.gcashTxns, db.syncQueue, async () => {
-        const existing = await db.gcashTxns.where('refNoNorm').equals(refNorm).first();
+        const existing = await db.gcashTxns
+          .where('[tenantId+refNoNorm]')
+          .equals([tenantId, refNorm])
+          .first();
         if (existing) return false;
         await db.gcashTxns.add(record);
         await addSyncRecord('GCashTxn', 'Insert', record);
@@ -335,10 +338,17 @@ export const GCashPage: React.FC = () => {
               return (
                 <div key={txn.id} className={styles.logRow}>
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                       <Badge appearance="filled" color={isCashIn ? 'informative' : 'success'} size="small">
                         {isCashIn ? 'CASH-IN' : 'CASH-OUT'}
                       </Badge>
+                      {txn.needsAttention && (
+                        <span data-testid="duplicate-ref-badge">
+                          <Badge appearance="filled" color="danger" size="small">
+                            {language === 'tl' ? 'Dobleng Ref (Kailangan ng Pansin)' : 'Duplicate Ref (Needs Attention)'}
+                          </Badge>
+                        </span>
+                      )}
                       <Text weight="semibold" size={300}>₱{txn.amount.toFixed(2)}</Text>
                       <Text size={100} style={{ color: tokens.colorBrandForeground1 }}>
                         (Fee: ₱{txn.fee.toFixed(2)})
@@ -347,6 +357,11 @@ export const GCashPage: React.FC = () => {
                     <Text size={100} style={{ color: tokens.colorNeutralForeground3, marginTop: '2px', display: 'block' }}>
                       Ref: {txn.refNo} {txn.customerPhone ? `• ${txn.customerPhone}` : ''} • {new Date(txn.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </Text>
+                    {txn.conflictReason && (
+                      <Text size={100} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
+                        ⚠️ {txn.conflictReason}
+                      </Text>
+                    )}
                   </div>
 
                   <Text size={200} weight="bold">

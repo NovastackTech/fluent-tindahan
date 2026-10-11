@@ -111,6 +111,7 @@ public class GCashHandlerTests
             Amount = 1000m,
             Fee = 15m,
             RefNo = "REF-UNIQUE-01",
+            RefNoNorm = GCashTxn.NormalizeRef("REF-UNIQUE-01"),
             Date = DateTimeOffset.UtcNow
         });
         await context.SaveChangesAsync();
@@ -123,7 +124,7 @@ public class GCashHandlerTests
         );
 
         var act = () => handler.Handle(duplicateCmd, CancellationToken.None);
-        await act.Should().ThrowAsync<InvalidOperationException>()
+        await act.Should().ThrowAsync<DuplicateGCashRefException>()
             .WithMessage("*Duplicate GCash reference number*");
     }
 }

@@ -12,18 +12,14 @@ public class GCashTxn : IMustHaveTenant
     public decimal Amount { get; set; }
     public decimal Fee { get; set; }
 
-    public string RefNo
-    {
-        get => _refNo;
-        set
-        {
-            _refNo = value ?? string.Empty;
-            RefNoNorm = NormalizeRef(_refNo);
-        }
-    }
+    /// <summary>
+    /// Reference number for the GCash transaction. RefNo is immutable after insert.
+    /// </summary>
+    public string RefNo { get; set; } = string.Empty;
 
     /// <summary>
     /// Trimmed, lower-cased RefNo. Unique per tenant when non-empty (enforced by a partial unique index).
+    /// Normalization is set during creation/insert only to preserve legacy rows with an empty RefNoNorm.
     /// </summary>
     public string RefNoNorm { get; set; } = string.Empty;
 

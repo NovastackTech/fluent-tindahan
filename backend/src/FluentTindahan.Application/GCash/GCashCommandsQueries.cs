@@ -57,6 +57,17 @@ public record RecordGCashTxnCommand(
     string? Notes = null
 ) : IRequest<GCashTxnDto>;
 
+public class DuplicateGCashRefException : InvalidOperationException
+{
+    public string RefNo { get; }
+
+    public DuplicateGCashRefException(string refNo)
+        : base($"Duplicate GCash reference number '{refNo.Trim()}' for this tenant.")
+    {
+        RefNo = refNo;
+    }
+}
+
 public class RecordGCashTxnCommandHandler : IRequestHandler<RecordGCashTxnCommand, GCashTxnDto>
 {
     private readonly IApplicationDbContext _context;
@@ -79,11 +90,11 @@ public class RecordGCashTxnCommandHandler : IRequestHandler<RecordGCashTxnComman
         var refNorm = GCashTxn.NormalizeRef(request.RefNo);
         if (refNorm.Length > 0)
         {
-            var duplicate = await _context.GCashTransactions
+            var duplicate = await _context.GCashTransactions.IgnoreQueryFilters()
                 .AnyAsync(g => g.TenantId == tenantId && g.RefNoNorm == refNorm, cancellationToken);
             if (duplicate)
             {
-                throw new InvalidOperationException($"Duplicate GCash reference number '{request.RefNo.Trim()}' for this tenant.");
+                throw new DuplicateGCashRefException(request.RefNo);
             }
         }
 
@@ -95,13 +106,22 @@ public class RecordGCashTxnCommandHandler : IRequestHandler<RecordGCashTxnComman
             Amount = request.Amount,
             Fee = request.Fee,
             RefNo = request.RefNo,
+            RefNoNorm = refNorm,
             CustomerPhone = request.CustomerPhone,
             Date = DateTimeOffset.UtcNow,
             Notes = request.Notes
         };
 
         _context.GCashTransactions.Add(txn);
-        await _context.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsUniqueIndexViolation(ex))
+        {
+            _context.Entry(txn).State = EntityState.Detached;
+            throw new DuplicateGCashRefException(request.RefNo);
+        }
 
         return new GCashTxnDto(
             txn.Id,
@@ -114,4 +134,31 @@ public class RecordGCashTxnCommandHandler : IRequestHandler<RecordGCashTxnComman
             txn.Date,
             txn.Notes);
     }
+
+    public static bool IsUniqueIndexViolation(DbUpdateException ex)
+    {
+        var current = (Exception?)ex;
+        while (current != null)
+        {
+            if (string.Equals(current.GetType().Name, "PostgresException", StringComparison.OrdinalIgnoreCase))
+            {
+                var sqlStateProp = current.GetType().GetProperty("SqlState");
+                if (sqlStateProp?.GetValue(current) as string == "23505")
+                {
+                    return true;
+                }
+            }
+
+            var msg = current.Message.ToLowerInvariant();
+            if (msg.Contains("23505") || msg.Contains("unique") || msg.Contains("duplicate") || msg.Contains("ix_gcashtransactions_tenantid_refnonorm"))
+            {
+                return true;
+            }
+
+            current = current.InnerException;
+        }
+
+        return false;
+    }
 }
+

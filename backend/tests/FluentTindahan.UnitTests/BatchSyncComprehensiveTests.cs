@@ -645,7 +645,7 @@ public class BatchSyncComprehensiveTests
     }
 
     [Fact]
-    public async Task ProcessBatchSync_DuplicateGCashRef_FailsWithDuplicateError()
+    public async Task ProcessBatchSync_DuplicateGCashRef_ReturnsDuplicateRefStatus()
     {
         var (context, userMock) = CreateInMemoryContext();
         var handler = new ProcessBatchSyncCommandHandler(context, userMock.Object, NullLogger<ProcessBatchSyncCommandHandler>.Instance);
@@ -659,6 +659,7 @@ public class BatchSyncComprehensiveTests
             Amount = 1000m,
             Fee = 15m,
             RefNo = "REF-DUPLICATE-999",
+            RefNoNorm = GCashTxn.NormalizeRef("REF-DUPLICATE-999"),
             Date = DateTimeOffset.UtcNow
         });
         await context.SaveChangesAsync();
@@ -690,8 +691,9 @@ public class BatchSyncComprehensiveTests
         var response = await handler.Handle(new ProcessBatchSyncCommand(batch), CancellationToken.None);
 
         response.Results.Should().HaveCount(1);
-        response.Results[0].Status.Should().Be("Failed");
+        response.Results[0].Status.Should().Be("DuplicateRef");
         response.Results[0].Error.Should().Contain("Duplicate GCash reference number");
+        response.ProcessedCount.Should().Be(1);
     }
 
     [Fact]
