@@ -224,6 +224,11 @@ public class AppDbContext : DbContext, IApplicationDbContext
             builder.HasIndex(g => new { g.TenantId, g.Date });
             builder.HasIndex(g => new { g.TenantId, g.RefNo });
 
+            builder.Property(g => g.RefNoNorm).IsRequired().HasMaxLength(100).HasDefaultValue(string.Empty);
+            builder.HasIndex(g => new { g.TenantId, g.RefNoNorm })
+                .IsUnique()
+                .HasFilter("\"RefNoNorm\" <> ''");
+
             builder.HasOne(g => g.Tenant)
                 .WithMany(t => t.GCashTransactions)
                 .HasForeignKey(g => g.TenantId)

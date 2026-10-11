@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { FluentProvider } from '@fluentui/react-components';
 import { GCashPage } from './GCashPage';
@@ -106,6 +106,44 @@ describe('GCashPage', () => {
       expect(screen.getByText(/REF-HIST-1/i)).toBeInTheDocument();
       expect(screen.getAllByText(/500\.00/).length).toBeGreaterThan(0);
     });
+  });
+
+  it('rejects recording transaction with duplicate reference number', async () => {
+    const alertMock = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+    await db.gcashTxns.add({
+      id: 'g-dup-1',
+      tenantId: '11111111-1111-1111-1111-111111111111',
+      type: 'CashIn',
+      amount: 500,
+      fee: 10,
+      refNo: 'REF-DUP-12345',
+      refNoNorm: 'ref-dup-12345',
+      date: new Date().toISOString()
+    });
+
+    renderGCash();
+
+    const spinInputs = screen.getAllByRole('spinbutton');
+    fireEvent.change(spinInputs[0], { target: { value: '750' } });
+
+    const textInputs = screen.getAllByRole('textbox');
+    // textInputs: Ref No, Customer Phone, Notes
+    // Pass duplicate with differing casing and surrounding whitespace
+    fireEvent.change(textInputs[0], { target: { value: '  ref-dup-12345  ' } });
+
+    const submitBtn = screen.getByRole('button', { name: /Itala ang GCash|Record GCash|Cash-In/i });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(alertMock).toHaveBeenCalledWith(expect.stringMatching(/Ginamit na|already been used|Hindi maaaring magtala ng doble/i));
+    });
+
+    const records = await db.gcashTxns.toArray();
+    expect(records).toHaveLength(1);
+    expect(records[0].refNo).toBe('REF-DUP-12345');
+
+    alertMock.mockRestore();
   });
 });
 

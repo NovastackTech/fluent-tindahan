@@ -616,6 +616,17 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
             return "Success"; // idempotent
         }
 
+        var refNorm = GCashTxn.NormalizeRef(raw.RefNo);
+        if (refNorm.Length > 0)
+        {
+            var duplicateRef = await _context.GCashTransactions.IgnoreQueryFilters()
+                .AnyAsync(g => g.TenantId == tenantId && g.RefNoNorm == refNorm, cancellationToken);
+            if (duplicateRef)
+            {
+                throw new InvalidOperationException($"Duplicate GCash reference number '{raw.RefNo!.Trim()}' for this tenant.");
+            }
+        }
+
         var txnDate = raw.Date != default ? raw.Date : op.Timestamp;
         var startOfMonth = ManilaTime.StartOfCurrentMonthUtc();
 

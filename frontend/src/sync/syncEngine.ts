@@ -42,7 +42,11 @@ function getDeviceId(): string {
 
 let globalQueueOrder = 0;
 
-export async function enqueueSync(
+/**
+ * Adds a sync queue row only (safe to call inside a Dexie transaction that
+ * includes db.syncQueue). Call `kickSync()` after the transaction commits.
+ */
+export async function addSyncRecord(
   entity: 'Product' | 'Customer' | 'Sale' | 'UtangLedger' | 'GCashTxn',
   action: 'Insert' | 'Update' | 'Delete',
   payload: any
@@ -60,13 +64,25 @@ export async function enqueueSync(
   };
 
   await db.syncQueue.add(record);
+  return syncId;
+}
+
+export async function kickSync() {
   await updateQueueCounts();
 
   // If online, kick off sync asynchronously
   if (navigator.onLine) {
     processSyncQueue().catch((err) => console.warn('Background sync trigger failed:', err));
   }
+}
 
+export async function enqueueSync(
+  entity: 'Product' | 'Customer' | 'Sale' | 'UtangLedger' | 'GCashTxn',
+  action: 'Insert' | 'Update' | 'Delete',
+  payload: any
+): Promise<string> {
+  const syncId = await addSyncRecord(entity, action, payload);
+  await kickSync();
   return syncId;
 }
 

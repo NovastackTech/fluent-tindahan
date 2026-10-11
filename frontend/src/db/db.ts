@@ -62,6 +62,8 @@ export interface GCashTxnRecord {
   amount: number;
   fee: number;
   refNo: string;
+  /** Trimmed, lower-cased refNo used for indexed duplicate detection. */
+  refNoNorm?: string;
   customerPhone?: string;
   date: string;
   notes?: string;
@@ -100,6 +102,10 @@ export interface TenantRecord {
   updatedAt: string;
 }
 
+export function normalizeRef(refNo: string | undefined | null): string {
+  return (refNo || '').trim().toLowerCase();
+}
+
 export class FluentTindahanDatabase extends Dexie {
   products!: Table<ProductRecord, string>;
   customers!: Table<CustomerRecord, string>;
@@ -124,6 +130,18 @@ export class FluentTindahanDatabase extends Dexie {
       deadLetterQueue: 'id, entity, failedAt',
       tenants: 'id, tier, subscriptionEndDate, updatedAt'
     });
+    this.version(2)
+      .stores({
+        gcashTxns: 'id, tenantId, type, date, refNo, refNoNorm'
+      })
+      .upgrade((tx) =>
+        tx
+          .table('gcashTxns')
+          .toCollection()
+          .modify((row: GCashTxnRecord) => {
+            row.refNoNorm = normalizeRef(row.refNo);
+          })
+      );
   }
 }
 

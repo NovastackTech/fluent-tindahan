@@ -76,6 +76,17 @@ public class RecordGCashTxnCommandHandler : IRequestHandler<RecordGCashTxnComman
             throw new UnauthorizedAccessException("Tenant is not authenticated or resolved.");
         }
 
+        var refNorm = GCashTxn.NormalizeRef(request.RefNo);
+        if (refNorm.Length > 0)
+        {
+            var duplicate = await _context.GCashTransactions
+                .AnyAsync(g => g.TenantId == tenantId && g.RefNoNorm == refNorm, cancellationToken);
+            if (duplicate)
+            {
+                throw new InvalidOperationException($"Duplicate GCash reference number '{request.RefNo.Trim()}' for this tenant.");
+            }
+        }
+
         var txn = new GCashTxn
         {
             Id = Guid.NewGuid(),

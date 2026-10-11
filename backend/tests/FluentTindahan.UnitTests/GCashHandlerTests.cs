@@ -96,4 +96,34 @@ public class GCashHandlerTests
         result[0].RefNo.Should().Be("NEW-02");
         result[1].RefNo.Should().Be("OLD-01");
     }
+
+    [Fact]
+    public async Task RecordGCashTxn_DuplicateRef_ThrowsInvalidOperationException()
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var handler = new RecordGCashTxnCommandHandler(context, userMock.Object);
+
+        context.GCashTransactions.Add(new GCashTxn
+        {
+            Id = Guid.NewGuid(),
+            TenantId = _testTenantId,
+            Type = "CashIn",
+            Amount = 1000m,
+            Fee = 15m,
+            RefNo = "REF-UNIQUE-01",
+            Date = DateTimeOffset.UtcNow
+        });
+        await context.SaveChangesAsync();
+
+        var duplicateCmd = new RecordGCashTxnCommand(
+            Type: "CashIn",
+            Amount: 500m,
+            Fee: 10m,
+            RefNo: "  ref-unique-01  "
+        );
+
+        var act = () => handler.Handle(duplicateCmd, CancellationToken.None);
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*Duplicate GCash reference number*");
+    }
 }

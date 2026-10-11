@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   makeStyles,
   tokens,
@@ -19,9 +19,9 @@ import {
   HistoryRegular
 } from '@fluentui/react-icons';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, type GCashTxnRecord } from '../db/db';
+import { db, normalizeRef, type GCashTxnRecord } from '../db/db';
 import { useAuthStore } from '../state/authStore';
-import { enqueueSync } from '../sync/syncEngine';
+import { addSyncRecord, kickSync } from '../sync/syncEngine';
 import { useTranslation } from '../state/languageStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
 
@@ -72,6 +72,8 @@ export const GCashPage: React.FC = () => {
   const [refNo, setRefNo] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [notes, setNotes] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const savingRef = useRef(false);
 
   const tenantId = useAuthStore((s) => s.tenantId);
 
@@ -121,50 +123,61 @@ export const GCashPage: React.FC = () => {
       return;
     }
 
-    const trimmedRef = refNo.trim();
-    if (trimmedRef) {
-      const normalized = trimmedRef.toLowerCase();
-      const existing = await db.gcashTxns
-        .filter((x) => (x.refNo || '').trim().toLowerCase() === normalized)
-        .first();
-      if (existing) {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setIsSaving(true);
+
+    try {
+      const trimmedRef = refNo.trim();
+      // Auto-generated refs are UUID-based (collision-safe) and still go through the same check
+      const finalRef = trimmedRef || `GC-${crypto.randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase()}`;
+      const refNorm = normalizeRef(finalRef);
+
+      const record: GCashTxnRecord = {
+        id: crypto.randomUUID(),
+        tenantId,
+        type: txnType,
+        amount: numAmount,
+        fee: activeFee,
+        refNo: finalRef,
+        refNoNorm: refNorm,
+        customerPhone: customerPhone.trim() || undefined,
+        date: new Date().toISOString(),
+        notes: notes.trim() || undefined
+      };
+
+      // Atomic lookup + insert + sync enqueue: concurrent submits cannot both pass the check
+      const inserted = await db.transaction('rw', db.gcashTxns, db.syncQueue, async () => {
+        const existing = await db.gcashTxns.where('refNoNorm').equals(refNorm).first();
+        if (existing) return false;
+        await db.gcashTxns.add(record);
+        await addSyncRecord('GCashTxn', 'Insert', record);
+        return true;
+      });
+
+      if (!inserted) {
         alert(
           language === 'tl'
-            ? `Ginamit na ang reference number na ${trimmedRef}. Hindi maaaring magtala ng doble.`
-            : `Reference number ${trimmedRef} has already been used. Duplicate entries are not allowed.`
+            ? `Ginamit na ang reference number na ${finalRef}. Hindi maaaring magtala ng doble.`
+            : `Reference number ${finalRef} has already been used. Duplicate entries are not allowed.`
         );
         return;
       }
+
+      await kickSync();
+
+      // Reset form
+      setAmount('');
+      setCustomFee(null);
+      setRefNo('');
+      setCustomerPhone('');
+      setNotes('');
+    } finally {
+      savingRef.current = false;
+      setIsSaving(false);
     }
-
-    const id = crypto.randomUUID();
-    const now = new Date().toISOString();
-
-    const record: GCashTxnRecord = {
-      id,
-      tenantId,
-      type: txnType,
-      amount: numAmount,
-      fee: activeFee,
-      refNo: trimmedRef || `GC-${Date.now().toString().slice(-6)}`,
-      customerPhone: customerPhone.trim() || undefined,
-      date: now,
-      notes: notes.trim() || undefined
-    };
-
-    // 1. Direct local insert to Dexie
-    await db.gcashTxns.add(record);
-
-    // 2. Enqueue for background batch sync
-    await enqueueSync('GCashTxn', 'Insert', record);
-
-    // Reset form
-    setAmount('');
-    setCustomFee(null);
-    setRefNo('');
-    setCustomerPhone('');
-    setNotes('');
   };
+
 
   return (
     <div className={styles.container}>
@@ -295,6 +308,7 @@ export const GCashPage: React.FC = () => {
             type="submit"
             appearance="primary"
             icon={<CheckmarkRegular />}
+            disabled={isSaving}
             style={{ width: '100%', marginTop: '16px' }}
           >
             {t.gcash.saveTransaction} ({txnType === 'CashIn' ? 'Cash-In' : 'Cash-Out'})

@@ -819,9 +819,13 @@ export const POSPage: React.FC = () => {
               {/* Cash Payment Mode */}
               {paymentMethod === 'Cash' && (
                 <div>
-                  <Text size={200} weight="semibold">{t.pos.cashTendered}</Text>
+                  <label htmlFor="pos-cash-received">
+                    <Text size={200} weight="semibold">{t.pos.cashTendered}</Text>
+                  </label>
                   <Input
+                    id="pos-cash-received"
                     type="number"
+                    aria-label={language === 'tl' ? 'Tinanggap na pera (Cash received)' : 'Cash received (Tinanggap)'}
                     value={cashReceived === 0 ? '' : cashReceived.toString()}
                     onChange={(_, data) => setCashReceived(parseFloat(data.value) || 0)}
                     placeholder="0.00"

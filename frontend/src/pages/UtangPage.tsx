@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   makeStyles,
   tokens,
@@ -26,7 +26,7 @@ import {
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type CustomerRecord, type UtangLedgerRecord } from '../db/db';
 import { useAuthStore } from '../state/authStore';
-import { enqueueSync } from '../sync/syncEngine';
+import { enqueueSync, addSyncRecord, kickSync } from '../sync/syncEngine';
 import { useTranslation } from '../state/languageStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
 
@@ -103,6 +103,8 @@ export const UtangPage: React.FC = () => {
   const [isNewCustomerOpen, setIsNewCustomerOpen] = useState(false);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
   const [isAddCreditOpen, setIsAddCreditOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const savingRef = useRef(false);
 
   // Form states
   const [newCustName, setNewCustName] = useState('');
@@ -200,92 +202,115 @@ export const UtangPage: React.FC = () => {
 
   // Record payment
   const handleRecordPayment = async () => {
-    if (!selectedCustomer) return;
+    if (!selectedCustomer || savingRef.current) return;
     const amount = parseFloat(paymentAmount);
     if (isNaN(amount) || amount <= 0) return;
 
-    const fresh = await db.customers.get(selectedCustomer.id);
-    const currentBalance = fresh?.totalUtangBalance ?? selectedCustomer.totalUtangBalance ?? 0;
-    if (Math.round(amount * 100) > Math.round(currentBalance * 100)) {
-      alert(
-        language === 'tl'
-          ? `Hindi puwedeng lumampas ang bayad (₱${amount.toFixed(2)}) sa balanse ng utang (₱${currentBalance.toFixed(2)}).`
-          : `Payment (₱${amount.toFixed(2)}) cannot exceed the outstanding balance (₱${currentBalance.toFixed(2)}).`
-      );
-      return;
+    savingRef.current = true;
+    setIsSaving(true);
+    try {
+      const now = new Date().toISOString();
+      const ledgerRecord: UtangLedgerRecord = {
+        id: crypto.randomUUID(),
+        tenantId,
+        customerId: selectedCustomer.id,
+        amount,
+        type: 'Payment',
+        date: now,
+        notes: paymentNotes || 'Bayad sa utang'
+      };
+
+      // Atomic read-check-write so concurrent submits cannot both pass the check
+      const result = await db.transaction('rw', db.customers, db.utangLedger, db.syncQueue, async () => {
+        const fresh = await db.customers.get(selectedCustomer.id);
+        const currentBalance = fresh?.totalUtangBalance ?? selectedCustomer.totalUtangBalance ?? 0;
+        if (Math.round(amount * 100) > Math.round(currentBalance * 100)) {
+          return { ok: false as const, currentBalance };
+        }
+        await db.utangLedger.add(ledgerRecord);
+        await addSyncRecord('UtangLedger', 'Insert', ledgerRecord);
+        const newBalance = Math.round(currentBalance * 100 - amount * 100) / 100;
+        await db.customers.update(selectedCustomer.id, {
+          totalUtangBalance: newBalance,
+          updatedAt: now
+        });
+        return { ok: true as const, newBalance };
+      });
+
+      if (!result.ok) {
+        alert(
+          language === 'tl'
+            ? `Hindi puwedeng lumampas ang bayad (₱${amount.toFixed(2)}) sa balanse ng utang (₱${result.currentBalance.toFixed(2)}).`
+            : `Payment (₱${amount.toFixed(2)}) cannot exceed the outstanding balance (₱${result.currentBalance.toFixed(2)}).`
+        );
+        return;
+      }
+
+      await kickSync();
+
+      setSelectedCustomer({
+        ...selectedCustomer,
+        totalUtangBalance: result.newBalance,
+        updatedAt: now
+      });
+
+      setPaymentAmount('');
+      setPaymentNotes('');
+      setIsPaymentOpen(false);
+    } finally {
+      savingRef.current = false;
+      setIsSaving(false);
     }
-
-
-    const now = new Date().toISOString();
-    const ledgerId = crypto.randomUUID();
-
-    const ledgerRecord: UtangLedgerRecord = {
-      id: ledgerId,
-      tenantId,
-      customerId: selectedCustomer.id,
-      amount,
-      type: 'Payment',
-      date: now,
-      notes: paymentNotes || 'Bayad sa utang'
-    };
-
-    await db.utangLedger.add(ledgerRecord);
-    await enqueueSync('UtangLedger', 'Insert', ledgerRecord);
-
-    const newBalance = Math.round((currentBalance * 100 - amount * 100)) / 100;
-    await db.customers.update(selectedCustomer.id, {
-      totalUtangBalance: newBalance,
-      updatedAt: now
-    });
-
-    setSelectedCustomer({
-      ...selectedCustomer,
-      totalUtangBalance: newBalance,
-      updatedAt: now
-    });
-
-    setPaymentAmount('');
-    setPaymentNotes('');
-    setIsPaymentOpen(false);
   };
 
   // Add credit
   const handleAddCredit = async () => {
-    if (!selectedCustomer) return;
+    if (!selectedCustomer || savingRef.current) return;
     const amount = parseFloat(creditAmount);
     if (isNaN(amount) || amount <= 0) return;
 
-    const now = new Date().toISOString();
-    const ledgerId = crypto.randomUUID();
+    savingRef.current = true;
+    setIsSaving(true);
+    try {
+      const now = new Date().toISOString();
+      const ledgerRecord: UtangLedgerRecord = {
+        id: crypto.randomUUID(),
+        tenantId,
+        customerId: selectedCustomer.id,
+        amount,
+        type: 'Credit',
+        date: now,
+        notes: creditNotes || 'Dagdag na utang'
+      };
 
-    const ledgerRecord: UtangLedgerRecord = {
-      id: ledgerId,
-      tenantId,
-      customerId: selectedCustomer.id,
-      amount,
-      type: 'Credit',
-      date: now,
-      notes: creditNotes || 'Dagdag na utang'
-    };
+      const newBalance = await db.transaction('rw', db.customers, db.utangLedger, db.syncQueue, async () => {
+        const fresh = await db.customers.get(selectedCustomer.id);
+        const currentBalance = fresh?.totalUtangBalance ?? selectedCustomer.totalUtangBalance ?? 0;
+        await db.utangLedger.add(ledgerRecord);
+        await addSyncRecord('UtangLedger', 'Insert', ledgerRecord);
+        const updated = Math.round(currentBalance * 100 + amount * 100) / 100;
+        await db.customers.update(selectedCustomer.id, {
+          totalUtangBalance: updated,
+          updatedAt: now
+        });
+        return updated;
+      });
 
-    await db.utangLedger.add(ledgerRecord);
-    await enqueueSync('UtangLedger', 'Insert', ledgerRecord);
+      await kickSync();
 
-    const newBalance = Math.round((selectedCustomer.totalUtangBalance || 0) * 100 + amount * 100) / 100;
-    await db.customers.update(selectedCustomer.id, {
-      totalUtangBalance: newBalance,
-      updatedAt: now
-    });
+      setSelectedCustomer({
+        ...selectedCustomer,
+        totalUtangBalance: newBalance,
+        updatedAt: now
+      });
 
-    setSelectedCustomer({
-      ...selectedCustomer,
-      totalUtangBalance: newBalance,
-      updatedAt: now
-    });
-
-    setCreditAmount('');
-    setCreditNotes('');
-    setIsAddCreditOpen(false);
+      setCreditAmount('');
+      setCreditNotes('');
+      setIsAddCreditOpen(false);
+    } finally {
+      savingRef.current = false;
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -545,7 +570,7 @@ export const UtangPage: React.FC = () => {
               <Button appearance="subtle" onClick={() => setIsPaymentOpen(false)}>
                 {t.common.cancel}
               </Button>
-              <Button appearance="primary" icon={<CheckmarkRegular />} onClick={handleRecordPayment}>
+              <Button appearance="primary" icon={<CheckmarkRegular />} onClick={handleRecordPayment} disabled={isSaving}>
                 {t.utang.confirmPayment}
               </Button>
             </DialogActions>
@@ -586,7 +611,7 @@ export const UtangPage: React.FC = () => {
               <Button appearance="subtle" onClick={() => setIsAddCreditOpen(false)}>
                 {t.common.cancel}
               </Button>
-              <Button appearance="primary" icon={<CheckmarkRegular />} onClick={handleAddCredit}>
+              <Button appearance="primary" icon={<CheckmarkRegular />} onClick={handleAddCredit} disabled={isSaving}>
                 {t.utang.saveCredit}
               </Button>
             </DialogActions>

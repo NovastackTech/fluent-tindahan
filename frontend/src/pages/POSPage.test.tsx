@@ -114,7 +114,7 @@ describe('POSPage', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument();
 
     const completeBtn = screen.getByRole('button', { name: /Kumpletuhin ang Benta|Complete Sale/i });
-    const tenderInput = screen.getAllByRole('spinbutton')[0];
+    const tenderInput = screen.getByLabelText(/Cash received|Tinanggap/i);
 
     // Short tender (total is 16)
     fireEvent.change(tenderInput, { target: { value: '10' } });
