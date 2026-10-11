@@ -117,6 +117,10 @@ public class CreateCheckoutSessionCommandHandler : IRequestHandler<CreateCheckou
         }
 
         var tenantId = _currentUserService.TenantId;
+        if (tenantId == Guid.Empty)
+        {
+            throw new UnauthorizedAccessException("Tenant is not authenticated or resolved.");
+        }
 
         var sessionResult = await _gatewayService.CreateCheckoutSessionAsync(
             tenantId,
@@ -519,6 +523,11 @@ public class GetTenantSubscriptionQueryHandler : IRequestHandler<GetTenantSubscr
     public async Task<TenantSubscriptionDto> Handle(GetTenantSubscriptionQuery request, CancellationToken cancellationToken)
     {
         var tenantId = _currentUserService.TenantId;
+        if (tenantId == Guid.Empty)
+        {
+            throw new UnauthorizedAccessException("Tenant is not authenticated or resolved.");
+        }
+
         var tenant = await _context.Tenants
             .AsNoTracking()
             .IgnoreQueryFilters()

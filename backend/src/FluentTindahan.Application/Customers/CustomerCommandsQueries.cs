@@ -57,10 +57,16 @@ public class CreateCustomerCommandHandler : IRequestHandler<CreateCustomerComman
 
     public async Task<CustomerDto> Handle(CreateCustomerCommand request, CancellationToken cancellationToken)
     {
+        var tenantId = _currentUserService.TenantId;
+        if (tenantId == Guid.Empty)
+        {
+            throw new UnauthorizedAccessException("Tenant is not authenticated or resolved.");
+        }
+
         var customer = new Customer
         {
             Id = Guid.NewGuid(),
-            TenantId = _currentUserService.TenantId,
+            TenantId = tenantId,
             Name = request.Name,
             Phone = request.Phone,
             TotalUtangBalance = 0m,

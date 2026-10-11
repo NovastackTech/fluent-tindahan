@@ -97,6 +97,11 @@ public class CreateSaleCommandHandler : IRequestHandler<CreateSaleCommand, SaleD
     public async Task<SaleDto> Handle(CreateSaleCommand request, CancellationToken cancellationToken)
     {
         var tenantId = _currentUserService.TenantId;
+        if (tenantId == Guid.Empty)
+        {
+            throw new UnauthorizedAccessException("Tenant is not authenticated or resolved.");
+        }
+
         var saleId = Guid.NewGuid();
 
         var sale = new Sale

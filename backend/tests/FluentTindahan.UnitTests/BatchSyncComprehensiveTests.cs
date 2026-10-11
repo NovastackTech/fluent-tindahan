@@ -111,7 +111,7 @@ public class BatchSyncComprehensiveTests
             TenantId = _testTenantId,
             Name = "Existing Suki",
             Phone = "09180000000",
-            TotalUtangBalance = 100m,
+            TotalUtangBalance = 0m,
             UpdatedAt = serverTime
         });
         await context.SaveChangesAsync();

@@ -52,7 +52,10 @@ public class CurrentUserService : ICurrentUserService
         get
         {
             var httpContext = _httpContextAccessor.HttpContext;
-            if (httpContext == null) return DefaultTenantId;
+            if (httpContext == null)
+            {
+                return IsDevelopmentOrDemoMode() ? DefaultTenantId : Guid.Empty;
+            }
 
             // 1. Check verified JWT claims first for authenticated users (prevents header spoofing)
             var user = httpContext.User;
@@ -71,9 +74,18 @@ public class CurrentUserService : ICurrentUserService
                 {
                     return parsedTenantId;
                 }
+
+                return DefaultTenantId;
             }
 
-            return DefaultTenantId;
+            // 3. Fallback to default ID only in Development or Demo mode
+            if (IsDevelopmentOrDemoMode())
+            {
+                return DefaultTenantId;
+            }
+
+            // In production, an unauthenticated caller or authenticated caller without a valid tenant claim returns Guid.Empty
+            return Guid.Empty;
         }
     }
 
@@ -82,7 +94,10 @@ public class CurrentUserService : ICurrentUserService
         get
         {
             var httpContext = _httpContextAccessor.HttpContext;
-            if (httpContext == null) return DefaultUserId;
+            if (httpContext == null)
+            {
+                return IsDevelopmentOrDemoMode() ? DefaultUserId : null;
+            }
 
             // 1. Check verified JWT claims first
             var user = httpContext.User;
@@ -101,9 +116,18 @@ public class CurrentUserService : ICurrentUserService
                 {
                     return parsedUserId;
                 }
+
+                return DefaultUserId;
             }
 
-            return DefaultUserId;
+            // 3. Fallback to default ID only in Development or Demo mode
+            if (IsDevelopmentOrDemoMode())
+            {
+                return DefaultUserId;
+            }
+
+            // In production, an unauthenticated caller or authenticated caller without a valid sub claim returns null
+            return null;
         }
     }
 

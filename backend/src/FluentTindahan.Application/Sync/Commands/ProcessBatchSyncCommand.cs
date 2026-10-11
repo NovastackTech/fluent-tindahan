@@ -38,6 +38,11 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
     public async Task<BatchSyncResultDto> Handle(ProcessBatchSyncCommand command, CancellationToken cancellationToken)
     {
         var tenantId = _currentUserService.TenantId;
+        if (tenantId == Guid.Empty)
+        {
+            throw new UnauthorizedAccessException("Tenant is not authenticated or resolved.");
+        }
+
         var operations = command.Request.Operations ?? new List<SyncOperationDto>();
 
         _logger.LogInformation("Processing batch sync for tenant {TenantId}, device {DeviceId}, operations count {Count}",
@@ -328,6 +333,11 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
                     _logger.LogInformation("LWW conflict ignored for Customer delete {Id}: existing is newer ({Existing} > {Incoming})",
                         existing.Id, existing.UpdatedAt, op.Timestamp);
                     return "ConflictIgnored";
+                }
+
+                if (existing.TotalUtangBalance != 0m)
+                {
+                    throw new InvalidOperationException($"Cannot delete customer '{existing.Name}' ({existing.Id}) with an outstanding utang balance of {existing.TotalUtangBalance:F2}. Outstanding balance must be settled first.");
                 }
 
                 var wasDeleted = existing.IsDeleted;

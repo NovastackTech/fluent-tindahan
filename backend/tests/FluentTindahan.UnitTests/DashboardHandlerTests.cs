@@ -73,4 +73,45 @@ public class DashboardHandlerTests
         summary.TotalProductsCount.Should().Be(2);
         summary.LowStockProductsCount.Should().Be(1);
     }
+
+    [Fact]
+    public async Task GetDashboardSummary_SoftDeletedCustomerWithUtang_IncludesInTotalUtangOutstanding()
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var now = DateTimeOffset.UtcNow;
+
+        // Active debtor
+        context.Customers.Add(new Customer
+        {
+            Id = Guid.NewGuid(),
+            TenantId = _testTenantId,
+            Name = "Active Debtor",
+            Phone = "09181112222",
+            TotalUtangBalance = 150m,
+            IsDeleted = false,
+            UpdatedAt = now
+        });
+
+        // Soft-deleted debtor with remaining balance
+        context.Customers.Add(new Customer
+        {
+            Id = Guid.NewGuid(),
+            TenantId = _testTenantId,
+            Name = "Soft-Deleted Debtor",
+            Phone = "09183334444",
+            TotalUtangBalance = 200m,
+            IsDeleted = true,
+            UpdatedAt = now
+        });
+
+        await context.SaveChangesAsync();
+
+        var handler = new GetDashboardSummaryQueryHandler(context, userMock.Object);
+        var summary = await handler.Handle(new GetDashboardSummaryQuery(), CancellationToken.None);
+
+        summary.Should().NotBeNull();
+        // Total utang outstanding must include both active and soft-deleted debtors (150 + 200 = 350)
+        summary.TotalUtangOutstanding.Should().Be(350m);
+        summary.DebtorsCount.Should().Be(2);
+    }
 }

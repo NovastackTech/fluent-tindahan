@@ -148,6 +148,7 @@ public class AppDbContext : DbContext, IApplicationDbContext
             builder.HasOne(u => u.Customer)
                 .WithMany(c => c.UtangLedgers)
                 .HasForeignKey(u => u.CustomerId)
+                .IsRequired(false)
                 .OnDelete(DeleteBehavior.Cascade);
 
             builder.HasOne(u => u.RefSale)
@@ -178,6 +179,7 @@ public class AppDbContext : DbContext, IApplicationDbContext
             builder.HasOne(s => s.Customer)
                 .WithMany()
                 .HasForeignKey(s => s.CustomerId)
+                .IsRequired(false)
                 .OnDelete(DeleteBehavior.SetNull);
         });
 
@@ -201,6 +203,7 @@ public class AppDbContext : DbContext, IApplicationDbContext
             builder.HasOne(i => i.Product)
                 .WithMany()
                 .HasForeignKey(i => i.ProductId)
+                .IsRequired(false)
                 .OnDelete(DeleteBehavior.Restrict);
         });
 
@@ -275,7 +278,12 @@ public class AppDbContext : DbContext, IApplicationDbContext
         {
             if (entry.State == EntityState.Added && entry.Entity.TenantId == Guid.Empty)
             {
-                entry.Entity.TenantId = _currentUserService.TenantId;
+                var tenantId = _currentUserService.TenantId;
+                if (tenantId == Guid.Empty)
+                {
+                    throw new UnauthorizedAccessException("Cannot save tenant-scoped entity without an authenticated tenant.");
+                }
+                entry.Entity.TenantId = tenantId;
             }
         }
 

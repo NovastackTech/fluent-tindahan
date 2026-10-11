@@ -39,6 +39,11 @@ public class TenantController : ControllerBase
     public async Task<ActionResult<TenantProfileDto>> GetProfile(CancellationToken cancellationToken)
     {
         var tenantId = _currentUserService.TenantId;
+        if (tenantId == Guid.Empty)
+        {
+            return Unauthorized(new { message = "User is not authenticated or tenant is not resolved." });
+        }
+
         var tenant = await _context.Tenants
             .AsNoTracking()
             .IgnoreQueryFilters()

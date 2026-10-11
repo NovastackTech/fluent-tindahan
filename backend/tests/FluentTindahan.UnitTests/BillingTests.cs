@@ -1518,7 +1518,7 @@ public class BillingTests
             TenantId = tenantId,
             Name = "Active Aling Tina",
             Phone = "09171112222",
-            TotalUtangBalance = 150m,
+            TotalUtangBalance = 0m,
             IsDeleted = false,
             UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-10)
         };
@@ -1649,6 +1649,60 @@ public class BillingTests
         // Active customer count in DB is exactly 29 (28 initial + 1 added - 1 active deleted; placeholder was already deleted)
         var totalActive = await context.Customers.CountAsync();
         totalActive.Should().Be(29);
+    }
+
+    [Fact]
+    public async Task ProcessBatchSyncCommand_CustomerDeleteWithNonZeroUtangBalance_RejectsDeleteAndReturnsFailedStatus()
+    {
+        using var context = CreateInMemoryDbContext();
+        var tenantId = _currentUserServiceMock.Object.TenantId;
+
+        var debtorId = Guid.NewGuid();
+        var debtor = new Customer
+        {
+            Id = debtorId,
+            TenantId = tenantId,
+            Name = "Unsettled Debtor",
+            Phone = "09173334444",
+            TotalUtangBalance = 250m,
+            IsDeleted = false,
+            UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-10)
+        };
+        context.Customers.Add(debtor);
+        await context.SaveChangesAsync();
+
+        var handler = new ProcessBatchSyncCommandHandler(
+            context,
+            _currentUserServiceMock.Object,
+            NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+
+        var batch = new BatchSyncRequestDto
+        {
+            DeviceId = Guid.NewGuid(),
+            Operations = new List<SyncOperationDto>
+            {
+                new SyncOperationDto
+                {
+                    SyncId = "del_unsettled_debtor",
+                    Entity = "Customer",
+                    Action = "Delete",
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Payload = System.Text.Json.JsonDocument.Parse($$"""{ "id": "{{debtorId}}" }""").RootElement
+                }
+            }
+        };
+
+        var response = await handler.Handle(new ProcessBatchSyncCommand(batch), CancellationToken.None);
+
+        response.Results.Should().HaveCount(1);
+        response.Results[0].Status.Should().Be("Failed");
+        response.Results[0].Error.Should().Contain("outstanding utang balance");
+
+        // Debtor must NOT be soft-deleted
+        var retrieved = await context.Customers.FirstOrDefaultAsync(c => c.Id == debtorId);
+        retrieved.Should().NotBeNull();
+        retrieved!.IsDeleted.Should().BeFalse();
+        retrieved.TotalUtangBalance.Should().Be(250m);
     }
 
     [Fact]

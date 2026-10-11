@@ -1152,12 +1152,16 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                       size="small"
                       appearance="subtle"
                       icon={<EditRegular />}
+                      title={t.inventory.editProduct}
+                      aria-label={t.inventory.editProduct}
                       onClick={() => openEditModal(p)}
                     />
                     <Button
                       size="small"
                       appearance="subtle"
                       icon={<DeleteRegular style={{ color: tokens.colorPaletteRedForeground1 }} />}
+                      title={t.inventory.deleteProduct}
+                      aria-label={t.inventory.deleteProduct}
                       onClick={() => openDeleteDialog(p)}
                     />
                   </div>

@@ -1,6 +1,8 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using FluentTindahan.Application.Common.Interfaces;
+using FluentTindahan.Domain.Entities;
+using FluentTindahan.Domain.Interfaces;
 
 namespace FluentTindahan.Application.Dashboard;
 
@@ -20,10 +22,12 @@ public record GetDashboardSummaryQuery : IRequest<DashboardSummaryDto>;
 public class GetDashboardSummaryQueryHandler : IRequestHandler<GetDashboardSummaryQuery, DashboardSummaryDto>
 {
     private readonly IApplicationDbContext _context;
+    private readonly ICurrentUserService? _currentUserService;
 
-    public GetDashboardSummaryQueryHandler(IApplicationDbContext context)
+    public GetDashboardSummaryQueryHandler(IApplicationDbContext context, ICurrentUserService? currentUserService = null)
     {
         _context = context;
+        _currentUserService = currentUserService;
     }
 
     public async Task<DashboardSummaryDto> Handle(GetDashboardSummaryQuery request, CancellationToken cancellationToken)
@@ -38,8 +42,19 @@ public class GetDashboardSummaryQueryHandler : IRequestHandler<GetDashboardSumma
         var todaySalesTotal = todaySalesList.Sum(s => s.TotalAmount);
         var todaySalesCount = todaySalesList.Count;
 
-        var debtors = await _context.Customers
-            .AsNoTracking()
+        var tenantId = _currentUserService?.TenantId;
+        IQueryable<Customer> debtorsQuery = _context.Customers.AsNoTracking();
+        if (tenantId.HasValue && tenantId.Value != Guid.Empty)
+        {
+            // IgnoreQueryFilters ensures soft-deleted customers with non-zero utang balances
+            // are still included in storewide outstanding debt reports.
+            debtorsQuery = _context.Customers
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .Where(c => c.TenantId == tenantId.Value);
+        }
+
+        var debtors = await debtorsQuery
             .Where(c => c.TotalUtangBalance > 0)
             .ToListAsync(cancellationToken);
 

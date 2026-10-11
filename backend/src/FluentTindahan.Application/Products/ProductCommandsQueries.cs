@@ -70,10 +70,16 @@ public class CreateProductCommandHandler : IRequestHandler<CreateProductCommand,
 
     public async Task<ProductDto> Handle(CreateProductCommand request, CancellationToken cancellationToken)
     {
+        var tenantId = _currentUserService.TenantId;
+        if (tenantId == Guid.Empty)
+        {
+            throw new UnauthorizedAccessException("Tenant is not authenticated or resolved.");
+        }
+
         var product = new Product
         {
             Id = Guid.NewGuid(),
-            TenantId = _currentUserService.TenantId,
+            TenantId = tenantId,
             Name = request.Name,
             Price = request.Price,
             Cost = request.Cost,
