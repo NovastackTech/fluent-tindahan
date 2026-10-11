@@ -35,6 +35,7 @@ import { printThermalReceipt } from '../services/receiptPrinter';
 import {
   useSyncStore,
   processSyncQueue,
+  updateQueueCounts,
   retryDeadLetterItem,
   clearDeadLetterQueue,
   pullCatalogFromServer
@@ -72,7 +73,7 @@ const useStyles = makeStyles({
 
 export const SettingsPage: React.FC = () => {
   const styles = useStyles();
-  const { isOnline, isSyncing, lastSyncedAt } = useSyncStore();
+  const { isOnline, isSyncing, lastSyncedAt, pendingCount, deadLetterCount } = useSyncStore();
   const { tenantId, userId, businessName, logout } = useAuthStore();
   const { t, language, setLanguage } = useTranslation();
   const { themeMode, setThemeMode } = useThemeStore();
@@ -100,10 +101,14 @@ export const SettingsPage: React.FC = () => {
   const [storageEstimate, setStorageEstimate] = useState<{ usage: number; quota: number } | null>(null);
   const [isPersisted, setIsPersisted] = useState<boolean | null>(null);
 
-  const pendingItems = useLiveQuery(() => db.syncQueue.toArray(), []) || [];
-  const deadLetterItems = useLiveQuery(() => db.deadLetterQueue.toArray(), []) || [];
+  const pendingItemsResult = useLiveQuery(() => db.syncQueue.toArray(), []);
+  const deadLetterItemsResult = useLiveQuery(() => db.deadLetterQueue.toArray(), []);
+  const pendingItems = pendingItemsResult || [];
+  const deadLetterItems = deadLetterItemsResult || [];
+  const displayedPendingCount = Math.max(pendingCount, pendingItems.length);
 
   useEffect(() => {
+    updateQueueCounts().catch(console.error);
     if (navigator.storage && navigator.storage.estimate) {
       navigator.storage.estimate().then((est) => {
         setStorageEstimate({
@@ -456,17 +461,38 @@ export const SettingsPage: React.FC = () => {
 
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
           <Text size={200}>{t.settings.pendingSync}</Text>
-          <Badge appearance="filled" color={pendingItems.length > 0 ? 'warning' : 'success'}>
-            {pendingItems.length}
+          <Badge data-testid="sync-pending-count" appearance="filled" color={displayedPendingCount > 0 ? 'warning' : 'success'}>
+            {displayedPendingCount}
           </Badge>
         </div>
 
-        {pendingItems.length === 0 ? (
-          <Text size={200} style={{ color: tokens.colorNeutralForeground3, fontStyle: 'italic' }}>
-            {t.common.allSynced}
+        {displayedPendingCount === 0 ? (
+          pendingItemsResult === undefined ? (
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3, fontStyle: 'italic' }}>
+              {language === 'tl' ? 'Sinusuri ang sync queue…' : 'Checking sync queue…'}
+            </Text>
+          ) : (
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3, fontStyle: 'italic' }}>
+              {deadLetterCount > 0 || deadLetterItems.length > 0
+                ? (language === 'tl' ? 'Walang nakapila, pero may hindi na-sync na item.' : 'No pending items, but some items still need attention.')
+                : t.common.allSynced}
+            </Text>
+          )
+        ) : pendingItems.length === 0 ? (
+          <Text size={200} style={{ color: tokens.colorPaletteRedForeground1 }}>
+            {language === 'tl'
+              ? `${displayedPendingCount} item ang nakapila at hindi pa naka-sync. Hindi pa kumpleto ang detalye ng queue.`
+              : `${displayedPendingCount} items are queued and not synced. Queue details are still loading.`}
           </Text>
         ) : (
           <div style={{ maxHeight: '160px', overflowY: 'auto' }}>
+            {displayedPendingCount > pendingItems.length && (
+              <Text size={100} style={{ color: tokens.colorPaletteRedForeground1, display: 'block', marginBottom: '8px' }}>
+                {language === 'tl'
+                  ? `${displayedPendingCount - pendingItems.length} pang item ang nakapila ngunit hindi pa naipapakita.`
+                  : `${displayedPendingCount - pendingItems.length} additional queued items are not shown yet.`}
+              </Text>
+            )}
             {pendingItems.map((item) => (
               <div key={item.id} className={styles.queueItem}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>

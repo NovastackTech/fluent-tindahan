@@ -136,6 +136,28 @@ describe('SettingsPage', () => {
     }, { timeout: 2000 });
   });
 
+  it('matches the header queue count and never claims all synced while work is pending', async () => {
+    const lastSyncedAt = new Date('2026-10-12T01:30:00.000Z');
+    await db.syncQueue.bulkAdd(Array.from({ length: 8 }, (_, index) => ({
+      id: `sq-pending-${index}`,
+      entity: 'Product' as const,
+      action: 'Insert' as const,
+      timestamp: new Date().toISOString(),
+      payload: { id: `product-${index}` },
+      status: 'Pending' as const,
+      retryCount: 0
+    })));
+    useSyncStore.setState({ pendingCount: 8, lastSyncedAt, deadLetterCount: 0 });
+
+    renderSettings();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('sync-pending-count')).toHaveTextContent('8');
+      expect(screen.queryByText(/Lahat ay naka-sync sa cloud|All data synced/i)).not.toBeInTheDocument();
+      expect(screen.getByText(/Last sync:/i)).not.toHaveTextContent('Never');
+    });
+  });
+
   it('allows configuring printer paper width and running test print', () => {
     vi.spyOn(window, 'alert').mockImplementation(() => {});
     const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {});

@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { FluentProvider } from '@fluentui/react-components';
 import { SubscriptionModal } from './SubscriptionModal';
 import { sariSariLightTheme } from '../theme/theme';
-import { useSubscriptionStore } from '../state/subscriptionStore';
+import { SUBSCRIPTION_REFRESH_ERROR, useSubscriptionStore } from '../state/subscriptionStore';
 import { useAuthStore } from '../state/authStore';
 import { useLanguageStore } from '../state/languageStore';
 import { db } from '../db/db';
@@ -65,6 +65,17 @@ describe('SubscriptionModal', () => {
 
     expect(screen.getByText('₱35')).toBeInTheDocument();
     expect(screen.getByText('₱89')).toBeInTheDocument();
+  });
+
+  it('keeps plan prices visible and offers retry when subscription refresh fails', () => {
+    useSubscriptionStore.setState({ isUpgradeModalOpen: true, error: SUBSCRIPTION_REFRESH_ERROR });
+    renderModal();
+
+    expect(screen.getByText('₱129')).toBeInTheDocument();
+    expect(screen.getByText('₱349')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Subukan muli|Retry/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Mag-upgrade sa Pro|Upgrade to Pro/i })).toBeEnabled();
+    expect(screen.queryByText(/Request failed with status code 500/i)).not.toBeInTheDocument();
   });
 
   it('closes modal when close button is clicked', () => {

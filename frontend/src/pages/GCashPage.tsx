@@ -104,9 +104,16 @@ export const GCashPage: React.FC = () => {
   const numAmount = parseFloat(amount) || 0;
 
   // Live query for GCash logs
-  const allTxns = useLiveQuery(() => db.gcashTxns.reverse().sortBy('date'), []) || [];
-  const resolutions = useLiveQuery(() => db.gcashTxnResolutions.toArray(), []);
+  const allTxns = useLiveQuery(
+    () => db.gcashTxns.where('tenantId').equals(tenantId).reverse().sortBy('date'),
+    [tenantId]
+  ) || [];
+  const resolutions = useLiveQuery(
+    () => db.gcashTxnResolutions.where('tenantId').equals(tenantId).toArray(),
+    [tenantId]
+  );
   const todayStr = toLocalDateKey(new Date());
+  const currentMonthPrefix = todayStr.slice(0, 7);
   const resolutionsByTxnId = useMemo(
     () => new Map((resolutions || []).map((resolution) => [resolution.gcashTxnId, resolution])),
     [resolutions]
@@ -123,13 +130,13 @@ export const GCashPage: React.FC = () => {
     const resolution = resolutionsByTxnId.get(txn.id);
     const resolvedToday = resolution ? toLocalDateKey(resolution.resolvedAt) === todayStr : false;
     const unresolvedAndUnresolvedLocally = !resolution && isGCashTxnUnresolved(txn);
-    return toLocalDateKey(txn.date) === todayStr || unresolvedAndUnresolvedLocally || resolvedToday || replacementTxnIdsResolvedToday.has(txn.id);
+    const isCurrentMonthEntry = toLocalDateKey(txn.date).slice(0, 7) === currentMonthPrefix && !resolution;
+    return isCurrentMonthEntry || unresolvedAndUnresolvedLocally || resolvedToday || replacementTxnIdsResolvedToday.has(txn.id);
   });
   const countedTodayTxns = todayTxns.filter(
     (t) => !isGCashTxnUnresolved(t) && !resolutionsByTxnId.has(t.id)
   );
 
-  const currentMonthPrefix = todayStr.slice(0, 7);
   const currentMonthTxnCount = allTxns.filter(
     (t) => toLocalDateKey(t.date).slice(0, 7) === currentMonthPrefix && !isGCashTxnUnresolved(t) && !resolutionsByTxnId.has(t.id)
   ).length;
@@ -452,7 +459,7 @@ export const GCashPage: React.FC = () => {
         </form>
       </Card>
 
-      {/* Running Daily GCash Log */}
+      {/* Current-Month GCash Log */}
       <Card className={styles.card}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
           <HistoryRegular fontSize={20} />
@@ -527,7 +534,9 @@ export const GCashPage: React.FC = () => {
                     )}
                     {isGCashTxnUnresolved(txn) && !resolution && (
                       <Text size={100} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
-                        {language === 'tl' ? 'Hindi naka-sync; hindi kasama sa totals.' : 'Not synced; excluded from totals.'}
+                        {language === 'tl'
+                          ? 'Hindi naka-sync; hindi kasama sa totals o buwanang bilang.'
+                          : 'Not synced; excluded from totals and monthly count.'}
                       </Text>
                     )}
                     {canResolve && (

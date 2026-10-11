@@ -74,6 +74,28 @@ describe('UtangPage', () => {
     });
   });
 
+  it('rejects a negative opening utang balance without writing customer, ledger, or sync data', async () => {
+    const alertMock = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    renderUtang();
+
+    fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Bagong Suki|Add New Customer/i }));
+
+    const textInputs = screen.getAllByRole('textbox');
+    fireEvent.change(textInputs[1], { target: { value: 'QA-TEST Neg' } });
+    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '-50' } });
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Suki|Save Customer/i }));
+
+    await waitFor(() => {
+      expect(alertMock).toHaveBeenCalledWith(expect.stringMatching(/Hindi maaaring negatibo|cannot be negative/i));
+    });
+    expect(await db.customers.toArray()).toHaveLength(0);
+    expect(await db.utangLedger.toArray()).toHaveLength(0);
+    expect(await db.syncQueue.toArray()).toHaveLength(0);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    alertMock.mockRestore();
+  });
+
   it('opens customer details and records payment', async () => {
     await db.customers.add({
       id: 'cust-pay',

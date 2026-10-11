@@ -153,6 +153,16 @@ export const UtangPage: React.FC = () => {
   const handleCreateCustomer = async () => {
     if (!newCustName.trim()) return;
 
+    const enteredInitialBalance = newCustInitialUtang.trim() === '' ? 0 : Number(newCustInitialUtang);
+    if (!Number.isFinite(enteredInitialBalance) || enteredInitialBalance < 0) {
+      alert(
+        language === 'tl'
+          ? 'Hindi maaaring negatibo ang panimulang balanse ng utang.'
+          : 'The opening utang balance cannot be negative.'
+      );
+      return;
+    }
+
     if (!canAddCustomer(customers.length)) {
       alert(
         language === 'tl'
@@ -165,7 +175,7 @@ export const UtangPage: React.FC = () => {
 
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
-    const initBalance = parseFloat(newCustInitialUtang) || 0;
+    const initBalance = enteredInitialBalance;
 
     const newCustomer: CustomerRecord = {
       id,
@@ -537,6 +547,8 @@ export const UtangPage: React.FC = () => {
                 <Text size={200} weight="semibold">{t.utang.paymentAmountLabel}</Text>
                 <Input
                   type="number"
+                  min={0}
+                  step="0.01"
                   style={{ width: '100%', marginTop: '4px' }}
                   value={paymentAmount}
                   onChange={(_, data) => setPaymentAmount(data.value)}
@@ -649,6 +661,8 @@ export const UtangPage: React.FC = () => {
                 <Text size={200} weight="semibold">{t.utang.initialDebtLabel}</Text>
                 <Input
                   type="number"
+                  min={0}
+                  step="0.01"
                   style={{ width: '100%', marginTop: '4px' }}
                   value={newCustInitialUtang}
                   onChange={(_, data) => setNewCustInitialUtang(data.value)}

@@ -24,7 +24,12 @@ import {
   StarFilled,
   CreditCardPersonRegular
 } from '@fluentui/react-icons';
-import { useSubscriptionStore, type BillingCycle, IS_MOCK_PAYMENT_ENABLED } from '../state/subscriptionStore';
+import {
+  useSubscriptionStore,
+  type BillingCycle,
+  IS_MOCK_PAYMENT_ENABLED,
+  SUBSCRIPTION_REFRESH_ERROR
+} from '../state/subscriptionStore';
 import { type PlanTier } from '../db/db';
 import { useLanguageStore } from '../state/languageStore';
 
@@ -136,6 +141,7 @@ export const SubscriptionModal: React.FC = () => {
     daysRemaining,
     isUpgradeModalOpen,
     closeUpgradeModal,
+    refreshSubscription,
     createCheckoutSession,
     simulateMockPayment,
     isLoading,
@@ -144,6 +150,7 @@ export const SubscriptionModal: React.FC = () => {
 
   const [cycle, setCycle] = useState<BillingCycle>('Monthly');
   const [processingTier, setProcessingTier] = useState<PlanTier | null>(null);
+  const isRefreshError = error === SUBSCRIPTION_REFRESH_ERROR;
 
   const handleCheckout = async (targetTier: PlanTier) => {
     setProcessingTier(targetTier);
@@ -198,8 +205,24 @@ export const SubscriptionModal: React.FC = () => {
         <DialogBody>
           <DialogContent>
             {error && (
-              <MessageBar intent="error" style={{ marginBottom: tokens.spacingVerticalM }}>
-                <MessageBarBody>{error}</MessageBarBody>
+              <MessageBar intent={isRefreshError ? 'warning' : 'error'} style={{ marginBottom: tokens.spacingVerticalM }}>
+                <MessageBarBody>
+                  {isRefreshError
+                    ? (isTagalog
+                      ? 'Hindi ma-refresh ang detalye ng subscription. Ipinapakita pa rin ang mga plano at presyo gamit ang huling na-save na plano.'
+                      : 'Subscription details could not be refreshed. Plans and prices are still available using your saved plan.')
+                    : error}
+                </MessageBarBody>
+                {isRefreshError && (
+                  <Button
+                    appearance="subtle"
+                    size="small"
+                    disabled={isLoading}
+                    onClick={() => void refreshSubscription()}
+                  >
+                    {isTagalog ? 'Subukan muli' : 'Retry'}
+                  </Button>
+                )}
               </MessageBar>
             )}
 

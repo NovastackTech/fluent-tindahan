@@ -395,6 +395,26 @@ public class BillingTests
     }
 
     [Fact]
+    public async Task BillingController_GetSubscriptionWithoutTenant_ReturnsUnauthorized()
+    {
+        _currentUserServiceMock.Setup(service => service.TenantId).Returns(Guid.Empty);
+        var mediator = new Mock<IMediator>();
+        var environment = new Mock<IHostEnvironment>();
+        var controller = new BillingController(
+            mediator.Object,
+            _currentUserServiceMock.Object,
+            environment.Object,
+            NullLogger<BillingController>.Instance);
+
+        var result = await controller.GetSubscription(CancellationToken.None);
+
+        result.Result.Should().BeOfType<UnauthorizedObjectResult>();
+        mediator.Verify(
+            service => service.Send(It.IsAny<GetTenantSubscriptionQuery>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task ProcessBatchSyncCommand_LibreTier_Enforces50ProductLimit()
     {
         using var context = CreateInMemoryDbContext();

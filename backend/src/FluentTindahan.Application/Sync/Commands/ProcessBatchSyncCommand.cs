@@ -406,6 +406,11 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
             return "Success";
         }
 
+        if (raw.TotalUtangBalance < 0m)
+        {
+            throw new InvalidOperationException("Customer utang balance cannot be negative.");
+        }
+
         if (existing == null)
         {
             if (effectiveTier == PlanTier.Libre)

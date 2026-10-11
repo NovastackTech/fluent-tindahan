@@ -96,6 +96,44 @@ public class BatchSyncComprehensiveTests
     }
 
     [Fact]
+    public async Task ProcessBatchSync_CustomerInsertRejectsNegativeOpeningBalance()
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var handler = new ProcessBatchSyncCommandHandler(context, userMock.Object, NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+        var customerId = Guid.NewGuid();
+
+        var batch = new BatchSyncRequestDto
+        {
+            DeviceId = Guid.NewGuid(),
+            Operations = new List<SyncOperationDto>
+            {
+                new SyncOperationDto
+                {
+                    SyncId = Guid.NewGuid().ToString(),
+                    Entity = "Customer",
+                    Action = "Insert",
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Payload = JsonSerializer.SerializeToElement(new
+                    {
+                        id = customerId,
+                        tenantId = _testTenantId,
+                        name = "QA-TEST Neg",
+                        phone = string.Empty,
+                        totalUtangBalance = -50m
+                    })
+                }
+            }
+        };
+
+        var response = await handler.Handle(new ProcessBatchSyncCommand(batch), CancellationToken.None);
+
+        response.Results.Should().ContainSingle();
+        response.Results[0].Status.Should().Be("Failed");
+        response.Results[0].Error.Should().Contain("cannot be negative");
+        (await context.Customers.IgnoreQueryFilters().AnyAsync(c => c.Id == customerId)).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task ProcessBatchSync_CustomerDeleteAndStaleUpdate_HandlesLWWCorrectly()
     {
         var (context, userMock) = CreateInMemoryContext();

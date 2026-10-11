@@ -101,7 +101,7 @@ describe('GCashPage', () => {
   it('renders existing today transactions in history log', async () => {
     await db.gcashTxns.add({
       id: 'g-hist-1',
-      tenantId: 't-1',
+      tenantId: '11111111-1111-1111-1111-111111111111',
       type: 'CashIn',
       amount: 500,
       fee: 10,
@@ -117,16 +117,63 @@ describe('GCashPage', () => {
     });
   });
 
+  it('shows current-tenant entries from this month and excludes other tenants from quota', async () => {
+    const earlierThisMonth = new Date();
+    earlierThisMonth.setDate(1);
+    earlierThisMonth.setHours(12, 0, 0, 0);
+
+    await db.gcashTxns.bulkAdd([
+      {
+        id: 'g-month-current-tenant',
+        tenantId: '11111111-1111-1111-1111-111111111111',
+        type: 'CashOut',
+        amount: 500,
+        fee: 10,
+        refNo: 'REF-MONTH-CURRENT-TENANT',
+        date: earlierThisMonth.toISOString()
+      },
+      {
+        id: 'g-month-other-tenant',
+        tenantId: '99999999-9999-9999-9999-999999999999',
+        type: 'CashOut',
+        amount: 700,
+        fee: 15,
+        refNo: 'REF-MONTH-OTHER-TENANT',
+        date: new Date().toISOString()
+      }
+    ]);
+
+    renderGCash();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('monthly-gcash-count')).toHaveTextContent('1/30');
+      expect(screen.getByText(/REF-MONTH-CURRENT-TENANT/i)).toBeInTheDocument();
+      expect(screen.queryByText(/REF-MONTH-OTHER-TENANT/i)).not.toBeInTheDocument();
+    });
+
+    const spinInputs = screen.getAllByRole('spinbutton');
+    fireEvent.change(spinInputs[0], { target: { value: '50' } });
+    const textInputs = screen.getAllByRole('textbox');
+    fireEvent.change(textInputs[0], { target: { value: 'REF-MONTH-SECOND' } });
+    fireEvent.click(screen.getByRole('button', { name: /Itala ang GCash|Record GCash|Cash-In/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('monthly-gcash-count')).toHaveTextContent('2/30');
+      expect(screen.getByText(/REF-MONTH-SECOND/i)).toBeInTheDocument();
+      expect(screen.queryByText(/REF-MONTH-OTHER-TENANT/i)).not.toBeInTheDocument();
+    });
+  });
+
   it('hides resolved originals and replacements after the day they were resolved', async () => {
     const now = Date.now();
     const today = new Date(now).toISOString();
-    const oldDate = new Date(now - 5 * 24 * 60 * 60 * 1000).toISOString();
+    const oldDate = new Date(now - 45 * 24 * 60 * 60 * 1000).toISOString();
     const resolvedYesterday = new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString();
 
     await db.gcashTxns.bulkAdd([
       {
         id: 'g-old-resolved',
-        tenantId: 't-1',
+        tenantId: '11111111-1111-1111-1111-111111111111',
         type: 'CashIn',
         amount: 400,
         fee: 10,
@@ -137,7 +184,7 @@ describe('GCashPage', () => {
       },
       {
         id: 'g-current-visible',
-        tenantId: 't-1',
+        tenantId: '11111111-1111-1111-1111-111111111111',
         type: 'CashIn',
         amount: 100,
         fee: 5,
@@ -146,7 +193,7 @@ describe('GCashPage', () => {
       },
       {
         id: 'g-old-replacement',
-        tenantId: 't-1',
+        tenantId: '11111111-1111-1111-1111-111111111111',
         type: 'CashIn',
         amount: 400,
         fee: 10,
@@ -156,7 +203,7 @@ describe('GCashPage', () => {
     ]);
     await db.gcashTxnResolutions.add({
       gcashTxnId: 'g-old-resolved',
-      tenantId: 't-1',
+      tenantId: '11111111-1111-1111-1111-111111111111',
       resolution: 'Corrected',
       resolvedAt: resolvedYesterday,
       replacementTxnId: 'g-old-replacement',
@@ -274,7 +321,7 @@ describe('GCashPage', () => {
     await db.gcashTxns.bulkAdd([
       {
         id: 'g-counted-1',
-        tenantId: 't-1',
+        tenantId: '11111111-1111-1111-1111-111111111111',
         type: 'CashIn',
         amount: 100,
         fee: 5,
@@ -283,7 +330,7 @@ describe('GCashPage', () => {
       },
       {
         id: 'g-unresolved-1',
-        tenantId: 't-1',
+        tenantId: '11111111-1111-1111-1111-111111111111',
         type: 'CashIn',
         amount: 800,
         fee: 15,

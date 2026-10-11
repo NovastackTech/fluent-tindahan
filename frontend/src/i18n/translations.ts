@@ -576,7 +576,7 @@ export const translations: Record<Language, Translations> = {
       todayFees: 'Kita sa Service Fees',
       transactionSuccess: 'GCash transaksyon matagumpay na naitala!',
       recentTransactions: 'Kamakailang mga Transaksyon',
-      noTransactions: 'Wala pang naitalang transaksyon ngayong araw.',
+      noTransactions: 'Wala pang naitalang transaksyon ngayong buwan.',
       amountLabel: 'Halaga (Amount ₱):*',
       feeLabel: 'Kaltas / Singil na Fee (₱):',
       feeAuto: 'Awtomatiko',
@@ -588,7 +588,7 @@ export const translations: Record<Language, Translations> = {
       totalFromCustomer: 'Kabuuang Kukunin sa Customer:',
       totalToCustomer: 'Kabuuang Ibibigay sa Customer:',
       saveTransaction: 'I-save ang Transaksyon',
-      historyTitle: 'Kasaysayan ng GCash Ngayong Araw',
+      historyTitle: 'Kasaysayan ng GCash Ngayong Buwan',
       invalidAmountAlert: 'Maglagay ng wastong halaga.'
     },
     dashboard: {
@@ -1001,7 +1001,7 @@ export const translations: Record<Language, Translations> = {
       todayFees: 'Service Fees Earned',
       transactionSuccess: 'GCash transaction recorded successfully!',
       recentTransactions: 'Recent Transactions',
-      noTransactions: 'No transactions recorded today yet.',
+      noTransactions: 'No transactions recorded this month yet.',
       amountLabel: 'Amount (₱):*',
       feeLabel: 'Service Fee (₱):',
       feeAuto: 'Automatic',
@@ -1013,7 +1013,7 @@ export const translations: Record<Language, Translations> = {
       totalFromCustomer: 'Total to Collect from Customer:',
       totalToCustomer: 'Total to Disburse to Customer:',
       saveTransaction: 'Save Transaction',
-      historyTitle: "Today's GCash History",
+      historyTitle: "This Month's GCash History",
       invalidAmountAlert: 'Please enter a valid amount.'
     },
     dashboard: {
