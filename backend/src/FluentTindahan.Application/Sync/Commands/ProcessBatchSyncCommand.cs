@@ -330,9 +330,11 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
                     return "ConflictIgnored";
                 }
 
-                _context.Customers.Remove(existing);
+                var wasDeleted = existing.IsDeleted;
+                existing.IsDeleted = true;
+                existing.UpdatedAt = op.Timestamp;
                 await _context.SaveChangesAsync(cancellationToken);
-                if (counters.CustomerCount.HasValue && counters.CustomerCount > 0)
+                if (!wasDeleted && counters.CustomerCount.HasValue && counters.CustomerCount > 0)
                 {
                     counters.CustomerCount--;
                 }
@@ -346,7 +348,7 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
             {
                 // Count once per batch to avoid N+1 queries, incrementing locally
                 counters.CustomerCount ??= await _context.Customers.IgnoreQueryFilters()
-                    .CountAsync(c => c.TenantId == tenantId, cancellationToken);
+                    .CountAsync(c => c.TenantId == tenantId && !c.IsDeleted, cancellationToken);
 
                 if (counters.CustomerCount >= TierLimits.LibreMaxCustomers)
                 {
@@ -360,7 +362,8 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
                 Name = raw.Name ?? "Unknown Customer",
                 Phone = raw.Phone ?? string.Empty,
                 TotalUtangBalance = raw.TotalUtangBalance,
-                UpdatedAt = op.Timestamp
+                UpdatedAt = op.Timestamp,
+                IsDeleted = false
             };
             _context.Customers.Add(customer);
             await _context.SaveChangesAsync(cancellationToken);
@@ -374,9 +377,28 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
         // LWW
         if (existing.UpdatedAt > op.Timestamp)
         {
+            _logger.LogInformation("LWW conflict ignored for Customer {Id}: existing is newer ({Existing} > {Incoming})",
+                existing.Id, existing.UpdatedAt, op.Timestamp);
             return "ConflictIgnored";
         }
 
+        var wasPreviouslyDeleted = existing.IsDeleted;
+        if (wasPreviouslyDeleted)
+        {
+            if (effectiveTier == PlanTier.Libre)
+            {
+                counters.CustomerCount ??= await _context.Customers.IgnoreQueryFilters()
+                    .CountAsync(c => c.TenantId == tenantId && !c.IsDeleted, cancellationToken);
+
+                if (counters.CustomerCount >= TierLimits.LibreMaxCustomers)
+                {
+                    throw new InvalidOperationException($"Libre plan limit exceeded: Maximum {TierLimits.LibreMaxCustomers} debtors allowed. Upgrade to Tindahan Pro for unlimited customer accounts.");
+                }
+            }
+        }
+
+        // If existing customer was previously archived/deleted, restore it
+        existing.IsDeleted = false;
         existing.Name = raw.Name ?? existing.Name;
         existing.Phone = raw.Phone ?? existing.Phone;
         // TotalUtangBalance is normally maintained by UtangLedger, but if sync provided latest computed balance:
@@ -387,6 +409,10 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
         existing.UpdatedAt = op.Timestamp;
 
         await _context.SaveChangesAsync(cancellationToken);
+        if (wasPreviouslyDeleted && counters.CustomerCount.HasValue)
+        {
+            counters.CustomerCount++;
+        }
         return "Success";
     }
 

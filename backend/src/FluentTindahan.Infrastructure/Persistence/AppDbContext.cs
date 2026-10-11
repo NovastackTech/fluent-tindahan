@@ -114,6 +114,7 @@ public class AppDbContext : DbContext, IApplicationDbContext
             builder.Property(c => c.Name).IsRequired().HasMaxLength(200);
             builder.Property(c => c.Phone).HasMaxLength(30);
             builder.Property(c => c.TotalUtangBalance).HasPrecision(12, 2);
+            builder.Property(c => c.IsDeleted).HasDefaultValue(false);
 
             builder.HasIndex(c => c.TenantId);
             builder.HasIndex(c => new { c.TenantId, c.Phone });
@@ -254,7 +255,7 @@ public class AppDbContext : DbContext, IApplicationDbContext
         // Global Query Filters for multi-tenancy isolation and soft delete
         ConfigureTenantFilter<User>(modelBuilder);
         modelBuilder.Entity<Product>().HasQueryFilter(p => p.TenantId == _currentUserService.TenantId && !p.IsDeleted);
-        ConfigureTenantFilter<Customer>(modelBuilder);
+        modelBuilder.Entity<Customer>().HasQueryFilter(c => c.TenantId == _currentUserService.TenantId && !c.IsDeleted);
         ConfigureTenantFilter<UtangLedger>(modelBuilder);
         ConfigureTenantFilter<Sale>(modelBuilder);
         ConfigureTenantFilter<SaleItem>(modelBuilder);

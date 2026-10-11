@@ -154,8 +154,12 @@ public class BatchSyncComprehensiveTests
         response.Results[0].Status.Should().Be("ConflictIgnored");
         response.Results[1].Status.Should().Be("Success");
 
-        var deleted = await context.Customers.FindAsync(custId);
+        var deleted = await context.Customers.FirstOrDefaultAsync(c => c.Id == custId);
         deleted.Should().BeNull();
+
+        var softDeleted = await context.Customers.IgnoreQueryFilters().FirstOrDefaultAsync(c => c.Id == custId);
+        softDeleted.Should().NotBeNull();
+        softDeleted!.IsDeleted.Should().BeTrue();
     }
 
     [Fact]

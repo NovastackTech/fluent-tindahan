@@ -449,6 +449,81 @@ public class BillingTests
     }
 
     [Fact]
+    public async Task ProcessBatchSyncCommand_LibreTier_SoftDeletedCustomersDoNotCountTowardCap()
+    {
+        using var context = CreateInMemoryDbContext();
+        var tenantId = _currentUserServiceMock.Object.TenantId;
+
+        // Seed 25 active customers and 10 soft-deleted customers (total 35 in DB)
+        for (int i = 0; i < 25; i++)
+        {
+            context.Customers.Add(new Customer
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantId,
+                Name = $"Active Debtor {i}",
+                Phone = $"0918000{i:D4}",
+                IsDeleted = false,
+                UpdatedAt = DateTimeOffset.UtcNow
+            });
+        }
+        for (int i = 0; i < 10; i++)
+        {
+            context.Customers.Add(new Customer
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantId,
+                Name = $"Deleted Debtor {i}",
+                Phone = $"0919000{i:D4}",
+                IsDeleted = true,
+                UpdatedAt = DateTimeOffset.UtcNow
+            });
+        }
+        await context.SaveChangesAsync();
+
+        var handler = new ProcessBatchSyncCommandHandler(
+            context,
+            _currentUserServiceMock.Object,
+            NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+
+        // Even though total rows in DB is 35 (which exceeds 30 cap), only 25 are active.
+        // Inserting a 26th customer must succeed!
+        var op = new SyncOperationDto
+        {
+            SyncId = "sync_cust_26",
+            Entity = "Customer",
+            Action = "Insert",
+            Timestamp = DateTimeOffset.UtcNow,
+            Payload = System.Text.Json.JsonDocument.Parse("""
+            {
+                "id": "55555555-5555-5555-5555-555555555555",
+                "name": "Active Customer 26",
+                "phone": "09175555555"
+            }
+            """).RootElement
+        };
+
+        var request = new BatchSyncRequestDto
+        {
+            DeviceId = Guid.NewGuid(),
+            Operations = new List<SyncOperationDto> { op }
+        };
+
+        var result = await handler.Handle(new ProcessBatchSyncCommand(request), CancellationToken.None);
+
+        result.Results.Should().HaveCount(1);
+        result.Results[0].Status.Should().Be("Success");
+
+        // Active customer count is now 26
+        var activeCount = await context.Customers.CountAsync();
+        activeCount.Should().Be(26);
+
+        // Total customer rows in DB is 36
+        var totalRows = await context.Customers.IgnoreQueryFilters().CountAsync();
+        totalRows.Should().Be(36);
+    }
+
+    [Fact]
     public async Task SubscriptionMonitorService_ExpiredTenant_ShouldDowngradeToLibre()
     {
         var expiredTenantId = Guid.NewGuid();
@@ -1423,6 +1498,253 @@ public class BillingTests
         // Count of active products is back to 50
         var activeCount = await context.Products.CountAsync();
         activeCount.Should().Be(50);
+    }
+
+    [Fact]
+    public async Task ProcessBatchSyncCommand_CustomerDelete_SoftDeletesAndDoesNotDoubleDecrementCounters()
+    {
+        using var context = CreateInMemoryDbContext();
+        var tenantId = _currentUserServiceMock.Object.TenantId;
+
+        var activeCustomerId = Guid.NewGuid();
+        var placeholderCustomerId = Guid.NewGuid();
+        var utangId = Guid.NewGuid();
+        var saleId = Guid.NewGuid();
+
+        // 1 active customer
+        var activeCust = new Customer
+        {
+            Id = activeCustomerId,
+            TenantId = tenantId,
+            Name = "Active Aling Tina",
+            Phone = "09171112222",
+            TotalUtangBalance = 150m,
+            IsDeleted = false,
+            UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-10)
+        };
+        // 1 placeholder customer (already soft-deleted)
+        var placeholderCust = new Customer
+        {
+            Id = placeholderCustomerId,
+            TenantId = tenantId,
+            Name = "Deleted Customer Placeholder",
+            Phone = "09180001111",
+            TotalUtangBalance = 0m,
+            IsDeleted = true,
+            UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-10)
+        };
+        context.Customers.Add(activeCust);
+        context.Customers.Add(placeholderCust);
+
+        // 28 other active customers to reach 29 active customers before batch
+        for (int i = 0; i < 28; i++)
+        {
+            context.Customers.Add(new Customer
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantId,
+                Name = $"Customer {i}",
+                Phone = $"0917000{i:D4}",
+                TotalUtangBalance = 0m,
+                IsDeleted = false,
+                UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-10)
+            });
+        }
+
+        // Add utang ledger and sale referencing active customer
+        context.UtangLedgers.Add(new UtangLedger
+        {
+            Id = utangId,
+            TenantId = tenantId,
+            CustomerId = activeCustomerId,
+            Amount = 150m,
+            Type = "Credit",
+            Date = DateTimeOffset.UtcNow.AddMinutes(-5),
+            Notes = "Sample utang"
+        });
+        context.Sales.Add(new Sale
+        {
+            Id = saleId,
+            TenantId = tenantId,
+            CustomerId = activeCustomerId,
+            TotalAmount = 150m,
+            Date = DateTimeOffset.UtcNow.AddMinutes(-5),
+            PaymentMethod = "Utang"
+        });
+        await context.SaveChangesAsync();
+
+        var handler = new ProcessBatchSyncCommandHandler(
+            context,
+            _currentUserServiceMock.Object,
+            NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+
+        var deleteTimestamp = DateTimeOffset.UtcNow;
+        var batch = new BatchSyncRequestDto
+        {
+            DeviceId = Guid.NewGuid(),
+            Operations = new List<SyncOperationDto>
+            {
+                // Delete active customer
+                new SyncOperationDto
+                {
+                    SyncId = "del_active_cust",
+                    Entity = "Customer",
+                    Action = "Delete",
+                    Timestamp = deleteTimestamp,
+                    Payload = System.Text.Json.JsonDocument.Parse($$"""{ "id": "{{activeCustomerId}}" }""").RootElement
+                },
+                // Delete already soft-deleted placeholder customer (must NOT double-decrement)
+                new SyncOperationDto
+                {
+                    SyncId = "del_placeholder_cust",
+                    Entity = "Customer",
+                    Action = "Delete",
+                    Timestamp = deleteTimestamp,
+                    Payload = System.Text.Json.JsonDocument.Parse($$"""{ "id": "{{placeholderCustomerId}}" }""").RootElement
+                },
+                // Add a new customer (succeeds as 30th customer, then del_active decrements to 29, placeholder does not decrement to 28)
+                new SyncOperationDto
+                {
+                    SyncId = "add_new_cust",
+                    Entity = "Customer",
+                    Action = "Insert",
+                    Timestamp = deleteTimestamp,
+                    Payload = System.Text.Json.JsonDocument.Parse($$"""
+                    {
+                        "id": "{{Guid.NewGuid()}}",
+                        "name": "New Customer Under Limit",
+                        "phone": "09179998888"
+                    }
+                    """).RootElement
+                }
+            }
+        };
+
+        var response = await handler.Handle(new ProcessBatchSyncCommand(batch), CancellationToken.None);
+
+        response.Results.Should().HaveCount(3);
+        response.Results[0].Status.Should().Be("Success");
+        response.Results[1].Status.Should().Be("Success");
+        response.Results[2].Status.Should().Be("Success");
+
+        // Verify active customer is now soft-deleted (filtered out by global query filter)
+        var standardQuery = await context.Customers.FirstOrDefaultAsync(c => c.Id == activeCustomerId);
+        standardQuery.Should().BeNull();
+
+        // But still exists in database with IsDeleted == true and updated timestamp
+        var rawActive = await context.Customers.IgnoreQueryFilters().FirstOrDefaultAsync(c => c.Id == activeCustomerId);
+        rawActive.Should().NotBeNull();
+        rawActive!.IsDeleted.Should().BeTrue();
+        rawActive.UpdatedAt.Should().Be(deleteTimestamp);
+
+        // Verify UtangLedger and Sale still exist and retain foreign key to activeCustomerId without being orphaned or cascaded
+        var preservedUtang = await context.UtangLedgers.FirstOrDefaultAsync(u => u.Id == utangId);
+        preservedUtang.Should().NotBeNull();
+        preservedUtang!.CustomerId.Should().Be(activeCustomerId);
+
+        var preservedSale = await context.Sales.FirstOrDefaultAsync(s => s.Id == saleId);
+        preservedSale.Should().NotBeNull();
+        preservedSale!.CustomerId.Should().Be(activeCustomerId);
+
+        // Active customer count in DB is exactly 29 (28 initial + 1 added - 1 active deleted; placeholder was already deleted)
+        var totalActive = await context.Customers.CountAsync();
+        totalActive.Should().Be(29);
+    }
+
+    [Fact]
+    public async Task ProcessBatchSyncCommand_RestoringCustomerPlaceholder_EnforcesLibreLimitAndIncrementsCounter()
+    {
+        using var context = CreateInMemoryDbContext();
+        var tenantId = _currentUserServiceMock.Object.TenantId;
+
+        var placeholderId = Guid.NewGuid();
+        // Seed 30 active customers (reaching Libre limit)
+        for (int i = 0; i < 30; i++)
+        {
+            context.Customers.Add(new Customer
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantId,
+                Name = $"Active Customer {i}",
+                Phone = $"0918000{i:D4}",
+                IsDeleted = false,
+                UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-10)
+            });
+        }
+
+        // Seed 1 placeholder customer
+        context.Customers.Add(new Customer
+        {
+            Id = placeholderId,
+            TenantId = tenantId,
+            Name = "Missing Placeholder Debtor",
+            Phone = "09180009999",
+            IsDeleted = true,
+            UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-10)
+        });
+        await context.SaveChangesAsync();
+
+        var handler = new ProcessBatchSyncCommandHandler(
+            context,
+            _currentUserServiceMock.Object,
+            NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+
+        // Attempting to restore the placeholder when at 30 customers must fail
+        var restoreOp = new SyncOperationDto
+        {
+            SyncId = "sync_restore_cust_placeholder",
+            Entity = "Customer",
+            Action = "Update",
+            Timestamp = DateTimeOffset.UtcNow,
+            Payload = System.Text.Json.JsonDocument.Parse($$"""
+            {
+                "id": "{{placeholderId}}",
+                "name": "Restored Real Debtor",
+                "phone": "09181119999"
+            }
+            """).RootElement
+        };
+
+        var response1 = await handler.Handle(
+            new ProcessBatchSyncCommand(new BatchSyncRequestDto
+            {
+                DeviceId = Guid.NewGuid(),
+                Operations = new List<SyncOperationDto> { restoreOp }
+            }),
+            CancellationToken.None);
+
+        response1.Results.Should().HaveCount(1);
+        response1.Results[0].Status.Should().Be("Failed");
+        response1.Results[0].Error.Should().Contain("Libre plan limit exceeded: Maximum 30 debtors allowed");
+
+        // Placeholder must still be soft-deleted
+        var rawPlaceholder1 = await context.Customers.IgnoreQueryFilters().FirstOrDefaultAsync(c => c.Id == placeholderId);
+        rawPlaceholder1!.IsDeleted.Should().BeTrue();
+
+        // Now delete one active customer to drop count to 29
+        var activeToDelete = await context.Customers.FirstAsync(c => !c.IsDeleted);
+        activeToDelete.IsDeleted = true;
+        await context.SaveChangesAsync();
+
+        // Restoring the placeholder now should succeed and increment the counter to 30
+        var response2 = await handler.Handle(
+            new ProcessBatchSyncCommand(new BatchSyncRequestDto
+            {
+                DeviceId = Guid.NewGuid(),
+                Operations = new List<SyncOperationDto> { restoreOp }
+            }),
+            CancellationToken.None);
+
+        response2.Results.Should().HaveCount(1);
+        response2.Results[0].Status.Should().Be("Success");
+
+        var rawPlaceholder2 = await context.Customers.IgnoreQueryFilters().FirstOrDefaultAsync(c => c.Id == placeholderId);
+        rawPlaceholder2!.IsDeleted.Should().BeFalse();
+        rawPlaceholder2.Name.Should().Be("Restored Real Debtor");
+
+        // Count of active customers is back to 30
+        var activeCount = await context.Customers.CountAsync();
+        activeCount.Should().Be(30);
     }
 
     [Fact]
