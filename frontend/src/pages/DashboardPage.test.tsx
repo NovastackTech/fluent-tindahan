@@ -82,5 +82,37 @@ describe('DashboardPage', () => {
       expect(screen.getByText(/Ref #s-dash/i)).toBeInTheDocument();
     });
   });
+
+  it('excludes unresolved GCash conflicts from dashboard volume and fee totals', async () => {
+    const today = new Date().toISOString();
+    await db.gcashTxns.bulkAdd([
+      {
+        id: 'g-dash-counted',
+        tenantId: 't-1',
+        type: 'CashIn',
+        amount: 100,
+        fee: 5,
+        refNo: 'REF-DASH-COUNTED',
+        date: today
+      },
+      {
+        id: 'g-dash-unresolved',
+        tenantId: 't-1',
+        type: 'CashOut',
+        amount: 800,
+        fee: 15,
+        refNo: 'REF-DASH-UNRESOLVED',
+        date: today,
+        syncStatus: 'Conflict'
+      }
+    ]);
+
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('today-gcash-volume')).toHaveTextContent('₱100.00');
+      expect(screen.getByTestId('today-gcash-fees')).toHaveTextContent('₱5.00');
+    });
+  });
 });
 

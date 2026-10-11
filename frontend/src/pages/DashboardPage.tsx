@@ -20,7 +20,7 @@ import {
   BoxRegular
 } from '@fluentui/react-icons';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../db/db';
+import { db, isGCashTxnUnresolved } from '../db/db';
 import { useSyncStore } from '../sync/syncEngine';
 import type { NavTab } from '../components/Navigation';
 import { useTranslation } from '../state/languageStore';
@@ -125,7 +125,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   const debtors = (customers || []).filter((c) => c.totalUtangBalance > 0);
   const totalUtangAmount = debtors.reduce((sum, c) => sum + c.totalUtangBalance, 0);
 
-  const todayGCash = (gcashTxns || []).filter((g) => g.date.slice(0, 10) === todayStr);
+  const todayGCash = (gcashTxns || []).filter(
+    (g) => g.date.slice(0, 10) === todayStr && !isGCashTxnUnresolved(g)
+  );
   const totalGCashVolume = todayGCash.reduce((sum, g) => sum + g.amount, 0);
   const totalGCashFees = todayGCash.reduce((sum, g) => sum + g.fee, 0);
 
@@ -245,10 +247,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
 
           <Card className={styles.metricCard}>
             <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>{t.dashboard.gcashVolume}</Text>
-            <div className={styles.metricValue} style={{ color: tokens.colorPaletteBlueForeground2 }}>
+            <div data-testid="today-gcash-volume" className={styles.metricValue} style={{ color: tokens.colorPaletteBlueForeground2 }}>
               ₱{totalGCashVolume.toFixed(2)}
             </div>
-            <Text size={200}>{t.gcash.todayFees}: <strong>₱{totalGCashFees.toFixed(2)}</strong> ({todayGCash.length} txns)</Text>
+            <Text size={200}>{t.gcash.todayFees}: <strong data-testid="today-gcash-fees">₱{totalGCashFees.toFixed(2)}</strong> ({todayGCash.length} txns)</Text>
           </Card>
 
           <Card

@@ -693,7 +693,8 @@ public class BatchSyncComprehensiveTests
         response.Results.Should().HaveCount(1);
         response.Results[0].Status.Should().Be("DuplicateRef");
         response.Results[0].Error.Should().Contain("Duplicate GCash reference number");
-        response.ProcessedCount.Should().Be(1);
+        response.ProcessedCount.Should().Be(0);
+        response.ConflictCount.Should().Be(1);
     }
 
     [Fact]

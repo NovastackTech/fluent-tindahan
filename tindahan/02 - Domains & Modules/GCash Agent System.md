@@ -62,6 +62,10 @@ Fraud and disputes frequently occur when customers claim to have sent funds that
 - Prevents duplicate entry of identical reference numbers within the store tenant.
 - Facilitates immediate search when a customer returns regarding a disputed transaction.
 
+### Duplicate references reported during sync
+
+When the server rejects a GCash reference as a duplicate, the transaction remains on the originating device and is marked for attention; it is not uploaded. These unresolved rows remain visible in the GCash log but are excluded from local volume, fee, and monthly transaction-count totals. The current UI does not yet let a cashier correct the reference and re-enqueue the transaction or void it, so the row remains local until that resolution workflow is implemented.
+
 ---
 
 ## 4. End-of-Day Float Reconciliation

@@ -20,6 +20,7 @@ public class SyncOperationDto
 public class BatchSyncResultDto
 {
     public int ProcessedCount { get; set; }
+    public int ConflictCount { get; set; }
     public List<SyncItemResultDto> Results { get; set; } = new();
 }
 

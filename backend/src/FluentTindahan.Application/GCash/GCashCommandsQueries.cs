@@ -140,19 +140,12 @@ public class RecordGCashTxnCommandHandler : IRequestHandler<RecordGCashTxnComman
         var current = (Exception?)ex;
         while (current != null)
         {
-            if (string.Equals(current.GetType().Name, "PostgresException", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(current.GetType().FullName, "Npgsql.PostgresException", StringComparison.Ordinal))
             {
                 var sqlStateProp = current.GetType().GetProperty("SqlState");
-                if (sqlStateProp?.GetValue(current) as string == "23505")
-                {
-                    return true;
-                }
-            }
-
-            var msg = current.Message.ToLowerInvariant();
-            if (msg.Contains("23505") || msg.Contains("unique") || msg.Contains("duplicate") || msg.Contains("ix_gcashtransactions_tenantid_refnonorm"))
-            {
-                return true;
+                var constraintNameProp = current.GetType().GetProperty("ConstraintName");
+                return sqlStateProp?.GetValue(current) as string == "23505"
+                    && constraintNameProp?.GetValue(current) as string == "IX_GCashTransactions_TenantId_RefNoNorm";
             }
 
             current = current.InnerException;

@@ -184,7 +184,7 @@ export async function processSyncQueue(): Promise<{ processed: number; errors: n
 
     let successCount = 0;
     let failCount = 0;
-    let conflictMessage: string | null = null;
+    let duplicateRefCount = 0;
 
     for (const res of results) {
       const original = pendingItems.find((p) => p.id === res.syncId);
@@ -193,13 +193,14 @@ export async function processSyncQueue(): Promise<{ processed: number; errors: n
       if (res.status === 'Success' || res.status === 'ConflictIgnored') {
         await db.syncQueue.delete(original.id);
         successCount++;
-      } else if (res.status === 'DuplicateRef' || res.status === 'Conflict') {
-        // Handled conflict: remove from syncQueue so it does not fail the whole batch or retry infinitely
+      } else if (res.status === 'DuplicateRef' && original.entity === 'GCashTxn') {
+        // GCash duplicate references need manual attention and should not retry automatically.
         await db.syncQueue.delete(original.id);
         successCount++;
+        duplicateRefCount++;
 
         // Mark/flag the local row so the UI can show it needs attention
-        if (original.entity === 'GCashTxn' && original.payload?.id) {
+        if (original.payload?.id) {
           const localTxn = await db.gcashTxns.get(original.payload.id);
           if (localTxn) {
             await db.gcashTxns.update(original.payload.id, {
@@ -209,7 +210,6 @@ export async function processSyncQueue(): Promise<{ processed: number; errors: n
             });
           }
         }
-        conflictMessage = res.error || `May duplicate GCash reference number: ${original.payload?.refNo || ''}`;
       } else {
         failCount++;
         const newRetryCount = (original.retryCount || 0) + 1;
@@ -238,8 +238,10 @@ export async function processSyncQueue(): Promise<{ processed: number; errors: n
     }
 
     store.setLastSyncedAt(new Date());
-    if (conflictMessage) {
-      store.setLastErrorMessage(conflictMessage);
+    if (duplicateRefCount > 0) {
+      store.setLastErrorMessage(
+        `${duplicateRefCount} duplicate GCash reference${duplicateRefCount === 1 ? '' : 's'} detected.`
+      );
     }
     await updateQueueCounts();
     return { processed: successCount, errors: failCount };

@@ -127,7 +127,10 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
                     continue;
                 }
 
-                if (ex is DbUpdateException dbEx && RecordGCashTxnCommandHandler.IsUniqueIndexViolation(dbEx))
+                var entityType = op.Entity?.Trim().ToLowerInvariant();
+                if (entityType is "gcashtxn" or "gcash"
+                    && ex is DbUpdateException dbEx
+                    && RecordGCashTxnCommandHandler.IsUniqueIndexViolation(dbEx))
                 {
                     _logger.LogWarning(ex, "Unique constraint violation on sync operation {SyncId}", syncId);
                     resultsByIndex[item.OriginalIndex] = new SyncItemResultDto
@@ -139,7 +142,6 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
                     continue;
                 }
 
-                var entityType = op.Entity?.Trim().ToLowerInvariant();
                 if (entityType == "product" && TryExtractId(op.Payload, out var prodId))
                 {
                     counters.RejectedProductIds.Add(prodId);
@@ -163,7 +165,8 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
 
         return new BatchSyncResultDto
         {
-            ProcessedCount = results.Count(r => r.Status == "Success" || r.Status == "ConflictIgnored" || r.Status == "DuplicateRef" || r.Status == "Conflict"),
+            ProcessedCount = results.Count(r => r.Status == "Success" || r.Status == "ConflictIgnored"),
+            ConflictCount = results.Count(r => r.Status == "DuplicateRef" || r.Status == "Conflict"),
             Results = results
         };
     }

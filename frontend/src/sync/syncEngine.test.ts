@@ -94,6 +94,31 @@ describe('syncEngine', () => {
     expect(useSyncStore.getState().lastSyncedAt).not.toBeNull();
   });
 
+  it.each([
+    ['Customer', 'Conflict'],
+    ['Customer', 'DuplicateRef'],
+    ['GCashTxn', 'Conflict']
+  ])('processSyncQueue retries %s %s responses', async (entity, status) => {
+    const syncId = await enqueueSync(entity as 'Customer' | 'GCashTxn', 'Delete', { id: 'entity-conflict-1' });
+
+    (apiClient.post as any).mockResolvedValueOnce({
+      data: {
+        results: [{ syncId, status, error: 'Operation conflict' }]
+      }
+    });
+
+    const result = await processSyncQueue();
+
+    expect(result.processed).toBe(0);
+    expect(result.errors).toBe(1);
+
+    const queued = await db.syncQueue.get(syncId);
+    expect(queued?.status).toBe('Failed');
+    expect(queued?.retryCount).toBe(1);
+    expect(queued?.errorMessage).toBe('Operation conflict');
+    expect(await db.deadLetterQueue.get(syncId)).toBeUndefined();
+  });
+
   it('processSyncQueue treats ConflictIgnored as resolved success', async () => {
     const syncId = await enqueueSync('Product', 'Update', { id: 'p-1', name: 'Old name' });
 
@@ -327,16 +352,29 @@ describe('syncEngine', () => {
 
   it('processSyncQueue handles DuplicateRef status by clearing queue and flagging local GCashTxn row with needsAttention', async () => {
     const txnId = 'gcash-dup-test-1';
-    await db.gcashTxns.add({
-      id: txnId,
-      tenantId: 't-1',
-      type: 'CashIn',
-      amount: 1000,
-      fee: 15,
-      refNo: 'REF-DUP-999',
-      refNoNorm: 'ref-dup-999',
-      date: new Date().toISOString()
-    });
+    const secondTxnId = 'gcash-dup-test-2';
+    await db.gcashTxns.bulkAdd([
+      {
+        id: txnId,
+        tenantId: 't-1',
+        type: 'CashIn',
+        amount: 1000,
+        fee: 15,
+        refNo: 'REF-DUP-999',
+        refNoNorm: 'ref-dup-999',
+        date: new Date().toISOString()
+      },
+      {
+        id: secondTxnId,
+        tenantId: 't-1',
+        type: 'CashOut',
+        amount: 500,
+        fee: 10,
+        refNo: 'REF-DUP-1000',
+        refNoNorm: 'ref-dup-1000',
+        date: new Date().toISOString()
+      }
+    ]);
 
     const syncId = await enqueueSync('GCashTxn', 'Insert', {
       id: txnId,
@@ -347,15 +385,29 @@ describe('syncEngine', () => {
       refNo: 'REF-DUP-999',
       date: new Date().toISOString()
     });
+    const secondSyncId = await enqueueSync('GCashTxn', 'Insert', {
+      id: secondTxnId,
+      tenantId: 't-1',
+      type: 'CashOut',
+      amount: 500,
+      fee: 10,
+      refNo: 'REF-DUP-1000',
+      date: new Date().toISOString()
+    });
 
     (apiClient.post as any).mockResolvedValueOnce({
       data: {
-        processedCount: 1,
+        processedCount: 2,
         results: [
           {
             syncId,
             status: 'DuplicateRef',
             error: "Duplicate GCash reference number 'REF-DUP-999' for this tenant."
+          },
+          {
+            syncId: secondSyncId,
+            status: 'DuplicateRef',
+            error: "Duplicate GCash reference number 'REF-DUP-1000' for this tenant."
           }
         ]
       }
@@ -363,7 +415,7 @@ describe('syncEngine', () => {
 
     const result = await processSyncQueue();
 
-    expect(result.processed).toBe(1);
+    expect(result.processed).toBe(2);
     expect(result.errors).toBe(0);
 
     // Queue is cleared (not kept or retried until dead letter)
@@ -375,9 +427,11 @@ describe('syncEngine', () => {
     expect(updatedTxn?.needsAttention).toBe(true);
     expect(updatedTxn?.syncStatus).toBe('DuplicateRef');
     expect(updatedTxn?.conflictReason).toContain('Duplicate GCash reference number');
+    const secondUpdatedTxn = await db.gcashTxns.get(secondTxnId);
+    expect(secondUpdatedTxn?.needsAttention).toBe(true);
+    expect(secondUpdatedTxn?.syncStatus).toBe('DuplicateRef');
 
-    // Sync store message is updated
-    expect(useSyncStore.getState().lastErrorMessage).toContain('Duplicate GCash reference number');
+    expect(useSyncStore.getState().lastErrorMessage).toBe('2 duplicate GCash references detected.');
   });
 
   it('initSyncEngine attaches online and offline event handlers', () => {

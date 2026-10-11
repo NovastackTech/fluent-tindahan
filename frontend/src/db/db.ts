@@ -110,6 +110,10 @@ export function normalizeRef(refNo: string | undefined | null): string {
   return (refNo || '').trim().toLowerCase();
 }
 
+export function isGCashTxnUnresolved(txn: Pick<GCashTxnRecord, 'needsAttention' | 'syncStatus'>): boolean {
+  return txn.needsAttention === true || txn.syncStatus === 'DuplicateRef' || txn.syncStatus === 'Conflict';
+}
+
 export class FluentTindahanDatabase extends Dexie {
   products!: Table<ProductRecord, string>;
   customers!: Table<CustomerRecord, string>;

@@ -36,6 +36,7 @@ public class GCashController : ControllerBase
         {
             return Conflict(new { message = ex.Message });
         }
+        // Defensive fallback if a provider exception escapes the command handler.
         catch (Microsoft.EntityFrameworkCore.DbUpdateException ex) when (RecordGCashTxnCommandHandler.IsUniqueIndexViolation(ex))
         {
             return Conflict(new { message = $"Duplicate GCash reference number '{command.RefNo?.Trim()}' for this tenant." });

@@ -201,6 +201,42 @@ describe('GCashPage', () => {
       expect(screen.getAllByText(/REF-FLAGGED-777/i).length).toBeGreaterThan(0);
       expect(screen.getByTestId('duplicate-ref-badge')).toBeInTheDocument();
       expect(screen.getByText(/Duplicate GCash reference number 'REF-FLAGGED-777'/i)).toBeInTheDocument();
+      expect(screen.getByText(/Not synced; excluded from totals|Hindi naka-sync; hindi kasama sa totals/i)).toBeInTheDocument();
+    });
+  });
+
+  it('excludes flagged conflicts from daily GCash totals while retaining them in the log', async () => {
+    const today = new Date().toISOString();
+    await db.gcashTxns.bulkAdd([
+      {
+        id: 'g-counted-1',
+        tenantId: 't-1',
+        type: 'CashIn',
+        amount: 100,
+        fee: 5,
+        refNo: 'REF-COUNTED-1',
+        date: today
+      },
+      {
+        id: 'g-unresolved-1',
+        tenantId: 't-1',
+        type: 'CashIn',
+        amount: 800,
+        fee: 15,
+        refNo: 'REF-UNRESOLVED-1',
+        date: today,
+        needsAttention: true,
+        syncStatus: 'DuplicateRef'
+      }
+    ]);
+
+    renderGCash();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('today-cash-in-total')).toHaveTextContent('₱100.00');
+      expect(screen.getByTestId('today-gcash-fees-total')).toHaveTextContent('₱5.00');
+      expect(screen.getByTestId('monthly-gcash-count')).toHaveTextContent('1/30');
+      expect(screen.getByText(/REF-UNRESOLVED-1/i)).toBeInTheDocument();
     });
   });
 });

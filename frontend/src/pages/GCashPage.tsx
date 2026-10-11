@@ -19,7 +19,7 @@ import {
   HistoryRegular
 } from '@fluentui/react-icons';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, normalizeRef, type GCashTxnRecord } from '../db/db';
+import { db, isGCashTxnUnresolved, normalizeRef, type GCashTxnRecord } from '../db/db';
 import { useAuthStore } from '../state/authStore';
 import { addSyncRecord, kickSync } from '../sync/syncEngine';
 import { useTranslation } from '../state/languageStore';
@@ -98,13 +98,16 @@ export const GCashPage: React.FC = () => {
 
   const todayStr = new Date().toISOString().slice(0, 10);
   const todayTxns = allTxns.filter((t) => t.date.slice(0, 10) === todayStr);
+  const countedTodayTxns = todayTxns.filter((t) => !isGCashTxnUnresolved(t));
 
   const currentMonthPrefix = new Date().toISOString().slice(0, 7);
-  const currentMonthTxnCount = allTxns.filter((t) => t.date.slice(0, 7) === currentMonthPrefix).length;
+  const currentMonthTxnCount = allTxns.filter(
+    (t) => t.date.slice(0, 7) === currentMonthPrefix && !isGCashTxnUnresolved(t)
+  ).length;
 
-  const todayCashIn = todayTxns.filter((t) => t.type === 'CashIn').reduce((s, t) => s + t.amount, 0);
-  const todayCashOut = todayTxns.filter((t) => t.type === 'CashOut').reduce((s, t) => s + t.amount, 0);
-  const todayFees = todayTxns.reduce((s, t) => s + t.fee, 0);
+  const todayCashIn = countedTodayTxns.filter((t) => t.type === 'CashIn').reduce((s, t) => s + t.amount, 0);
+  const todayCashOut = countedTodayTxns.filter((t) => t.type === 'CashOut').reduce((s, t) => s + t.amount, 0);
+  const todayFees = countedTodayTxns.reduce((s, t) => s + t.fee, 0);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -189,7 +192,7 @@ export const GCashPage: React.FC = () => {
         <Text size={300} style={{ color: tokens.colorNeutralForeground3, display: 'block' }}>
           {t.gcash.subtitle}
           {tier === 'Libre' && (
-            <span> • {language === 'tl' ? 'Ngayong Buwan:' : 'This Month:'} {currentMonthTxnCount}/30 (Libre)</span>
+            <span> • {language === 'tl' ? 'Ngayong Buwan:' : 'This Month:'} <span data-testid="monthly-gcash-count">{currentMonthTxnCount}/30</span> (Libre)</span>
           )}
         </Text>
       </div>
@@ -198,21 +201,21 @@ export const GCashPage: React.FC = () => {
       <div className={styles.summaryGrid}>
         <Card className={styles.summaryCard}>
           <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>{t.gcash.todayCashIn}</Text>
-          <Text size={400} weight="bold" style={{ color: tokens.colorPaletteBlueForeground2, display: 'block' }}>
+          <Text data-testid="today-cash-in-total" size={400} weight="bold" style={{ color: tokens.colorPaletteBlueForeground2, display: 'block' }}>
             ₱{todayCashIn.toFixed(2)}
           </Text>
         </Card>
 
         <Card className={styles.summaryCard}>
           <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>{t.gcash.todayCashOut}</Text>
-          <Text size={400} weight="bold" style={{ color: tokens.colorPaletteGreenForeground1, display: 'block' }}>
+          <Text data-testid="today-cash-out-total" size={400} weight="bold" style={{ color: tokens.colorPaletteGreenForeground1, display: 'block' }}>
             ₱{todayCashOut.toFixed(2)}
           </Text>
         </Card>
 
         <Card className={styles.summaryCard}>
           <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>{t.gcash.todayFees}</Text>
-          <Text size={400} weight="bold" style={{ color: tokens.colorBrandForeground1, display: 'block' }}>
+          <Text data-testid="today-gcash-fees-total" size={400} weight="bold" style={{ color: tokens.colorBrandForeground1, display: 'block' }}>
             ₱{todayFees.toFixed(2)}
           </Text>
         </Card>
@@ -342,7 +345,7 @@ export const GCashPage: React.FC = () => {
                       <Badge appearance="filled" color={isCashIn ? 'informative' : 'success'} size="small">
                         {isCashIn ? 'CASH-IN' : 'CASH-OUT'}
                       </Badge>
-                      {txn.needsAttention && (
+                      {isGCashTxnUnresolved(txn) && (
                         <span data-testid="duplicate-ref-badge">
                           <Badge appearance="filled" color="danger" size="small">
                             {language === 'tl' ? 'Dobleng Ref (Kailangan ng Pansin)' : 'Duplicate Ref (Needs Attention)'}
@@ -360,6 +363,11 @@ export const GCashPage: React.FC = () => {
                     {txn.conflictReason && (
                       <Text size={100} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
                         ⚠️ {txn.conflictReason}
+                      </Text>
+                    )}
+                    {isGCashTxnUnresolved(txn) && (
+                      <Text size={100} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
+                        {language === 'tl' ? 'Hindi naka-sync; hindi kasama sa totals.' : 'Not synced; excluded from totals.'}
                       </Text>
                     )}
                   </div>
