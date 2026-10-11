@@ -102,6 +102,34 @@ describe('POSPage', () => {
     });
   });
 
+  it('blocks completing a cash sale when tender is short or negative', async () => {
+    renderPOS();
+
+    await waitFor(() => {
+      expect(screen.getByText('Lucky Me Pancit Canton Kalamansi')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Lucky Me Pancit Canton Kalamansi'));
+    fireEvent.click(screen.getByRole('button', { name: /Bayad|Pay/i }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    const completeBtn = screen.getByRole('button', { name: /Kumpletuhin ang Benta|Complete Sale/i });
+    const tenderInput = screen.getAllByRole('spinbutton')[0];
+
+    // Short tender (total is 16)
+    fireEvent.change(tenderInput, { target: { value: '10' } });
+    expect(completeBtn).toBeDisabled();
+    expect(screen.getByText(/Short by|Kulang ng/i)).toBeInTheDocument();
+
+    // Negative tender
+    fireEvent.change(tenderInput, { target: { value: '-10' } });
+    expect(completeBtn).toBeDisabled();
+
+    // Sufficient tender
+    fireEvent.change(tenderInput, { target: { value: '20' } });
+    expect(completeBtn).toBeEnabled();
+  });
+
   it('completes cash checkout and records sale in Dexie', async () => {
     renderPOS();
 
@@ -118,7 +146,8 @@ describe('POSPage', () => {
 
     expect(screen.getByRole('dialog')).toBeInTheDocument();
 
-    // Complete sale
+    // Tender exact cash and complete sale
+    fireEvent.click(screen.getByRole('button', { name: /Eksaktong|Exact/i }));
     const completeBtn = screen.getByRole('button', { name: /Kumpletuhin ang Benta|Complete Sale/i });
     fireEvent.click(completeBtn);
 
@@ -399,7 +428,8 @@ describe('POSPage', () => {
     fireEvent.click(payBtn);
     expect(screen.getByRole('dialog')).toBeInTheDocument();
 
-    // 4. Complete checkout
+    // 4. Tender exact cash and complete checkout
+    fireEvent.click(screen.getByRole('button', { name: /Eksaktong|Exact/i }));
     const completeBtn = screen.getByRole('button', { name: /Kumpletuhin ang Benta|Complete Sale/i });
     fireEvent.click(completeBtn);
 

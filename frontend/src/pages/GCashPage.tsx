@@ -121,6 +121,22 @@ export const GCashPage: React.FC = () => {
       return;
     }
 
+    const trimmedRef = refNo.trim();
+    if (trimmedRef) {
+      const normalized = trimmedRef.toLowerCase();
+      const existing = await db.gcashTxns
+        .filter((x) => (x.refNo || '').trim().toLowerCase() === normalized)
+        .first();
+      if (existing) {
+        alert(
+          language === 'tl'
+            ? `Ginamit na ang reference number na ${trimmedRef}. Hindi maaaring magtala ng doble.`
+            : `Reference number ${trimmedRef} has already been used. Duplicate entries are not allowed.`
+        );
+        return;
+      }
+    }
+
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
 
@@ -130,7 +146,7 @@ export const GCashPage: React.FC = () => {
       type: txnType,
       amount: numAmount,
       fee: activeFee,
-      refNo: refNo.trim() || `GC-${Date.now().toString().slice(-6)}`,
+      refNo: trimmedRef || `GC-${Date.now().toString().slice(-6)}`,
       customerPhone: customerPhone.trim() || undefined,
       date: now,
       notes: notes.trim() || undefined

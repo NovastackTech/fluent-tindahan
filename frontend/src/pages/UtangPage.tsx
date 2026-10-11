@@ -204,6 +204,18 @@ export const UtangPage: React.FC = () => {
     const amount = parseFloat(paymentAmount);
     if (isNaN(amount) || amount <= 0) return;
 
+    const fresh = await db.customers.get(selectedCustomer.id);
+    const currentBalance = fresh?.totalUtangBalance ?? selectedCustomer.totalUtangBalance ?? 0;
+    if (Math.round(amount * 100) > Math.round(currentBalance * 100)) {
+      alert(
+        language === 'tl'
+          ? `Hindi puwedeng lumampas ang bayad (₱${amount.toFixed(2)}) sa balanse ng utang (₱${currentBalance.toFixed(2)}).`
+          : `Payment (₱${amount.toFixed(2)}) cannot exceed the outstanding balance (₱${currentBalance.toFixed(2)}).`
+      );
+      return;
+    }
+
+
     const now = new Date().toISOString();
     const ledgerId = crypto.randomUUID();
 
@@ -220,7 +232,7 @@ export const UtangPage: React.FC = () => {
     await db.utangLedger.add(ledgerRecord);
     await enqueueSync('UtangLedger', 'Insert', ledgerRecord);
 
-    const newBalance = Math.max(0, (selectedCustomer.totalUtangBalance || 0) - amount);
+    const newBalance = Math.round((currentBalance * 100 - amount * 100)) / 100;
     await db.customers.update(selectedCustomer.id, {
       totalUtangBalance: newBalance,
       updatedAt: now
@@ -259,7 +271,7 @@ export const UtangPage: React.FC = () => {
     await db.utangLedger.add(ledgerRecord);
     await enqueueSync('UtangLedger', 'Insert', ledgerRecord);
 
-    const newBalance = (selectedCustomer.totalUtangBalance || 0) + amount;
+    const newBalance = Math.round((selectedCustomer.totalUtangBalance || 0) * 100 + amount * 100) / 100;
     await db.customers.update(selectedCustomer.id, {
       totalUtangBalance: newBalance,
       updatedAt: now

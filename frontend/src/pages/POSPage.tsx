@@ -177,7 +177,7 @@ const QUICK_PESO_BILLS = [20, 50, 100, 200, 500, 1000];
 
 export const POSPage: React.FC = () => {
   const styles = useStyles();
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -370,6 +370,33 @@ export const POSPage: React.FC = () => {
     return 0;
   }, [paymentMethod, cashReceived, splitCashAmount, splitGCashAmount, totalAmount]);
 
+  // Tender validation in integer centavos
+  const { isTenderValid, tenderError } = useMemo(() => {
+    const totalC = Math.round(totalAmount * 100);
+    const fmt = (c: number) => `₱${(c / 100).toFixed(2)}`;
+    const tl = language === 'tl';
+    if (paymentMethod === 'Cash') {
+      const cashC = Math.round(cashReceived * 100);
+      if (cashC < 0) {
+        return { isTenderValid: false, tenderError: tl ? 'Hindi puwedeng negatibo ang tinanggap na pera.' : 'Cash tendered cannot be negative.' };
+      }
+      if (cashC < totalC) {
+        return { isTenderValid: false, tenderError: tl ? `Kulang ng ${fmt(totalC - cashC)}` : `Short by ${fmt(totalC - cashC)}` };
+      }
+    }
+    if (paymentMethod === 'Split') {
+      const cashC = Math.round(splitCashAmount * 100);
+      const gcashC = Math.round(splitGCashAmount * 100);
+      if (cashC < 0 || gcashC < 0) {
+        return { isTenderValid: false, tenderError: tl ? 'Hindi puwedeng negatibo ang halaga.' : 'Amounts cannot be negative.' };
+      }
+      if (cashC + gcashC < totalC) {
+        return { isTenderValid: false, tenderError: tl ? `Kulang ng ${fmt(totalC - cashC - gcashC)}` : `Short by ${fmt(totalC - cashC - gcashC)}` };
+      }
+    }
+    return { isTenderValid: true, tenderError: '' };
+  }, [paymentMethod, cashReceived, splitCashAmount, splitGCashAmount, totalAmount, language]);
+
   // Quick add new debtor during checkout
   const handleSaveNewDebtor = async () => {
     if (!newDebtorName.trim()) {
@@ -401,6 +428,7 @@ export const POSPage: React.FC = () => {
   // Complete checkout
   const handleCompleteSale = async () => {
     if (cartItems.length === 0) return;
+    if (!isTenderValid) return;
 
     if (paymentMethod === 'Utang' && !customerId) {
       alert(t.pos.customerSelectRequired);
@@ -832,6 +860,11 @@ export const POSPage: React.FC = () => {
                       </Text>
                     </div>
                   </div>
+                  {!isTenderValid && (
+                    <Text size={200} style={{ color: tokens.colorPaletteRedForeground1, display: 'block', marginTop: '4px' }}>
+                      {tenderError}
+                    </Text>
+                  )}
                 </div>
               )}
 
@@ -1016,6 +1049,11 @@ export const POSPage: React.FC = () => {
                       ₱{(splitCashAmount + splitGCashAmount - totalAmount).toFixed(2)}
                     </Text>
                   </div>
+                  {!isTenderValid && (
+                    <Text size={200} style={{ color: tokens.colorPaletteRedForeground1, display: 'block', marginTop: '4px' }}>
+                      {tenderError}
+                    </Text>
+                  )}
                 </div>
               )}
             </DialogContent>
@@ -1033,7 +1071,7 @@ export const POSPage: React.FC = () => {
               >
                 {t.common.cancel}
               </Button>
-              <Button appearance="primary" icon={<CheckmarkCircleRegular />} onClick={handleCompleteSale}>
+              <Button appearance="primary" icon={<CheckmarkCircleRegular />} onClick={handleCompleteSale} disabled={!isTenderValid}>
                 {t.pos.completeSaleBtn}
               </Button>
             </DialogActions>
