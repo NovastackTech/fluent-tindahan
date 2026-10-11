@@ -149,4 +149,51 @@ describe('UtangPage', () => {
       expect(updated?.totalUtangBalance).toBe(250);
     });
   });
+
+  it('renders transaction timeline with non-breaking Utang and Bayad badges and amounts', async () => {
+    await db.customers.add({
+      id: 'cust-timeline',
+      tenantId: 'tenant-1',
+      name: 'Aling Rosa Santos',
+      phone: '09204445566',
+      totalUtangBalance: 0,
+      updatedAt: new Date().toISOString()
+    });
+
+    await db.utangLedger.add({
+      id: 'ledger-1',
+      tenantId: 'tenant-1',
+      customerId: 'cust-timeline',
+      type: 'Payment',
+      amount: 15031,
+      date: new Date().toISOString(),
+      notes: 'Bayad sa utang'
+    });
+
+    await db.utangLedger.add({
+      id: 'ledger-2',
+      tenantId: 'tenant-1',
+      customerId: 'cust-timeline',
+      type: 'Credit',
+      amount: 150,
+      date: new Date().toISOString(),
+      notes: 'Marlboro pack & Skyflakes'
+    });
+
+    renderUtang();
+
+    await waitFor(() => {
+      expect(screen.getByText('Aling Rosa Santos')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Aling Rosa Santos'));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Marlboro pack & Skyflakes/)).toBeInTheDocument();
+      expect(screen.getByText(/\+[\s\u00A0]*UTANG/i)).toBeInTheDocument();
+      expect(screen.getByText(/-[\s\u00A0]*BAYAD/i)).toBeInTheDocument();
+      expect(screen.getByText('+₱150.00')).toBeInTheDocument();
+      expect(screen.getByText('-₱15031.00')).toBeInTheDocument();
+    });
+  });
 });

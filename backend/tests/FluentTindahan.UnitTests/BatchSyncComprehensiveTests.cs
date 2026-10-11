@@ -8,6 +8,7 @@ using FluentTindahan.Application;
 using FluentTindahan.Application.Sync.Commands;
 using FluentTindahan.Application.Sync.DTOs;
 using FluentTindahan.Domain.Entities;
+using FluentTindahan.Domain.Enums;
 using FluentTindahan.Domain.Interfaces;
 using FluentTindahan.Infrastructure.Persistence;
 using Xunit;
@@ -232,6 +233,103 @@ public class BatchSyncComprehensiveTests
     }
 
     [Fact]
+    public async Task ProcessBatchSync_StaleProductDelete_IgnoresConflictAndPreservesProduct()
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var handler = new ProcessBatchSyncCommandHandler(context, userMock.Object, NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+
+        var prodId = Guid.NewGuid();
+        var serverTime = DateTimeOffset.UtcNow;
+        var staleDeleteTime = serverTime.AddMinutes(-5);
+
+        context.Products.Add(new Product
+        {
+            Id = prodId,
+            TenantId = _testTenantId,
+            Name = "Active Fresh Product",
+            Price = 20m,
+            Cost = 15m,
+            StockQty = 10,
+            IsDeleted = false,
+            UpdatedAt = serverTime
+        });
+        await context.SaveChangesAsync();
+
+        var batch = new BatchSyncRequestDto
+        {
+            DeviceId = Guid.NewGuid(),
+            Operations = new List<SyncOperationDto>
+            {
+                new SyncOperationDto
+                {
+                    SyncId = Guid.NewGuid().ToString(),
+                    Entity = "Product",
+                    Action = "Delete",
+                    Timestamp = staleDeleteTime,
+                    Payload = JsonSerializer.SerializeToElement(new { id = prodId })
+                }
+            }
+        };
+
+        var response = await handler.Handle(new ProcessBatchSyncCommand(batch), CancellationToken.None);
+
+        response.Results.Should().HaveCount(1);
+        response.Results[0].Status.Should().Be("ConflictIgnored");
+
+        var product = await context.Products.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == prodId);
+        product.Should().NotBeNull();
+        product!.IsDeleted.Should().BeFalse();
+        product.UpdatedAt.Should().Be(serverTime);
+    }
+
+    [Fact]
+    public async Task ProcessBatchSync_StaleCustomerDelete_IgnoresConflictAndPreservesCustomer()
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var handler = new ProcessBatchSyncCommandHandler(context, userMock.Object, NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+
+        var custId = Guid.NewGuid();
+        var serverTime = DateTimeOffset.UtcNow;
+        var staleDeleteTime = serverTime.AddMinutes(-5);
+
+        context.Customers.Add(new Customer
+        {
+            Id = custId,
+            TenantId = _testTenantId,
+            Name = "Active Customer",
+            Phone = "09123456789",
+            TotalUtangBalance = 100m,
+            UpdatedAt = serverTime
+        });
+        await context.SaveChangesAsync();
+
+        var batch = new BatchSyncRequestDto
+        {
+            DeviceId = Guid.NewGuid(),
+            Operations = new List<SyncOperationDto>
+            {
+                new SyncOperationDto
+                {
+                    SyncId = Guid.NewGuid().ToString(),
+                    Entity = "Customer",
+                    Action = "Delete",
+                    Timestamp = staleDeleteTime,
+                    Payload = JsonSerializer.SerializeToElement(new { id = custId })
+                }
+            }
+        };
+
+        var response = await handler.Handle(new ProcessBatchSyncCommand(batch), CancellationToken.None);
+
+        response.Results.Should().HaveCount(1);
+        response.Results[0].Status.Should().Be("ConflictIgnored");
+
+        var customer = await context.Customers.IgnoreQueryFilters().FirstOrDefaultAsync(c => c.Id == custId);
+        customer.Should().NotBeNull();
+        customer!.UpdatedAt.Should().Be(serverTime);
+    }
+
+    [Fact]
     public async Task ProcessBatchSync_GCashTxn_InsertsSuccessfully()
     {
         var (context, userMock) = CreateInMemoryContext();
@@ -381,6 +479,165 @@ public class BatchSyncComprehensiveTests
         response.Results.Should().HaveCount(1);
         response.Results[0].Status.Should().Be("Failed");
         response.Results[0].Error.Should().Contain("not supported");
+    }
+
+    [Fact]
+    public async Task ProcessBatchSync_DeleteProductWithSales_SoftDeletesAndPreservesSaleHistory()
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var handler = new ProcessBatchSyncCommandHandler(context, userMock.Object, NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+
+        var prodId = Guid.NewGuid();
+        var saleId = Guid.NewGuid();
+
+        context.Products.Add(new Product
+        {
+            Id = prodId,
+            TenantId = _testTenantId,
+            Name = "Product With Sales",
+            Price = 50m,
+            Cost = 30m,
+            StockQty = 10,
+            UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+            IsDeleted = false
+        });
+
+        context.Sales.Add(new Sale
+        {
+            Id = saleId,
+            TenantId = _testTenantId,
+            TotalAmount = 50m,
+            PaymentMethod = "Cash",
+            Date = DateTimeOffset.UtcNow.AddMinutes(-5),
+            Items = new List<SaleItem>
+            {
+                new SaleItem
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = _testTenantId,
+                    SaleId = saleId,
+                    ProductId = prodId,
+                    Qty = 1,
+                    UnitPrice = 50m,
+                    Subtotal = 50m
+                }
+            }
+        });
+        await context.SaveChangesAsync();
+
+        var batch = new BatchSyncRequestDto
+        {
+            DeviceId = Guid.NewGuid(),
+            Operations = new List<SyncOperationDto>
+            {
+                new SyncOperationDto
+                {
+                    SyncId = "del_prod_with_sales",
+                    Entity = "Product",
+                    Action = "Delete",
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Payload = JsonSerializer.SerializeToElement(new { id = prodId })
+                }
+            }
+        };
+
+        var response = await handler.Handle(new ProcessBatchSyncCommand(batch), CancellationToken.None);
+
+        response.Results.Should().HaveCount(1);
+        response.Results[0].Status.Should().Be("Success");
+
+        // Standard query excludes the soft-deleted product
+        var activeProduct = await context.Products.FirstOrDefaultAsync(p => p.Id == prodId);
+        activeProduct.Should().BeNull();
+
+        // Product is preserved in DB with IsDeleted = true
+        var rawProduct = await context.Products.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == prodId);
+        rawProduct.Should().NotBeNull();
+        rawProduct!.IsDeleted.Should().BeTrue();
+
+        // Historical Sale and SaleItem records remain completely intact and reference the product
+        var preservedSale = await context.Sales.Include(s => s.Items).FirstOrDefaultAsync(s => s.Id == saleId);
+        preservedSale.Should().NotBeNull();
+        preservedSale!.Items.Should().HaveCount(1);
+        preservedSale.Items.First().ProductId.Should().Be(prodId);
+    }
+
+    [Fact]
+    public async Task ProcessBatchSync_PlaceholderRestore_AtLibreCap_RejectsWithPlanLimitError()
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var handler = new ProcessBatchSyncCommandHandler(context, userMock.Object, NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+
+        // Explicitly set tenant on Libre tier
+        context.Tenants.Add(new Tenant
+        {
+            Id = _testTenantId,
+            BusinessName = "Sari-Sari Store At Cap",
+            Tier = PlanTier.Libre,
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+
+        // Seed 50 active products (Libre capacity limit)
+        for (int i = 0; i < 50; i++)
+        {
+            context.Products.Add(new Product
+            {
+                Id = Guid.NewGuid(),
+                TenantId = _testTenantId,
+                Name = $"Active Product {i}",
+                Price = 10m,
+                IsDeleted = false,
+                UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-10)
+            });
+        }
+
+        // Seed 1 placeholder product (soft-deleted)
+        var placeholderId = Guid.NewGuid();
+        context.Products.Add(new Product
+        {
+            Id = placeholderId,
+            TenantId = _testTenantId,
+            Name = "Missing Placeholder Product",
+            Price = 25m,
+            IsDeleted = true,
+            UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-10)
+        });
+        await context.SaveChangesAsync();
+
+        // Incoming update/insert attempting to restore the placeholder when already at cap
+        var batch = new BatchSyncRequestDto
+        {
+            DeviceId = Guid.NewGuid(),
+            Operations = new List<SyncOperationDto>
+            {
+                new SyncOperationDto
+                {
+                    SyncId = "restore_placeholder_at_cap",
+                    Entity = "Product",
+                    Action = "Update",
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Payload = JsonSerializer.SerializeToElement(new
+                    {
+                        id = placeholderId,
+                        name = "Attempt Restoring Placeholder",
+                        price = 30m,
+                        cost = 20m,
+                        stockQty = 15
+                    })
+                }
+            }
+        };
+
+        var response = await handler.Handle(new ProcessBatchSyncCommand(batch), CancellationToken.None);
+
+        response.Results.Should().HaveCount(1);
+        response.Results[0].Status.Should().Be("Failed");
+        response.Results[0].Error.Should().Contain("Libre plan limit exceeded: Maximum 50 products allowed");
+
+        // Placeholder must remain soft-deleted
+        var rawPlaceholder = await context.Products.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == placeholderId);
+        rawPlaceholder.Should().NotBeNull();
+        rawPlaceholder!.IsDeleted.Should().BeTrue();
     }
 
     [Fact]

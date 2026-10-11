@@ -204,8 +204,18 @@ public class ApplySubscriptionPaymentCommandHandler : IRequestHandler<ApplySubsc
 
             var now = DateTimeOffset.UtcNow;
             var duration = TierPricing.GetDuration(request.Cycle);
-            var newEndDate = (tenant.SubscriptionEndDate.HasValue && tenant.SubscriptionEndDate.Value > now)
-                ? tenant.SubscriptionEndDate.Value.Add(duration)
+
+            // Mid-term tier change rule:
+            // Renewing the SAME active tier extends the existing SubscriptionEndDate.
+            // Switching tiers mid-term (or subscribing for the first time / after expiration) starts the new tier
+            // pass from 'now' for the full purchased duration, preventing cheaper tiers from artificially
+            // extending premium tier access without payment.
+            var isSameTierRenewal = tenant.Tier == request.Tier &&
+                                    tenant.SubscriptionEndDate.HasValue &&
+                                    tenant.SubscriptionEndDate.Value > now;
+
+            var newEndDate = isSameTierRenewal
+                ? tenant.SubscriptionEndDate!.Value.Add(duration)
                 : now.Add(duration);
 
             tenant.Tier = request.Tier;
@@ -529,43 +539,17 @@ public class GetTenantSubscriptionQueryHandler : IRequestHandler<GetTenantSubscr
             ? (int)Math.Ceiling((endDate.Value - now).TotalDays)
             : null;
 
-        // Compute tier limit caps
-        int maxProducts = effectiveTier switch
-        {
-            PlanTier.Libre => 50,
-            _ => -1 // Unlimited
-        };
+        // Compute tier limit caps from canonical domain TierLimits
+        int maxProducts = TierLimits.GetMaxProducts(effectiveTier);
+        int maxCustomers = TierLimits.GetMaxCustomers(effectiveTier);
+        int maxGCashTxns = TierLimits.GetMaxGCashTransactionsPerMonth(effectiveTier);
+        int maxUsers = TierLimits.GetMaxUsers(effectiveTier);
+        int maxDevices = TierLimits.GetMaxDevices(effectiveTier);
 
-        int maxCustomers = effectiveTier switch
-        {
-            PlanTier.Libre => 30,
-            _ => -1 // Unlimited
-        };
-
-        int maxGCashTxns = effectiveTier switch
-        {
-            PlanTier.Libre => 30,
-            _ => -1 // Unlimited
-        };
-
-        int maxUsers = effectiveTier switch
-        {
-            PlanTier.NegosyoPlus => 5,
-            _ => 1
-        };
-
-        int maxDevices = effectiveTier switch
-        {
-            PlanTier.Libre => 1,
-            PlanTier.TindahanPro => 2,
-            PlanTier.NegosyoPlus => 4,
-            _ => 1
-        };
-
-        bool canImportCsv = effectiveTier != PlanTier.Libre;
-        bool hasWatermarkedReceipts = effectiveTier == PlanTier.Libre;
-        bool hasProfitAnalytics = effectiveTier != PlanTier.Libre;
-        bool hasAuditLogs = effectiveTier == PlanTier.NegosyoPlus;
+        bool canImportCsv = TierLimits.CanImportCsv(effectiveTier);
+        bool hasWatermarkedReceipts = TierLimits.HasWatermarkedReceipts(effectiveTier);
+        bool hasProfitAnalytics = TierLimits.HasProfitAnalytics(effectiveTier);
+        bool hasAuditLogs = TierLimits.HasAuditLogs(effectiveTier);
 
         // Usage counts
         var productCount = await _context.Products.CountAsync(cancellationToken);

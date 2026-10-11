@@ -84,6 +84,39 @@ public class InfrastructureTests
     }
 
     [Fact]
+    public void CurrentUserService_AuthenticatedClaimsTakePrecedenceOverHeader()
+    {
+        var claimTenant = Guid.NewGuid();
+        var claimUser = Guid.NewGuid();
+        var spoofedHeaderTenant = Guid.NewGuid();
+        var spoofedHeaderUser = Guid.NewGuid();
+
+        var claims = new[]
+        {
+            new Claim("tenant_id", claimTenant.ToString()),
+            new Claim("sub", claimUser.ToString())
+        };
+        var identity = new ClaimsIdentity(claims, "Bearer");
+        var principal = new ClaimsPrincipal(identity);
+
+        var context = new DefaultHttpContext { User = principal };
+        // Attacker attempts to spoof tenant and user IDs via headers
+        context.Request.Headers["X-Tenant-Id"] = spoofedHeaderTenant.ToString();
+        context.Request.Headers["X-User-Id"] = spoofedHeaderUser.ToString();
+
+        var httpAccessorMock = new Mock<IHttpContextAccessor>();
+        httpAccessorMock.Setup(h => h.HttpContext).Returns(context);
+
+        var service = new CurrentUserService(httpAccessorMock.Object);
+
+        // Cryptographically verified claims must take precedence over unverified headers
+        service.TenantId.Should().Be(claimTenant);
+        service.UserId.Should().Be(claimUser);
+        service.TenantId.Should().NotBe(spoofedHeaderTenant);
+        service.UserId.Should().NotBe(spoofedHeaderUser);
+    }
+
+    [Fact]
     public async Task DatabaseSeeder_SeedAsync_SeedsTenantUserProductsAndIsIdempotent()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()

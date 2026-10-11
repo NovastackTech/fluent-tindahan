@@ -1,4 +1,5 @@
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using FluentTindahan.Application.Billing;
 using FluentTindahan.Application.Common.Interfaces;
@@ -8,6 +9,12 @@ using FluentTindahan.Domain.Interfaces;
 
 namespace FluentTindahan.WebApi.Controllers;
 
+/// <summary>
+/// Handles SaaS plan upgrades, subscription queries, and checkout session generation.
+/// Authenticated endpoints require a valid tenant bearer token; the tenant is resolved
+/// from the caller's verified claims.
+/// </summary>
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class BillingController : ControllerBase
@@ -44,6 +51,7 @@ public class BillingController : ControllerBase
     [HttpPost("checkout")]
     [ProducesResponseType(typeof(CheckoutSessionResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status502BadGateway)]
     public async Task<ActionResult<CheckoutSessionResponseDto>> CreateCheckout(
         [FromBody] CreateCheckoutRequest request,
@@ -73,6 +81,7 @@ public class BillingController : ControllerBase
     /// </summary>
     [HttpGet("subscription")]
     [ProducesResponseType(typeof(TenantSubscriptionDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<TenantSubscriptionDto>> GetSubscription(CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(new GetTenantSubscriptionQuery(), cancellationToken);
@@ -84,6 +93,7 @@ public class BillingController : ControllerBase
     /// </summary>
     [HttpGet("history")]
     [ProducesResponseType(typeof(List<PaymentHistoryDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<List<PaymentHistoryDto>>> GetHistory(CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(new GetPaymentHistoryQuery(), cancellationToken);
@@ -100,6 +110,7 @@ public class BillingController : ControllerBase
     /// Returns 404 in every non-Development environment.
     /// </summary>
     [HttpPost("mock-pay")]
+    [AllowAnonymous]
     [ApiExplorerSettings(IgnoreApi = true)]
     public async Task<ActionResult<WebhookProcessResultDto>> MockPay(
         [FromBody] MockPayRequest request,

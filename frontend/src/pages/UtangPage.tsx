@@ -59,8 +59,36 @@ const useStyles = makeStyles({
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+    ...shorthands.gap(tokens.spacingHorizontalM),
     ...shorthands.padding(tokens.spacingVerticalS, '0'),
     ...shorthands.borderBottom('1px', 'solid', tokens.colorNeutralStroke2)
+  },
+  timelineLeft: {
+    display: 'flex',
+    flexDirection: 'column',
+    flexGrow: 1,
+    flexShrink: 1,
+    minWidth: 0
+  },
+  timelineBadgeRow: {
+    display: 'flex',
+    alignItems: 'center',
+    ...shorthands.gap(tokens.spacingHorizontalXS),
+    minWidth: 0
+  },
+  timelineBadge: {
+    whiteSpace: 'nowrap',
+    flexShrink: 0
+  },
+  timelineNotes: {
+    overflowWrap: 'break-word',
+    wordBreak: 'break-word',
+    minWidth: 0
+  },
+  timelineAmount: {
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
+    textAlign: 'right'
   }
 });
 
@@ -361,7 +389,7 @@ export const UtangPage: React.FC = () => {
 
       {/* Debtor Details & Timeline Dialog */}
       <Dialog open={!!selectedCustomer} onOpenChange={(_, data) => !data.open && setSelectedCustomer(null)}>
-        <DialogSurface style={{ maxWidth: '500px' }}>
+        <DialogSurface style={{ maxWidth: '500px', width: '100%' }}>
           <DialogBody>
             {selectedCustomer && (
               <>
@@ -381,7 +409,7 @@ export const UtangPage: React.FC = () => {
                 </div>
 
                 {/* Quick actions for this customer */}
-                <div style={{ display: 'flex', gap: '8px', margin: '16px 0' }}>
+                <div style={{ display: 'flex', gap: '8px', margin: '16px 0', flexWrap: 'wrap' }}>
                   <Button
                     appearance="primary"
                     icon={<PaymentRegular />}
@@ -419,12 +447,17 @@ export const UtangPage: React.FC = () => {
                       const isCredit = entry.type === 'Credit';
                       return (
                         <div key={entry.id} className={styles.timelineItem}>
-                          <div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <Badge appearance="filled" color={isCredit ? 'danger' : 'success'} size="small">
-                                {isCredit ? '+ UTANG' : '- BAYAD'}
+                          <div className={styles.timelineLeft}>
+                            <div className={styles.timelineBadgeRow}>
+                              <Badge
+                                appearance="filled"
+                                color={isCredit ? 'danger' : 'success'}
+                                size="small"
+                                className={styles.timelineBadge}
+                              >
+                                {isCredit ? '+\u00A0UTANG' : '-\u00A0BAYAD'}
                               </Badge>
-                              <Text weight="semibold" size={200}>
+                              <Text weight="semibold" size={200} className={styles.timelineNotes}>
                                 {entry.notes || (isCredit ? t.nav.utang : t.common.pesos)}
                               </Text>
                             </div>
@@ -435,6 +468,7 @@ export const UtangPage: React.FC = () => {
                           <Text
                             weight="bold"
                             size={300}
+                            className={styles.timelineAmount}
                             style={{ color: isCredit ? tokens.colorPaletteRedForeground1 : tokens.colorPaletteGreenForeground1 }}
                           >
                             {isCredit ? '+' : '-'}₱{entry.amount.toFixed(2)}

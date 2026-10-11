@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using FluentTindahan.Application.Common;
 using FluentTindahan.Application.Common.Interfaces;
 using FluentTindahan.Application.Sync.DTOs;
+using FluentTindahan.Domain.Billing;
 using FluentTindahan.Domain.Entities;
 using FluentTindahan.Domain.Enums;
 using FluentTindahan.Domain.Interfaces;
@@ -212,6 +213,13 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
         {
             if (existing != null)
             {
+                if (existing.UpdatedAt > op.Timestamp)
+                {
+                    _logger.LogInformation("LWW conflict ignored for Product delete {Id}: existing is newer ({Existing} > {Incoming})",
+                        existing.Id, existing.UpdatedAt, op.Timestamp);
+                    return "ConflictIgnored";
+                }
+
                 var wasDeleted = existing.IsDeleted;
                 existing.IsDeleted = true;
                 existing.UpdatedAt = op.Timestamp;
@@ -232,9 +240,9 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
                 counters.ProductCount ??= await _context.Products.IgnoreQueryFilters()
                     .CountAsync(p => p.TenantId == tenantId && !p.IsDeleted, cancellationToken);
 
-                if (counters.ProductCount >= 50)
+                if (counters.ProductCount >= TierLimits.LibreMaxProducts)
                 {
-                    throw new InvalidOperationException("Libre plan limit exceeded: Maximum 50 products allowed. Upgrade to Tindahan Pro for unlimited catalog capacity.");
+                    throw new InvalidOperationException($"Libre plan limit exceeded: Maximum {TierLimits.LibreMaxProducts} products allowed. Upgrade to Tindahan Pro for unlimited catalog capacity.");
                 }
             }
 
@@ -268,6 +276,21 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
             return "ConflictIgnored";
         }
 
+        var wasPreviouslyDeleted = existing.IsDeleted;
+        if (wasPreviouslyDeleted)
+        {
+            if (effectiveTier == PlanTier.Libre)
+            {
+                counters.ProductCount ??= await _context.Products.IgnoreQueryFilters()
+                    .CountAsync(p => p.TenantId == tenantId && !p.IsDeleted, cancellationToken);
+
+                if (counters.ProductCount >= TierLimits.LibreMaxProducts)
+                {
+                    throw new InvalidOperationException($"Libre plan limit exceeded: Maximum {TierLimits.LibreMaxProducts} products allowed. Upgrade to Tindahan Pro for unlimited catalog capacity.");
+                }
+            }
+        }
+
         // If existing product was previously an archived/deleted placeholder, restore it
         existing.IsDeleted = false;
         existing.Name = raw.Name ?? existing.Name;
@@ -279,6 +302,10 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
         existing.UpdatedAt = op.Timestamp;
 
         await _context.SaveChangesAsync(cancellationToken);
+        if (wasPreviouslyDeleted && counters.ProductCount.HasValue)
+        {
+            counters.ProductCount++;
+        }
         return "Success";
     }
 
@@ -296,6 +323,13 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
         {
             if (existing != null)
             {
+                if (existing.UpdatedAt > op.Timestamp)
+                {
+                    _logger.LogInformation("LWW conflict ignored for Customer delete {Id}: existing is newer ({Existing} > {Incoming})",
+                        existing.Id, existing.UpdatedAt, op.Timestamp);
+                    return "ConflictIgnored";
+                }
+
                 _context.Customers.Remove(existing);
                 await _context.SaveChangesAsync(cancellationToken);
                 if (counters.CustomerCount.HasValue && counters.CustomerCount > 0)
@@ -314,9 +348,9 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
                 counters.CustomerCount ??= await _context.Customers.IgnoreQueryFilters()
                     .CountAsync(c => c.TenantId == tenantId, cancellationToken);
 
-                if (counters.CustomerCount >= 30)
+                if (counters.CustomerCount >= TierLimits.LibreMaxCustomers)
                 {
-                    throw new InvalidOperationException("Libre plan limit exceeded: Maximum 30 debtors allowed. Upgrade to Tindahan Pro for unlimited customer accounts.");
+                    throw new InvalidOperationException($"Libre plan limit exceeded: Maximum {TierLimits.LibreMaxCustomers} debtors allowed. Upgrade to Tindahan Pro for unlimited customer accounts.");
                 }
             }
             var customer = new Customer
@@ -555,9 +589,9 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
             counters.MonthlyGCashCount ??= await _context.GCashTransactions.IgnoreQueryFilters()
                 .CountAsync(g => g.TenantId == tenantId && g.Date >= startOfMonth, cancellationToken);
 
-            if (counters.MonthlyGCashCount >= 30)
+            if (counters.MonthlyGCashCount >= TierLimits.LibreMaxGCashTransactionsPerMonth)
             {
-                throw new InvalidOperationException("Libre plan limit exceeded: Maximum 30 GCash transactions per month allowed. Upgrade to Tindahan Pro for unlimited logs.");
+                throw new InvalidOperationException($"Libre plan limit exceeded: Maximum {TierLimits.LibreMaxGCashTransactionsPerMonth} GCash transactions per month allowed. Upgrade to Tindahan Pro for unlimited logs.");
             }
         }
 

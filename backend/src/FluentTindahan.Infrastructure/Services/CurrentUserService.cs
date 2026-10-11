@@ -23,19 +23,19 @@ public class CurrentUserService : ICurrentUserService
             var httpContext = _httpContextAccessor.HttpContext;
             if (httpContext == null) return DefaultTenantId;
 
-            // 1. Check custom header (useful for client device sync)
+            // 1. Check verified JWT claims first for authenticated users (prevents header spoofing)
+            var user = httpContext.User;
+            var tenantClaim = user?.FindFirst("tenant_id")?.Value ?? user?.FindFirst("TenantId")?.Value;
+            if (!string.IsNullOrEmpty(tenantClaim) && Guid.TryParse(tenantClaim, out var claimTenantId))
+            {
+                return claimTenantId;
+            }
+
+            // 2. Custom header fallback for client device sync in offline/demo mode
             if (httpContext.Request.Headers.TryGetValue("X-Tenant-Id", out var tenantHeader) &&
                 Guid.TryParse(tenantHeader, out var parsedTenantId))
             {
                 return parsedTenantId;
-            }
-
-            // 2. Check JWT claims
-            var user = httpContext.User;
-            var tenantClaim = user.FindFirst("tenant_id")?.Value ?? user.FindFirst("TenantId")?.Value;
-            if (!string.IsNullOrEmpty(tenantClaim) && Guid.TryParse(tenantClaim, out var claimTenantId))
-            {
-                return claimTenantId;
             }
 
             return DefaultTenantId;
@@ -49,17 +49,19 @@ public class CurrentUserService : ICurrentUserService
             var httpContext = _httpContextAccessor.HttpContext;
             if (httpContext == null) return DefaultUserId;
 
+            // 1. Check verified JWT claims first
+            var user = httpContext.User;
+            var sub = user?.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? user?.FindFirst("sub")?.Value;
+            if (!string.IsNullOrEmpty(sub) && Guid.TryParse(sub, out var parsedSub))
+            {
+                return parsedSub;
+            }
+
+            // 2. Custom header fallback
             if (httpContext.Request.Headers.TryGetValue("X-User-Id", out var userHeader) &&
                 Guid.TryParse(userHeader, out var parsedUserId))
             {
                 return parsedUserId;
-            }
-
-            var user = httpContext.User;
-            var sub = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? user.FindFirst("sub")?.Value;
-            if (!string.IsNullOrEmpty(sub) && Guid.TryParse(sub, out var parsedSub))
-            {
-                return parsedSub;
             }
 
             return DefaultUserId;

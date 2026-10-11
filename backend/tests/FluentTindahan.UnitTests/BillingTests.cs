@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using FluentAssertions;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -1329,6 +1330,102 @@ public class BillingTests
     }
 
     [Fact]
+    public async Task ProcessBatchSyncCommand_RestoringPlaceholder_EnforcesLibreLimitAndIncrementsCounter()
+    {
+        using var context = CreateInMemoryDbContext();
+        var tenantId = _currentUserServiceMock.Object.TenantId;
+
+        var placeholderId = Guid.NewGuid();
+        // Seed 50 active products (reaching Libre limit)
+        for (int i = 0; i < 50; i++)
+        {
+            context.Products.Add(new Product
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantId,
+                Name = $"Active Product {i}",
+                Price = 10m,
+                IsDeleted = false,
+                UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-10)
+            });
+        }
+
+        // Seed 1 placeholder product
+        context.Products.Add(new Product
+        {
+            Id = placeholderId,
+            TenantId = tenantId,
+            Name = "Missing Placeholder",
+            Price = 20m,
+            IsDeleted = true,
+            UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-10)
+        });
+        await context.SaveChangesAsync();
+
+        var handler = new ProcessBatchSyncCommandHandler(
+            context,
+            _currentUserServiceMock.Object,
+            NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+
+        // Attempting to restore the placeholder when at 50 products must fail
+        var restoreOp = new SyncOperationDto
+        {
+            SyncId = "sync_restore_placeholder",
+            Entity = "Product",
+            Action = "Update",
+            Timestamp = DateTimeOffset.UtcNow,
+            Payload = System.Text.Json.JsonDocument.Parse($$"""
+            {
+                "id": "{{placeholderId}}",
+                "name": "Restored Real Product",
+                "price": 25.0
+            }
+            """).RootElement
+        };
+
+        var response1 = await handler.Handle(
+            new ProcessBatchSyncCommand(new BatchSyncRequestDto
+            {
+                DeviceId = Guid.NewGuid(),
+                Operations = new List<SyncOperationDto> { restoreOp }
+            }),
+            CancellationToken.None);
+
+        response1.Results.Should().HaveCount(1);
+        response1.Results[0].Status.Should().Be("Failed");
+        response1.Results[0].Error.Should().Contain("Libre plan limit exceeded: Maximum 50 products allowed");
+
+        // Placeholder must still be soft-deleted
+        var rawPlaceholder1 = await context.Products.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == placeholderId);
+        rawPlaceholder1!.IsDeleted.Should().BeTrue();
+
+        // Now delete one active product to drop count to 49
+        var activeToDelete = await context.Products.FirstAsync(p => !p.IsDeleted);
+        activeToDelete.IsDeleted = true;
+        await context.SaveChangesAsync();
+
+        // Restoring the placeholder now should succeed and increment the counter to 50
+        var response2 = await handler.Handle(
+            new ProcessBatchSyncCommand(new BatchSyncRequestDto
+            {
+                DeviceId = Guid.NewGuid(),
+                Operations = new List<SyncOperationDto> { restoreOp }
+            }),
+            CancellationToken.None);
+
+        response2.Results.Should().HaveCount(1);
+        response2.Results[0].Status.Should().Be("Success");
+
+        var rawPlaceholder2 = await context.Products.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == placeholderId);
+        rawPlaceholder2!.IsDeleted.Should().BeFalse();
+        rawPlaceholder2.Name.Should().Be("Restored Real Product");
+
+        // Count of active products is back to 50
+        var activeCount = await context.Products.CountAsync();
+        activeCount.Should().Be(50);
+    }
+
+    [Fact]
     public void VerifyWebhookSignature_ValidSignatureInDevelopment_ReturnsTrue()
     {
         var fixedTime = DateTimeOffset.UtcNow;
@@ -1537,6 +1634,170 @@ public class BillingTests
         var proWeekly = TierPricing.TryGetPriceCentavos(PlanTier.TindahanPro, BillingCycle.Weekly, out var p3);
         proWeekly.Should().BeTrue();
         p3.Should().Be(3_500);
+    }
+
+    [Fact]
+    public async Task PayMongoPaymentGatewayService_RapidCalls_GeneratesUniqueRefNos()
+    {
+        var fixedTime = DateTimeOffset.UtcNow;
+        var timeProvider = new MutableTimeProvider(fixedTime);
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["PayMongo:SecretKey"] = "mock_secret_key",
+                ["PayMongo:FrontendOrigin"] = "http://localhost:5173"
+            })
+            .Build();
+
+        var envMock = new Mock<IHostEnvironment>();
+        envMock.Setup(e => e.EnvironmentName).Returns("Development");
+
+        var service = new PayMongoPaymentGatewayService(
+            new HttpClient(),
+            config,
+            envMock.Object,
+            timeProvider,
+            NullLogger<PayMongoPaymentGatewayService>.Instance);
+
+        var refNos = new HashSet<string>();
+        for (int i = 0; i < 100; i++)
+        {
+            var session = await service.CreateCheckoutSessionAsync(_testTenantId, PlanTier.TindahanPro, BillingCycle.Monthly);
+            refNos.Add(session.ReferenceNumber).Should().BeTrue("every generated reference number must be unique even within the same millisecond timestamp");
+        }
+
+        refNos.Should().HaveCount(100);
+    }
+
+    [Fact]
+    public async Task ApplySubscriptionPaymentCommandHandler_MidTermTierChange_StartsFromNow()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new ApplySubscriptionPaymentCommandHandler(context, NullLogger<ApplySubscriptionPaymentCommandHandler>.Instance);
+
+        var tenant = await context.Tenants.FirstAsync(t => t.Id == _testTenantId);
+        var now = DateTimeOffset.UtcNow;
+        // Tenant currently has an active TindahanPro subscription expiring in 15 days
+        var existingEnd = now.AddDays(15);
+        tenant.Tier = PlanTier.TindahanPro;
+        tenant.SubscriptionEndDate = existingEnd;
+        await context.SaveChangesAsync();
+
+        // Customer upgrades mid-term to NegosyoPlus for 1 month
+        var result = await handler.Handle(new ApplySubscriptionPaymentCommand(
+            _testTenantId,
+            PlanTier.NegosyoPlus,
+            BillingCycle.Monthly,
+            34_900,
+            "pay_upgrade_midterm",
+            "gcash"), CancellationToken.None);
+
+        result.Success.Should().BeTrue();
+
+        var updatedTenant = await context.Tenants.FirstAsync(t => t.Id == _testTenantId);
+        updatedTenant.Tier.Should().Be(PlanTier.NegosyoPlus);
+
+        // Mid-term upgrade should NOT stack onto existingEnd (+15 days + 30 days = +45 days).
+        // It must start from now (+30 days).
+        var duration = TierPricing.GetDuration(BillingCycle.Monthly);
+        var expectedEnd = now.Add(duration);
+        updatedTenant.SubscriptionEndDate.Should().NotBeNull();
+        updatedTenant.SubscriptionEndDate!.Value.Should().BeCloseTo(expectedEnd, TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task ApplySubscriptionPaymentCommandHandler_SameTierRenewal_StacksOntoExistingEndDate()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new ApplySubscriptionPaymentCommandHandler(context, NullLogger<ApplySubscriptionPaymentCommandHandler>.Instance);
+
+        var tenant = await context.Tenants.FirstAsync(t => t.Id == _testTenantId);
+        var now = DateTimeOffset.UtcNow;
+        var existingEnd = now.AddDays(10);
+        tenant.Tier = PlanTier.TindahanPro;
+        tenant.SubscriptionEndDate = existingEnd;
+        await context.SaveChangesAsync();
+
+        // Tenant renews the SAME tier (TindahanPro) for 1 month
+        var result = await handler.Handle(new ApplySubscriptionPaymentCommand(
+            _testTenantId,
+            PlanTier.TindahanPro,
+            BillingCycle.Monthly,
+            12_900,
+            "pay_same_tier_renewal",
+            "gcash"), CancellationToken.None);
+
+        result.Success.Should().BeTrue();
+
+        var updatedTenant = await context.Tenants.FirstAsync(t => t.Id == _testTenantId);
+        updatedTenant.Tier.Should().Be(PlanTier.TindahanPro);
+
+        // Same-tier renewal stacks onto existingEnd
+        var duration = TierPricing.GetDuration(BillingCycle.Monthly);
+        var expectedEnd = existingEnd.Add(duration);
+        updatedTenant.SubscriptionEndDate.Should().NotBeNull();
+        updatedTenant.SubscriptionEndDate!.Value.Should().BeCloseTo(expectedEnd, TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public void TierLimits_CanonicalValues_MatchPlanRules()
+    {
+        TierLimits.LibreMaxProducts.Should().Be(50);
+        TierLimits.LibreMaxCustomers.Should().Be(30);
+        TierLimits.LibreMaxGCashTransactionsPerMonth.Should().Be(30);
+        TierLimits.Unlimited.Should().Be(-1);
+
+        TierLimits.GetMaxProducts(PlanTier.Libre).Should().Be(50);
+        TierLimits.GetMaxProducts(PlanTier.TindahanPro).Should().Be(TierLimits.Unlimited);
+        TierLimits.GetMaxProducts(PlanTier.NegosyoPlus).Should().Be(TierLimits.Unlimited);
+
+        TierLimits.GetMaxCustomers(PlanTier.Libre).Should().Be(30);
+        TierLimits.GetMaxCustomers(PlanTier.TindahanPro).Should().Be(TierLimits.Unlimited);
+        TierLimits.GetMaxCustomers(PlanTier.NegosyoPlus).Should().Be(TierLimits.Unlimited);
+
+        TierLimits.GetMaxGCashTransactionsPerMonth(PlanTier.Libre).Should().Be(30);
+        TierLimits.GetMaxGCashTransactionsPerMonth(PlanTier.TindahanPro).Should().Be(TierLimits.Unlimited);
+        TierLimits.GetMaxGCashTransactionsPerMonth(PlanTier.NegosyoPlus).Should().Be(TierLimits.Unlimited);
+
+        TierLimits.GetMaxUsers(PlanTier.Libre).Should().Be(1);
+        TierLimits.GetMaxUsers(PlanTier.TindahanPro).Should().Be(1);
+        TierLimits.GetMaxUsers(PlanTier.NegosyoPlus).Should().Be(5);
+
+        TierLimits.GetMaxDevices(PlanTier.Libre).Should().Be(1);
+        TierLimits.GetMaxDevices(PlanTier.TindahanPro).Should().Be(2);
+        TierLimits.GetMaxDevices(PlanTier.NegosyoPlus).Should().Be(4);
+
+        TierLimits.CanImportCsv(PlanTier.Libre).Should().BeFalse();
+        TierLimits.CanImportCsv(PlanTier.TindahanPro).Should().BeTrue();
+        TierLimits.CanImportCsv(PlanTier.NegosyoPlus).Should().BeTrue();
+
+        TierLimits.HasWatermarkedReceipts(PlanTier.Libre).Should().BeTrue();
+        TierLimits.HasWatermarkedReceipts(PlanTier.TindahanPro).Should().BeFalse();
+        TierLimits.HasWatermarkedReceipts(PlanTier.NegosyoPlus).Should().BeFalse();
+
+        TierLimits.HasProfitAnalytics(PlanTier.Libre).Should().BeFalse();
+        TierLimits.HasProfitAnalytics(PlanTier.TindahanPro).Should().BeTrue();
+        TierLimits.HasProfitAnalytics(PlanTier.NegosyoPlus).Should().BeTrue();
+
+        TierLimits.HasAuditLogs(PlanTier.Libre).Should().BeFalse();
+        TierLimits.HasAuditLogs(PlanTier.TindahanPro).Should().BeFalse();
+        TierLimits.HasAuditLogs(PlanTier.NegosyoPlus).Should().BeTrue();
+    }
+
+    [Fact]
+    public void BillingController_AuthenticationAttributes_AreConfigured()
+    {
+        var controllerType = typeof(BillingController);
+
+        // Controller must have [Authorize] attribute
+        var authorizeAttr = controllerType.GetCustomAttributes(typeof(AuthorizeAttribute), inherit: true);
+        authorizeAttr.Should().NotBeEmpty("BillingController must require authorization by default");
+
+        // MockPay action must have [AllowAnonymous] attribute for development simulation
+        var mockPayMethod = controllerType.GetMethod(nameof(BillingController.MockPay));
+        mockPayMethod.Should().NotBeNull();
+        var allowAnonAttr = mockPayMethod!.GetCustomAttributes(typeof(AllowAnonymousAttribute), inherit: false);
+        allowAnonAttr.Should().NotBeEmpty("MockPay endpoint must have [AllowAnonymous] for dev simulation");
     }
 
     private sealed class MutableTimeProvider : TimeProvider

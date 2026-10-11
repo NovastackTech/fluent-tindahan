@@ -77,7 +77,7 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
 
         var amountInCentavos = TierPricing.GetPriceCentavos(tier, cycle);
         var amount = TierPricing.ToPesos(amountInCentavos);
-        var refNo = $"sub_{tenantId.ToString("N")[..8]}_{_timeProvider.GetUtcNow().ToUnixTimeSeconds()}";
+        var refNo = $"sub_{tenantId.ToString("N")[..8]}_{_timeProvider.GetUtcNow().ToUnixTimeMilliseconds()}_{Guid.NewGuid().ToString("N")[..8]}";
         var tierDisplayName = tier == PlanTier.TindahanPro ? "Tindahan Pro" : "Negosyo Plus";
         var cycleDisplayName = cycle == BillingCycle.Weekly ? "Weekly" : "Monthly";
         var lineItemName = $"Fluent Tindahan - {tierDisplayName} ({cycleDisplayName})";
