@@ -9,8 +9,9 @@ import {
   MessageBarActions,
   Button
 } from '@fluentui/react-components';
-import { ArrowSyncRegular } from '@fluentui/react-icons';
-import { useSyncStore, processSyncQueue } from '../sync/syncEngine';
+import { ArrowSyncRegular, ArrowClockwiseRegular } from '@fluentui/react-icons';
+import { useSyncStore, processSyncQueue, retryDeadLetterItem } from '../sync/syncEngine';
+import { db } from '../db/db';
 import { useTranslation } from '../state/languageStore';
 
 const useStyles = makeStyles({
@@ -31,9 +32,30 @@ export const OfflineSyncBanner: React.FC = () => {
   const { isOnline, isSyncing, pendingCount, deadLetterCount, lastErrorMessage } = useSyncStore();
   const { t } = useTranslation();
 
+  const [isRetrying, setIsRetrying] = React.useState(false);
+
   if (isOnline && pendingCount === 0 && deadLetterCount === 0 && !lastErrorMessage) {
     return null;
   }
+
+  const handleRetryAllDeadLetter = async () => {
+    if (isRetrying) return;
+    setIsRetrying(true);
+    try {
+      const items = await db.deadLetterQueue.toArray();
+      for (const item of items) {
+        try {
+          await retryDeadLetterItem(item.id);
+        } catch (itemErr) {
+          console.error(`Failed to retry dead letter item ${item.id}:`, itemErr);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load dead letter items for retry:', err);
+    } finally {
+      setIsRetrying(false);
+    }
+  };
 
   return (
     <div className={styles.container}>
@@ -72,7 +94,29 @@ export const OfflineSyncBanner: React.FC = () => {
         <MessageBar intent="error">
           <MessageBarTitle>Dead Letter Queue ({deadLetterCount})</MessageBarTitle>
           <MessageBarBody>
-            {t.common.dlqWarning}
+            {lastErrorMessage || t.common.dlqWarning}
+          </MessageBarBody>
+          <MessageBarActions
+            containerAction={
+              <Button
+                size="small"
+                appearance="subtle"
+                icon={<ArrowClockwiseRegular />}
+                disabled={isRetrying}
+                onClick={handleRetryAllDeadLetter}
+              >
+                {isRetrying ? (t.common.syncing || 'Sumusubok...') : (t.settings.retryBtn || 'Subukang Muli')}
+              </Button>
+            }
+          />
+        </MessageBar>
+      )}
+
+      {deadLetterCount === 0 && lastErrorMessage && (
+        <MessageBar intent="error">
+          <MessageBarTitle>Sync Error</MessageBarTitle>
+          <MessageBarBody>
+            {lastErrorMessage}
           </MessageBarBody>
         </MessageBar>
       )}

@@ -509,6 +509,7 @@ export const POSPage: React.FC = () => {
         items: cartItems.map((i) => ({
           id: crypto.randomUUID(),
           productId: i.productId,
+          productName: i.name,
           qty: i.qty,
           unitPrice: i.price,
           subtotal: i.subtotal

@@ -7,10 +7,12 @@ import { useAuthStore } from '../state/authStore';
 import { useThemeStore } from '../state/themeStore';
 import { useLanguageStore } from '../state/languageStore';
 import { usePwaStore } from '../state/pwaStore';
+import { useSubscriptionStore } from '../state/subscriptionStore';
 
 describe('Header', () => {
   beforeEach(() => {
     useAuthStore.setState({ businessName: "Aling Nena's Store" });
+    useSubscriptionStore.setState({ tier: 'Libre', isUpgradeModalOpen: false });
     useThemeStore.setState({ themeMode: 'light', isDarkMode: false });
     useLanguageStore.setState({ language: 'tl' });
     usePwaStore.setState({ isInstallable: false, isStandalone: false, isInstalled: false });
@@ -90,6 +92,18 @@ describe('Header', () => {
     renderHeader();
 
     expect(screen.queryByRole('button', { name: /I-install ang Fluent Tindahan sa device|Install Fluent Tindahan to device/i })).not.toBeInTheDocument();
+  });
+
+  it('renders plan tier badge and opens upgrade modal on click', () => {
+    useSubscriptionStore.setState({ tier: 'TindahanPro' });
+    renderHeader();
+
+    expect(screen.getByText('PRO')).toBeInTheDocument();
+
+    const planBtn = screen.getByTitle('View Subscription Plans');
+    fireEvent.click(planBtn);
+
+    expect(useSubscriptionStore.getState().isUpgradeModalOpen).toBe(true);
   });
 });
 

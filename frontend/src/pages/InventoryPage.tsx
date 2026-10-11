@@ -39,6 +39,7 @@ import { useTranslation } from '../state/languageStore';
 import { BarcodeScannerModal } from '../components/BarcodeScannerModal';
 import { QuickRegisterProductDialog } from '../components/QuickRegisterProductDialog';
 import { playScanBeep } from '../utils/sound';
+import { useSubscriptionStore } from '../state/subscriptionStore';
 import type { NavTab } from '../components/Navigation';
 
 interface InventoryPageProps {
@@ -196,6 +197,22 @@ const useStyles = makeStyles({
     ...shorthands.padding(tokens.spacingVerticalM, tokens.spacingHorizontalM),
     verticalAlign: 'middle'
   },
+  categoryTh: {
+    minWidth: '130px',
+    whiteSpace: 'nowrap'
+  },
+  categoryCell: {
+    whiteSpace: 'nowrap',
+    minWidth: '130px'
+  },
+  categoryBadge: {
+    whiteSpace: 'nowrap',
+    maxWidth: '220px',
+    textOverflow: 'ellipsis',
+    overflowX: 'hidden',
+    display: 'inline-flex',
+    alignItems: 'center'
+  },
   stockBadgeCell: {
     display: 'flex',
     flexDirection: 'column',
@@ -304,8 +321,9 @@ const useStyles = makeStyles({
 
 export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
   const styles = useStyles();
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const tenantId = useAuthStore((s) => s.tenantId);
+  const { tier, canAddProduct, openUpgradeModal } = useSubscriptionStore();
 
   // Live Query from local Dexie database
   const products = useLiveQuery(() => db.products.toArray(), []) || [];
@@ -487,6 +505,15 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
 
   // Open Add Product Modal
   const openAddModal = () => {
+    if (!canAddProduct(products.length)) {
+      alert(
+        language === 'tl'
+          ? 'Naabot na ang limitasyon ng Libreng plano (50 produkto). Mag-upgrade sa Tindahan Pro o Negosyo Plus upang magdagdag pa.'
+          : 'Limit reached for Libre plan (50 products maximum). Please upgrade to Tindahan Pro or Negosyo Plus to add more products.'
+      );
+      openUpgradeModal();
+      return;
+    }
     setModalMode('add');
     setEditingProduct(null);
     setFormName('');
@@ -530,6 +557,15 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
 
     try {
       if (modalMode === 'add') {
+        if (!canAddProduct(products.length)) {
+          alert(
+            language === 'tl'
+              ? 'Naabot na ang limitasyon ng Libreng plano (50 produkto). Mag-upgrade sa Tindahan Pro o Negosyo Plus upang magdagdag pa.'
+              : 'Limit reached for Libre plan (50 products maximum). Please upgrade to Tindahan Pro or Negosyo Plus to add more products.'
+          );
+          openUpgradeModal();
+          return;
+        }
         const newProduct: ProductRecord = {
           id: crypto.randomUUID(),
           tenantId,
@@ -648,7 +684,19 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
             <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
               {t.inventory.totalProducts}
             </Text>
-            <div className={styles.metricValue}>{metrics.totalProducts}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div className={styles.metricValue}>
+                {metrics.totalProducts}
+                {tier === 'Libre' && (
+                  <span style={{ fontSize: '14px', fontWeight: 'normal', color: tokens.colorNeutralForeground3 }}> / 50</span>
+                )}
+              </div>
+              {tier === 'Libre' && metrics.totalProducts >= 45 && (
+                <Badge appearance="tint" color="warning" size="small">
+                  {metrics.totalProducts >= 50 ? 'Puno na' : 'Halos Puno'}
+                </Badge>
+              )}
+            </div>
             <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>
               {metrics.inStockCount} {t.inventory.inStockBadge.toLowerCase()} • {metrics.outOfStockCount} {t.inventory.outOfStockBadge.toLowerCase()}
             </Text>
@@ -818,7 +866,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
               <thead>
                 <tr>
                   <th className={styles.th}>{t.inventory.colProduct}</th>
-                  <th className={styles.th}>{t.inventory.colCategory}</th>
+                  <th className={`${styles.th} ${styles.categoryTh}`}>{t.inventory.colCategory}</th>
                   <th className={styles.th}>{t.inventory.colStock}</th>
                   <th className={styles.th}>{t.inventory.colCost}</th>
                   <th className={styles.th}>{t.inventory.colPrice}</th>
@@ -856,8 +904,14 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                       </td>
 
                       {/* Category */}
-                      <td className={styles.td}>
-                        <Badge appearance="tint" color="informative" size="small">
+                      <td className={`${styles.td} ${styles.categoryCell}`}>
+                        <Badge
+                          appearance="tint"
+                          color="informative"
+                          size="small"
+                          className={styles.categoryBadge}
+                          title={p.category || 'General'}
+                        >
                           {p.category || 'General'}
                         </Badge>
                       </td>
@@ -996,7 +1050,13 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                       {p.name}
                     </Text>
                     <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '4px' }}>
-                      <Badge appearance="tint" color="informative" size="small">
+                      <Badge
+                        appearance="tint"
+                        color="informative"
+                        size="small"
+                        className={styles.categoryBadge}
+                        title={p.category || 'General'}
+                      >
                         {p.category || 'General'}
                       </Badge>
                       {p.barcode && (
@@ -1092,12 +1152,16 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                       size="small"
                       appearance="subtle"
                       icon={<EditRegular />}
+                      title={t.inventory.editProduct}
+                      aria-label={t.inventory.editProduct}
                       onClick={() => openEditModal(p)}
                     />
                     <Button
                       size="small"
                       appearance="subtle"
                       icon={<DeleteRegular style={{ color: tokens.colorPaletteRedForeground1 }} />}
+                      title={t.inventory.deleteProduct}
+                      aria-label={t.inventory.deleteProduct}
                       onClick={() => openDeleteDialog(p)}
                     />
                   </div>

@@ -8,6 +8,7 @@ import { useLanguageStore } from '../state/languageStore';
 import { useThemeStore } from '../state/themeStore';
 import { useSyncStore } from '../sync/syncEngine';
 import { usePwaStore } from '../state/pwaStore';
+import { useSubscriptionStore } from '../state/subscriptionStore';
 import { db } from '../db/db';
 
 describe('SettingsPage', () => {
@@ -15,6 +16,12 @@ describe('SettingsPage', () => {
     useAuthStore.setState({
       businessName: "Aling Nena's Tindahan & GCash",
       role: 'Owner'
+    });
+    useSubscriptionStore.setState({
+      tier: 'Libre',
+      subscriptionEndDate: null,
+      daysRemaining: null,
+      isUpgradeModalOpen: false
     });
     useLanguageStore.setState({ language: 'tl' });
     useThemeStore.setState({ themeMode: 'light', isDarkMode: false });
@@ -182,6 +189,19 @@ describe('SettingsPage', () => {
 
     expect(screen.getByText(/Naka-install bilang Standalone App|Installed as Standalone PWA/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /I-install ang App|Install App/i })).not.toBeInTheDocument();
+  });
+
+  it('renders SaaS subscription card and opens upgrade modal on click', () => {
+    renderSettings();
+
+    expect(screen.getByText(/Plano at Subscription|Subscription & Plans/i)).toBeInTheDocument();
+    expect(screen.getByText('LIBRE')).toBeInTheDocument();
+
+    const upgradeBtn = screen.getByRole('button', { name: /Mag-upgrade Ngayon|Upgrade Now/i });
+    expect(upgradeBtn).toBeInTheDocument();
+
+    fireEvent.click(upgradeBtn);
+    expect(useSubscriptionStore.getState().isUpgradeModalOpen).toBe(true);
   });
 });
 

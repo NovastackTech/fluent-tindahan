@@ -94,6 +94,10 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
+// Fail fast: billing must never run in a non-Development environment without its secrets
+// (a missing webhook secret would otherwise weaken signature verification).
+FluentTindahan.Infrastructure.Services.PayMongoPaymentGatewayService.ValidateConfiguration(builder.Configuration, builder.Environment);
+
 var app = builder.Build();
 
 // Migrate and seed database
@@ -104,13 +108,17 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var db = services.GetRequiredService<AppDbContext>();
-        await db.Database.EnsureCreatedAsync();
+        await DatabaseMigrator.MigrateAsync(db, logger);
         await DatabaseSeeder.SeedAsync(db);
-        logger.LogInformation("Database verified and seeded successfully.");
+        logger.LogInformation("Database migrated and seeded successfully.");
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "An error occurred while creating or seeding the database.");
+        logger.LogError(ex, "An error occurred while migrating or seeding the database.");
+        if (!app.Environment.IsDevelopment())
+        {
+            throw;
+        }
     }
 }
 

@@ -40,6 +40,8 @@ function getDeviceId(): string {
   return deviceId;
 }
 
+let globalQueueOrder = 0;
+
 export async function enqueueSync(
   entity: 'Product' | 'Customer' | 'Sale' | 'UtangLedger' | 'GCashTxn',
   action: 'Insert' | 'Update' | 'Delete',
@@ -53,7 +55,8 @@ export async function enqueueSync(
     timestamp: new Date().toISOString(),
     payload,
     status: 'Pending',
-    retryCount: 0
+    retryCount: 0,
+    queueOrder: Date.now() * 1000 + (++globalQueueOrder % 1000)
   };
 
   await db.syncQueue.add(record);
@@ -87,6 +90,63 @@ export async function processSyncQueue(): Promise<{ processed: number; errors: n
     await updateQueueCounts();
     return { processed: 0, errors: 0 };
   }
+
+  // Initially order pending items strictly by enqueued sequence (queueOrder / timestamp)
+  pendingItems.sort((a, b) => {
+    const qA = a.queueOrder ?? new Date(a.timestamp).getTime();
+    const qB = b.queueOrder ?? new Date(b.timestamp).getTime();
+    return qA - qB;
+  });
+
+  // Identify entity IDs that have a subsequent Insert/Update in the same batch
+  const reinsertedIds = new Set<string>();
+  const seenDeletes = new Set<string>();
+  for (const item of pendingItems) {
+    const targetId = item.payload?.id;
+    if (targetId) {
+      const key = `${item.entity}:${targetId}`;
+      if (item.action === 'Delete') {
+        seenDeletes.add(key);
+      } else if (seenDeletes.has(key)) {
+        reinsertedIds.add(key);
+      }
+    }
+  }
+
+  // Ensure dependencies are ordered: Customer -> Product -> Sale -> UtangLedger -> GCashTxn -> Deletes (unless reinserted)
+  const entityOrder: Record<string, number> = {
+    Customer: 1,
+    Product: 2,
+    Sale: 3,
+    UtangLedger: 4,
+    GCashTxn: 5
+  };
+
+  const originalIndices = new Map(pendingItems.map((item, idx) => [item.id, idx]));
+
+  pendingItems.sort((a, b) => {
+    // Keep original outbox order for ops on the exact same entity and id
+    if (a.payload?.id && b.payload?.id && a.entity === b.entity && a.payload.id === b.payload.id) {
+      return (originalIndices.get(a.id) ?? 0) - (originalIndices.get(b.id) ?? 0);
+    }
+
+    const isReinsertedA = a.payload?.id && reinsertedIds.has(`${a.entity}:${a.payload.id}`);
+    const isReinsertedB = b.payload?.id && reinsertedIds.has(`${b.entity}:${b.payload.id}`);
+
+    const orderA = a.action === 'Delete' && !isReinsertedA ? 10 : (entityOrder[a.entity] ?? 6);
+    const orderB = b.action === 'Delete' && !isReinsertedB ? 10 : (entityOrder[b.entity] ?? 6);
+    if (orderA !== orderB) return orderA - orderB;
+
+    const timeA = new Date(a.timestamp).getTime();
+    const timeB = new Date(b.timestamp).getTime();
+    if (timeA !== timeB) return timeA - timeB;
+
+    if (a.queueOrder !== undefined && b.queueOrder !== undefined && a.queueOrder !== b.queueOrder) {
+      return a.queueOrder - b.queueOrder;
+    }
+
+    return (originalIndices.get(a.id) ?? 0) - (originalIndices.get(b.id) ?? 0);
+  });
 
   store.setSyncing(true);
 

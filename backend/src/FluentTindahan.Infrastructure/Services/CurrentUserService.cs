@@ -1,5 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using FluentTindahan.Domain.Interfaces;
 
 namespace FluentTindahan.Infrastructure.Services;
@@ -7,13 +9,42 @@ namespace FluentTindahan.Infrastructure.Services;
 public class CurrentUserService : ICurrentUserService
 {
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IHostEnvironment? _environment;
+    private readonly IConfiguration? _configuration;
 
     public static readonly Guid DefaultTenantId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     public static readonly Guid DefaultUserId = Guid.Parse("22222222-2222-2222-2222-222222222222");
 
-    public CurrentUserService(IHttpContextAccessor httpContextAccessor)
+    public CurrentUserService(
+        IHttpContextAccessor httpContextAccessor,
+        IHostEnvironment? environment = null,
+        IConfiguration? configuration = null)
     {
         _httpContextAccessor = httpContextAccessor;
+        _environment = environment;
+        _configuration = configuration;
+    }
+
+    private bool IsDevelopmentOrDemoMode()
+    {
+        if (_environment != null)
+        {
+            if (_environment.IsDevelopment() || _environment.IsEnvironment("Demo"))
+            {
+                return true;
+            }
+        }
+
+        if (_configuration != null)
+        {
+            var demoEnabled = _configuration["DemoMode"] ?? _configuration["Demo:Enabled"];
+            if (string.Equals(demoEnabled, "true", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public Guid TenantId
@@ -21,24 +52,40 @@ public class CurrentUserService : ICurrentUserService
         get
         {
             var httpContext = _httpContextAccessor.HttpContext;
-            if (httpContext == null) return DefaultTenantId;
-
-            // 1. Check custom header (useful for client device sync)
-            if (httpContext.Request.Headers.TryGetValue("X-Tenant-Id", out var tenantHeader) &&
-                Guid.TryParse(tenantHeader, out var parsedTenantId))
+            if (httpContext == null)
             {
-                return parsedTenantId;
+                return IsDevelopmentOrDemoMode() ? DefaultTenantId : Guid.Empty;
             }
 
-            // 2. Check JWT claims
+            // 1. Check verified JWT claims first for authenticated users (prevents header spoofing)
             var user = httpContext.User;
-            var tenantClaim = user.FindFirst("tenant_id")?.Value ?? user.FindFirst("TenantId")?.Value;
-            if (!string.IsNullOrEmpty(tenantClaim) && Guid.TryParse(tenantClaim, out var claimTenantId))
+            var tenantClaim = user?.FindFirst("tenant_id")?.Value ?? user?.FindFirst("TenantId")?.Value;
+            if (!string.IsNullOrEmpty(tenantClaim) && Guid.TryParse(tenantClaim, out var claimTenantId) && claimTenantId != Guid.Empty)
             {
                 return claimTenantId;
             }
 
-            return DefaultTenantId;
+            // 2. Custom header fallback: ONLY permitted when unauthenticated AND running in Development or demo mode
+            if (!IsAuthenticated && IsDevelopmentOrDemoMode())
+            {
+                if (httpContext.Request.Headers.TryGetValue("X-Tenant-Id", out var tenantHeader) &&
+                    Guid.TryParse(tenantHeader, out var parsedTenantId) &&
+                    parsedTenantId != Guid.Empty)
+                {
+                    return parsedTenantId;
+                }
+
+                return DefaultTenantId;
+            }
+
+            // 3. Fallback to default ID only in Development or Demo mode
+            if (IsDevelopmentOrDemoMode())
+            {
+                return DefaultTenantId;
+            }
+
+            // In production, an unauthenticated caller or authenticated caller without a valid tenant claim returns Guid.Empty
+            return Guid.Empty;
         }
     }
 
@@ -47,22 +94,40 @@ public class CurrentUserService : ICurrentUserService
         get
         {
             var httpContext = _httpContextAccessor.HttpContext;
-            if (httpContext == null) return DefaultUserId;
-
-            if (httpContext.Request.Headers.TryGetValue("X-User-Id", out var userHeader) &&
-                Guid.TryParse(userHeader, out var parsedUserId))
+            if (httpContext == null)
             {
-                return parsedUserId;
+                return IsDevelopmentOrDemoMode() ? DefaultUserId : null;
             }
 
+            // 1. Check verified JWT claims first
             var user = httpContext.User;
-            var sub = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? user.FindFirst("sub")?.Value;
-            if (!string.IsNullOrEmpty(sub) && Guid.TryParse(sub, out var parsedSub))
+            var sub = user?.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? user?.FindFirst("sub")?.Value;
+            if (!string.IsNullOrEmpty(sub) && Guid.TryParse(sub, out var parsedSub) && parsedSub != Guid.Empty)
             {
                 return parsedSub;
             }
 
-            return DefaultUserId;
+            // 2. Custom header fallback: ONLY permitted when unauthenticated AND running in Development or demo mode
+            if (!IsAuthenticated && IsDevelopmentOrDemoMode())
+            {
+                if (httpContext.Request.Headers.TryGetValue("X-User-Id", out var userHeader) &&
+                    Guid.TryParse(userHeader, out var parsedUserId) &&
+                    parsedUserId != Guid.Empty)
+                {
+                    return parsedUserId;
+                }
+
+                return DefaultUserId;
+            }
+
+            // 3. Fallback to default ID only in Development or Demo mode
+            if (IsDevelopmentOrDemoMode())
+            {
+                return DefaultUserId;
+            }
+
+            // In production, an unauthenticated caller or authenticated caller without a valid sub claim returns null
+            return null;
         }
     }
 

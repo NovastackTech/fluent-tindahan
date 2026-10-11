@@ -398,6 +398,32 @@ export interface Translations {
     browserInstallTip: string;
     browserInstallNote: string;
   };
+  subscription: {
+    planSection: string;
+    planDesc: string;
+    currentPlan: string;
+    libreTier: string;
+    proTier: string;
+    plusTier: string;
+    managePlanBtn: string;
+    upgradeBtn: string;
+    statusActive: string;
+    statusExpired: string;
+    statusFree: string;
+    expiresOn: string;
+    daysRemaining: string;
+    limitsTitle: string;
+    productLimit: string;
+    debtorLimit: string;
+    gcashLimit: string;
+    csvImportStatus: string;
+    unlimited: string;
+    lockedForLibre: string;
+    unlocked: string;
+    pricingToggleWeekly: string;
+    pricingToggleMonthly: string;
+    popularBadge: string;
+  };
 }
 
 export const translations: Record<Language, Translations> = {
@@ -798,6 +824,32 @@ export const translations: Record<Language, Translations> = {
       installHeaderTooltip: 'I-install ang Fluent Tindahan sa device',
       browserInstallTip: 'Para i-install: Pindutin ang install icon sa address bar ng iyong browser (itaas-kanan), o buksan ang browser menu (tatlong tuldok ⋮) at piliin ang "Install Fluent Tindahan" o "Add to Home screen".',
       browserInstallNote: 'Tandaan: Hindi puwedeng mag-install kung nasa Incognito / Private window.'
+    },
+    subscription: {
+      planSection: 'Plano at Subscription',
+      planDesc: 'Pamahalaan ang iyong SaaS subscription, tingnan ang mga limitasyon ng plano, at mag-upgrade.',
+      currentPlan: 'Kasalukuyang Plano:',
+      libreTier: 'Libre (₱0)',
+      proTier: 'Tindahan Pro',
+      plusTier: 'Negosyo Plus',
+      managePlanBtn: 'Tingnan ang mga Plano / Mag-upgrade',
+      upgradeBtn: 'Mag-upgrade Ngayon',
+      statusActive: 'Aktibo',
+      statusExpired: 'Nag-expire',
+      statusFree: 'Libreng Plano',
+      expiresOn: 'Magtatapos sa:',
+      daysRemaining: 'Natitirang araw:',
+      limitsTitle: 'Mga Limitasyon at Tampok ng Plano:',
+      productLimit: 'Produkto sa Imbentaryo:',
+      debtorLimit: 'Mga May Utang (Debtors):',
+      gcashLimit: 'GCash Logs bawat Buwan:',
+      csvImportStatus: 'CSV Bulk Import / Export:',
+      unlimited: 'Walang Limitasyon (Unlimited)',
+      lockedForLibre: 'Naka-lock (Kailangan ng Pro/Plus)',
+      unlocked: 'Bukás (Unlocked)',
+      pricingToggleWeekly: 'Sachet (Kada Linggo)',
+      pricingToggleMonthly: 'Buwanan (Kada Buwan)',
+      popularBadge: 'PINAKASIKAT'
     }
   },
   en: {
@@ -1197,6 +1249,33 @@ export const translations: Record<Language, Translations> = {
       installHeaderTooltip: 'Install Fluent Tindahan to device',
       browserInstallTip: 'To install: Click the install icon in your browser address bar (top right), or click the browser menu (three dots ⋮) and select "Install Fluent Tindahan" or "Add to Home screen".',
       browserInstallNote: 'Note: PWA installation is not available in Incognito / Private browsing windows.'
+    },
+    subscription: {
+      planSection: 'Subscription & Plans',
+      planDesc: 'Manage your SaaS subscription tier, inspect plan limits, and upgrade.',
+      currentPlan: 'Current Plan:',
+      libreTier: 'Libre (₱0 Free)',
+      proTier: 'Tindahan Pro',
+      plusTier: 'Negosyo Plus',
+      managePlanBtn: 'View Plans / Upgrade',
+      upgradeBtn: 'Upgrade Now',
+      statusActive: 'Active',
+      statusExpired: 'Expired',
+      statusFree: 'Free Forever',
+      expiresOn: 'Expires on:',
+      daysRemaining: 'Days remaining:',
+      limitsTitle: 'Plan Features & Allowances:',
+      productLimit: 'Catalog Products:',
+      debtorLimit: 'Tracked Debtors:',
+      gcashLimit: 'Monthly GCash Logs:',
+      csvImportStatus: 'CSV Bulk Import / Export:',
+      unlimited: 'Unlimited',
+      lockedForLibre: 'Locked (Requires Pro or Plus)',
+      unlocked: 'Unlocked',
+      pricingToggleWeekly: 'Sachet (Weekly)',
+      pricingToggleMonthly: 'Monthly',
+      popularBadge: 'MOST POPULAR'
     }
   }
 };
+

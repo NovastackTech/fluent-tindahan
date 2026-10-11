@@ -114,6 +114,7 @@ const useStyles = makeStyles({
 export const ReceiptModal: React.FC<ReceiptModalProps> = ({ open, onClose, data }) => {
   const styles = useStyles();
   const businessName = useAuthStore((s) => s.businessName);
+  const tier = useAuthStore((s) => s.tier);
   const { t } = useTranslation();
   const { paperWidth, setPaperWidth } = usePrinterStore();
   const [copied, setCopied] = useState(false);
@@ -155,6 +156,10 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ open, onClose, data 
     text += `*** FOR ACKNOWLEDGMENT ONLY ***\n`;
     text += `${t.receipt.thankYou}`;
 
+    if (tier === 'Libre') {
+      text += `\n🛒 Powered by Fluent Tindahan`;
+    }
+
     return text;
   };
 
@@ -162,7 +167,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ open, onClose, data 
     setIsPrinting(true);
     setStatusMsg(t.receipt.printing);
     try {
-      printThermalReceipt(data, businessName, { paperWidth });
+      printThermalReceipt(data, businessName, { paperWidth, tier });
       setStatusMsg(t.receipt.printSuccess);
       setTimeout(() => setStatusMsg(null), 3000);
     } catch (err: any) {
@@ -218,7 +223,17 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ open, onClose, data 
   };
 
   return (
-    <Dialog open={open} onOpenChange={(_, data) => !data.open && onClose()}>
+    <Dialog
+      open={open}
+      modalType="modal"
+      onOpenChange={(_, data) => {
+        // Backdrop dismissal is intentionally blocked to prevent accidental closure on touchscreens;
+        // Escape key remains active for standard desktop POS keyboard accessibility.
+        if (!data.open && data.type !== 'backdropClick') {
+          onClose();
+        }
+      }}
+    >
       <DialogSurface>
         <DialogBody>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -330,6 +345,16 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ open, onClose, data 
               <div className={styles.noticeBox}>
                 NOT AN OFFICIAL RECEIPT.<br />FOR ACKNOWLEDGMENT ONLY.
               </div>
+
+              {tier === 'Libre' ? (
+                <div style={{ textAlign: 'center', marginTop: '6px', fontSize: '10px', color: tokens.colorNeutralForeground4 }}>
+                  🛒 Powered by Fluent Tindahan (Libre Plan)
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', marginTop: '6px', fontSize: '10px', color: tokens.colorPaletteGreenForeground1 }}>
+                  ✓ {tier === 'NegosyoPlus' ? 'Negosyo Plus' : 'Tindahan Pro'} Verified Receipt
+                </div>
+              )}
             </div>
           </DialogContent>
 

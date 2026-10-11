@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using FluentTindahan.Domain.Entities;
+using FluentTindahan.Domain.Enums;
 using FluentTindahan.Infrastructure.Services;
 
 namespace FluentTindahan.Infrastructure.Persistence;
@@ -19,10 +20,16 @@ public static class DatabaseSeeder
             {
                 Id = tenantId,
                 BusinessName = "Aling Nena's Tindahan & GCash",
-                PlanTier = "SariSariPro",
+                Tier = PlanTier.TindahanPro,
+                SubscriptionEndDate = DateTimeOffset.UtcNow.AddYears(1),
                 CreatedAt = DateTimeOffset.UtcNow
             };
             context.Tenants.Add(tenant);
+            await context.SaveChangesAsync();
+        }
+        else if (tenant.Tier != PlanTier.Libre && !tenant.SubscriptionEndDate.HasValue)
+        {
+            tenant.SubscriptionEndDate = DateTimeOffset.UtcNow.AddYears(1);
             await context.SaveChangesAsync();
         }
 

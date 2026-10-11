@@ -76,6 +76,11 @@ public class RecordUtangCommandHandler : IRequestHandler<RecordUtangCommand, Uta
     public async Task<UtangLedgerDto> Handle(RecordUtangCommand request, CancellationToken cancellationToken)
     {
         var tenantId = _currentUserService.TenantId;
+        if (tenantId == Guid.Empty)
+        {
+            throw new UnauthorizedAccessException("Tenant is not authenticated or resolved.");
+        }
+
         var entry = new UtangLedger
         {
             Id = Guid.NewGuid(),

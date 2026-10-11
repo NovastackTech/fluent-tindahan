@@ -1,5 +1,6 @@
 using FluentAssertions;
 using FluentTindahan.Domain.Entities;
+using FluentTindahan.Domain.Enums;
 using FluentTindahan.Domain.Exceptions;
 using Xunit;
 
@@ -205,7 +206,7 @@ public class DomainTests
         {
             Id = tenantId,
             BusinessName = "Aling Nena's Tindahan",
-            PlanTier = "Free",
+            Tier = PlanTier.Libre,
             CreatedAt = now
         };
 
@@ -221,7 +222,7 @@ public class DomainTests
 
         tenant.Id.Should().Be(tenantId);
         tenant.BusinessName.Should().Be("Aling Nena's Tindahan");
-        tenant.PlanTier.Should().Be("Free");
+        tenant.Tier.Should().Be(PlanTier.Libre);
         tenant.CreatedAt.Should().Be(now);
 
         user.Id.Should().Be(userId);

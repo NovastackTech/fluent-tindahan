@@ -25,6 +25,7 @@ public class AppDbContext : DbContext, IApplicationDbContext
     public DbSet<Sale> Sales => Set<Sale>();
     public DbSet<SaleItem> SaleItems => Set<SaleItem>();
     public DbSet<GCashTxn> GCashTransactions => Set<GCashTxn>();
+    public DbSet<PaymentHistory> PaymentHistories => Set<PaymentHistory>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -56,7 +57,10 @@ public class AppDbContext : DbContext, IApplicationDbContext
             builder.HasKey(t => t.Id);
             builder.Property(t => t.Id).HasDefaultValueSql("gen_random_uuid()");
             builder.Property(t => t.BusinessName).IsRequired().HasMaxLength(200);
-            builder.Property(t => t.PlanTier).IsRequired().HasMaxLength(50);
+            builder.Property(t => t.Tier).HasConversion<int>().IsRequired();
+            builder.Property(t => t.SubscriptionEndDate);
+            builder.Property(t => t.ExternalCustomerId).HasMaxLength(128);
+            builder.UseXminAsConcurrencyToken();
         });
 
         // User
@@ -89,6 +93,7 @@ public class AppDbContext : DbContext, IApplicationDbContext
             builder.Property(p => p.Cost).HasPrecision(12, 2);
             builder.Property(p => p.Barcode).HasMaxLength(100);
             builder.Property(p => p.Category).HasMaxLength(100);
+            builder.Property(p => p.IsDeleted).HasDefaultValue(false);
 
             builder.HasIndex(p => p.TenantId);
             builder.HasIndex(p => new { p.TenantId, p.Barcode });
@@ -109,6 +114,7 @@ public class AppDbContext : DbContext, IApplicationDbContext
             builder.Property(c => c.Name).IsRequired().HasMaxLength(200);
             builder.Property(c => c.Phone).HasMaxLength(30);
             builder.Property(c => c.TotalUtangBalance).HasPrecision(12, 2);
+            builder.Property(c => c.IsDeleted).HasDefaultValue(false);
 
             builder.HasIndex(c => c.TenantId);
             builder.HasIndex(c => new { c.TenantId, c.Phone });
@@ -142,6 +148,7 @@ public class AppDbContext : DbContext, IApplicationDbContext
             builder.HasOne(u => u.Customer)
                 .WithMany(c => c.UtangLedgers)
                 .HasForeignKey(u => u.CustomerId)
+                .IsRequired(false)
                 .OnDelete(DeleteBehavior.Cascade);
 
             builder.HasOne(u => u.RefSale)
@@ -172,6 +179,7 @@ public class AppDbContext : DbContext, IApplicationDbContext
             builder.HasOne(s => s.Customer)
                 .WithMany()
                 .HasForeignKey(s => s.CustomerId)
+                .IsRequired(false)
                 .OnDelete(DeleteBehavior.SetNull);
         });
 
@@ -195,6 +203,7 @@ public class AppDbContext : DbContext, IApplicationDbContext
             builder.HasOne(i => i.Product)
                 .WithMany()
                 .HasForeignKey(i => i.ProductId)
+                .IsRequired(false)
                 .OnDelete(DeleteBehavior.Restrict);
         });
 
@@ -221,14 +230,40 @@ public class AppDbContext : DbContext, IApplicationDbContext
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
-        // Global Query Filters for multi-tenancy isolation
+        // PaymentHistory
+        modelBuilder.Entity<PaymentHistory>(builder =>
+        {
+            builder.ToTable("PaymentHistories");
+            builder.HasKey(p => p.Id);
+            builder.Property(p => p.Id).HasDefaultValueSql("gen_random_uuid()");
+            builder.Property(p => p.AmountCentavos).IsRequired();
+            builder.Property(p => p.Currency).IsRequired().HasMaxLength(10);
+            builder.Property(p => p.TierPurchased).HasConversion<int>().IsRequired();
+            builder.Property(p => p.BillingCycle).HasConversion<int>().IsRequired();
+            builder.Property(p => p.GatewayReferenceId).IsRequired().HasMaxLength(150);
+            builder.Property(p => p.Status).IsRequired().HasMaxLength(50);
+            builder.Property(p => p.PaymentMethod).HasMaxLength(50);
+
+            builder.HasIndex(p => p.TenantId);
+            builder.HasIndex(p => new { p.TenantId, p.CreatedAt });
+            // Unique: PayMongo retries webhooks; a duplicate payment id must never extend a subscription twice.
+            builder.HasIndex(p => p.GatewayReferenceId).IsUnique();
+
+            builder.HasOne(p => p.Tenant)
+                .WithMany(t => t.PaymentHistories)
+                .HasForeignKey(p => p.TenantId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // Global Query Filters for multi-tenancy isolation and soft delete
         ConfigureTenantFilter<User>(modelBuilder);
-        ConfigureTenantFilter<Product>(modelBuilder);
-        ConfigureTenantFilter<Customer>(modelBuilder);
+        modelBuilder.Entity<Product>().HasQueryFilter(p => p.TenantId == _currentUserService.TenantId && !p.IsDeleted);
+        modelBuilder.Entity<Customer>().HasQueryFilter(c => c.TenantId == _currentUserService.TenantId && !c.IsDeleted);
         ConfigureTenantFilter<UtangLedger>(modelBuilder);
         ConfigureTenantFilter<Sale>(modelBuilder);
         ConfigureTenantFilter<SaleItem>(modelBuilder);
         ConfigureTenantFilter<GCashTxn>(modelBuilder);
+        ConfigureTenantFilter<PaymentHistory>(modelBuilder);
     }
 
     private void ConfigureTenantFilter<TEntity>(ModelBuilder modelBuilder) where TEntity : class, IMustHaveTenant
@@ -243,7 +278,12 @@ public class AppDbContext : DbContext, IApplicationDbContext
         {
             if (entry.State == EntityState.Added && entry.Entity.TenantId == Guid.Empty)
             {
-                entry.Entity.TenantId = _currentUserService.TenantId;
+                var tenantId = _currentUserService.TenantId;
+                if (tenantId == Guid.Empty)
+                {
+                    throw new UnauthorizedAccessException("Cannot save tenant-scoped entity without an authenticated tenant.");
+                }
+                entry.Entity.TenantId = tenantId;
             }
         }
 

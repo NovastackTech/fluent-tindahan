@@ -23,6 +23,7 @@ import { db, type GCashTxnRecord } from '../db/db';
 import { useAuthStore } from '../state/authStore';
 import { enqueueSync } from '../sync/syncEngine';
 import { useTranslation } from '../state/languageStore';
+import { useSubscriptionStore } from '../state/subscriptionStore';
 
 const useStyles = makeStyles({
   container: {
@@ -63,7 +64,8 @@ const useStyles = makeStyles({
 
 export const GCashPage: React.FC = () => {
   const styles = useStyles();
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
+  const { tier, canAddGCashTxn, openUpgradeModal } = useSubscriptionStore();
   const [txnType, setTxnType] = useState<'CashIn' | 'CashOut'>('CashIn');
   const [amount, setAmount] = useState('');
   const [customFee, setCustomFee] = useState<string | null>(null);
@@ -95,6 +97,9 @@ export const GCashPage: React.FC = () => {
   const todayStr = new Date().toISOString().slice(0, 10);
   const todayTxns = allTxns.filter((t) => t.date.slice(0, 10) === todayStr);
 
+  const currentMonthPrefix = new Date().toISOString().slice(0, 7);
+  const currentMonthTxnCount = allTxns.filter((t) => t.date.slice(0, 7) === currentMonthPrefix).length;
+
   const todayCashIn = todayTxns.filter((t) => t.type === 'CashIn').reduce((s, t) => s + t.amount, 0);
   const todayCashOut = todayTxns.filter((t) => t.type === 'CashOut').reduce((s, t) => s + t.amount, 0);
   const todayFees = todayTxns.reduce((s, t) => s + t.fee, 0);
@@ -103,6 +108,16 @@ export const GCashPage: React.FC = () => {
     e.preventDefault();
     if (numAmount <= 0) {
       alert(t.gcash.invalidAmountAlert);
+      return;
+    }
+
+    if (!canAddGCashTxn(currentMonthTxnCount)) {
+      alert(
+        language === 'tl'
+          ? 'Naabot na ang limitasyon ng Libreng plano (30 GCash transactions kada buwan). Mag-upgrade sa Tindahan Pro o Negosyo Plus upang magtala pa.'
+          : 'Limit reached for Libre plan (30 GCash transactions per month). Please upgrade to Tindahan Pro or Negosyo Plus to log more transactions.'
+      );
+      openUpgradeModal();
       return;
     }
 
@@ -141,6 +156,9 @@ export const GCashPage: React.FC = () => {
         <Text size={500} weight="bold">{t.gcash.title}</Text>
         <Text size={300} style={{ color: tokens.colorNeutralForeground3, display: 'block' }}>
           {t.gcash.subtitle}
+          {tier === 'Libre' && (
+            <span> • {language === 'tl' ? 'Ngayong Buwan:' : 'This Month:'} {currentMonthTxnCount}/30 (Libre)</span>
+          )}
         </Text>
       </div>
 

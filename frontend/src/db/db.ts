@@ -76,6 +76,7 @@ export interface SyncQueueRecord {
   status: 'Pending' | 'InFlight' | 'Failed';
   retryCount: number;
   errorMessage?: string;
+  queueOrder?: number;
 }
 
 export interface DeadLetterRecord {
@@ -89,6 +90,16 @@ export interface DeadLetterRecord {
   failedAt: string;
 }
 
+export type PlanTier = 'Libre' | 'TindahanPro' | 'NegosyoPlus';
+
+export interface TenantRecord {
+  id: string; // UUID
+  businessName: string;
+  tier: PlanTier;
+  subscriptionEndDate?: string;
+  updatedAt: string;
+}
+
 export class FluentTindahanDatabase extends Dexie {
   products!: Table<ProductRecord, string>;
   customers!: Table<CustomerRecord, string>;
@@ -98,6 +109,7 @@ export class FluentTindahanDatabase extends Dexie {
   gcashTxns!: Table<GCashTxnRecord, string>;
   syncQueue!: Table<SyncQueueRecord, string>;
   deadLetterQueue!: Table<DeadLetterRecord, string>;
+  tenants!: Table<TenantRecord, string>;
 
   constructor() {
     super('FluentTindahanDb');
@@ -109,7 +121,8 @@ export class FluentTindahanDatabase extends Dexie {
       utangLedger: 'id, tenantId, customerId, type, date, refSaleId',
       gcashTxns: 'id, tenantId, type, date, refNo',
       syncQueue: 'id, entity, status, retryCount, timestamp',
-      deadLetterQueue: 'id, entity, failedAt'
+      deadLetterQueue: 'id, entity, failedAt',
+      tenants: 'id, tier, subscriptionEndDate, updatedAt'
     });
   }
 }

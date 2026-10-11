@@ -70,10 +70,16 @@ public class RecordGCashTxnCommandHandler : IRequestHandler<RecordGCashTxnComman
 
     public async Task<GCashTxnDto> Handle(RecordGCashTxnCommand request, CancellationToken cancellationToken)
     {
+        var tenantId = _currentUserService.TenantId;
+        if (tenantId == Guid.Empty)
+        {
+            throw new UnauthorizedAccessException("Tenant is not authenticated or resolved.");
+        }
+
         var txn = new GCashTxn
         {
             Id = Guid.NewGuid(),
-            TenantId = _currentUserService.TenantId,
+            TenantId = tenantId,
             Type = request.Type,
             Amount = request.Amount,
             Fee = request.Fee,

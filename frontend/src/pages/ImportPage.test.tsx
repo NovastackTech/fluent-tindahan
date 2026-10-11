@@ -4,11 +4,13 @@ import { FluentProvider } from '@fluentui/react-components';
 import { ImportPage } from './ImportPage';
 import { sariSariLightTheme } from '../theme/theme';
 import { db } from '../db/db';
+import { useSubscriptionStore } from '../state/subscriptionStore';
 
 describe('ImportPage', () => {
   beforeEach(async () => {
     await db.products.clear();
     await db.syncQueue.clear();
+    useSubscriptionStore.setState({ tier: 'TindahanPro' });
   });
 
   const renderImport = () => {
@@ -62,6 +64,14 @@ describe('ImportPage', () => {
       const prods = await db.products.toArray();
       expect(prods.length).toBeGreaterThan(0);
     });
+  });
+
+  it('displays Pro feature warning when on Libre tier', () => {
+    useSubscriptionStore.setState({ tier: 'Libre' });
+    renderImport();
+
+    expect(screen.getByText(/Pro Feature: CSV Bulk Import/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Mag-upgrade sa Pro|Upgrade to Pro/i })).toBeInTheDocument();
   });
 });
 

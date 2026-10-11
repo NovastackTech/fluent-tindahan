@@ -4,6 +4,7 @@ import type { PaperWidth } from '../state/printerStore';
 export interface PrintOptions {
   paperWidth?: PaperWidth;
   businessName?: string;
+  tier?: 'Libre' | 'TindahanPro' | 'NegosyoPlus';
 }
 
 export interface BluetoothPrintResult {
@@ -18,7 +19,8 @@ export interface BluetoothPrintResult {
 export function generateThermalReceiptHtml(
   data: ReceiptData,
   businessName: string,
-  paperWidth: PaperWidth = '58mm'
+  paperWidth: PaperWidth = '58mm',
+  tier: 'Libre' | 'TindahanPro' | 'NegosyoPlus' = 'Libre'
 ): string {
   const is58 = paperWidth === '58mm';
   const widthMm = is58 ? '58mm' : '80mm';
@@ -165,6 +167,7 @@ export function generateThermalReceiptHtml(
       *** HINDI OPISYAL NA RESIBO ***<br />
       *** FOR ACKNOWLEDGMENT ONLY ***<br />
       Maraming Salamat po sa Pagbili!
+      ${tier === 'Libre' ? '<br />Powered by Fluent Tindahan 🛒🇵🇭' : ''}
     </div>
   </div>
 </body>
@@ -183,7 +186,8 @@ export function printThermalReceipt(
   if (typeof window === 'undefined') return false;
 
   const paperWidth = options.paperWidth || '58mm';
-  const html = generateThermalReceiptHtml(data, businessName, paperWidth);
+  const tier = options.tier || 'Libre';
+  const html = generateThermalReceiptHtml(data, businessName, paperWidth, tier);
 
   try {
     const iframe = document.createElement('iframe');

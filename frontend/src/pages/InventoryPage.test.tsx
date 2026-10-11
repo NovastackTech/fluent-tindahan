@@ -5,8 +5,13 @@ import { InventoryPage } from './InventoryPage';
 import { sariSariLightTheme } from '../theme/theme';
 import { db } from '../db/db';
 
+import { useLanguageStore } from '../state/languageStore';
+import { useSubscriptionStore } from '../state/subscriptionStore';
+
 describe('InventoryPage', () => {
   beforeEach(async () => {
+    useLanguageStore.setState({ language: 'tl' });
+    useSubscriptionStore.setState({ tier: 'Libre', isUpgradeModalOpen: false });
     await db.products.clear();
     await db.syncQueue.clear();
 
@@ -151,11 +156,8 @@ describe('InventoryPage', () => {
     }
 
     // Confirmation dialog should appear
-    await waitFor(() => {
-      expect(screen.getByText(/Sigurado ka bang nais mong burahin|delete this product/i)).toBeInTheDocument();
-    });
-
-    const confirmDeleteBtn = screen.getByRole('button', { name: /Burahin$|Delete$/i });
+    const confirmDeleteBtn = await screen.findByRole('button', { name: /Burahin$|Delete$/i });
+    expect(screen.getByText(/Sigurado ka bang nais mong burahin|delete this product/i)).toBeInTheDocument();
     fireEvent.click(confirmDeleteBtn);
 
     await waitFor(async () => {

@@ -26,6 +26,7 @@
     <ProjectReference Include="..\..\src\FluentTindahan.Application\FluentTindahan.Application.csproj" />
     <ProjectReference Include="..\..\src\FluentTindahan.Domain\FluentTindahan.Domain.csproj" />
     <ProjectReference Include="..\..\src\FluentTindahan.Infrastructure\FluentTindahan.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\FluentTindahan.WebApi\FluentTindahan.WebApi.csproj" />
   </ItemGroup>
 
 </Project>

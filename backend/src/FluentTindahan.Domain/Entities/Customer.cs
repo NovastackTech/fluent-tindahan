@@ -10,6 +10,7 @@ public class Customer : IMustHaveTenant
     public string Phone { get; set; } = string.Empty;
     public decimal TotalUtangBalance { get; set; } = 0m;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public bool IsDeleted { get; set; } = false;
 
     public Tenant? Tenant { get; set; }
     public ICollection<UtangLedger> UtangLedgers { get; set; } = new List<UtangLedger>();

@@ -13,6 +13,7 @@ public class Product : IMustHaveTenant
     public string? Category { get; set; }
     public int StockQty { get; set; } = 0;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public bool IsDeleted { get; set; } = false;
 
     public Tenant? Tenant { get; set; }
 }
