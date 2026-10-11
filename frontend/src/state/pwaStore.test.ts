@@ -12,7 +12,11 @@ describe('pwaStore', () => {
       isDismissed: false,
       deferredPrompt: null,
       needRefresh: false,
-      offlineReady: false
+      offlineReady: false,
+      otherTabsHaveCart: false,
+      reloadDeferred: false,
+      isSaleInProgress: false,
+      hasActiveReceipt: false
     });
   });
 

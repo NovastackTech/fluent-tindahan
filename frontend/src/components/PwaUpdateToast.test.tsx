@@ -10,7 +10,11 @@ import * as pwaRegister from '../pwa/registerServiceWorker';
 describe('PwaUpdateToast', () => {
   beforeEach(() => {
     usePwaStore.setState({
-      needRefresh: false
+      needRefresh: false,
+      otherTabsHaveCart: false,
+      reloadDeferred: false,
+      isSaleInProgress: false,
+      hasActiveReceipt: false
     });
     useCartStore.getState().clearCart();
   });
