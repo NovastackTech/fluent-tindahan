@@ -110,6 +110,49 @@ describe('GCashPage', () => {
     });
   });
 
+  it('hides resolved originals after the day they were resolved', async () => {
+    const now = Date.now();
+    const today = new Date(now).toISOString();
+    const oldDate = new Date(now - 5 * 24 * 60 * 60 * 1000).toISOString();
+    const resolvedYesterday = new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString();
+
+    await db.gcashTxns.bulkAdd([
+      {
+        id: 'g-old-resolved',
+        tenantId: 't-1',
+        type: 'CashIn',
+        amount: 400,
+        fee: 10,
+        refNo: 'REF-OLD-RESOLVED',
+        date: oldDate,
+        needsAttention: true,
+        syncStatus: 'DuplicateRef'
+      },
+      {
+        id: 'g-current-visible',
+        tenantId: 't-1',
+        type: 'CashIn',
+        amount: 100,
+        fee: 5,
+        refNo: 'REF-CURRENT-VISIBLE',
+        date: today
+      }
+    ]);
+    await db.gcashTxnResolutions.add({
+      gcashTxnId: 'g-old-resolved',
+      tenantId: 't-1',
+      resolution: 'Voided',
+      resolvedAt: resolvedYesterday
+    });
+
+    renderGCash();
+
+    await waitFor(() => {
+      expect(screen.getByText(/REF-CURRENT-VISIBLE/i)).toBeInTheDocument();
+      expect(screen.queryByText(/REF-OLD-RESOLVED/i)).not.toBeInTheDocument();
+    });
+  });
+
   it('rejects recording transaction with duplicate reference number', async () => {
     const alertMock = vi.spyOn(window, 'alert').mockImplementation(() => {});
 
@@ -259,6 +302,9 @@ describe('GCashPage', () => {
 
     renderGCash();
     await screen.findByText(/REF-ORIGINAL/i);
+    expect(await screen.findByTestId('gcash-correction-date-note')).toHaveTextContent(
+      /original transaction date|orihinal na petsa/i
+    );
 
     fireEvent.change(screen.getByRole('textbox', { name: /Corrected reference for REF-ORIGINAL|Bagong reference para sa REF-ORIGINAL/i }), {
       target: { value: 'REF-CORRECTED' }
@@ -290,6 +336,10 @@ describe('GCashPage', () => {
     });
 
     expect(screen.getByText(/Corrected; new ref: REF-CORRECTED|Naayos; bagong ref: REF-CORRECTED/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByTestId('duplicate-ref-badge')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Not synced; excluded from totals|Hindi naka-sync; hindi kasama sa totals/i)).not.toBeInTheDocument();
+    });
     expect(screen.getByTestId('today-cash-in-total')).toHaveTextContent('₱0.00');
   });
 
@@ -349,6 +399,8 @@ describe('GCashPage', () => {
     });
     expect(await db.syncQueue.count()).toBe(0);
     expect(screen.getByText(/Voided locally|Voided \(lokal\)/i)).toBeInTheDocument();
+    expect(screen.queryByTestId('duplicate-ref-badge')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Not synced; excluded from totals|Hindi naka-sync; hindi kasama sa totals/i)).not.toBeInTheDocument();
     expect(screen.getByTestId('today-cash-out-total')).toHaveTextContent('₱0.00');
     confirmMock.mockRestore();
   });

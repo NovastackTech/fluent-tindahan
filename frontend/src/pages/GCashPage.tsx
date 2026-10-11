@@ -105,9 +105,12 @@ export const GCashPage: React.FC = () => {
 
   const todayStr = new Date().toISOString().slice(0, 10);
   const todayTxns = allTxns.filter((t) => t.date.slice(0, 10) === todayStr);
-  const visibleTxns = allTxns.filter(
-    (t) => t.date.slice(0, 10) === todayStr || isGCashTxnUnresolved(t) || resolutionsByTxnId.has(t.id)
-  );
+  const visibleTxns = allTxns.filter((txn) => {
+    const resolution = resolutionsByTxnId.get(txn.id);
+    const resolvedToday = resolution?.resolvedAt.slice(0, 10) === todayStr;
+    const unresolvedAndUnresolvedLocally = !resolution && isGCashTxnUnresolved(txn);
+    return txn.date.slice(0, 10) === todayStr || unresolvedAndUnresolvedLocally || resolvedToday;
+  });
   const countedTodayTxns = todayTxns.filter(
     (t) => !isGCashTxnUnresolved(t) && !resolutionsByTxnId.has(t.id)
   );
@@ -206,6 +209,7 @@ export const GCashPage: React.FC = () => {
       const replacement: GCashTxnRecord = {
         ...txn,
         id: crypto.randomUUID(),
+        // Preserve the original transaction date; resolvedAt separately records when the reference was corrected.
         refNo: correctedRef,
         refNoNorm: correctedRefNorm,
         needsAttention: undefined,
@@ -460,7 +464,7 @@ export const GCashPage: React.FC = () => {
                       <Badge appearance="filled" color={isCashIn ? 'informative' : 'success'} size="small">
                         {isCashIn ? 'CASH-IN' : 'CASH-OUT'}
                       </Badge>
-                      {isGCashTxnUnresolved(txn) && (
+                      {isGCashTxnUnresolved(txn) && !resolution && (
                         <span data-testid="duplicate-ref-badge">
                           <Badge appearance="filled" color="danger" size="small">
                             {txn.syncStatus === 'Conflict'
@@ -492,7 +496,7 @@ export const GCashPage: React.FC = () => {
                         ⚠️ {txn.conflictReason}
                       </Text>
                     )}
-                    {isGCashTxnUnresolved(txn) && (
+                    {isGCashTxnUnresolved(txn) && !resolution && (
                       <Text size={100} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
                         {language === 'tl' ? 'Hindi naka-sync; hindi kasama sa totals.' : 'Not synced; excluded from totals.'}
                       </Text>
@@ -519,6 +523,17 @@ export const GCashPage: React.FC = () => {
                         >
                           {language === 'tl' ? 'I-void' : 'Void'}
                         </Button>
+                        {!isToday && (
+                          <Text
+                            data-testid="gcash-correction-date-note"
+                            size={100}
+                            style={{ color: tokens.colorNeutralForeground3, alignSelf: 'center' }}
+                          >
+                            {language === 'tl'
+                              ? 'Pananatilihin ang orihinal na petsa; hindi madadagdag sa totals ngayong araw ang lumang transaksyon.'
+                              : "Keeps the original transaction date; older corrections aren't added to today's totals."}
+                          </Text>
+                        )}
                       </div>
                     )}
                   </div>
