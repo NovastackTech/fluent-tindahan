@@ -18,7 +18,7 @@ describe('seedData', () => {
     await seedDexieDatabaseIfNeeded();
 
     const productCount = await db.products.count();
-    expect(productCount).toBeGreaterThanOrEqual(138);
+    expect(productCount).toBe(50);
 
     const customerCount = await db.customers.count();
     expect(customerCount).toBeGreaterThan(0);

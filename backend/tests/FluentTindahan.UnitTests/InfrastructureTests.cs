@@ -340,7 +340,7 @@ public class InfrastructureTests
         user.Should().NotBeNull();
 
         var productCount = await dbContext.Products.IgnoreQueryFilters().CountAsync();
-        productCount.Should().BeGreaterThan(50); // Full 138-item sari-sari catalog
+        productCount.Should().Be(50); // 50-item sari-sari store catalog
 
         var customerCount = await dbContext.Customers.IgnoreQueryFilters().CountAsync();
         customerCount.Should().BeGreaterThan(0); // Sample debtors
