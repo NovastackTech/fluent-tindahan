@@ -227,6 +227,7 @@ public class AppDbContext : DbContext, IApplicationDbContext
             builder.Property(g => g.RefNoNorm).IsRequired().HasMaxLength(100).HasDefaultValue(string.Empty);
             builder.HasIndex(g => new { g.TenantId, g.RefNoNorm })
                 .IsUnique()
+                .HasDatabaseName(GCashTxn.RefNoNormUniqueIndexName)
                 .HasFilter("\"RefNoNorm\" <> ''");
 
             builder.HasOne(g => g.Tenant)

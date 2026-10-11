@@ -73,6 +73,17 @@ export interface GCashTxnRecord {
   conflictReason?: string;
 }
 
+/** Local audit record for resolving a GCash transaction rejected before sync. */
+export interface GCashTxnResolutionRecord {
+  /** ID of the original, rejected transaction. */
+  gcashTxnId: string;
+  tenantId: string;
+  resolution: 'Corrected' | 'Voided';
+  resolvedAt: string;
+  replacementTxnId?: string;
+  correctedRefNo?: string;
+}
+
 export interface SyncQueueRecord {
   id: string; // syncId UUID
   entity: 'Product' | 'Customer' | 'Sale' | 'UtangLedger' | 'GCashTxn';
@@ -121,6 +132,7 @@ export class FluentTindahanDatabase extends Dexie {
   saleItems!: Table<SaleItemRecord, string>;
   utangLedger!: Table<UtangLedgerRecord, string>;
   gcashTxns!: Table<GCashTxnRecord, string>;
+  gcashTxnResolutions!: Table<GCashTxnResolutionRecord, string>;
   syncQueue!: Table<SyncQueueRecord, string>;
   deadLetterQueue!: Table<DeadLetterRecord, string>;
   tenants!: Table<TenantRecord, string>;
@@ -164,6 +176,9 @@ export class FluentTindahanDatabase extends Dexie {
             }
           })
       );
+    this.version(4).stores({
+      gcashTxnResolutions: 'gcashTxnId, tenantId, resolution, resolvedAt'
+    });
   }
 }
 

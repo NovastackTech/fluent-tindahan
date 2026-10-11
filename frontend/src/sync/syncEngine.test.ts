@@ -96,8 +96,7 @@ describe('syncEngine', () => {
 
   it.each([
     ['Customer', 'Conflict'],
-    ['Customer', 'DuplicateRef'],
-    ['GCashTxn', 'Conflict']
+    ['Customer', 'DuplicateRef']
   ])('processSyncQueue retries %s %s responses', async (entity, status) => {
     const syncId = await enqueueSync(entity as 'Customer' | 'GCashTxn', 'Delete', { id: 'entity-conflict-1' });
 
@@ -415,7 +414,8 @@ describe('syncEngine', () => {
 
     const result = await processSyncQueue();
 
-    expect(result.processed).toBe(2);
+    expect(result.processed).toBe(0);
+    expect(result.conflicts).toBe(2);
     expect(result.errors).toBe(0);
 
     // Queue is cleared (not kept or retried until dead letter)
@@ -432,6 +432,48 @@ describe('syncEngine', () => {
     expect(secondUpdatedTxn?.syncStatus).toBe('DuplicateRef');
 
     expect(useSyncStore.getState().lastErrorMessage).toBe('2 duplicate GCash references detected.');
+  });
+
+  it('processSyncQueue handles GCash Conflict as a terminal attention result', async () => {
+    const txnId = 'gcash-conflict-test-1';
+    await db.gcashTxns.add({
+      id: txnId,
+      tenantId: 't-1',
+      type: 'CashIn',
+      amount: 650,
+      fee: 10,
+      refNo: 'REF-CONFLICT-1',
+      refNoNorm: 'ref-conflict-1',
+      date: new Date().toISOString()
+    });
+
+    const syncId = await enqueueSync('GCashTxn', 'Insert', {
+      id: txnId,
+      tenantId: 't-1',
+      type: 'CashIn',
+      amount: 650,
+      fee: 10,
+      refNo: 'REF-CONFLICT-1',
+      date: new Date().toISOString()
+    });
+
+    (apiClient.post as any).mockResolvedValueOnce({
+      data: {
+        results: [{ syncId, status: 'Conflict', error: 'GCash operation conflicted on server' }]
+      }
+    });
+
+    const result = await processSyncQueue();
+
+    expect(result).toEqual({ processed: 0, conflicts: 1, errors: 0 });
+    expect(await db.syncQueue.get(syncId)).toBeUndefined();
+    expect(await db.deadLetterQueue.get(syncId)).toBeUndefined();
+    expect(await db.gcashTxns.get(txnId)).toMatchObject({
+      needsAttention: true,
+      syncStatus: 'Conflict',
+      conflictReason: 'GCash operation conflicted on server'
+    });
+    expect(useSyncStore.getState().lastErrorMessage).toBe('1 GCash transaction conflict detected.');
   });
 
   it('initSyncEngine attaches online and offline event handlers', () => {

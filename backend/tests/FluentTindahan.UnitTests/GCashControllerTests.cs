@@ -5,8 +5,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Moq;
-using Xunit;
 using FluentTindahan.Application.GCash;
+using FluentTindahan.Domain.Entities;
 using FluentTindahan.WebApi.Controllers;
 
 namespace FluentTindahan.UnitTests;
@@ -70,7 +70,7 @@ public class GCashControllerTests
                 "ERROR",
                 "ERROR",
                 "23505",
-                constraintName: "IX_GCashTransactions_TenantId_RefNoNorm"));
+                constraintName: GCashTxn.RefNoNormUniqueIndexName));
 
         _mediatorMock.Setup(m => m.Send(command, It.IsAny<CancellationToken>()))
             .ThrowsAsync(dbUpdateEx);
@@ -87,7 +87,7 @@ public class GCashControllerTests
     {
         var dbUpdateEx = new DbUpdateException(
             "An error occurred while saving the entity changes.",
-            new Exception("23505: duplicate key value violates unique constraint \"IX_GCashTransactions_TenantId_RefNoNorm\""));
+            new Exception($"23505: duplicate key value violates unique constraint \"{GCashTxn.RefNoNormUniqueIndexName}\""));
 
         RecordGCashTxnCommandHandler.IsUniqueIndexViolation(dbUpdateEx).Should().BeFalse();
     }

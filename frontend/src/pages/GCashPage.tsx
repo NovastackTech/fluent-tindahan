@@ -73,6 +73,8 @@ export const GCashPage: React.FC = () => {
   const [customerPhone, setCustomerPhone] = useState('');
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [resolutionRefDrafts, setResolutionRefDrafts] = useState<Record<string, string>>({});
+  const [resolvingTxnId, setResolvingTxnId] = useState<string | null>(null);
   const savingRef = useRef(false);
 
   const tenantId = useAuthStore((s) => s.tenantId);
@@ -95,14 +97,24 @@ export const GCashPage: React.FC = () => {
 
   // Live query for GCash logs
   const allTxns = useLiveQuery(() => db.gcashTxns.reverse().sortBy('date'), []) || [];
+  const resolutions = useLiveQuery(() => db.gcashTxnResolutions.toArray(), []);
+  const resolutionsByTxnId = useMemo(
+    () => new Map((resolutions || []).map((resolution) => [resolution.gcashTxnId, resolution])),
+    [resolutions]
+  );
 
   const todayStr = new Date().toISOString().slice(0, 10);
   const todayTxns = allTxns.filter((t) => t.date.slice(0, 10) === todayStr);
-  const countedTodayTxns = todayTxns.filter((t) => !isGCashTxnUnresolved(t));
+  const visibleTxns = allTxns.filter(
+    (t) => t.date.slice(0, 10) === todayStr || isGCashTxnUnresolved(t) || resolutionsByTxnId.has(t.id)
+  );
+  const countedTodayTxns = todayTxns.filter(
+    (t) => !isGCashTxnUnresolved(t) && !resolutionsByTxnId.has(t.id)
+  );
 
   const currentMonthPrefix = new Date().toISOString().slice(0, 7);
   const currentMonthTxnCount = allTxns.filter(
-    (t) => t.date.slice(0, 7) === currentMonthPrefix && !isGCashTxnUnresolved(t)
+    (t) => t.date.slice(0, 7) === currentMonthPrefix && !isGCashTxnUnresolved(t) && !resolutionsByTxnId.has(t.id)
   ).length;
 
   const todayCashIn = countedTodayTxns.filter((t) => t.type === 'CashIn').reduce((s, t) => s + t.amount, 0);
@@ -181,6 +193,106 @@ export const GCashPage: React.FC = () => {
     } finally {
       savingRef.current = false;
       setIsSaving(false);
+    }
+  };
+
+  const handleCorrectReference = async (txn: GCashTxnRecord) => {
+    const correctedRef = resolutionRefDrafts[txn.id]?.trim() || '';
+    const correctedRefNorm = normalizeRef(correctedRef);
+    if (!correctedRefNorm || txn.tenantId !== tenantId || txn.syncStatus !== 'DuplicateRef') return;
+
+    setResolvingTxnId(txn.id);
+    try {
+      const replacement: GCashTxnRecord = {
+        ...txn,
+        id: crypto.randomUUID(),
+        refNo: correctedRef,
+        refNoNorm: correctedRefNorm,
+        needsAttention: undefined,
+        syncStatus: undefined,
+        conflictReason: undefined
+      };
+
+      const resolved = await db.transaction(
+        'rw',
+        db.gcashTxns,
+        db.gcashTxnResolutions,
+        db.syncQueue,
+        async () => {
+          const current = await db.gcashTxns.get(txn.id);
+          if (!current || current.tenantId !== tenantId || current.syncStatus !== 'DuplicateRef') return 'unavailable';
+          if (await db.gcashTxnResolutions.get(txn.id)) return 'resolved';
+
+          const duplicate = await db.gcashTxns
+            .where('[tenantId+refNoNorm]')
+            .equals([tenantId, correctedRefNorm])
+            .first();
+          if (duplicate) return 'duplicate';
+
+          await db.gcashTxns.add(replacement);
+          await db.gcashTxnResolutions.add({
+            gcashTxnId: txn.id,
+            tenantId,
+            resolution: 'Corrected',
+            resolvedAt: new Date().toISOString(),
+            replacementTxnId: replacement.id,
+            correctedRefNo: correctedRef
+          });
+          await addSyncRecord('GCashTxn', 'Insert', replacement);
+          return 'success';
+        }
+      );
+
+      if (resolved === 'duplicate') {
+        alert(language === 'tl'
+          ? 'Nagamit na ang reference number na ito sa tindahang ito.'
+          : 'That reference number is already used by this tenant.');
+        return;
+      }
+      if (resolved !== 'success') {
+        alert(language === 'tl'
+          ? 'Hindi na maaaring ayusin ang transaksyong ito.'
+          : 'This transaction can no longer be resolved.');
+        return;
+      }
+
+      setResolutionRefDrafts((drafts) => ({ ...drafts, [txn.id]: '' }));
+      await kickSync();
+    } finally {
+      setResolvingTxnId(null);
+    }
+  };
+
+  const handleVoidTransaction = async (txn: GCashTxnRecord) => {
+    if (
+      txn.tenantId !== tenantId ||
+      txn.syncStatus !== 'DuplicateRef' ||
+      !window.confirm(language === 'tl'
+        ? 'Markahan itong transaksyon bilang void? Itatago ito sa totals, pero pananatilihin ang audit record.'
+        : 'Void this transaction? It will stay in the audit log and remain excluded from totals.')
+    ) return;
+
+    setResolvingTxnId(txn.id);
+    try {
+      const resolved = await db.transaction('rw', db.gcashTxns, db.gcashTxnResolutions, async () => {
+        const current = await db.gcashTxns.get(txn.id);
+        if (!current || current.tenantId !== tenantId || current.syncStatus !== 'DuplicateRef') return false;
+        if (await db.gcashTxnResolutions.get(txn.id)) return false;
+        await db.gcashTxnResolutions.add({
+          gcashTxnId: txn.id,
+          tenantId,
+          resolution: 'Voided',
+          resolvedAt: new Date().toISOString()
+        });
+        return true;
+      });
+      if (!resolved) {
+        alert(language === 'tl'
+          ? 'Hindi na maaaring ayusin ang transaksyong ito.'
+          : 'This transaction can no longer be resolved.');
+      }
+    } finally {
+      setResolvingTxnId(null);
     }
   };
 
@@ -326,18 +438,21 @@ export const GCashPage: React.FC = () => {
       <Card className={styles.card}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
           <HistoryRegular fontSize={20} />
-          <Text weight="bold" size={300}>{t.gcash.historyTitle} ({todayTxns.length})</Text>
+          <Text weight="bold" size={300}>{t.gcash.historyTitle} ({visibleTxns.length})</Text>
         </div>
         <Divider />
 
         <div style={{ marginTop: '8px' }}>
-          {todayTxns.length === 0 ? (
+          {visibleTxns.length === 0 ? (
             <Text size={200} style={{ color: tokens.colorNeutralForeground3, textAlign: 'center', display: 'block', padding: '16px' }}>
               {t.gcash.noTransactions}
             </Text>
           ) : (
-            todayTxns.map((txn) => {
+            visibleTxns.map((txn) => {
               const isCashIn = txn.type === 'CashIn';
+              const isToday = txn.date.slice(0, 10) === todayStr;
+              const resolution = resolutionsByTxnId.get(txn.id);
+              const canResolve = !resolution && txn.tenantId === tenantId && txn.syncStatus === 'DuplicateRef';
               return (
                 <div key={txn.id} className={styles.logRow}>
                   <div>
@@ -348,9 +463,21 @@ export const GCashPage: React.FC = () => {
                       {isGCashTxnUnresolved(txn) && (
                         <span data-testid="duplicate-ref-badge">
                           <Badge appearance="filled" color="danger" size="small">
-                            {language === 'tl' ? 'Dobleng Ref (Kailangan ng Pansin)' : 'Duplicate Ref (Needs Attention)'}
+                            {txn.syncStatus === 'Conflict'
+                              ? (language === 'tl' ? 'Salungatan sa Sync (Kailangan ng Pansin)' : 'Sync Conflict (Needs Attention)')
+                              : (language === 'tl' ? 'Dobleng Ref (Kailangan ng Pansin)' : 'Duplicate Ref (Needs Attention)')}
                           </Badge>
                         </span>
+                      )}
+                      {resolution?.resolution === 'Corrected' && (
+                        <Badge appearance="tint" color="success" size="small">
+                          {language === 'tl' ? `Naayos; bagong ref: ${resolution.correctedRefNo}` : `Corrected; new ref: ${resolution.correctedRefNo}`}
+                        </Badge>
+                      )}
+                      {resolution?.resolution === 'Voided' && (
+                        <Badge appearance="tint" color="warning" size="small">
+                          {language === 'tl' ? 'Voided (lokal)' : 'Voided locally'}
+                        </Badge>
                       )}
                       <Text weight="semibold" size={300}>₱{txn.amount.toFixed(2)}</Text>
                       <Text size={100} style={{ color: tokens.colorBrandForeground1 }}>
@@ -358,7 +485,7 @@ export const GCashPage: React.FC = () => {
                       </Text>
                     </div>
                     <Text size={100} style={{ color: tokens.colorNeutralForeground3, marginTop: '2px', display: 'block' }}>
-                      Ref: {txn.refNo} {txn.customerPhone ? `• ${txn.customerPhone}` : ''} • {new Date(txn.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {!isToday && `${new Date(txn.date).toLocaleDateString()} • `}Ref: {txn.refNo} {txn.customerPhone ? `• ${txn.customerPhone}` : ''} • {new Date(txn.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </Text>
                     {txn.conflictReason && (
                       <Text size={100} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
@@ -369,6 +496,30 @@ export const GCashPage: React.FC = () => {
                       <Text size={100} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
                         {language === 'tl' ? 'Hindi naka-sync; hindi kasama sa totals.' : 'Not synced; excluded from totals.'}
                       </Text>
+                    )}
+                    {canResolve && (
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
+                        <Input
+                          aria-label={language === 'tl' ? `Bagong reference para sa ${txn.refNo}` : `Corrected reference for ${txn.refNo}`}
+                          value={resolutionRefDrafts[txn.id] ?? ''}
+                          onChange={(_, data) => setResolutionRefDrafts((drafts) => ({ ...drafts, [txn.id]: data.value }))}
+                          placeholder={language === 'tl' ? 'Tamang GCash reference' : 'Correct GCash reference'}
+                        />
+                        <Button
+                          appearance="primary"
+                          disabled={resolvingTxnId !== null || !resolutionRefDrafts[txn.id]?.trim()}
+                          onClick={() => void handleCorrectReference(txn)}
+                        >
+                          {language === 'tl' ? 'Ayusin at i-sync' : 'Correct & sync'}
+                        </Button>
+                        <Button
+                          appearance="secondary"
+                          disabled={resolvingTxnId !== null}
+                          onClick={() => void handleVoidTransaction(txn)}
+                        >
+                          {language === 'tl' ? 'I-void' : 'Void'}
+                        </Button>
+                      </div>
                     )}
                   </div>
 

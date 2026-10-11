@@ -8,6 +8,8 @@ import { db } from '../db/db';
 describe('GCashPage', () => {
   beforeEach(async () => {
     await db.gcashTxns.clear();
+    await db.gcashTxnResolutions.clear();
+    await db.syncQueue.clear();
   });
 
   const renderGCash = () => {
@@ -189,7 +191,7 @@ describe('GCashPage', () => {
       fee: 15,
       refNo: 'REF-FLAGGED-777',
       refNoNorm: 'ref-flagged-777',
-      date: new Date().toISOString(),
+      date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
       needsAttention: true,
       syncStatus: 'DuplicateRef',
       conflictReason: "Duplicate GCash reference number 'REF-FLAGGED-777' for this tenant."
@@ -238,6 +240,117 @@ describe('GCashPage', () => {
       expect(screen.getByTestId('monthly-gcash-count')).toHaveTextContent('1/30');
       expect(screen.getByText(/REF-UNRESOLVED-1/i)).toBeInTheDocument();
     });
+  });
+
+  it('corrects a rejected reference by preserving the original and enqueueing a replacement', async () => {
+    await db.gcashTxns.add({
+      id: 'g-correct-me',
+      tenantId: '11111111-1111-1111-1111-111111111111',
+      type: 'CashIn',
+      amount: 800,
+      fee: 15,
+      refNo: 'REF-ORIGINAL',
+      refNoNorm: 'ref-original',
+      date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+      needsAttention: true,
+      syncStatus: 'DuplicateRef',
+      conflictReason: 'Duplicate reference'
+    });
+
+    renderGCash();
+    await screen.findByText(/REF-ORIGINAL/i);
+
+    fireEvent.change(screen.getByRole('textbox', { name: /Corrected reference for REF-ORIGINAL|Bagong reference para sa REF-ORIGINAL/i }), {
+      target: { value: 'REF-CORRECTED' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Correct & sync|Ayusin at i-sync/i }));
+
+    await waitFor(async () => {
+      const original = await db.gcashTxns.get('g-correct-me');
+      const replacement = await db.gcashTxns.where('refNoNorm').equals('ref-corrected').first();
+      const resolution = await db.gcashTxnResolutions.get('g-correct-me');
+      const queued = await db.syncQueue.toArray();
+
+      expect(original?.refNo).toBe('REF-ORIGINAL');
+      expect(original?.syncStatus).toBe('DuplicateRef');
+      expect(replacement).toMatchObject({
+        tenantId: '11111111-1111-1111-1111-111111111111',
+        refNo: 'REF-CORRECTED',
+        amount: 800,
+        fee: 15
+      });
+      expect(replacement?.id).not.toBe('g-correct-me');
+      expect(resolution).toMatchObject({
+        resolution: 'Corrected',
+        replacementTxnId: replacement?.id,
+        correctedRefNo: 'REF-CORRECTED'
+      });
+      expect(queued).toHaveLength(1);
+      expect(queued[0]).toMatchObject({ entity: 'GCashTxn', action: 'Insert', payload: { id: replacement?.id } });
+    });
+
+    expect(screen.getByText(/Corrected; new ref: REF-CORRECTED|Naayos; bagong ref: REF-CORRECTED/i)).toBeInTheDocument();
+    expect(screen.getByTestId('today-cash-in-total')).toHaveTextContent('₱0.00');
+  });
+
+  it('rejects a corrected reference already used in the same tenant', async () => {
+    const alertMock = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    await db.gcashTxns.bulkAdd([
+      {
+        id: 'g-needs-correction',
+        tenantId: '11111111-1111-1111-1111-111111111111',
+        type: 'CashIn', amount: 300, fee: 10, refNo: 'REF-BAD', refNoNorm: 'ref-bad',
+        date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(), needsAttention: true, syncStatus: 'DuplicateRef'
+      },
+      {
+        id: 'g-existing-ref',
+        tenantId: '11111111-1111-1111-1111-111111111111',
+        type: 'CashOut', amount: 200, fee: 5, refNo: 'REF-TAKEN', refNoNorm: 'ref-taken',
+        date: new Date().toISOString()
+      }
+    ]);
+
+    renderGCash();
+    await screen.findByText(/REF-BAD/i);
+    fireEvent.change(screen.getByRole('textbox', { name: /Corrected reference for REF-BAD|Bagong reference para sa REF-BAD/i }), {
+      target: { value: 'REF-TAKEN' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Correct & sync|Ayusin at i-sync/i }));
+
+    await waitFor(() => expect(alertMock).toHaveBeenCalledWith(expect.stringMatching(/already used|Nagamit na/i)));
+    expect(await db.gcashTxnResolutions.get('g-needs-correction')).toBeUndefined();
+    expect(await db.syncQueue.count()).toBe(0);
+    expect(await db.gcashTxns.count()).toBe(2);
+    alertMock.mockRestore();
+  });
+
+  it('voids a rejected row without deleting it or enqueueing it', async () => {
+    const confirmMock = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    await db.gcashTxns.add({
+      id: 'g-void-me',
+      tenantId: '11111111-1111-1111-1111-111111111111',
+      type: 'CashOut',
+      amount: 700,
+      fee: 15,
+      refNo: 'REF-VOID',
+      refNoNorm: 'ref-void',
+      date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+      needsAttention: true,
+      syncStatus: 'DuplicateRef'
+    });
+
+    renderGCash();
+    await screen.findByText(/REF-VOID/i);
+    fireEvent.click(screen.getByRole('button', { name: /^Void$|^I-void$/i }));
+
+    await waitFor(async () => {
+      expect(await db.gcashTxns.get('g-void-me')).toBeDefined();
+      expect(await db.gcashTxnResolutions.get('g-void-me')).toMatchObject({ resolution: 'Voided' });
+    });
+    expect(await db.syncQueue.count()).toBe(0);
+    expect(screen.getByText(/Voided locally|Voided \(lokal\)/i)).toBeInTheDocument();
+    expect(screen.getByTestId('today-cash-out-total')).toHaveTextContent('₱0.00');
+    confirmMock.mockRestore();
   });
 });
 

@@ -10,6 +10,7 @@ describe('DashboardPage', () => {
     await db.sales.clear();
     await db.customers.clear();
     await db.gcashTxns.clear();
+    await db.gcashTxnResolutions.clear();
     await db.products.clear();
   });
 
@@ -112,6 +113,35 @@ describe('DashboardPage', () => {
     await waitFor(() => {
       expect(screen.getByTestId('today-gcash-volume')).toHaveTextContent('₱100.00');
       expect(screen.getByTestId('today-gcash-fees')).toHaveTextContent('₱5.00');
+    });
+  });
+
+  it('excludes locally resolved originals from dashboard GCash totals', async () => {
+    const today = new Date().toISOString();
+    await db.gcashTxns.bulkAdd([
+      {
+        id: 'g-dash-resolved-original', tenantId: 't-1', type: 'CashIn', amount: 900, fee: 20,
+        refNo: 'REF-DASH-OLD', date: today, needsAttention: true, syncStatus: 'DuplicateRef'
+      },
+      {
+        id: 'g-dash-replacement', tenantId: 't-1', type: 'CashIn', amount: 900, fee: 20,
+        refNo: 'REF-DASH-NEW', date: today
+      }
+    ]);
+    await db.gcashTxnResolutions.add({
+      gcashTxnId: 'g-dash-resolved-original',
+      tenantId: 't-1',
+      resolution: 'Corrected',
+      resolvedAt: today,
+      replacementTxnId: 'g-dash-replacement',
+      correctedRefNo: 'REF-DASH-NEW'
+    });
+
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('today-gcash-volume')).toHaveTextContent('₱900.00');
+      expect(screen.getByTestId('today-gcash-fees')).toHaveTextContent('₱20.00');
     });
   });
 });

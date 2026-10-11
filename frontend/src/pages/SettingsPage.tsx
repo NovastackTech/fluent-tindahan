@@ -134,6 +134,7 @@ export const SettingsPage: React.FC = () => {
       await db.saleItems.clear();
       await db.utangLedger.clear();
       await db.gcashTxns.clear();
+      await db.gcashTxnResolutions.clear();
       await db.syncQueue.clear();
       await db.deadLetterQueue.clear();
       await seedDexieDatabaseIfNeeded(true);

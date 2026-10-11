@@ -112,6 +112,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   const sales = useLiveQuery(() => db.sales.toArray(), []);
   const customers = useLiveQuery(() => db.customers.toArray(), []);
   const gcashTxns = useLiveQuery(() => db.gcashTxns.toArray(), []);
+  const gcashResolutions = useLiveQuery(() => db.gcashTxnResolutions.toArray(), []);
   const products = useLiveQuery(() => db.products.toArray(), []) || [];
 
   const lowStockProducts = products.filter((p) => (p.stockQty || 0) <= 5);
@@ -125,8 +126,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   const debtors = (customers || []).filter((c) => c.totalUtangBalance > 0);
   const totalUtangAmount = debtors.reduce((sum, c) => sum + c.totalUtangBalance, 0);
 
+  const resolvedGCashIds = new Set((gcashResolutions || []).map((resolution) => resolution.gcashTxnId));
   const todayGCash = (gcashTxns || []).filter(
-    (g) => g.date.slice(0, 10) === todayStr && !isGCashTxnUnresolved(g)
+    (g) => g.date.slice(0, 10) === todayStr && !isGCashTxnUnresolved(g) && !resolvedGCashIds.has(g.id)
   );
   const totalGCashVolume = todayGCash.reduce((sum, g) => sum + g.amount, 0);
   const totalGCashFees = todayGCash.reduce((sum, g) => sum + g.fee, 0);

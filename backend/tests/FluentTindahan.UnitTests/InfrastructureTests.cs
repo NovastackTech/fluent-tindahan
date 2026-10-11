@@ -22,6 +22,7 @@ using FluentTindahan.Application.Sales;
 using FluentTindahan.Application.Utang;
 using FluentTindahan.Application.GCash;
 using FluentTindahan.Application.Billing;
+using FluentTindahan.Domain.Entities;
 using Xunit;
 
 namespace FluentTindahan.UnitTests;
@@ -416,6 +417,22 @@ public class InfrastructureTests
             context.GetService<IDesignTimeModel>().Model.GetRelationalModel());
 
         hasDifferences.Should().BeFalse("the database model must match the latest EF Core migrations and snapshot with no pending changes");
+    }
+
+    [Fact]
+    public void AppDbContext_GCashReferenceIndexUsesSharedName()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql("Host=localhost;Database=test")
+            .Options;
+        var userMock = new Mock<ICurrentUserService>();
+        using var context = new AppDbContext(options, userMock.Object);
+
+        var index = context.Model.FindEntityType(typeof(GCashTxn))!
+            .GetIndexes()
+            .Single(i => i.IsUnique && i.Properties.Any(p => p.Name == nameof(GCashTxn.RefNoNorm)));
+
+        index.GetDatabaseName().Should().Be(GCashTxn.RefNoNormUniqueIndexName);
     }
 
     [Fact]

@@ -9,6 +9,7 @@ describe('FluentTindahanDatabase', () => {
     await db.saleItems.clear();
     await db.utangLedger.clear();
     await db.gcashTxns.clear();
+    await db.gcashTxnResolutions.clear();
     await db.syncQueue.clear();
     await db.deadLetterQueue.clear();
   });
@@ -20,6 +21,7 @@ describe('FluentTindahanDatabase', () => {
     expect(db.saleItems).toBeDefined();
     expect(db.utangLedger).toBeDefined();
     expect(db.gcashTxns).toBeDefined();
+    expect(db.gcashTxnResolutions).toBeDefined();
     expect(db.syncQueue).toBeDefined();
     expect(db.deadLetterQueue).toBeDefined();
   });

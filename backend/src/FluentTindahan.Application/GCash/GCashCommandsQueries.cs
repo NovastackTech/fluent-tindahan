@@ -145,7 +145,7 @@ public class RecordGCashTxnCommandHandler : IRequestHandler<RecordGCashTxnComman
                 var sqlStateProp = current.GetType().GetProperty("SqlState");
                 var constraintNameProp = current.GetType().GetProperty("ConstraintName");
                 return sqlStateProp?.GetValue(current) as string == "23505"
-                    && constraintNameProp?.GetValue(current) as string == "IX_GCashTransactions_TenantId_RefNoNorm";
+                    && constraintNameProp?.GetValue(current) as string == GCashTxn.RefNoNormUniqueIndexName;
             }
 
             current = current.InnerException;

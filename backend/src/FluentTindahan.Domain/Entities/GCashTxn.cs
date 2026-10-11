@@ -4,6 +4,9 @@ namespace FluentTindahan.Domain.Entities;
 
 public class GCashTxn : IMustHaveTenant
 {
+    /// <summary>Database name of the tenant-scoped unique normalized-reference index.</summary>
+    public const string RefNoNormUniqueIndexName = "IX_GCashTransactions_TenantId_RefNoNorm";
+
     private string _refNo = string.Empty;
 
     public Guid Id { get; set; } = Guid.NewGuid();
