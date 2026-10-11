@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { FluentProvider } from '@fluentui/react-components';
-import { GCashPage } from './GCashPage';
+import { GCashPage, toLocalDateKey } from './GCashPage';
 import { sariSariLightTheme } from '../theme/theme';
 import { db } from '../db/db';
 
@@ -19,6 +19,13 @@ describe('GCashPage', () => {
       </FluentProvider>
     );
   };
+
+  it('builds date keys from local calendar components', () => {
+    const localDate = new Date(2026, 9, 12, 0, 30);
+
+    expect(toLocalDateKey(localDate)).toBe('2026-10-12');
+    expect(toLocalDateKey(localDate.toISOString())).toBe('2026-10-12');
+  });
 
   it('renders GCash Hub header and Cash In / Cash Out tabs', () => {
     renderGCash();
@@ -110,7 +117,7 @@ describe('GCashPage', () => {
     });
   });
 
-  it('hides resolved originals after the day they were resolved', async () => {
+  it('hides resolved originals and replacements after the day they were resolved', async () => {
     const now = Date.now();
     const today = new Date(now).toISOString();
     const oldDate = new Date(now - 5 * 24 * 60 * 60 * 1000).toISOString();
@@ -136,13 +143,24 @@ describe('GCashPage', () => {
         fee: 5,
         refNo: 'REF-CURRENT-VISIBLE',
         date: today
+      },
+      {
+        id: 'g-old-replacement',
+        tenantId: 't-1',
+        type: 'CashIn',
+        amount: 400,
+        fee: 10,
+        refNo: 'REF-OLD-REPLACEMENT',
+        date: oldDate
       }
     ]);
     await db.gcashTxnResolutions.add({
       gcashTxnId: 'g-old-resolved',
       tenantId: 't-1',
-      resolution: 'Voided',
-      resolvedAt: resolvedYesterday
+      resolution: 'Corrected',
+      resolvedAt: resolvedYesterday,
+      replacementTxnId: 'g-old-replacement',
+      correctedRefNo: 'REF-OLD-REPLACEMENT'
     });
 
     renderGCash();
@@ -150,6 +168,7 @@ describe('GCashPage', () => {
     await waitFor(() => {
       expect(screen.getByText(/REF-CURRENT-VISIBLE/i)).toBeInTheDocument();
       expect(screen.queryByText(/REF-OLD-RESOLVED/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/REF-OLD-REPLACEMENT/i)).not.toBeInTheDocument();
     });
   });
 
@@ -336,6 +355,10 @@ describe('GCashPage', () => {
     });
 
     expect(screen.getByText(/Corrected; new ref: REF-CORRECTED|Naayos; bagong ref: REF-CORRECTED/i)).toBeInTheDocument();
+    expect(await screen.findByTestId('gcash-correction-replacement-row')).toBeInTheDocument();
+    expect(screen.getByTestId('gcash-correction-replacement-badge')).toHaveTextContent(
+      /Corrected replacement created today|Bagong ref na naayos ngayon/i
+    );
     await waitFor(() => {
       expect(screen.queryByTestId('duplicate-ref-badge')).not.toBeInTheDocument();
       expect(screen.queryByText(/Not synced; excluded from totals|Hindi naka-sync; hindi kasama sa totals/i)).not.toBeInTheDocument();

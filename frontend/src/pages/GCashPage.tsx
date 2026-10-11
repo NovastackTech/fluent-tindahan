@@ -25,6 +25,14 @@ import { addSyncRecord, kickSync } from '../sync/syncEngine';
 import { useTranslation } from '../state/languageStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
 
+export function toLocalDateKey(value: Date | string): string {
+  const date = typeof value === 'string' ? new Date(value) : value;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 const useStyles = makeStyles({
   container: {
     ...shorthands.padding(tokens.spacingVerticalM, tokens.spacingHorizontalM),
@@ -98,26 +106,32 @@ export const GCashPage: React.FC = () => {
   // Live query for GCash logs
   const allTxns = useLiveQuery(() => db.gcashTxns.reverse().sortBy('date'), []) || [];
   const resolutions = useLiveQuery(() => db.gcashTxnResolutions.toArray(), []);
+  const todayStr = toLocalDateKey(new Date());
   const resolutionsByTxnId = useMemo(
     () => new Map((resolutions || []).map((resolution) => [resolution.gcashTxnId, resolution])),
     [resolutions]
   );
-
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const todayTxns = allTxns.filter((t) => t.date.slice(0, 10) === todayStr);
+  const replacementTxnIdsResolvedToday = useMemo(
+    () => new Set((resolutions || [])
+      .filter((resolution) => resolution.resolution === 'Corrected' && toLocalDateKey(resolution.resolvedAt) === todayStr)
+      .map((resolution) => resolution.replacementTxnId)
+      .filter((id): id is string => Boolean(id))),
+    [resolutions, todayStr]
+  );
+  const todayTxns = allTxns.filter((t) => toLocalDateKey(t.date) === todayStr);
   const visibleTxns = allTxns.filter((txn) => {
     const resolution = resolutionsByTxnId.get(txn.id);
-    const resolvedToday = resolution?.resolvedAt.slice(0, 10) === todayStr;
+    const resolvedToday = resolution ? toLocalDateKey(resolution.resolvedAt) === todayStr : false;
     const unresolvedAndUnresolvedLocally = !resolution && isGCashTxnUnresolved(txn);
-    return txn.date.slice(0, 10) === todayStr || unresolvedAndUnresolvedLocally || resolvedToday;
+    return toLocalDateKey(txn.date) === todayStr || unresolvedAndUnresolvedLocally || resolvedToday || replacementTxnIdsResolvedToday.has(txn.id);
   });
   const countedTodayTxns = todayTxns.filter(
     (t) => !isGCashTxnUnresolved(t) && !resolutionsByTxnId.has(t.id)
   );
 
-  const currentMonthPrefix = new Date().toISOString().slice(0, 7);
+  const currentMonthPrefix = todayStr.slice(0, 7);
   const currentMonthTxnCount = allTxns.filter(
-    (t) => t.date.slice(0, 7) === currentMonthPrefix && !isGCashTxnUnresolved(t) && !resolutionsByTxnId.has(t.id)
+    (t) => toLocalDateKey(t.date).slice(0, 7) === currentMonthPrefix && !isGCashTxnUnresolved(t) && !resolutionsByTxnId.has(t.id)
   ).length;
 
   const todayCashIn = countedTodayTxns.filter((t) => t.type === 'CashIn').reduce((s, t) => s + t.amount, 0);
@@ -454,11 +468,16 @@ export const GCashPage: React.FC = () => {
           ) : (
             visibleTxns.map((txn) => {
               const isCashIn = txn.type === 'CashIn';
-              const isToday = txn.date.slice(0, 10) === todayStr;
+              const isToday = toLocalDateKey(txn.date) === todayStr;
               const resolution = resolutionsByTxnId.get(txn.id);
+              const isCorrectionReplacement = replacementTxnIdsResolvedToday.has(txn.id);
               const canResolve = !resolution && txn.tenantId === tenantId && txn.syncStatus === 'DuplicateRef';
               return (
-                <div key={txn.id} className={styles.logRow}>
+                <div
+                  key={txn.id}
+                  className={styles.logRow}
+                  data-testid={isCorrectionReplacement ? 'gcash-correction-replacement-row' : undefined}
+                >
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                       <Badge appearance="filled" color={isCashIn ? 'informative' : 'success'} size="small">
@@ -481,6 +500,16 @@ export const GCashPage: React.FC = () => {
                       {resolution?.resolution === 'Voided' && (
                         <Badge appearance="tint" color="warning" size="small">
                           {language === 'tl' ? 'Voided (lokal)' : 'Voided locally'}
+                        </Badge>
+                      )}
+                      {isCorrectionReplacement && (
+                        <Badge
+                          data-testid="gcash-correction-replacement-badge"
+                          appearance="tint"
+                          color="brand"
+                          size="small"
+                        >
+                          {language === 'tl' ? 'Bagong ref na naayos ngayon' : 'Corrected replacement created today'}
                         </Badge>
                       )}
                       <Text weight="semibold" size={300}>₱{txn.amount.toFixed(2)}</Text>
