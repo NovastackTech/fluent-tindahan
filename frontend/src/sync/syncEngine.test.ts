@@ -11,6 +11,7 @@ import {
 } from './syncEngine';
 import { db } from '../db/db';
 import { apiClient } from '../services/apiClient';
+import { useAuthStore } from '../state/authStore';
 
 vi.mock('../services/apiClient', () => ({
   apiClient: {
@@ -31,8 +32,12 @@ describe('syncEngine', () => {
       lastSyncedAt: null,
       pendingCount: 0,
       deadLetterCount: 0,
-      lastErrorMessage: null
+      lastErrorMessage: null,
+      authBlockedSessionKey: null,
+      batchFailureCount: 0,
+      nextRetryAt: null
     });
+    useAuthStore.setState({ firebaseToken: null });
     vi.resetAllMocks();
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
   });
@@ -239,7 +244,7 @@ describe('syncEngine', () => {
     expect(prod?.name).toBe('Nescafe Classic 2g');
   });
 
-  it('handles server network failure during processSyncQueue gracefully', async () => {
+  it('backs off after server failures without dead-lettering pending operations', async () => {
     const syncId = await enqueueSync('Customer', 'Insert', { id: 'c-99' });
 
     (apiClient.post as any).mockRejectedValueOnce({
@@ -251,9 +256,42 @@ describe('syncEngine', () => {
 
     expect(result.processed).toBe(0);
     expect(result.errors).toBe(1);
-    expect(useSyncStore.getState().lastErrorMessage).toBe('Database temporarily unavailable');
-    expect(await db.syncQueue.get(syncId)).toBeDefined();
+    expect(useSyncStore.getState().lastErrorMessage).toContain('Database temporarily unavailable');
+    expect(useSyncStore.getState().lastErrorMessage).toContain('backoff');
+    expect(useSyncStore.getState().batchFailureCount).toBe(1);
+    expect(useSyncStore.getState().nextRetryAt).toBeGreaterThan(Date.now());
+    expect(await db.syncQueue.get(syncId)).toMatchObject({ status: 'Pending', retryCount: 0 });
     expect(await db.deadLetterQueue.get(syncId)).toBeUndefined();
+
+    await processSyncQueue();
+    expect(apiClient.post).toHaveBeenCalledTimes(1);
+  });
+
+  it('pauses sync after 403 until the tenant session changes', async () => {
+    const syncId = await enqueueSync('Customer', 'Insert', { id: 'c-403' });
+    (apiClient.post as any).mockRejectedValueOnce({
+      message: 'Request failed with status code 403',
+      response: { status: 403, data: {} }
+    });
+
+    await processSyncQueue();
+
+    expect(useSyncStore.getState().lastErrorMessage).toContain('Re-authenticate');
+    expect(useSyncStore.getState().authBlockedSessionKey).not.toBeNull();
+    expect(await db.syncQueue.get(syncId)).toMatchObject({ status: 'Pending', retryCount: 0 });
+    expect(await db.deadLetterQueue.get(syncId)).toBeUndefined();
+
+    await processSyncQueue();
+    expect(apiClient.post).toHaveBeenCalledTimes(1);
+
+    useAuthStore.getState().setFirebaseToken('refreshed-tenant-session');
+    (apiClient.post as any).mockResolvedValueOnce({
+      data: { results: [{ syncId, status: 'Success' }] }
+    });
+    await processSyncQueue();
+
+    expect(apiClient.post).toHaveBeenCalledTimes(2);
+    expect(await db.syncQueue.get(syncId)).toBeUndefined();
   });
 
   it('orders outbox operations so Customer and Product precede UtangLedger and Sale', async () => {

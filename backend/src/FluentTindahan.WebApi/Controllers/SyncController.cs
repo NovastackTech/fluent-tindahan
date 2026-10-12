@@ -42,22 +42,7 @@ public class SyncController : ControllerBase
         _logger.LogInformation("Received batch sync from device {DeviceId} with {Count} operations",
             request.DeviceId, request.Operations.Count);
 
-        try
-        {
-            var result = await _mediator.Send(new ProcessBatchSyncCommand(request), cancellationToken);
-            return Ok(result);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Unexpected error processing batch sync from device {DeviceId}.", request.DeviceId);
-            return Problem(
-                title: "Batch sync failed.",
-                detail: "The batch could not be processed. Try again later.",
-                statusCode: StatusCodes.Status500InternalServerError);
-        }
+        var result = await _mediator.Send(new ProcessBatchSyncCommand(request), cancellationToken);
+        return Ok(result);
     }
 }

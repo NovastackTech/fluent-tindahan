@@ -19,6 +19,15 @@ public class ApiExceptionHandlerTests
     }
 
     [Fact]
+    public async Task MapsUnauthorizedAccessExceptionToSafeUnauthorizedProblem()
+    {
+        var (context, body) = await HandleException(new UnauthorizedAccessException("private tenant detail"));
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        await AssertSafeProblem(body, "A valid tenant is required for this request.", "private tenant detail");
+    }
+
+    [Fact]
     public async Task MapsUnexpectedExceptionToSafeServerProblem()
     {
         var (context, body) = await HandleException(new InvalidOperationException("database password"));

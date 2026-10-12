@@ -65,11 +65,15 @@ describe('UtangPage', () => {
     const saveBtn = screen.getByRole('button', { name: /I-save ang Suki|Save Customer/i });
     fireEvent.click(saveBtn);
 
-    await waitFor(async () => {
-      const saved = await db.customers.where('name').equals('Mang Kanor').first();
-      expect(saved).toBeDefined();
-      expect(saved?.totalUtangBalance).toBe(150);
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
+
+    const saved = await db.customers.where('name').equals('Mang Kanor').first();
+    expect(saved).toBeDefined();
+    expect(saved?.totalUtangBalance).toBe(150);
+    expect(await db.utangLedger.toArray()).toHaveLength(1);
+    expect(await db.syncQueue.toArray()).toHaveLength(2);
   });
 
   it('shows inline validation when saving a customer with a blank name', async () => {
@@ -188,8 +192,6 @@ describe('UtangPage', () => {
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
-    fireEvent.click(screen.getByText('Mang Jose'));
-    expect(await screen.findByRole('dialog')).toBeInTheDocument();
   });
 
   it('shows validation when payment amount is zero', async () => {

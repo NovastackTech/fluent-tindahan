@@ -60,7 +60,13 @@ describe('ImportPage', () => {
     fireEvent.click(importBtn);
 
     await waitFor(async () => {
-      expect(screen.getByText(/Matagumpay na na-import|Successfully imported/i)).toBeInTheDocument();
+      const successPattern = /Matagumpay na na-import|Successfully imported/i;
+      const successMessage = screen.getByText((_, element) => {
+        if (!element) return false;
+        const hasSuccessText = (node: Element) => successPattern.test(node.textContent ?? '');
+        return hasSuccessText(element) && Array.from(element.children).every((child) => !hasSuccessText(child));
+      });
+      expect(successMessage).toBeInTheDocument();
       const prods = await db.products.toArray();
       expect(prods.length).toBeGreaterThan(0);
     });
