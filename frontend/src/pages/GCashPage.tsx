@@ -26,14 +26,8 @@ import { useTranslation } from '../state/languageStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
 import { calculateGCashFee, DEFAULT_GCASH_FEE_TIERS, useGCashFeeStore } from '../state/gcashFeeStore';
 import { formatPeso } from '../utils/currency';
+import { toLocalDateKey } from '../utils/date';
 
-export function toLocalDateKey(value: Date | string): string {
-  const date = typeof value === 'string' ? new Date(value) : value;
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
 
 const useStyles = makeStyles({
   container: {
@@ -90,7 +84,7 @@ export const GCashPage: React.FC = () => {
   const tenantId = useAuthStore((s) => s.tenantId);
   const feeTiers = useGCashFeeStore((state) => state.feesByTenant[tenantId] || DEFAULT_GCASH_FEE_TIERS);
 
-  // Select the configured fixed fee for the amount bracket.
+  // Calculate the configured tier fee and any open-ended per-thousand increments.
   const calculatedFee = useMemo(() => {
     return calculateGCashFee(parseFloat(amount) || 0, feeTiers);
   }, [amount, feeTiers]);
@@ -104,9 +98,13 @@ export const GCashPage: React.FC = () => {
     [tenantId]
   ) || [];
   const enteredRefNorm = normalizeRef(refNo);
-  const hasDuplicateRef = Boolean(enteredRefNorm) && allTxns.some(
-    (txn) => (txn.refNoNorm || normalizeRef(txn.refNo)) === enteredRefNorm
+  const duplicateRefTxn = useLiveQuery(
+    () => enteredRefNorm
+      ? db.gcashTxns.where('[tenantId+refNoNorm]').equals([tenantId, enteredRefNorm]).first()
+      : Promise.resolve(undefined),
+    [tenantId, enteredRefNorm]
   );
+  const hasDuplicateRef = Boolean(duplicateRefTxn);
   const resolutions = useLiveQuery(
     () => db.gcashTxnResolutions.where('tenantId').equals(tenantId).toArray(),
     [tenantId]
@@ -129,8 +127,9 @@ export const GCashPage: React.FC = () => {
     const resolution = resolutionsByTxnId.get(txn.id);
     const resolvedToday = resolution ? toLocalDateKey(resolution.resolvedAt) === todayStr : false;
     const unresolvedAndUnresolvedLocally = !resolution && isGCashTxnUnresolved(txn);
-    const isCurrentMonthEntry = toLocalDateKey(txn.date).slice(0, 7) === currentMonthPrefix && !resolution;
-    return isCurrentMonthEntry || unresolvedAndUnresolvedLocally || resolvedToday || replacementTxnIdsResolvedToday.has(txn.id);
+    const isCurrentMonthEntry = toLocalDateKey(txn.date).slice(0, 7) === currentMonthPrefix;
+    const isCurrentMonthVoidAudit = isCurrentMonthEntry && resolution?.resolution === 'Voided';
+    return (isCurrentMonthEntry && !resolution) || unresolvedAndUnresolvedLocally || resolvedToday || isCurrentMonthVoidAudit || replacementTxnIdsResolvedToday.has(txn.id);
   });
   const countedTodayTxns = todayTxns.filter(
     (t) => !isGCashTxnUnresolved(t) && !resolutionsByTxnId.has(t.id)
@@ -190,12 +189,7 @@ export const GCashPage: React.FC = () => {
           .where('[tenantId+refNoNorm]')
           .equals([tenantId, refNorm])
           .first();
-        const legacyDuplicate = existing || await db.gcashTxns
-          .where('tenantId')
-          .equals(tenantId)
-          .filter((txn) => !txn.refNoNorm && normalizeRef(txn.refNo) === refNorm)
-          .first();
-        if (legacyDuplicate) return false;
+        if (existing) return false;
         await db.gcashTxns.add(record);
         await addSyncRecord('GCashTxn', 'Insert', record);
         return true;
@@ -333,7 +327,7 @@ export const GCashPage: React.FC = () => {
         <Text size={300} style={{ color: tokens.colorNeutralForeground3, display: 'block' }}>
           {t.gcash.subtitle}
           {tier === 'Libre' && (
-            <span> • {language === 'tl' ? 'Ngayong Buwan:' : 'This Month:'} <span data-testid="monthly-gcash-count">{currentMonthTxnCount}/30</span> ({language === 'tl' ? 'Libre' : 'Libre plan'})</span>
+            <span> • {language === 'tl' ? 'Ngayong Buwan:' : 'This Month:'} <span data-testid="monthly-gcash-count">{currentMonthTxnCount}/30</span> ({t.gcash.freePlanLabel})</span>
           )}
         </Text>
       </div>
@@ -379,6 +373,7 @@ export const GCashPage: React.FC = () => {
               <Text size={200} weight="semibold">{t.gcash.amountLabel}</Text>
               <Input
                 type="number"
+                aria-label={t.gcash.amountLabel}
                 style={{ width: '100%', marginTop: '4px' }}
                 value={amount}
                 onChange={(_, data) => {
@@ -398,6 +393,7 @@ export const GCashPage: React.FC = () => {
               </div>
               <Input
                 type="number"
+                aria-label={t.gcash.feeLabel}
                 style={{ width: '100%', marginTop: '4px' }}
                 value={activeFee.toString()}
                 onChange={(_, data) => setCustomFee(data.value)}
@@ -410,6 +406,7 @@ export const GCashPage: React.FC = () => {
             <div>
               <Text size={200} weight="semibold">{t.gcash.refNoLabel}</Text>
               <Input
+                aria-label={t.gcash.refNoLabel}
                 style={{ width: '100%', marginTop: '4px' }}
                 value={refNo}
                 onChange={(_, data) => setRefNo(data.value)}
@@ -432,6 +429,7 @@ export const GCashPage: React.FC = () => {
             <div>
               <Text size={200} weight="semibold">{t.gcash.phoneLabel}</Text>
               <Input
+                aria-label={t.gcash.phoneLabel}
                 style={{ width: '100%', marginTop: '4px' }}
                 value={customerPhone}
                 onChange={(_, data) => setCustomerPhone(data.value)}
@@ -443,6 +441,7 @@ export const GCashPage: React.FC = () => {
           <div style={{ marginTop: '12px' }}>
             <Text size={200} weight="semibold">{t.gcash.notesLabel}</Text>
             <Input
+              aria-label={t.gcash.notesLabel}
               style={{ width: '100%', marginTop: '4px' }}
               value={notes}
               onChange={(_, data) => setNotes(data.value)}

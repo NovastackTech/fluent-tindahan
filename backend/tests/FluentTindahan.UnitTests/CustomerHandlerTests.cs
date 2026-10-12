@@ -66,6 +66,8 @@ public class CustomerHandlerTests
     [Theory]
     [InlineData("09171239999", "09171239999")]
     [InlineData("+63 917-123-9999", "09171239999")]
+    [InlineData("639171239999", "09171239999")]
+    [InlineData("9171239999", "09171239999")]
     public async Task CreateCustomer_ValidPhone_StoresCanonicalLocalFormat(string phone, string expectedPhone)
     {
         var (context, userMock) = CreateInMemoryContext();

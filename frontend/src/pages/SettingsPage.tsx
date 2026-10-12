@@ -76,12 +76,13 @@ const useStyles = makeStyles({
 export const SettingsPage: React.FC = () => {
   const styles = useStyles();
   const { isOnline, isSyncing, lastSyncedAt, pendingCount, deadLetterCount } = useSyncStore();
-  const { tenantId, userId, businessName, logout } = useAuthStore();
+  const { tenantId, userId, businessName, logout, role } = useAuthStore();
   const { t, language, setLanguage } = useTranslation();
   const { themeMode, setThemeMode } = useThemeStore();
   const { paperWidth, setPaperWidth } = usePrinterStore();
   const gcashFees = useGCashFeeStore((state) => state.feesByTenant[tenantId] || DEFAULT_GCASH_FEE_TIERS);
   const setGcashFee = useGCashFeeStore((state) => state.setFeeForTenant);
+  const [gcashFeeDrafts, setGcashFeeDrafts] = useState<Record<string, string>>({});
   const { isStandalone, isInstalled, isInstallable, isIos, promptInstall } = usePwaStore();
   const { tier, subscriptionEndDate, daysRemaining, openUpgradeModal } = useSubscriptionStore();
 
@@ -265,6 +266,7 @@ export const SettingsPage: React.FC = () => {
       </Card>
 
       {/* GCash Transaction Fee Settings */}
+      {role === 'Owner' && (
       <Card className={styles.card}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
           <PhoneLaptopRegular fontSize={20} />
@@ -285,30 +287,52 @@ export const SettingsPage: React.FC = () => {
             </tr>
           </thead>
           <tbody>
-            {GCASH_FEE_BRACKETS.map((bracket, index) => (
-              <tr key={bracket.label}>
-                <td style={{ padding: '6px 4px', borderBottom: `1px solid ${tokens.colorNeutralStroke2}` }}>
-                  {bracket.label}
-                </td>
-                <td style={{ padding: '6px 4px', borderBottom: `1px solid ${tokens.colorNeutralStroke2}` }}>
-                  <Input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    aria-label={`${t.settings.gcashFixedFee} ${bracket.label}`}
-                    contentBefore="₱"
-                    value={String(gcashFees[index])}
-                    onChange={(_, data) => {
-                      if (data.value !== '') setGcashFee(tenantId, index, Number(data.value));
-                    }}
-                    style={{ width: '120px' }}
-                  />
-                </td>
-              </tr>
-            ))}
+            {GCASH_FEE_BRACKETS.map((bracket, index) => {
+              const draftKey = `${tenantId}:${index}`;
+              return (
+                <tr key={bracket.label}>
+                  <td style={{ padding: '6px 4px', borderBottom: `1px solid ${tokens.colorNeutralStroke2}` }}>
+                    {bracket.label}
+                  </td>
+                  <td style={{ padding: '6px 4px', borderBottom: `1px solid ${tokens.colorNeutralStroke2}` }}>
+                    <Input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      aria-label={`${t.settings.gcashFixedFee} ${bracket.label}`}
+                      contentBefore="₱"
+                      value={gcashFeeDrafts[draftKey] ?? String(gcashFees[index])}
+                      onChange={(_, data) => {
+                        setGcashFeeDrafts((drafts) => ({ ...drafts, [draftKey]: data.value }));
+                        const fee = Number(data.value);
+                        if (data.value.trim() !== '' && Number.isFinite(fee) && fee >= 0 && fee <= 100000) {
+                          setGcashFee(tenantId, index, fee);
+                        }
+                      }}
+                      onBlur={() => {
+                        const draft = gcashFeeDrafts[draftKey];
+                        if (draft !== undefined) {
+                          const fee = Number(draft);
+                          if (draft.trim() !== '' && Number.isFinite(fee) && fee >= 0 && fee <= 100000) {
+                            setGcashFee(tenantId, index, fee);
+                          }
+                          setGcashFeeDrafts((drafts) => {
+                            const nextDrafts = { ...drafts };
+                            delete nextDrafts[draftKey];
+                            return nextDrafts;
+                          });
+                        }
+                      }}
+                      style={{ width: '120px' }}
+                    />
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </Card>
+      )}
 
       {/* SaaS Subscription & Plan Management */}
       <Card className={styles.card}>

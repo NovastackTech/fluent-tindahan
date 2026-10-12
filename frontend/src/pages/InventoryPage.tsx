@@ -1188,6 +1188,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                     {t.inventory.productNameLabel}
                   </Text>
                   <Input
+                    aria-label={t.inventory.productNameLabel}
                     style={{ width: '100%' }}
                     placeholder="e.g. Lucky Me Pancit Canton Kalamansi"
                     value={formName}
@@ -1201,6 +1202,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                     {t.inventory.categoryLabel}
                   </Text>
                   <Input
+                    aria-label={t.inventory.categoryLabel}
                     style={{ width: '100%' }}
                     placeholder="e.g. Noodles & Instant Food"
                     list="categories-list"
@@ -1221,6 +1223,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                   </Text>
                   <div style={{ display: 'flex', gap: '4px' }}>
                     <Input
+                      aria-label={t.inventory.barcodeLabel}
                       style={{ flex: 1 }}
                       placeholder="e.g. 4800016644810"
                       value={formBarcode}
@@ -1242,6 +1245,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                   </Text>
                   <Input
                     type="number"
+                    aria-label={t.inventory.costLabel}
                     step="0.25"
                     min="0"
                     style={{ width: '100%' }}
@@ -1257,6 +1261,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                   </Text>
                   <Input
                     type="number"
+                    aria-label={t.inventory.priceLabel}
                     step="0.25"
                     min="0"
                     style={{ width: '100%' }}
@@ -1272,6 +1277,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                   </Text>
                   <Input
                     type="number"
+                    aria-label={t.inventory.stockLabel}
                     min="0"
                     step="1"
                     style={{ width: '100%' }}

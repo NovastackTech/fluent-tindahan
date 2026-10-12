@@ -137,8 +137,8 @@ export class FluentTindahanDatabase extends Dexie {
   deadLetterQueue!: Table<DeadLetterRecord, string>;
   tenants!: Table<TenantRecord, string>;
 
-  constructor() {
-    super('FluentTindahanDb');
+  constructor(databaseName = 'FluentTindahanDb') {
+    super(databaseName);
     this.version(1).stores({
       products: 'id, tenantId, name, barcode, category, updatedAt',
       customers: 'id, tenantId, name, phone, totalUtangBalance, updatedAt',
@@ -179,6 +179,18 @@ export class FluentTindahanDatabase extends Dexie {
     this.version(4).stores({
       gcashTxnResolutions: 'gcashTxnId, tenantId, resolution, resolvedAt'
     });
+    this.version(5)
+      .stores({
+        gcashTxns: 'id, tenantId, type, date, refNo, refNoNorm, [tenantId+refNoNorm]'
+      })
+      .upgrade((tx) =>
+        tx
+          .table('gcashTxns')
+          .toCollection()
+          .modify((row: GCashTxnRecord) => {
+            row.refNoNorm = normalizeRef(row.refNo);
+          })
+      );
   }
 }
 

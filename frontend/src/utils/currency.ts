@@ -5,5 +5,6 @@ const pesoNumberFormatter = new Intl.NumberFormat('en-PH', {
 
 export function formatPeso(amount: number): string {
   const formattedAmount = pesoNumberFormatter.format(Math.abs(amount));
-  return `${amount < 0 ? '-' : ''}₱${formattedAmount}`;
+  const negativeSign = amount < 0 && formattedAmount !== '0.00' ? '-' : '';
+  return `${negativeSign}₱${formattedAmount}`;
 }

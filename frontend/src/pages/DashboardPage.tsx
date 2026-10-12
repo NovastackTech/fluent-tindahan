@@ -25,6 +25,7 @@ import { useSyncStore } from '../sync/syncEngine';
 import type { NavTab } from '../components/Navigation';
 import { useTranslation } from '../state/languageStore';
 import { formatPeso } from '../utils/currency';
+import { toLocalDateKey } from '../utils/date';
 
 interface DashboardPageProps {
   onNavigate: (tab: NavTab) => void;
@@ -119,9 +120,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   const lowStockProducts = products.filter((p) => (p.stockQty || 0) > 0 && (p.stockQty || 0) <= 5);
 
   // Today's boundaries
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = toLocalDateKey(new Date());
 
-  const todaySales = (sales || []).filter((s) => s.date.slice(0, 10) === todayStr);
+  const todaySales = (sales || []).filter((s) => toLocalDateKey(s.date) === todayStr);
   const totalSalesAmount = todaySales.reduce((sum, s) => sum + s.totalAmount, 0);
 
   const debtors = (customers || []).filter((c) => c.totalUtangBalance > 0);
@@ -129,7 +130,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
 
   const resolvedGCashIds = new Set((gcashResolutions || []).map((resolution) => resolution.gcashTxnId));
   const todayGCash = (gcashTxns || []).filter(
-    (g) => g.date.slice(0, 10) === todayStr && !isGCashTxnUnresolved(g) && !resolvedGCashIds.has(g.id)
+    (g) => toLocalDateKey(g.date) === todayStr && !isGCashTxnUnresolved(g) && !resolvedGCashIds.has(g.id)
   );
   const totalGCashVolume = todayGCash.reduce((sum, g) => sum + g.amount, 0);
   const totalGCashFees = todayGCash.reduce((sum, g) => sum + g.fee, 0);

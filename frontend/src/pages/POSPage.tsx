@@ -408,8 +408,8 @@ export const POSPage: React.FC = () => {
     const phone = normalizePhilippineMobile(newDebtorPhone);
     if (phone === null) {
       setNewDebtorError(language === 'tl'
-        ? 'Maglagay ng wastong Philippine mobile number (09XXXXXXXXX).'
-        : 'Enter a valid Philippine mobile number (09XXXXXXXXX).');
+        ? 'Maglagay ng wastong Philippine mobile number.'
+        : 'Enter a valid Philippine mobile number.');
       return;
     }
 
@@ -928,7 +928,7 @@ export const POSPage: React.FC = () => {
                         <option value="__NEW__">➕ {t.pos.addNewDebtorBtn}...</option>
                         {customers.map((c) => (
                           <option key={c.id} value={c.id}>
-                            {c.name} ({c.phone}) - {t.nav.utang}: {formatPeso(c.totalUtangBalance)}
+                            {c.name}{c.phone ? ` (${c.phone})` : ''} - {t.nav.utang}: {formatPeso(c.totalUtangBalance)}
                           </option>
                         ))}
                       </Select>
@@ -1041,6 +1041,7 @@ export const POSPage: React.FC = () => {
                     <Text size={200} weight="semibold">{t.pos.cashAmount}</Text>
                     <Input
                       type="number"
+                      aria-label={t.pos.cashAmount}
                       value={splitCashAmount === 0 ? '' : splitCashAmount.toString()}
                       onChange={(_, data) => setSplitAmounts(parseFloat(data.value) || 0, splitGCashAmount)}
                       placeholder="0.00"
@@ -1053,6 +1054,7 @@ export const POSPage: React.FC = () => {
                     <Text size={200} weight="semibold">{t.pos.gcashAmount}</Text>
                     <Input
                       type="number"
+                      aria-label={t.pos.gcashAmount}
                       value={splitGCashAmount === 0 ? '' : splitGCashAmount.toString()}
                       onChange={(_, data) => setSplitAmounts(splitCashAmount, parseFloat(data.value) || 0)}
                       placeholder="0.00"

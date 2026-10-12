@@ -7,6 +7,8 @@ public static class PhilippineMobileNumber
     private static readonly Regex Separators = new(@"[\s()-]", RegexOptions.Compiled);
     private static readonly Regex LocalFormat = new(@"^09\d{9}$", RegexOptions.Compiled);
     private static readonly Regex InternationalFormat = new(@"^\+639\d{9}$", RegexOptions.Compiled);
+    private static readonly Regex InternationalWithoutPlusFormat = new(@"^639\d{9}$", RegexOptions.Compiled);
+    private static readonly Regex NationalWithoutLeadingZeroFormat = new(@"^9\d{9}$", RegexOptions.Compiled);
 
     public static bool TryNormalize(string? value, out string normalized)
     {
@@ -23,6 +25,18 @@ public static class PhilippineMobileNumber
         if (InternationalFormat.IsMatch(compact))
         {
             normalized = $"0{compact[3..]}";
+            return true;
+        }
+
+        if (InternationalWithoutPlusFormat.IsMatch(compact))
+        {
+            normalized = $"0{compact[2..]}";
+            return true;
+        }
+
+        if (NationalWithoutLeadingZeroFormat.IsMatch(compact))
+        {
+            normalized = $"0{compact}";
             return true;
         }
 

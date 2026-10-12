@@ -156,7 +156,7 @@ export const UtangPage: React.FC = () => {
   // Create new customer
   const handleCreateCustomer = async () => {
     if (!newCustName.trim()) {
-      setNewCustNameError(language === 'tl' ? 'Pakiusap ilagay ang pangalan ng suki.' : 'Please enter customer name.');
+      setNewCustNameError(t.utang.customerNameRequired);
       return;
     }
     setNewCustNameError('');
@@ -164,8 +164,8 @@ export const UtangPage: React.FC = () => {
     const phone = normalizePhilippineMobile(newCustPhone);
     if (phone === null) {
       alert(language === 'tl'
-        ? 'Maglagay ng wastong Philippine mobile number (09XXXXXXXXX).'
-        : 'Enter a valid Philippine mobile number (09XXXXXXXXX).');
+        ? 'Maglagay ng wastong Philippine mobile number.'
+        : 'Enter a valid Philippine mobile number.');
       return;
     }
 
@@ -571,6 +571,7 @@ export const UtangPage: React.FC = () => {
                   type="number"
                   min={0}
                   step="0.01"
+                  aria-label={t.utang.paymentAmountLabel}
                   style={{ width: '100%', marginTop: '4px' }}
                   value={paymentAmount}
                   onChange={(_, data) => {
@@ -601,6 +602,7 @@ export const UtangPage: React.FC = () => {
               <div style={{ margin: '12px 0' }}>
                 <Text size={200} weight="semibold">{t.utang.paymentNotesLabel}</Text>
                 <Input
+                  aria-label={t.utang.paymentNotesLabel}
                   style={{ width: '100%', marginTop: '4px' }}
                   value={paymentNotes}
                   onChange={(_, data) => setPaymentNotes(data.value)}
@@ -642,6 +644,7 @@ export const UtangPage: React.FC = () => {
               <div style={{ margin: '12px 0' }}>
                 <Text size={200} weight="semibold">{t.utang.creditNotesLabel}</Text>
                 <Input
+                  aria-label={t.utang.customerNameLabel}
                   style={{ width: '100%', marginTop: '4px' }}
                   value={creditNotes}
                   onChange={(_, data) => setCreditNotes(data.value)}
@@ -674,6 +677,7 @@ export const UtangPage: React.FC = () => {
               <div style={{ margin: '8px 0' }}>
                 <Text size={200} weight="semibold">{t.utang.customerNameLabel}</Text>
                 <Input
+                  aria-label={t.utang.customerNameLabel}
                   style={{ width: '100%', marginTop: '4px' }}
                   value={newCustName}
                   onChange={(_, data) => {
@@ -693,6 +697,7 @@ export const UtangPage: React.FC = () => {
                 <Text size={200} weight="semibold">{t.utang.phoneLabel}</Text>
                 <Input
                   type="tel"
+                  aria-label={t.utang.phoneLabel}
                   inputMode="tel"
                   style={{ width: '100%', marginTop: '4px' }}
                   value={newCustPhone}
@@ -707,6 +712,7 @@ export const UtangPage: React.FC = () => {
                   type="number"
                   min={0}
                   step="0.01"
+                  aria-label={t.utang.initialDebtLabel}
                   style={{ width: '100%', marginTop: '4px' }}
                   value={newCustInitialUtang}
                   onChange={(_, data) => setNewCustInitialUtang(data.value)}

@@ -187,11 +187,23 @@ describe('SettingsPage', () => {
     renderSettings();
 
     const firstBracketFee = screen.getByRole('spinbutton', { name: /₱1-₱500/i });
+    fireEvent.change(firstBracketFee, { target: { value: '' } });
+    expect(firstBracketFee).toHaveProperty('value', '');
+
     fireEvent.change(firstBracketFee, { target: { value: '7' } });
 
     const tenantId = useAuthStore.getState().tenantId;
     expect(useGCashFeeStore.getState().feesByTenant[tenantId]).toEqual([7, ...DEFAULT_GCASH_FEE_TIERS.slice(1)]);
     expect(JSON.parse(localStorage.getItem(GCASH_FEE_STORAGE_KEY) || '{}')[tenantId][0]).toBe(7);
+  });
+
+  it('hides GCash fee settings from Staff', () => {
+    useAuthStore.setState({ role: 'Staff' });
+
+    renderSettings();
+
+    expect(screen.queryByRole('spinbutton', { name: /₱1-₱500/i })).not.toBeInTheDocument();
+    expect(screen.getByText("Aling Nena's Tindahan & GCash")).toBeInTheDocument();
   });
 
   it('renders PWA section and allows installing app when installable', () => {

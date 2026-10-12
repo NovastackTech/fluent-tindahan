@@ -145,6 +145,41 @@ describe('DashboardPage', () => {
     });
   });
 
+  it('uses local calendar days for dashboard transaction totals across midnight', async () => {
+    const localMidnight = new Date();
+    localMidnight.setHours(0, 0, 0, 0);
+    const justBeforeMidnight = new Date(localMidnight.getTime() - 1).toISOString();
+    const justAfterMidnight = localMidnight.toISOString();
+
+    await db.gcashTxns.bulkAdd([
+      {
+        id: 'g-dash-before-local-midnight',
+        tenantId: 't-1',
+        type: 'CashIn',
+        amount: 900,
+        fee: 20,
+        refNo: 'REF-BEFORE-MIDNIGHT',
+        date: justBeforeMidnight
+      },
+      {
+        id: 'g-dash-after-local-midnight',
+        tenantId: 't-1',
+        type: 'CashIn',
+        amount: 100,
+        fee: 5,
+        refNo: 'REF-AFTER-MIDNIGHT',
+        date: justAfterMidnight
+      }
+    ]);
+
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('today-gcash-volume')).toHaveTextContent('₱100.00');
+      expect(screen.getByTestId('today-gcash-fees')).toHaveTextContent('₱5.00');
+    });
+  });
+
   it('excludes locally resolved originals from dashboard GCash totals', async () => {
     const today = new Date().toISOString();
     await db.gcashTxns.bulkAdd([

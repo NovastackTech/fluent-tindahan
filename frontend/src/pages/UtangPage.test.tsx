@@ -54,10 +54,8 @@ describe('UtangPage', () => {
 
     expect(screen.getByRole('dialog')).toBeInTheDocument();
 
-    const inputs = screen.getAllByRole('textbox');
-    // inputs[0] is search in main page, inputs[1] is Name, inputs[2] is Phone
-    const nameInput = inputs[1];
-    const phoneInput = inputs[2];
+    const nameInput = screen.getByRole('textbox', { name: /Pangalan ng Suki|Customer Name/i });
+    const phoneInput = screen.getByRole('textbox', { name: /Cellphone Number|Mobile Number/i });
     fireEvent.change(nameInput, { target: { value: 'Mang Kanor' } });
     fireEvent.change(phoneInput, { target: { value: '09189998888' } });
 
@@ -84,7 +82,7 @@ describe('UtangPage', () => {
     expect(await db.customers.toArray()).toHaveLength(0);
     expect(await db.syncQueue.toArray()).toHaveLength(0);
 
-    fireEvent.change(screen.getAllByRole('textbox')[1], { target: { value: 'QA-TEST Name' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Suki|Customer Name/i }), { target: { value: 'QA-TEST Name' } });
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
@@ -94,8 +92,7 @@ describe('UtangPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Bagong Suki|Add New Customer/i }));
 
-    const textInputs = screen.getAllByRole('textbox');
-    fireEvent.change(textInputs[1], { target: { value: 'QA-TEST Neg' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Suki|Customer Name/i }), { target: { value: 'QA-TEST Neg' } });
     fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '-50' } });
     fireEvent.click(screen.getByRole('button', { name: /I-save ang Suki|Save Customer/i }));
 
@@ -115,9 +112,8 @@ describe('UtangPage', () => {
     renderUtang();
 
     fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Bagong Suki|Add New Customer/i }));
-    const textInputs = screen.getAllByRole('textbox');
-    fireEvent.change(textInputs[1], { target: { value: 'QA-TEST Phone' } });
-    fireEvent.change(textInputs[2], { target: { value: 'abc123' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Suki|Customer Name/i }), { target: { value: 'QA-TEST Phone' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /Cellphone Number|Mobile Number/i }), { target: { value: 'abc123' } });
     fireEvent.click(screen.getByRole('button', { name: /I-save ang Suki|Save Customer/i }));
 
     await waitFor(() => {
@@ -132,9 +128,8 @@ describe('UtangPage', () => {
   it('normalizes international Philippine mobile input when creating a customer', async () => {
     renderUtang();
     fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Bagong Suki|Add New Customer/i }));
-    const textInputs = screen.getAllByRole('textbox');
-    fireEvent.change(textInputs[1], { target: { value: 'QA-TEST Phone Valid' } });
-    fireEvent.change(textInputs[2], { target: { value: '+63 917-123-4567' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Suki|Customer Name/i }), { target: { value: 'QA-TEST Phone Valid' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /Cellphone Number|Mobile Number/i }), { target: { value: '+63 917-123-4567' } });
     fireEvent.click(screen.getByRole('button', { name: /I-save ang Suki|Save Customer/i }));
 
     await waitFor(async () => {

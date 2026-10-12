@@ -109,6 +109,7 @@ export interface Translations {
     customerAdded: string;
     customerNameLabel: string;
     customerNamePlaceholder: string;
+    customerNameRequired: string;
     phoneLabel: string;
     initialDebtLabel: string;
     saveCustomer: string;
@@ -150,6 +151,7 @@ export interface Translations {
     todayFees: string;
     transactionSuccess: string;
     recentTransactions: string;
+    freePlanLabel: string;
     noTransactions: string;
     amountLabel: string;
     feeLabel: string;
@@ -541,6 +543,7 @@ export const translations: Record<Language, Translations> = {
       customerAdded: 'Matagumpay na naidagdag ang suki!',
       customerNameLabel: 'Pangalan ng Suki:*',
       customerNamePlaceholder: 'Hal. Aling Maria',
+      customerNameRequired: 'Pakiusap ilagay ang pangalan ng suki.',
       phoneLabel: 'Cellphone Number:',
       initialDebtLabel: 'Simulang Utang (Initial Balance - opsyonal):',
       saveCustomer: 'I-save ang Suki',
@@ -582,6 +585,7 @@ export const translations: Record<Language, Translations> = {
       todayFees: 'Kita sa Service Fees',
       transactionSuccess: 'GCash transaksyon matagumpay na naitala!',
       recentTransactions: 'Kamakailang mga Transaksyon',
+      freePlanLabel: 'Libre',
       noTransactions: 'Wala pang naitalang transaksyon ngayong buwan.',
       amountLabel: 'Halaga (Amount ₱):*',
       feeLabel: 'Kaltas / Singil na Fee (₱):',
@@ -771,7 +775,7 @@ export const translations: Record<Language, Translations> = {
       printerTestBtn: 'Subukang Mag-Print (Test Print)',
       printerTestSuccess: 'Naipadala ang test receipt sa printer!',
       gcashFeeSection: 'Mga Bayad sa GCash',
-      gcashFeeDesc: 'Itakda ang nakapirming singil ayon sa halaga ng transaksyon. Awtomatikong sine-save bawat tindahan.',
+      gcashFeeDesc: 'Itakda ang nakapirming singil ayon sa halaga ng transaksyon. Awtomatikong sine-save sa device na ito.',
       gcashFeeRange: 'Halaga ng Transaksyon',
       gcashFixedFee: 'Nakapirming Bayad'
     },
@@ -971,6 +975,7 @@ export const translations: Record<Language, Translations> = {
       customerAdded: 'Customer successfully added!',
       customerNameLabel: 'Customer Name:*',
       customerNamePlaceholder: 'e.g. Maria Santos',
+      customerNameRequired: 'Please enter customer name.',
       phoneLabel: 'Mobile Number:',
       initialDebtLabel: 'Initial Credit Balance (optional):',
       saveCustomer: 'Save Customer',
@@ -1012,6 +1017,7 @@ export const translations: Record<Language, Translations> = {
       todayFees: 'Service Fees Earned',
       transactionSuccess: 'GCash transaction recorded successfully!',
       recentTransactions: 'Recent Transactions',
+      freePlanLabel: 'Libre plan',
       noTransactions: 'No transactions recorded this month yet.',
       amountLabel: 'Amount (₱):*',
       feeLabel: 'Service Fee (₱):',
@@ -1201,7 +1207,7 @@ export const translations: Record<Language, Translations> = {
       printerTestBtn: 'Print Test Receipt',
       printerTestSuccess: 'Test receipt sent to printer!',
       gcashFeeSection: 'GCash Transaction Fees',
-      gcashFeeDesc: 'Set the fixed fee for each transaction amount bracket. Fees save automatically per store.',
+      gcashFeeDesc: 'Set the fixed fee for each transaction amount bracket. Fees save automatically on this device.',
       gcashFeeRange: 'Transaction Amount',
       gcashFixedFee: 'Fixed Fee'
     },

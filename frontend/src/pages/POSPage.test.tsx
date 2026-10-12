@@ -211,6 +211,27 @@ describe('POSPage', () => {
     });
   });
 
+  it('does not render empty parentheses for a customer without a phone', async () => {
+    await db.customers.add({
+      id: 'cust-no-phone',
+      tenantId: 't-1',
+      name: 'Suki Without Phone',
+      phone: '',
+      totalUtangBalance: 0,
+      updatedAt: new Date().toISOString()
+    });
+
+    renderPOS();
+    await waitFor(() => expect(screen.getByText('Lucky Me Pancit Canton Kalamansi')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Lucky Me Pancit Canton Kalamansi'));
+    fireEvent.click(screen.getByRole('button', { name: /Bayad|Pay/i }));
+    fireEvent.click(screen.getByRole('tab', { name: /Utang/i }));
+
+    const customerOption = screen.getByRole('option', { name: /Suki Without Phone/i });
+    expect(customerOption).toHaveTextContent('Suki Without Phone');
+    expect(customerOption).not.toHaveTextContent('()');
+  });
+
   it('completes GCash checkout and records sale in Dexie', async () => {
     renderPOS();
 
@@ -256,9 +277,8 @@ describe('POSPage', () => {
     fireEvent.click(splitTab);
 
     // Input cash and gcash amounts
-    const spinInputs = screen.getAllByRole('spinbutton');
-    fireEvent.change(spinInputs[0], { target: { value: '10' } });
-    fireEvent.change(spinInputs[1], { target: { value: '6' } });
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Halaga sa Cash|Cash Amount/i }), { target: { value: '10' } });
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Halaga sa GCash|GCash Amount/i }), { target: { value: '6' } });
 
     // Complete sale
     const completeBtn = screen.getByRole('button', { name: /Kumpletuhin ang Benta|Complete Sale/i });

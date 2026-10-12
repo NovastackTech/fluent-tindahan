@@ -58,10 +58,8 @@ describe('QuickRegisterProductDialog', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Oo, Irehistro ang Produkto|Yes, Register Product|Irehistro/i }));
 
-    const inputs = screen.getAllByRole('spinbutton');
-    // inputs: stock, cost, price
-    const costInput = inputs[1];
-    const priceInput = inputs[2];
+    const costInput = screen.getByRole('spinbutton', { name: /Puhunan|Cost Price/i });
+    const priceInput = screen.getByRole('spinbutton', { name: /Presyo ng Tinda|Retail Price/i });
 
     fireEvent.change(costInput, { target: { value: '10' } });
     fireEvent.change(priceInput, { target: { value: '15' } });
@@ -75,13 +73,10 @@ describe('QuickRegisterProductDialog', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Oo, Irehistro ang Produkto|Yes, Register Product|Irehistro/i }));
 
-    const textInputs = screen.getAllByRole('textbox');
-    // barcode input is readonly, product name is textInputs[1]
-    const nameInput = textInputs[1];
+    const nameInput = screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i });
     fireEvent.change(nameInput, { target: { value: 'Chippy Barbecue 110g' } });
 
-    const numInputs = screen.getAllByRole('spinbutton');
-    const priceInput = numInputs[2];
+    const priceInput = screen.getByRole('spinbutton', { name: /Presyo ng Tinda|Retail Price/i });
     fireEvent.change(priceInput, { target: { value: '25' } });
 
     const saveBtn = screen.getByRole('button', { name: /I-save ang Produkto|Save Product/i });

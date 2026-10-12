@@ -25,14 +25,7 @@ public class CustomersController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<CustomerDto>> Create([FromBody] CreateCustomerCommand command, CancellationToken cancellationToken)
     {
-        try
-        {
-            var result = await _mediator.Send(command, cancellationToken);
-            return CreatedAtAction(nameof(GetAll), new { id = result.Id }, result);
-        }
-        catch (ArgumentException ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
+        var result = await _mediator.Send(command, cancellationToken);
+        return CreatedAtAction(nameof(GetAll), new { id = result.Id }, result);
     }
 }

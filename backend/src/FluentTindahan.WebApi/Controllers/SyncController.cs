@@ -1,26 +1,25 @@
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using FluentTindahan.Application.Sync.Commands;
 using FluentTindahan.Application.Sync.DTOs;
-using FluentTindahan.Domain.Interfaces;
+using FluentTindahan.WebApi.Authorization;
 
 namespace FluentTindahan.WebApi.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize(Policy = AuthorizationPolicies.TenantResolved)]
 public class SyncController : ControllerBase
 {
     private readonly IMediator _mediator;
-    private readonly ICurrentUserService _currentUserService;
     private readonly ILogger<SyncController> _logger;
 
     public SyncController(
         IMediator mediator,
-        ICurrentUserService currentUserService,
         ILogger<SyncController> logger)
     {
         _mediator = mediator;
-        _currentUserService = currentUserService;
         _logger = logger;
     }
 
@@ -31,16 +30,13 @@ public class SyncController : ControllerBase
     [HttpPost("batch")]
     [ProducesResponseType(typeof(BatchSyncResultDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<BatchSyncResultDto>> ProcessBatch([FromBody] BatchSyncRequestDto request, CancellationToken cancellationToken)
     {
         if (request == null || request.Operations == null)
         {
             return BadRequest(new { message = "Invalid batch sync payload." });
-        }
-
-        if (_currentUserService.TenantId == Guid.Empty)
-        {
-            return Unauthorized(new { message = "A valid tenant is required to sync this device's changes." });
         }
 
         _logger.LogInformation("Received batch sync from device {DeviceId} with {Count} operations",
@@ -51,10 +47,17 @@ public class SyncController : ControllerBase
             var result = await _mediator.Send(new ProcessBatchSyncCommand(request), cancellationToken);
             return Ok(result);
         }
-        catch (UnauthorizedAccessException ex)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            _logger.LogWarning(ex, "Batch sync rejected because tenant identity could not be resolved.");
-            return Unauthorized(new { message = "A valid tenant is required to sync this device's changes." });
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error processing batch sync from device {DeviceId}.", request.DeviceId);
+            return Problem(
+                title: "Batch sync failed.",
+                detail: "The batch could not be processed. Try again later.",
+                statusCode: StatusCodes.Status500InternalServerError);
         }
     }
 }

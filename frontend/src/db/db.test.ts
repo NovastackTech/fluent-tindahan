@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { db } from './db';
+import Dexie from 'dexie';
+import { db, FluentTindahanDatabase } from './db';
 
 describe('FluentTindahanDatabase', () => {
   beforeEach(async () => {
@@ -24,6 +25,57 @@ describe('FluentTindahanDatabase', () => {
     expect(db.gcashTxnResolutions).toBeDefined();
     expect(db.syncQueue).toBeDefined();
     expect(db.deadLetterQueue).toBeDefined();
+  });
+
+  it('backfills normalized GCash references when upgrading from database version 4', async () => {
+    const databaseName = `FluentTindahanLegacyRefs-${crypto.randomUUID()}`;
+    const legacyDb = new Dexie(databaseName);
+    legacyDb.version(4).stores({
+      products: 'id, tenantId, name, barcode, category, updatedAt',
+      customers: 'id, tenantId, name, phone, totalUtangBalance, updatedAt',
+      sales: 'id, tenantId, date, paymentMethod, customerId',
+      saleItems: 'id, tenantId, saleId, productId',
+      utangLedger: 'id, tenantId, customerId, type, date, refSaleId',
+      gcashTxns: 'id, tenantId, type, date, refNo, refNoNorm, [tenantId+refNoNorm]',
+      gcashTxnResolutions: 'gcashTxnId, tenantId, resolution, resolvedAt',
+      syncQueue: 'id, entity, status, retryCount, timestamp',
+      deadLetterQueue: 'id, entity, failedAt',
+      tenants: 'id, tier, subscriptionEndDate, updatedAt'
+    });
+
+    await legacyDb.open();
+    await legacyDb.table('gcashTxns').bulkAdd([
+      {
+        id: 'legacy-ref-missing',
+        tenantId: 'tenant-1',
+        type: 'CashIn',
+        amount: 100,
+        fee: 5,
+        refNo: '  REF-Legacy-1  ',
+        date: new Date().toISOString()
+      },
+      {
+        id: 'legacy-ref-stale',
+        tenantId: 'tenant-1',
+        type: 'CashIn',
+        amount: 200,
+        fee: 5,
+        refNo: 'REF-Legacy-2',
+        refNoNorm: 'incorrect-normalized-value',
+        date: new Date().toISOString()
+      }
+    ]);
+    legacyDb.close();
+
+    const upgradedDb = new FluentTindahanDatabase(databaseName);
+    try {
+      await upgradedDb.open();
+      expect((await upgradedDb.gcashTxns.get('legacy-ref-missing'))?.refNoNorm).toBe('ref-legacy-1');
+      expect((await upgradedDb.gcashTxns.get('legacy-ref-stale'))?.refNoNorm).toBe('ref-legacy-2');
+    } finally {
+      upgradedDb.close();
+      await Dexie.delete(databaseName);
+    }
   });
 
   it('performs CRUD operations on products table', async () => {

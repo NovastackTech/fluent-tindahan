@@ -66,7 +66,7 @@ public class CreateCustomerCommandHandler : IRequestHandler<CreateCustomerComman
 
         if (!PhilippineMobileNumber.TryNormalize(request.Phone, out var phone))
         {
-            throw new ArgumentException("Enter a valid Philippine mobile number (09XXXXXXXXX).", nameof(request.Phone));
+            throw new ArgumentException("Enter a valid Philippine mobile number.", nameof(request.Phone));
         }
 
         var customer = new Customer

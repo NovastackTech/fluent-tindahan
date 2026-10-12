@@ -417,7 +417,12 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
         }
         else if (!PhilippineMobileNumber.TryNormalize(rawPhone, out normalizedPhone))
         {
-            throw new InvalidOperationException("Customer phone must be a valid Philippine mobile number (09XXXXXXXXX).");
+            var hasExistingPhone = existing != null && PhilippineMobileNumber.TryNormalize(existing.Phone, out normalizedPhone);
+            if (!hasExistingPhone)
+            {
+                normalizedPhone = string.Empty;
+            }
+            _logger.LogWarning("Ignoring an invalid legacy phone number while syncing customer {CustomerId}", raw.Id);
         }
 
         if (raw.TotalUtangBalance < 0m)
