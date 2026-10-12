@@ -53,6 +53,7 @@ interface ReceiptModalProps {
   open: boolean;
   onClose: () => void;
   data: ReceiptData | null;
+  embedded?: boolean;
 }
 
 const useStyles = makeStyles({
@@ -112,7 +113,7 @@ const useStyles = makeStyles({
   }
 });
 
-export const ReceiptModal: React.FC<ReceiptModalProps> = ({ open, onClose, data }) => {
+export const ReceiptModal: React.FC<ReceiptModalProps> = ({ open, onClose, data, embedded = false }) => {
   const styles = useStyles();
   const businessName = useAuthStore((s) => s.businessName);
   const tier = useAuthStore((s) => s.tier);
@@ -122,14 +123,15 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ open, onClose, data 
   const [isPrinting, setIsPrinting] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
-  if (!data) return null;
-
-  const formattedDate = new Date(data.date).toLocaleString('en-PH', {
-    dateStyle: 'medium',
-    timeStyle: 'short'
-  });
+  const formattedDate = data
+    ? new Date(data.date).toLocaleString('en-PH', {
+        dateStyle: 'medium',
+        timeStyle: 'short'
+      })
+    : '';
 
   const generateReceiptText = (): string => {
+    if (!data) return '';
     let text = `🛒 ${businessName.toUpperCase()}\n`;
     text += `${t.receipt.dateLabel} ${formattedDate}\n`;
     text += `${t.receipt.txnLabel} #${data.saleId.slice(0, 8)}\n`;
@@ -165,6 +167,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ open, onClose, data 
   };
 
   const handlePrintThermal = () => {
+    if (!data) return;
     setIsPrinting(true);
     setStatusMsg(t.receipt.printing);
     try {
@@ -179,6 +182,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ open, onClose, data 
   };
 
   const handlePrintBluetooth = async () => {
+    if (!data) return;
     if (!isBluetoothPrintSupported()) {
       alert(t.receipt.bluetoothNotSupported);
       return;
@@ -223,19 +227,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ open, onClose, data 
     setTimeout(() => setCopied(false), 2500);
   };
 
-  return (
-    <Dialog
-      open={open}
-      modalType="modal"
-      onOpenChange={(_, data) => {
-        // Backdrop dismissal is intentionally blocked to prevent accidental closure on touchscreens;
-        // Escape key remains active for standard desktop POS keyboard accessibility.
-        if (!data.open && data.type !== 'backdropClick') {
-          onClose();
-        }
-      }}
-    >
-      <DialogSurface>
+  const dialogBody = data && (
         <DialogBody>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <DialogTitle>{t.receipt.receiptTitle}</DialogTitle>
@@ -395,6 +387,22 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ open, onClose, data 
             </Button>
           </DialogActions>
         </DialogBody>
+  );
+
+  if (embedded) return dialogBody;
+
+  return (
+    <Dialog
+      open={open && Boolean(data)}
+      modalType="modal"
+      onOpenChange={(_, dialogState) => {
+        if (!dialogState.open && dialogState.type !== 'backdropClick') {
+          onClose();
+        }
+      }}
+    >
+      <DialogSurface>
+        {dialogBody}
       </DialogSurface>
     </Dialog>
   );

@@ -184,6 +184,25 @@ export const POSPage: React.FC = () => {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
+  const [pendingReceiptData, setPendingReceiptData] = useState<ReceiptData | null>(null);
+  const checkoutDialogRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (isCheckoutOpen || !pendingReceiptData) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setReceiptData(pendingReceiptData);
+      setPendingReceiptData(null);
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [isCheckoutOpen, pendingReceiptData]);
+
+  React.useEffect(() => {
+    if (receiptData) {
+      checkoutDialogRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
+    }
+  }, [receiptData]);
 
   // Category horizontal scroll controls
   const categoryScrollRef = React.useRef<HTMLDivElement>(null);
@@ -555,7 +574,7 @@ export const POSPage: React.FC = () => {
 
       // Prepare receipt data and mark receipt active
       usePwaStore.getState().setHasActiveReceipt(true);
-      setReceiptData({
+      setPendingReceiptData({
         saleId,
         date: now,
         items: cartItems.map((i) => ({
@@ -791,18 +810,35 @@ export const POSPage: React.FC = () => {
 
       {/* Checkout Dialog */}
       <Dialog
-        open={isCheckoutOpen}
+        open={isCheckoutOpen || Boolean(receiptData)}
         onOpenChange={(_, data) => {
+          if (!data.open && (receiptData || pendingReceiptData) && data.type === 'backdropClick') return;
           setIsCheckoutOpen(data.open);
           if (!data.open) {
             setIsAddDebtorOpen(false);
             setNewDebtorName('');
             setNewDebtorPhone('');
             setNewDebtorError(null);
+            if (receiptData || pendingReceiptData) {
+              setReceiptData(null);
+              setPendingReceiptData(null);
+              usePwaStore.getState().setHasActiveReceipt(false);
+            }
           }
         }}
       >
-        <DialogSurface>
+        <DialogSurface ref={checkoutDialogRef}>
+          {receiptData ? (
+            <ReceiptModal
+              embedded
+              open={true}
+              onClose={() => {
+                setReceiptData(null);
+                usePwaStore.getState().setHasActiveReceipt(false);
+              }}
+              data={receiptData}
+            />
+          ) : isCheckoutOpen ? (
           <DialogBody>
             <DialogTitle>{t.pos.checkoutConfirm}</DialogTitle>
             <DialogContent>
@@ -1096,18 +1132,9 @@ export const POSPage: React.FC = () => {
               </Button>
             </DialogActions>
           </DialogBody>
+          ) : null}
         </DialogSurface>
       </Dialog>
-
-      {/* Receipt Modal */}
-      <ReceiptModal
-        open={!!receiptData}
-        onClose={() => {
-          setReceiptData(null);
-          usePwaStore.getState().setHasActiveReceipt(false);
-        }}
-        data={receiptData}
-      />
 
       {/* Phone Camera Barcode Scanner Modal */}
       <BarcodeScannerModal

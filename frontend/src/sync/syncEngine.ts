@@ -1,5 +1,6 @@
 import { db, type SyncQueueRecord } from '../db/db';
 import { apiClient } from '../services/apiClient';
+import { useAuthStore } from '../state/authStore';
 import { create } from 'zustand';
 
 interface SyncStoreState {
@@ -9,6 +10,9 @@ interface SyncStoreState {
   pendingCount: number;
   deadLetterCount: number;
   lastErrorMessage: string | null;
+  authBlockedSessionKey: string | null;
+  batchFailureCount: number;
+  nextRetryAt: number | null;
   setOnline: (online: boolean) => void;
   setSyncing: (syncing: boolean) => void;
   setCounts: (pending: number, deadLetter: number) => void;
@@ -23,6 +27,9 @@ export const useSyncStore = create<SyncStoreState>((set) => ({
   pendingCount: 0,
   deadLetterCount: 0,
   lastErrorMessage: null,
+  authBlockedSessionKey: null,
+  batchFailureCount: 0,
+  nextRetryAt: null,
   setOnline: (online) => set({ isOnline: online }),
   setSyncing: (syncing) => set({ isSyncing: syncing }),
   setCounts: (pending, deadLetter) => set({ pendingCount: pending, deadLetterCount: deadLetter }),
@@ -92,9 +99,25 @@ export async function updateQueueCounts() {
   useSyncStore.getState().setCounts(pending, deadLetter);
 }
 
+function getAuthSessionKey(): string {
+  const { tenantId, firebaseToken } = useAuthStore.getState();
+  return `${tenantId}:${firebaseToken ?? ''}`;
+}
+
 export async function processSyncQueue(): Promise<{ processed: number; conflicts: number; errors: number }> {
   const store = useSyncStore.getState();
   if (store.isSyncing) return { processed: 0, conflicts: 0, errors: 0 };
+
+  const authSessionKey = getAuthSessionKey();
+  if (store.authBlockedSessionKey === authSessionKey) {
+    return { processed: 0, conflicts: 0, errors: 0 };
+  }
+  if (store.authBlockedSessionKey !== null) {
+    useSyncStore.setState({ authBlockedSessionKey: null, lastErrorMessage: null });
+  }
+  if (store.nextRetryAt !== null && Date.now() < store.nextRetryAt) {
+    return { processed: 0, conflicts: 0, errors: 0 };
+  }
 
   const pendingItems = await db.syncQueue
     .where('status')
@@ -179,6 +202,7 @@ export async function processSyncQueue(): Promise<{ processed: number; conflicts
     };
 
     const response = await apiClient.post('/sync/batch', payload);
+    useSyncStore.setState({ batchFailureCount: 0, nextRetryAt: null });
     const data = response.data;
     const results: Array<{ syncId: string; status: string; error?: string }> = data.results || [];
 
@@ -268,14 +292,30 @@ export async function processSyncQueue(): Promise<{ processed: number; conflicts
     console.error('Batch sync network/server failure:', err);
     const status = err?.response?.status;
     const serverMessage = err?.response?.data?.message;
-    const errorMessage = serverMessage || (
-      status === 401
-        ? 'Sync was rejected because this device has no valid tenant session. Pending changes remain on this device.'
-        : status >= 500
-          ? `Sync server error (${status}). Pending changes remain on this device.`
-          : err.message || 'Hindi makakonekta sa server'
-    );
-    store.setLastErrorMessage(errorMessage);
+    if (status === 401 || status === 403) {
+      useSyncStore.setState({
+        authBlockedSessionKey: authSessionKey,
+        batchFailureCount: 0,
+        nextRetryAt: null
+      });
+      store.setLastErrorMessage(
+        status === 403
+          ? 'Sync was rejected because this account has no authorized tenant. Re-authenticate to resume syncing. Pending changes remain on this device.'
+          : 'Sync was rejected because this device has no valid tenant session. Re-authenticate to resume syncing. Pending changes remain on this device.'
+      );
+    } else if (status >= 500 || !status) {
+      const batchFailureCount = store.batchFailureCount + 1;
+      const retryDelayMs = Math.min(30_000 * 2 ** (batchFailureCount - 1), 5 * 60_000);
+      useSyncStore.setState({
+        batchFailureCount,
+        nextRetryAt: Date.now() + retryDelayMs
+      });
+      store.setLastErrorMessage(
+        `${serverMessage || err.message || `Sync server error (${status || 'network'})`}. Retrying with backoff; pending changes remain on this device.`
+      );
+    } else {
+      store.setLastErrorMessage(serverMessage || err.message || 'Hindi makakonekta sa server');
+    }
     return { processed: 0, conflicts: 0, errors: pendingItems.length };
   } finally {
     store.setSyncing(false);

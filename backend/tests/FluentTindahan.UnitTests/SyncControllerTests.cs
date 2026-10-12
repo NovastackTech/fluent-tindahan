@@ -27,7 +27,7 @@ public class SyncControllerTests
     }
 
     [Fact]
-    public async Task ProcessBatch_WhenMediatorThrows_ReturnsGenericServerError()
+    public async Task ProcessBatch_WhenMediatorThrows_PropagatesToExceptionHandler()
     {
         var mediator = new Mock<IMediator>();
         mediator
@@ -40,12 +40,9 @@ public class SyncControllerTests
             Operations = new List<SyncOperationDto>()
         };
 
-        var result = await controller.ProcessBatch(request, CancellationToken.None);
+        var act = () => controller.ProcessBatch(request, CancellationToken.None);
 
-        var objectResult = result.Result.Should().BeOfType<ObjectResult>().Subject;
-        objectResult.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
-        var problem = objectResult.Value.Should().BeOfType<ProblemDetails>().Subject;
-        problem.Detail.Should().NotContain("sensitive database detail");
-        problem.Detail.Should().Be("The batch could not be processed. Try again later.");
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("sensitive database detail");
     }
 }
