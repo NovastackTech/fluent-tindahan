@@ -184,6 +184,14 @@ export const POSPage: React.FC = () => {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
+  const [pendingReceiptData, setPendingReceiptData] = useState<ReceiptData | null>(null);
+
+  React.useEffect(() => {
+    if (!isCheckoutOpen && pendingReceiptData) {
+      setReceiptData(pendingReceiptData);
+      setPendingReceiptData(null);
+    }
+  }, [isCheckoutOpen, pendingReceiptData]);
 
   // Category horizontal scroll controls
   const categoryScrollRef = React.useRef<HTMLDivElement>(null);
@@ -555,7 +563,7 @@ export const POSPage: React.FC = () => {
 
       // Prepare receipt data and mark receipt active
       usePwaStore.getState().setHasActiveReceipt(true);
-      setReceiptData({
+      setPendingReceiptData({
         saleId,
         date: now,
         items: cartItems.map((i) => ({
