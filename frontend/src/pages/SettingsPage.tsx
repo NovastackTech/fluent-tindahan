@@ -100,7 +100,7 @@ export const SettingsPage: React.FC = () => {
       changeGiven: 46
     };
     printThermalReceipt(testData, businessName || "Aling Nena's Tindahan", { paperWidth });
-    alert(t.settings.printerTestSuccess);
+    window.alert(t.settings.printerTestSuccess);
   };
 
   const [storageEstimate, setStorageEstimate] = useState<{ usage: number; quota: number } | null>(null);
@@ -133,11 +133,11 @@ export const SettingsPage: React.FC = () => {
 
   const handlePullCatalog = async () => {
     const count = await pullCatalogFromServer();
-    alert(`${t.settings.pullSuccessAlert} (${count})`);
+    window.alert(`${t.settings.pullSuccessAlert} (${count})`);
   };
 
   const handleResetSeed = async () => {
-    if (confirm(t.settings.resetSeedConfirm)) {
+    if (window.confirm(t.settings.resetSeedConfirm)) {
       await db.products.clear();
       await db.customers.clear();
       await db.sales.clear();
@@ -148,12 +148,12 @@ export const SettingsPage: React.FC = () => {
       await db.syncQueue.clear();
       await db.deadLetterQueue.clear();
       await seedDexieDatabaseIfNeeded(true);
-      alert(t.settings.resetSuccess);
+      window.alert(t.settings.resetSuccess);
     }
   };
 
   const handleWipeDatabaseOnLogout = async () => {
-    if (confirm(t.settings.wipeConfirm)) {
+    if (window.confirm(t.settings.wipeConfirm)) {
       await db.delete();
       logout();
       window.location.reload();
