@@ -491,7 +491,8 @@ describe('POSPage', () => {
     expect(reloadMock).not.toHaveBeenCalled();
 
     // 7. Cashier dismisses receipt modal
-    const closeBtn = await screen.findByRole('button', { name: /Isara|Close/i }, { timeout: 4000 });
+    const receiptDialog = await screen.findByRole('dialog', { name: /Resibo|Receipt/i });
+    const closeBtn = await within(receiptDialog).findByRole('button', { name: /Isara|Close/i });
     fireEvent.click(closeBtn);
 
     // 8. Closing the receipt does not trigger an unsolicited reload.
