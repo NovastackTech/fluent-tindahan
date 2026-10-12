@@ -96,6 +96,39 @@ describe('UtangPage', () => {
     alertMock.mockRestore();
   });
 
+  it('rejects a malformed customer phone without writing customer or sync data', async () => {
+    const alertMock = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    renderUtang();
+
+    fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Bagong Suki|Add New Customer/i }));
+    const textInputs = screen.getAllByRole('textbox');
+    fireEvent.change(textInputs[1], { target: { value: 'QA-TEST Phone' } });
+    fireEvent.change(textInputs[2], { target: { value: 'abc123' } });
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Suki|Save Customer/i }));
+
+    await waitFor(() => {
+      expect(alertMock).toHaveBeenCalledWith(expect.stringMatching(/wastong Philippine mobile|valid Philippine mobile/i));
+    });
+    expect(await db.customers.toArray()).toHaveLength(0);
+    expect(await db.syncQueue.toArray()).toHaveLength(0);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    alertMock.mockRestore();
+  });
+
+  it('normalizes international Philippine mobile input when creating a customer', async () => {
+    renderUtang();
+    fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Bagong Suki|Add New Customer/i }));
+    const textInputs = screen.getAllByRole('textbox');
+    fireEvent.change(textInputs[1], { target: { value: 'QA-TEST Phone Valid' } });
+    fireEvent.change(textInputs[2], { target: { value: '+63 917-123-4567' } });
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Suki|Save Customer/i }));
+
+    await waitFor(async () => {
+      const saved = await db.customers.where('name').equals('QA-TEST Phone Valid').first();
+      expect(saved?.phone).toBe('09171234567');
+    });
+  });
+
   it('opens customer details and records payment', async () => {
     await db.customers.add({
       id: 'cust-pay',
@@ -215,7 +248,7 @@ describe('UtangPage', () => {
       expect(screen.getByText(/\+[\s\u00A0]*UTANG/i)).toBeInTheDocument();
       expect(screen.getByText(/-[\s\u00A0]*BAYAD/i)).toBeInTheDocument();
       expect(screen.getByText('+₱150.00')).toBeInTheDocument();
-      expect(screen.getByText('-₱15031.00')).toBeInTheDocument();
+      expect(screen.getByText('-₱15,031.00')).toBeInTheDocument();
     });
   });
 

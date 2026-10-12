@@ -24,6 +24,7 @@ import { db, isGCashTxnUnresolved } from '../db/db';
 import { useSyncStore } from '../sync/syncEngine';
 import type { NavTab } from '../components/Navigation';
 import { useTranslation } from '../state/languageStore';
+import { formatPeso } from '../utils/currency';
 
 interface DashboardPageProps {
   onNavigate: (tab: NavTab) => void;
@@ -235,14 +236,14 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
         <div className={styles.metricsGrid}>
           <Card className={styles.metricCard}>
             <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>{t.dashboard.todaySales}</Text>
-            <div className={styles.metricValue}>₱{totalSalesAmount.toFixed(2)}</div>
+            <div className={styles.metricValue}>{formatPeso(totalSalesAmount)}</div>
             <Text size={200}>{todaySales.length} {t.dashboard.txnCount.toLowerCase()}</Text>
           </Card>
 
           <Card className={styles.metricCard}>
             <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>{t.dashboard.totalUtang}</Text>
             <div className={styles.metricValue} style={{ color: tokens.colorPaletteRedForeground1 }}>
-              ₱{totalUtangAmount.toFixed(2)}
+              {formatPeso(totalUtangAmount)}
             </div>
             <Text size={200}>{debtors.length} {t.dashboard.debtorsWithBalance}</Text>
           </Card>
@@ -250,9 +251,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
           <Card className={styles.metricCard}>
             <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>{t.dashboard.gcashVolume}</Text>
             <div data-testid="today-gcash-volume" className={styles.metricValue} style={{ color: tokens.colorPaletteBlueForeground2 }}>
-              ₱{totalGCashVolume.toFixed(2)}
+              {formatPeso(totalGCashVolume)}
             </div>
-            <Text size={200}>{t.gcash.todayFees}: <strong data-testid="today-gcash-fees">₱{totalGCashFees.toFixed(2)}</strong> ({todayGCash.length} txns)</Text>
+            <Text size={200}>{t.gcash.todayFees}: <strong data-testid="today-gcash-fees">{formatPeso(totalGCashFees)}</strong> ({todayGCash.length} txns)</Text>
           </Card>
 
           <Card
@@ -296,7 +297,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <ReceiptRegular fontSize={20} color={tokens.colorBrandForeground1} />
                   <div>
-                    <Text weight="semibold" size={300}>₱{sale.totalAmount.toFixed(2)}</Text>
+                    <Text weight="semibold" size={300}>{formatPeso(sale.totalAmount)}</Text>
                     <Text size={100} style={{ color: tokens.colorNeutralForeground3, display: 'block' }}>
                       {new Date(sale.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • Ref #{sale.id.slice(0, 6)}
                     </Text>

@@ -32,6 +32,7 @@ import {
 } from '../state/subscriptionStore';
 import { type PlanTier } from '../db/db';
 import { useLanguageStore } from '../state/languageStore';
+import { formatPeso } from '../utils/currency';
 
 const useStyles = makeStyles({
   surface: {
@@ -273,7 +274,7 @@ export const SubscriptionModal: React.FC = () => {
                   </Text>
 
                   <div className={styles.priceSection}>
-                    <Text size={700} weight="bold">₱0</Text>
+                    <Text size={700} weight="bold">{formatPeso(0)}</Text>
                     <Text size={300} style={{ color: tokens.colorNeutralForeground3 }}>
                       {isTagalog ? '/ habangbuhay' : '/ forever'}
                     </Text>
@@ -345,7 +346,7 @@ export const SubscriptionModal: React.FC = () => {
 
                   <div className={styles.priceSection}>
                     <Text size={700} weight="bold">
-                      {cycle === 'Weekly' ? '₱35' : '₱129'}
+                      {formatPeso(cycle === 'Weekly' ? 35 : 129)}
                     </Text>
                     <Text size={300} style={{ color: tokens.colorNeutralForeground3 }}>
                       {cycle === 'Weekly' ? (isTagalog ? '/ linggo' : '/ week') : (isTagalog ? '/ buwan' : '/ month')}
@@ -432,7 +433,7 @@ export const SubscriptionModal: React.FC = () => {
 
                   <div className={styles.priceSection}>
                     <Text size={700} weight="bold">
-                      {cycle === 'Weekly' ? '₱89' : '₱349'}
+                      {formatPeso(cycle === 'Weekly' ? 89 : 349)}
                     </Text>
                     <Text size={300} style={{ color: tokens.colorNeutralForeground3 }}>
                       {cycle === 'Weekly' ? (isTagalog ? '/ linggo' : '/ week') : (isTagalog ? '/ buwan' : '/ month')}

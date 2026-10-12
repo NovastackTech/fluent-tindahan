@@ -55,24 +55,24 @@ describe('SubscriptionModal', () => {
     useSubscriptionStore.setState({ isUpgradeModalOpen: true });
     renderModal();
 
-    // Default is Monthly: ₱129 and ₱349
-    expect(screen.getByText('₱129')).toBeInTheDocument();
-    expect(screen.getByText('₱349')).toBeInTheDocument();
+    // Default is Monthly: ₱129.00 and ₱349.00
+    expect(screen.getByText('₱129.00')).toBeInTheDocument();
+    expect(screen.getByText('₱349.00')).toBeInTheDocument();
 
     // Switch to Weekly Sachet
     const weeklyBtn = screen.getByRole('button', { name: /Lingguhan|Weekly/i });
     fireEvent.click(weeklyBtn);
 
-    expect(screen.getByText('₱35')).toBeInTheDocument();
-    expect(screen.getByText('₱89')).toBeInTheDocument();
+    expect(screen.getByText('₱35.00')).toBeInTheDocument();
+    expect(screen.getByText('₱89.00')).toBeInTheDocument();
   });
 
   it('keeps plan prices visible and offers retry when subscription refresh fails', () => {
     useSubscriptionStore.setState({ isUpgradeModalOpen: true, error: SUBSCRIPTION_REFRESH_ERROR });
     renderModal();
 
-    expect(screen.getByText('₱129')).toBeInTheDocument();
-    expect(screen.getByText('₱349')).toBeInTheDocument();
+    expect(screen.getByText('₱129.00')).toBeInTheDocument();
+    expect(screen.getByText('₱349.00')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Subukan muli|Retry/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Mag-upgrade sa Pro|Upgrade to Pro/i })).toBeEnabled();
     expect(screen.queryByText(/Request failed with status code 500/i)).not.toBeInTheDocument();

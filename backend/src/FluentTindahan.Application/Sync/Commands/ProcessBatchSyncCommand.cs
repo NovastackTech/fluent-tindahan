@@ -7,6 +7,7 @@ using FluentTindahan.Application.Common.Interfaces;
 using FluentTindahan.Application.GCash;
 using FluentTindahan.Application.Sync.DTOs;
 using FluentTindahan.Domain.Billing;
+using FluentTindahan.Domain.Common;
 using FluentTindahan.Domain.Entities;
 using FluentTindahan.Domain.Enums;
 using FluentTindahan.Domain.Interfaces;
@@ -406,6 +407,19 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
             return "Success";
         }
 
+        var rawPhone = string.Equals(raw.Phone?.Trim(), "N/A", StringComparison.OrdinalIgnoreCase)
+            ? string.Empty
+            : raw.Phone;
+        string normalizedPhone;
+        if (existing != null && rawPhone == null)
+        {
+            normalizedPhone = existing.Phone;
+        }
+        else if (!PhilippineMobileNumber.TryNormalize(rawPhone, out normalizedPhone))
+        {
+            throw new InvalidOperationException("Customer phone must be a valid Philippine mobile number (09XXXXXXXXX).");
+        }
+
         if (raw.TotalUtangBalance < 0m)
         {
             throw new InvalidOperationException("Customer utang balance cannot be negative.");
@@ -429,7 +443,7 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
                 Id = raw.Id,
                 TenantId = tenantId,
                 Name = raw.Name ?? "Unknown Customer",
-                Phone = raw.Phone ?? string.Empty,
+                Phone = normalizedPhone,
                 TotalUtangBalance = raw.TotalUtangBalance,
                 UpdatedAt = op.Timestamp,
                 IsDeleted = false
@@ -469,7 +483,7 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
         // If existing customer was previously archived/deleted, restore it
         existing.IsDeleted = false;
         existing.Name = raw.Name ?? existing.Name;
-        existing.Phone = raw.Phone ?? existing.Phone;
+        existing.Phone = normalizedPhone;
         // TotalUtangBalance is normally maintained by UtangLedger, but if sync provided latest computed balance:
         if (raw.TotalUtangBalance >= 0)
         {

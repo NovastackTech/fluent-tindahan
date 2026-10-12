@@ -29,6 +29,8 @@ import { useAuthStore } from '../state/authStore';
 import { enqueueSync, addSyncRecord, kickSync } from '../sync/syncEngine';
 import { useTranslation } from '../state/languageStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
+import { formatPeso } from '../utils/currency';
+import { normalizePhilippineMobile } from '../utils/philippineMobile';
 
 const useStyles = makeStyles({
   container: {
@@ -153,6 +155,14 @@ export const UtangPage: React.FC = () => {
   const handleCreateCustomer = async () => {
     if (!newCustName.trim()) return;
 
+    const phone = normalizePhilippineMobile(newCustPhone);
+    if (phone === null) {
+      alert(language === 'tl'
+        ? 'Maglagay ng wastong Philippine mobile number (09XXXXXXXXX).'
+        : 'Enter a valid Philippine mobile number (09XXXXXXXXX).');
+      return;
+    }
+
     const enteredInitialBalance = newCustInitialUtang.trim() === '' ? 0 : Number(newCustInitialUtang);
     if (!Number.isFinite(enteredInitialBalance) || enteredInitialBalance < 0) {
       alert(
@@ -181,7 +191,7 @@ export const UtangPage: React.FC = () => {
       id,
       tenantId,
       name: newCustName.trim(),
-      phone: newCustPhone.trim(),
+      phone,
       totalUtangBalance: initBalance,
       updatedAt: now
     };
@@ -250,8 +260,8 @@ export const UtangPage: React.FC = () => {
       if (!result.ok) {
         alert(
           language === 'tl'
-            ? `Hindi puwedeng lumampas ang bayad (₱${amount.toFixed(2)}) sa balanse ng utang (₱${result.currentBalance.toFixed(2)}).`
-            : `Payment (₱${amount.toFixed(2)}) cannot exceed the outstanding balance (₱${result.currentBalance.toFixed(2)}).`
+            ? `Hindi puwedeng lumampas ang bayad (${formatPeso(amount)}) sa balanse ng utang (${formatPeso(result.currentBalance)}).`
+            : `Payment (${formatPeso(amount)}) cannot exceed the outstanding balance (${formatPeso(result.currentBalance)}).`
         );
         return;
       }
@@ -330,7 +340,7 @@ export const UtangPage: React.FC = () => {
         <div>
           <Text size={500} weight="bold">{t.utang.title}</Text>
           <Text size={300} style={{ color: tokens.colorNeutralForeground3, display: 'block' }}>
-            {t.utang.totalOutstanding}: <strong style={{ color: tokens.colorPaletteRedForeground1 }}>₱{totalOutstanding.toFixed(2)}</strong>
+            {t.utang.totalOutstanding}: <strong style={{ color: tokens.colorPaletteRedForeground1 }}>{formatPeso(totalOutstanding)}</strong>
             {' • '}
             <span>{t.utang.customersCount}: {customers.length}{tier === 'Libre' ? ' / 30 (Libre)' : ''}</span>
           </Text>
@@ -417,7 +427,7 @@ export const UtangPage: React.FC = () => {
                         display: 'block'
                       }}
                     >
-                      ₱{cust.totalUtangBalance.toFixed(2)}
+                      {formatPeso(cust.totalUtangBalance)}
                     </Text>
                     <Badge
                       appearance="tint"
@@ -450,7 +460,7 @@ export const UtangPage: React.FC = () => {
                   <div style={{ textAlign: 'right' }}>
                     <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>{t.utang.currentDebt}</Text>
                     <div style={{ fontSize: '24px', fontWeight: 'bold', color: selectedCustomer.totalUtangBalance > 0 ? tokens.colorPaletteRedForeground1 : tokens.colorPaletteGreenForeground1 }}>
-                      ₱{selectedCustomer.totalUtangBalance.toFixed(2)}
+                      {formatPeso(selectedCustomer.totalUtangBalance)}
                     </div>
                   </div>
                 </div>
@@ -518,7 +528,7 @@ export const UtangPage: React.FC = () => {
                             className={styles.timelineAmount}
                             style={{ color: isCredit ? tokens.colorPaletteRedForeground1 : tokens.colorPaletteGreenForeground1 }}
                           >
-                            {isCredit ? '+' : '-'}₱{entry.amount.toFixed(2)}
+                            {isCredit ? '+' : '-'}{formatPeso(entry.amount)}
                           </Text>
                         </div>
                       );
@@ -563,7 +573,7 @@ export const UtangPage: React.FC = () => {
                   appearance="subtle"
                   onClick={() => setPaymentAmount(selectedCustomer.totalUtangBalance.toString())}
                 >
-                  {t.utang.payAll} (₱{selectedCustomer.totalUtangBalance.toFixed(2)})
+                  {t.utang.payAll} ({formatPeso(selectedCustomer.totalUtangBalance)})
                 </Button>
               )}
 
@@ -650,6 +660,8 @@ export const UtangPage: React.FC = () => {
               <div style={{ margin: '8px 0' }}>
                 <Text size={200} weight="semibold">{t.utang.phoneLabel}</Text>
                 <Input
+                  type="tel"
+                  inputMode="tel"
                   style={{ width: '100%', marginTop: '4px' }}
                   value={newCustPhone}
                   onChange={(_, data) => setNewCustPhone(data.value)}

@@ -25,6 +25,7 @@ import {
 import { useAuthStore } from '../state/authStore';
 import { useTranslation } from '../state/languageStore';
 import { usePrinterStore } from '../state/printerStore';
+import { formatPeso } from '../utils/currency';
 import {
   printThermalReceipt,
   printBluetoothReceipt,
@@ -134,21 +135,21 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ open, onClose, data 
     text += `${t.receipt.txnLabel} #${data.saleId.slice(0, 8)}\n`;
     text += `--------------------------------\n`;
     data.items.forEach((item) => {
-      text += `${item.qty}x ${item.name} @ ₱${item.price.toFixed(2)} = ₱${item.subtotal.toFixed(2)}\n`;
+      text += `${item.qty}x ${item.name} @ ${formatPeso(item.price)} = ${formatPeso(item.subtotal)}\n`;
     });
     text += `--------------------------------\n`;
-    text += `${t.receipt.totalLabel} ₱${data.totalAmount.toFixed(2)}\n`;
+    text += `${t.receipt.totalLabel} ${formatPeso(data.totalAmount)}\n`;
     text += `${t.receipt.paymentMethodLabel} ${data.paymentMethod}\n`;
 
     if (data.cashReceived !== undefined && data.cashReceived > 0) {
-      text += `${t.receipt.tenderedLabel} ₱${data.cashReceived.toFixed(2)}\n`;
-      text += `${t.receipt.changeLabel} ₱${(data.changeGiven || 0).toFixed(2)}\n`;
+      text += `${t.receipt.tenderedLabel} ${formatPeso(data.cashReceived)}\n`;
+      text += `${t.receipt.changeLabel} ${formatPeso(data.changeGiven || 0)}\n`;
     }
 
     if (data.customerName) {
       text += `${t.receipt.customerLabel} ${data.customerName}\n`;
       if (data.customerUtangBalance !== undefined) {
-        text += `${t.receipt.remainingDebtLabel} ₱${data.customerUtangBalance.toFixed(2)}\n`;
+        text += `${t.receipt.remainingDebtLabel} ${formatPeso(data.customerUtangBalance)}\n`;
       }
     }
 
@@ -295,7 +296,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ open, onClose, data 
                 {data.items.map((item, idx) => (
                   <div key={idx} className={styles.itemRow}>
                     <span>{item.qty}x {item.name}</span>
-                    <span>₱{item.subtotal.toFixed(2)}</span>
+                    <span>{formatPeso(item.subtotal)}</span>
                   </div>
                 ))}
               </div>
@@ -304,7 +305,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ open, onClose, data 
 
               <div className={styles.totalRow}>
                 <span>{t.receipt.totalLabel}</span>
-                <span>₱{data.totalAmount.toFixed(2)}</span>
+                <span>{formatPeso(data.totalAmount)}</span>
               </div>
 
               <div className={styles.itemRow} style={{ marginTop: '6px' }}>
@@ -316,12 +317,12 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ open, onClose, data 
                 <>
                   <div className={styles.itemRow}>
                     <span>{t.receipt.tenderedLabel}</span>
-                    <span>₱{data.cashReceived.toFixed(2)}</span>
+                    <span>{formatPeso(data.cashReceived)}</span>
                   </div>
                   <div className={styles.itemRow}>
                     <span style={{ fontWeight: 'bold' }}>{t.receipt.changeLabel}</span>
                     <span style={{ fontWeight: 'bold', color: tokens.colorPaletteGreenForeground1 }}>
-                      ₱{(data.changeGiven || 0).toFixed(2)}
+                      {formatPeso(data.changeGiven || 0)}
                     </span>
                   </div>
                 </>
@@ -336,7 +337,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ open, onClose, data 
                   {data.customerUtangBalance !== undefined && (
                     <div className={styles.itemRow}>
                       <span>{t.receipt.remainingDebtLabel}</span>
-                      <strong style={{ color: tokens.colorPaletteRedForeground1 }}>₱{data.customerUtangBalance.toFixed(2)}</strong>
+                      <strong style={{ color: tokens.colorPaletteRedForeground1 }}>{formatPeso(data.customerUtangBalance)}</strong>
                     </div>
                   )}
                 </div>

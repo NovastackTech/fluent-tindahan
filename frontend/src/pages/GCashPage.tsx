@@ -24,6 +24,7 @@ import { useAuthStore } from '../state/authStore';
 import { addSyncRecord, kickSync } from '../sync/syncEngine';
 import { useTranslation } from '../state/languageStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
+import { formatPeso } from '../utils/currency';
 
 export function toLocalDateKey(value: Date | string): string {
   const date = typeof value === 'string' ? new Date(value) : value;
@@ -344,21 +345,21 @@ export const GCashPage: React.FC = () => {
         <Card className={styles.summaryCard}>
           <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>{t.gcash.todayCashIn}</Text>
           <Text data-testid="today-cash-in-total" size={400} weight="bold" style={{ color: tokens.colorPaletteBlueForeground2, display: 'block' }}>
-            ₱{todayCashIn.toFixed(2)}
+            {formatPeso(todayCashIn)}
           </Text>
         </Card>
 
         <Card className={styles.summaryCard}>
           <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>{t.gcash.todayCashOut}</Text>
           <Text data-testid="today-cash-out-total" size={400} weight="bold" style={{ color: tokens.colorPaletteGreenForeground1, display: 'block' }}>
-            ₱{todayCashOut.toFixed(2)}
+            {formatPeso(todayCashOut)}
           </Text>
         </Card>
 
         <Card className={styles.summaryCard}>
           <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>{t.gcash.todayFees}</Text>
           <Text data-testid="today-gcash-fees-total" size={400} weight="bold" style={{ color: tokens.colorBrandForeground1, display: 'block' }}>
-            ₱{todayFees.toFixed(2)}
+            {formatPeso(todayFees)}
           </Text>
         </Card>
       </div>
@@ -446,7 +447,7 @@ export const GCashPage: React.FC = () => {
                   {txnType === 'CashIn' ? t.gcash.totalFromCustomer : t.gcash.totalToCustomer}
                 </Text>
                 <Text size={500} weight="bold" style={{ color: tokens.colorBrandForeground1 }}>
-                  ₱{txnType === 'CashIn' ? (numAmount + activeFee).toFixed(2) : (numAmount - activeFee).toFixed(2)}
+                  {formatPeso(txnType === 'CashIn' ? numAmount + activeFee : numAmount - activeFee)}
                 </Text>
               </div>
             </div>
@@ -524,9 +525,9 @@ export const GCashPage: React.FC = () => {
                           {language === 'tl' ? 'Bagong ref na naayos ngayon' : 'Corrected replacement created today'}
                         </Badge>
                       )}
-                      <Text weight="semibold" size={300}>₱{txn.amount.toFixed(2)}</Text>
+                      <Text weight="semibold" size={300}>{formatPeso(txn.amount)}</Text>
                       <Text size={100} style={{ color: tokens.colorBrandForeground1 }}>
-                        (Fee: ₱{txn.fee.toFixed(2)})
+                        (Fee: {formatPeso(txn.fee)})
                       </Text>
                     </div>
                     <Text size={100} style={{ color: tokens.colorNeutralForeground3, marginTop: '2px', display: 'block' }}>
@@ -582,7 +583,7 @@ export const GCashPage: React.FC = () => {
                   </div>
 
                   <Text size={200} weight="bold">
-                    Net: ₱{(txn.amount + (isCashIn ? txn.fee : -txn.fee)).toFixed(2)}
+                    Net: {formatPeso(txn.amount + (isCashIn ? txn.fee : -txn.fee))}
                   </Text>
                 </div>
               );

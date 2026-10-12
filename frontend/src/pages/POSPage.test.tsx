@@ -17,6 +17,7 @@ describe('POSPage', () => {
     await db.saleItems.clear();
     await db.utangLedger.clear();
     await db.customers.clear();
+    await db.syncQueue.clear();
 
     await db.products.add({
       id: 'p-1',
@@ -361,6 +362,24 @@ describe('POSPage', () => {
       expect(ledger[0].customerId).toBe(tatay?.id);
       expect(ledger[0].amount).toBe(16);
     });
+  });
+
+  it('rejects a malformed phone when adding a debtor during checkout', async () => {
+    renderPOS();
+
+    await waitFor(() => expect(screen.getByText('Lucky Me Pancit Canton Kalamansi')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Lucky Me Pancit Canton Kalamansi'));
+    fireEvent.click(screen.getByRole('button', { name: /Bayad|Pay/i }));
+    fireEvent.click(screen.getByRole('tab', { name: /Utang/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Suki|Add New Debtor/i }));
+
+    fireEvent.change(screen.getByPlaceholderText(/Aling Maria/i), { target: { value: 'QA customer' } });
+    fireEvent.change(screen.getByPlaceholderText('09123456789'), { target: { value: 'abc123' } });
+    fireEvent.click(screen.getByRole('button', { name: /I-save at Piliin|Save & Select/i }));
+
+    expect(await screen.findByText(/wastong Philippine mobile|valid Philippine mobile/i)).toBeInTheDocument();
+    expect(await db.customers.toArray()).toHaveLength(0);
+    expect(await db.syncQueue.toArray()).toHaveLength(0);
   });
 
   it('validates debtor name and supports canceling debtor form in utang checkout', async () => {

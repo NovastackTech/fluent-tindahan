@@ -25,6 +25,7 @@ import { enqueueSync } from '../sync/syncEngine';
 import { useAuthStore } from '../state/authStore';
 import { useTranslation } from '../state/languageStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
+import { formatPeso } from '../utils/currency';
 
 interface QuickRegisterProductDialogProps {
   isOpen: boolean;
@@ -363,7 +364,7 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
                         : tokens.colorNeutralForeground1
                   }}
                 >
-                  ₱{unitProfit.toFixed(2)}
+                  {formatPeso(unitProfit)}
                 </Text>
               </div>
               <div className={styles.marginPreviewRow}>

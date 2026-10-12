@@ -41,6 +41,7 @@ import { QuickRegisterProductDialog } from '../components/QuickRegisterProductDi
 import { playScanBeep } from '../utils/sound';
 import { useSubscriptionStore } from '../state/subscriptionStore';
 import type { NavTab } from '../components/Navigation';
+import { formatPeso } from '../utils/currency';
 
 interface InventoryPageProps {
   onNavigate?: (tab: NavTab) => void;
@@ -736,10 +737,10 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
               {t.inventory.retailValue}
             </Text>
             <div className={styles.metricValue}>
-              ₱{metrics.totalRetailValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {formatPeso(metrics.totalRetailValue)}
             </div>
             <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>
-              {t.inventory.colCost}: ₱{metrics.totalCostValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {t.inventory.colCost}: {formatPeso(metrics.totalCostValue)}
             </Text>
           </Card>
 
@@ -752,7 +753,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
               {t.inventory.potentialProfit}
             </Text>
             <div className={styles.metricValue} style={{ color: tokens.colorPaletteGreenForeground1 }}>
-              ₱{metrics.projectedGrossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {formatPeso(metrics.projectedGrossProfit)}
             </div>
             <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>
               {t.inventory.avgMargin}: <strong>{metrics.avgMarginPercent.toFixed(1)}%</strong>
@@ -967,14 +968,14 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                       {/* Cost (Puhunan) */}
                       <td className={styles.td}>
                         <Text size={300} style={{ color: tokens.colorNeutralForeground2 }}>
-                          ₱{p.cost.toFixed(2)}
+                          {formatPeso(p.cost)}
                         </Text>
                       </td>
 
                       {/* SRP (Tinda) */}
                       <td className={styles.td}>
                         <Text size={300} weight="bold">
-                          ₱{p.price.toFixed(2)}
+                          {formatPeso(p.price)}
                         </Text>
                       </td>
 
@@ -992,7 +993,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                               marginTop: '2px'
                             }}
                           >
-                            +₱{profit.toFixed(2)} / pc
+                            {formatPeso(profit)} / pc
                           </Text>
                         </div>
                       </td>
@@ -1088,14 +1089,14 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                     <Text size={100} style={{ color: tokens.colorNeutralForeground3, display: 'block' }}>
                       {t.inventory.colCost}
                     </Text>
-                    <Text size={300}>₱{p.cost.toFixed(2)}</Text>
+                    <Text size={300}>{formatPeso(p.cost)}</Text>
                   </div>
                   <div>
                     <Text size={100} style={{ color: tokens.colorNeutralForeground3, display: 'block' }}>
                       {t.inventory.colPrice}
                     </Text>
                     <Text size={300} weight="bold">
-                      ₱{p.price.toFixed(2)}
+                      {formatPeso(p.price)}
                     </Text>
                   </div>
                   <div>
@@ -1298,7 +1299,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                           : tokens.colorNeutralForeground1
                     }}
                   >
-                    ₱{liveProfit.toFixed(2)}
+                    {formatPeso(liveProfit)}
                   </Text>
                 </div>
                 <div className={styles.marginPreviewRow}>
@@ -1348,8 +1349,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                     {productToDelete.name}
                   </Text>
                   <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-                    {productToDelete.category || 'General'} • {productToDelete.stockQty} in stock • ₱
-                    {productToDelete.price.toFixed(2)} SRP
+                    {productToDelete.category || 'General'} • {productToDelete.stockQty} in stock • {formatPeso(productToDelete.price)} SRP
                   </Text>
                 </div>
               )}
