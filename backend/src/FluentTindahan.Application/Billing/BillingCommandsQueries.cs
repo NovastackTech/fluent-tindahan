@@ -294,6 +294,49 @@ public class ApplySubscriptionPaymentCommandHandler : IRequestHandler<ApplySubsc
         new(PaymentWebhookOutcome.Rejected, message, tenantId, null, null);
 }
 
+public record ResetTenantSubscriptionCommand(Guid TenantId) : IRequest<bool>;
+
+public class ResetTenantSubscriptionCommandHandler : IRequestHandler<ResetTenantSubscriptionCommand, bool>
+{
+    private readonly IApplicationDbContext _context;
+    private readonly ILogger<ResetTenantSubscriptionCommandHandler> _logger;
+
+    public ResetTenantSubscriptionCommandHandler(
+        IApplicationDbContext context,
+        ILogger<ResetTenantSubscriptionCommandHandler> logger)
+    {
+        _context = context;
+        _logger = logger;
+    }
+
+    public async Task<bool> Handle(ResetTenantSubscriptionCommand request, CancellationToken cancellationToken)
+    {
+        var tenant = await _context.Tenants
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == request.TenantId, cancellationToken);
+
+        if (tenant == null)
+        {
+            _logger.LogWarning("ResetTenantSubscription: Tenant {TenantId} not found.", request.TenantId);
+            return false;
+        }
+
+        tenant.Tier = PlanTier.Libre;
+        tenant.SubscriptionEndDate = null;
+
+        var payments = await _context.PaymentHistories
+            .IgnoreQueryFilters()
+            .Where(p => p.TenantId == request.TenantId)
+            .ToListAsync(cancellationToken);
+
+        _context.PaymentHistories.RemoveRange(payments);
+
+        await _context.SaveChangesAsync(cancellationToken);
+        _logger.LogInformation("ResetTenantSubscription: Tenant {TenantId} reset to Libre tier and payment history cleared.", request.TenantId);
+        return true;
+    }
+}
+
 public record ProcessPaymentWebhookCommand(
     string JsonPayload,
     string? SignatureHeader
