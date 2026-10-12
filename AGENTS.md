@@ -121,8 +121,14 @@ fluent-tindahan/
 
 ### Run Development Servers
 ```powershell
-# Automated launcher (PowerShell)
-./start-local.ps1
+# Novastack standard launcher (native Backend + Vite)
+./run-local.ps1
+# Linux / macOS
+./run-local.sh
+
+# Full Docker Compose stack (Postgres + API + nginx)
+./run-local.ps1 -Docker
+./run-local.sh --docker
 
 # Manual Backend (Port 5000)
 cd backend/src/FluentTindahan.WebApi
@@ -132,6 +138,13 @@ dotnet run --urls "http://localhost:5000"
 # Manual Frontend (Port 5173)
 cd frontend
 npm run dev -- --host 127.0.0.1 --port 5173
+```
+
+### Deploy (Alibaba Cloud SAS)
+```bash
+cp deploy/alibaba-sas.env.example deploy/alibaba-sas.env
+./deploy-alibaba-sas.sh --bootstrap   # first time
+./deploy-alibaba-sas.sh
 ```
 
 ### Run Tests & Validation (Always Run Before Declaring Success)

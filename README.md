@@ -7,12 +7,19 @@ An offline-first Progressive Web App (PWA) built with **Fluent UI v9**, **Dexie.
 
 ## 🚀 Quick Start (Local Setup)
 
-### Option 1: One-Click Startup
-Run either of the following scripts from the repository root:
+### Option 1: One-Click Startup (Novastack standard)
 ```powershell
-./start-local.ps1
+./run-local.ps1
+# or
+./run-local.sh
 ```
-or double-click `start-local.bat`.
+Full Docker Compose stack (Postgres + API + nginx PWA):
+```powershell
+./run-local.ps1 -Docker
+# or
+./run-local.sh --docker
+```
+`start-local.ps1` / `start-local.bat` remain as thin wrappers around `run-local`.
 
 ### Option 2: Manual Startup
 
@@ -65,3 +72,21 @@ PWA_DEV=true npm run dev
 - **GCash Cash-In / Cash-Out**: Log fee tracking, transaction reference numbers, daily totals.
 - **Background Sync Engine**: Queues offline mutations in IndexedDB `syncQueue` and batches them to the .NET 8 Web API via `POST /api/sync/batch` with Last-Write-Wins and Dead-Letter Queue handling.
 - **Data Privacy Consent Dialog**: Compliant with RA 10173 (Philippine Data Privacy Act).
+
+---
+
+## ☁️ Deploy to Alibaba Cloud SAS
+
+Novastack standard remote deploy (SSH + Docker Compose on Simple Application Server):
+
+```bash
+cp deploy/alibaba-sas.env.example deploy/alibaba-sas.env
+# edit SAS_HOST, secrets, PUBLIC_ORIGIN, PayMongo keys
+
+./deploy-alibaba-sas.sh --bootstrap   # first time on a fresh Ubuntu SAS
+./deploy-alibaba-sas.sh               # subsequent deploys
+```
+
+PowerShell equivalent: `./deploy-alibaba-sas.ps1` (use `-Bootstrap` on first run).
+
+Stack on the server: Postgres 16 + .NET 8 API + nginx (PWA + `/api` reverse proxy). Open TCP 80 (and 443 if you terminate TLS) in the SAS Firewall console.

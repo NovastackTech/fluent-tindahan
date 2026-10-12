@@ -1,12 +1,12 @@
 ---
 title: CI-CD & Deployment
-tags: [guide, cicd, github-actions, deployment, docker, azure]
-updated: 2026-10-10
+tags: [guide, cicd, github-actions, deployment, docker, alibaba, sas]
+updated: 2026-10-12
 ---
 
 # 🚀 CI-CD & Deployment
 
-This document covers continuous integration pipelines, automated quality gates, and target production deployment architectures.
+This document covers continuous integration pipelines, automated quality gates, and target production deployment architectures (including Alibaba Cloud Simple Application Server).
 
 ---
 
@@ -45,7 +45,46 @@ graph LR
 
 ---
 
-## 2. Production Hosting Architecture
+## 2. Alibaba Cloud Simple Application Server (SAS) — Novastack Standard
+
+Primary production path for Novastack apps: one SAS instance running Docker Compose.
+
+```mermaid
+graph TB
+    Client["Store devices / browsers"] --> Nginx["nginx :80\nPWA static + /api proxy"]
+    Nginx --> API[".NET 8 Web API :8080"]
+    API --> PG[("PostgreSQL 16\nDocker volume")]
+```
+
+### Deploy
+```bash
+cp deploy/alibaba-sas.env.example deploy/alibaba-sas.env
+# set SAS_HOST, POSTGRES_PASSWORD, PayMongo secrets, PUBLIC_ORIGIN
+
+./deploy-alibaba-sas.sh --bootstrap   # first time
+./deploy-alibaba-sas.sh               # ship updates
+```
+
+PowerShell: `./deploy-alibaba-sas.ps1` (`-Bootstrap` on first run).
+
+| Piece | Role |
+| --- | --- |
+| `docker-compose.yml` | `db` + `api` + `web` stack used on SAS |
+| `deploy/nginx/default.conf` | SPA fallback + `/api` reverse proxy |
+| `deploy/alibaba-sas.env` | SSH target + production secrets (gitignored) |
+| `deploy/remote-bootstrap.sh` | Idempotent Docker install on Ubuntu/Debian SAS |
+
+Open TCP **80** (and **443** if TLS terminates on the instance) in the SAS Firewall console. Health probe: `GET /api/health`.
+
+### Local Docker parity
+```bash
+./run-local.sh --docker
+# PWA http://localhost:8080  ·  API http://localhost:5000  ·  Postgres :5432
+```
+
+---
+
+## 3. Alternate Hosting Architecture (CDN + managed DB)
 
 ```mermaid
 graph TB
@@ -67,8 +106,8 @@ graph TB
 ```
 
 ### Hosting Strategy:
-- **PWA Frontend**: Hosted as static assets on a global CDN (e.g., Cloudflare Pages or Vercel). High availability and instant delivery across the Philippines via edge PoPs (Manila / Cebu).
-- **Backend Web API**: Packaged as a lightweight Linux container (`mcr.microsoft.com/dotnet/aspnet:8.0`) deployed to Azure Container Apps or AWS App Runner.
+- **PWA Frontend**: Hosted as static assets on a global CDN when you outgrow single-node SAS.
+- **Backend Web API**: Packaged as a lightweight Linux container (`mcr.microsoft.com/dotnet/aspnet:8.0`).
 - **PostgreSQL**: Managed PostgreSQL 16 with daily automated backups.
 
 ---

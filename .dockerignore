@@ -1,0 +1,29 @@
+**/.git
+**/.github
+**/.obsidian
+**/bin
+**/obj
+**/TestResults
+**/node_modules
+**/coverage
+**/dist
+**/dev-dist
+**/.vs
+**/.idea
+**/*.user
+**/*.suo
+**/.DS_Store
+**/lcov-report
+**/*.log
+**/*.pdf
+tindahan
+.env
+.env.*
+!.env.example
+deploy/alibaba-sas.env
+**/playwright-report
+**/test-results
+frontend/dev-dist
+offline-first-pwa-architecture-plan.md
+SaaS Subs Plan.md
+Tindahan pricing model.md

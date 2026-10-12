@@ -35,3 +35,9 @@ lcov-report/
 # Test and documentation generated PDFs
 *.pdf
 
+# Local / deploy secrets (Novastack Alibaba SAS)
+.env
+!.env.example
+deploy/alibaba-sas.env
+.run/
+
