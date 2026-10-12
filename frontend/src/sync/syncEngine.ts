@@ -42,7 +42,11 @@ function getDeviceId(): string {
 
 let globalQueueOrder = 0;
 
-export async function enqueueSync(
+/**
+ * Adds a sync queue row only (safe to call inside a Dexie transaction that
+ * includes db.syncQueue). Call `kickSync()` after the transaction commits.
+ */
+export async function addSyncRecord(
   entity: 'Product' | 'Customer' | 'Sale' | 'UtangLedger' | 'GCashTxn',
   action: 'Insert' | 'Update' | 'Delete',
   payload: any
@@ -60,13 +64,25 @@ export async function enqueueSync(
   };
 
   await db.syncQueue.add(record);
+  return syncId;
+}
+
+export async function kickSync() {
   await updateQueueCounts();
 
   // If online, kick off sync asynchronously
   if (navigator.onLine) {
     processSyncQueue().catch((err) => console.warn('Background sync trigger failed:', err));
   }
+}
 
+export async function enqueueSync(
+  entity: 'Product' | 'Customer' | 'Sale' | 'UtangLedger' | 'GCashTxn',
+  action: 'Insert' | 'Update' | 'Delete',
+  payload: any
+): Promise<string> {
+  const syncId = await addSyncRecord(entity, action, payload);
+  await kickSync();
   return syncId;
 }
 
@@ -76,9 +92,9 @@ export async function updateQueueCounts() {
   useSyncStore.getState().setCounts(pending, deadLetter);
 }
 
-export async function processSyncQueue(): Promise<{ processed: number; errors: number }> {
+export async function processSyncQueue(): Promise<{ processed: number; conflicts: number; errors: number }> {
   const store = useSyncStore.getState();
-  if (store.isSyncing) return { processed: 0, errors: 0 };
+  if (store.isSyncing) return { processed: 0, conflicts: 0, errors: 0 };
 
   const pendingItems = await db.syncQueue
     .where('status')
@@ -88,7 +104,7 @@ export async function processSyncQueue(): Promise<{ processed: number; errors: n
 
   if (pendingItems.length === 0) {
     await updateQueueCounts();
-    return { processed: 0, errors: 0 };
+    return { processed: 0, conflicts: 0, errors: 0 };
   }
 
   // Initially order pending items strictly by enqueued sequence (queueOrder / timestamp)
@@ -167,7 +183,10 @@ export async function processSyncQueue(): Promise<{ processed: number; errors: n
     const results: Array<{ syncId: string; status: string; error?: string }> = data.results || [];
 
     let successCount = 0;
+    let conflictCount = 0;
     let failCount = 0;
+    let duplicateRefCount = 0;
+    let otherGCashConflictCount = 0;
 
     for (const res of results) {
       const original = pendingItems.find((p) => p.id === res.syncId);
@@ -176,6 +195,31 @@ export async function processSyncQueue(): Promise<{ processed: number; errors: n
       if (res.status === 'Success' || res.status === 'ConflictIgnored') {
         await db.syncQueue.delete(original.id);
         successCount++;
+      } else if (
+        original.entity === 'GCashTxn' &&
+        (res.status === 'DuplicateRef' || res.status === 'Conflict')
+      ) {
+        // GCash conflicts need manual attention and should not retry automatically.
+        await db.syncQueue.delete(original.id);
+        conflictCount++;
+        if (res.status === 'DuplicateRef') duplicateRefCount++;
+        else otherGCashConflictCount++;
+
+        // Mark/flag the local row so the UI can show it needs attention
+        if (original.payload?.id) {
+          const localTxn = await db.gcashTxns.get(original.payload.id);
+          if (localTxn) {
+            await db.gcashTxns.update(original.payload.id, {
+              needsAttention: true,
+              syncStatus: res.status,
+              conflictReason: res.error || (
+                res.status === 'DuplicateRef'
+                  ? 'Duplicate reference number on server'
+                  : 'GCash transaction conflict reported by server'
+              )
+            });
+          }
+        }
       } else {
         failCount++;
         const newRetryCount = (original.retryCount || 0) + 1;
@@ -204,12 +248,35 @@ export async function processSyncQueue(): Promise<{ processed: number; errors: n
     }
 
     store.setLastSyncedAt(new Date());
+    const conflictMessages: string[] = [];
+    if (duplicateRefCount > 0) {
+      conflictMessages.push(
+        `${duplicateRefCount} duplicate GCash reference${duplicateRefCount === 1 ? '' : 's'} detected.`
+      );
+    }
+    if (otherGCashConflictCount > 0) {
+      conflictMessages.push(
+        `${otherGCashConflictCount} GCash transaction conflict${otherGCashConflictCount === 1 ? '' : 's'} detected.`
+      );
+    }
+    if (conflictMessages.length > 0) {
+      store.setLastErrorMessage(conflictMessages.join(' '));
+    }
     await updateQueueCounts();
-    return { processed: successCount, errors: failCount };
+    return { processed: successCount, conflicts: conflictCount, errors: failCount };
   } catch (err: any) {
     console.error('Batch sync network/server failure:', err);
-    store.setLastErrorMessage(err.message || 'Hindi makakonekta sa server');
-    return { processed: 0, errors: pendingItems.length };
+    const status = err?.response?.status;
+    const serverMessage = err?.response?.data?.message;
+    const errorMessage = serverMessage || (
+      status === 401
+        ? 'Sync was rejected because this device has no valid tenant session. Pending changes remain on this device.'
+        : status >= 500
+          ? `Sync server error (${status}). Pending changes remain on this device.`
+          : err.message || 'Hindi makakonekta sa server'
+    );
+    store.setLastErrorMessage(errorMessage);
+    return { processed: 0, conflicts: 0, errors: pendingItems.length };
   } finally {
     store.setSyncing(false);
   }

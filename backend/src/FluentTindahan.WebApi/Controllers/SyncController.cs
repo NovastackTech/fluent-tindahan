@@ -1,18 +1,23 @@
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using FluentTindahan.Application.Sync.Commands;
 using FluentTindahan.Application.Sync.DTOs;
+using FluentTindahan.WebApi.Authorization;
 
 namespace FluentTindahan.WebApi.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize(Policy = AuthorizationPolicies.TenantResolved)]
 public class SyncController : ControllerBase
 {
     private readonly IMediator _mediator;
     private readonly ILogger<SyncController> _logger;
 
-    public SyncController(IMediator mediator, ILogger<SyncController> logger)
+    public SyncController(
+        IMediator mediator,
+        ILogger<SyncController> logger)
     {
         _mediator = mediator;
         _logger = logger;
@@ -24,6 +29,9 @@ public class SyncController : ControllerBase
     /// </summary>
     [HttpPost("batch")]
     [ProducesResponseType(typeof(BatchSyncResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<BatchSyncResultDto>> ProcessBatch([FromBody] BatchSyncRequestDto request, CancellationToken cancellationToken)
     {
         if (request == null || request.Operations == null)
@@ -34,7 +42,22 @@ public class SyncController : ControllerBase
         _logger.LogInformation("Received batch sync from device {DeviceId} with {Count} operations",
             request.DeviceId, request.Operations.Count);
 
-        var result = await _mediator.Send(new ProcessBatchSyncCommand(request), cancellationToken);
-        return Ok(result);
+        try
+        {
+            var result = await _mediator.Send(new ProcessBatchSyncCommand(request), cancellationToken);
+            return Ok(result);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error processing batch sync from device {DeviceId}.", request.DeviceId);
+            return Problem(
+                title: "Batch sync failed.",
+                detail: "The batch could not be processed. Try again later.",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
     }
 }

@@ -15,7 +15,8 @@ import {
   shorthands,
   Spinner,
   MessageBar,
-  MessageBarBody
+  MessageBarBody,
+  mergeClasses
 } from '@fluentui/react-components';
 import {
   CheckmarkRegular,
@@ -24,9 +25,15 @@ import {
   StarFilled,
   CreditCardPersonRegular
 } from '@fluentui/react-icons';
-import { useSubscriptionStore, type BillingCycle, IS_MOCK_PAYMENT_ENABLED } from '../state/subscriptionStore';
+import {
+  useSubscriptionStore,
+  type BillingCycle,
+  IS_MOCK_PAYMENT_ENABLED,
+  SUBSCRIPTION_REFRESH_ERROR
+} from '../state/subscriptionStore';
 import { type PlanTier } from '../db/db';
 import { useLanguageStore } from '../state/languageStore';
+import { formatPeso } from '../utils/currency';
 
 const useStyles = makeStyles({
   surface: {
@@ -136,6 +143,7 @@ export const SubscriptionModal: React.FC = () => {
     daysRemaining,
     isUpgradeModalOpen,
     closeUpgradeModal,
+    refreshSubscription,
     createCheckoutSession,
     simulateMockPayment,
     isLoading,
@@ -144,6 +152,7 @@ export const SubscriptionModal: React.FC = () => {
 
   const [cycle, setCycle] = useState<BillingCycle>('Monthly');
   const [processingTier, setProcessingTier] = useState<PlanTier | null>(null);
+  const isRefreshError = error === SUBSCRIPTION_REFRESH_ERROR;
 
   const handleCheckout = async (targetTier: PlanTier) => {
     setProcessingTier(targetTier);
@@ -198,8 +207,24 @@ export const SubscriptionModal: React.FC = () => {
         <DialogBody>
           <DialogContent>
             {error && (
-              <MessageBar intent="error" style={{ marginBottom: tokens.spacingVerticalM }}>
-                <MessageBarBody>{error}</MessageBarBody>
+              <MessageBar intent={isRefreshError ? 'warning' : 'error'} style={{ marginBottom: tokens.spacingVerticalM }}>
+                <MessageBarBody>
+                  {isRefreshError
+                    ? (isTagalog
+                      ? 'Hindi ma-refresh ang detalye ng subscription. Ipinapakita pa rin ang mga plano at presyo gamit ang huling na-save na plano.'
+                      : 'Subscription details could not be refreshed. Plans and prices are still available using your saved plan.')
+                    : error}
+                </MessageBarBody>
+                {isRefreshError && (
+                  <Button
+                    appearance="subtle"
+                    size="small"
+                    disabled={isLoading}
+                    onClick={() => void refreshSubscription()}
+                  >
+                    {isTagalog ? 'Subukan muli' : 'Retry'}
+                  </Button>
+                )}
               </MessageBar>
             )}
 
@@ -235,7 +260,7 @@ export const SubscriptionModal: React.FC = () => {
             {/* Cards Grid */}
             <div className={styles.cardsGrid}>
               {/* LIBRE */}
-              <Card className={`${styles.tierCard} ${currentTier === 'Libre' ? styles.activeTierCard : ''}`} style={{ overflow: 'visible' }}>
+              <Card className={mergeClasses(styles.tierCard, currentTier === 'Libre' && styles.activeTierCard)} style={{ overflow: 'visible' }}>
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Text weight="bold" size={500}>Libre</Text>
@@ -250,7 +275,7 @@ export const SubscriptionModal: React.FC = () => {
                   </Text>
 
                   <div className={styles.priceSection}>
-                    <Text size={700} weight="bold">₱0</Text>
+                    <Text size={700} weight="bold">{formatPeso(0)}</Text>
                     <Text size={300} style={{ color: tokens.colorNeutralForeground3 }}>
                       {isTagalog ? '/ habangbuhay' : '/ forever'}
                     </Text>
@@ -299,7 +324,11 @@ export const SubscriptionModal: React.FC = () => {
 
               {/* TINDAHAN PRO */}
               <Card
-                className={`${styles.tierCard} ${styles.popularTierCard} ${currentTier === 'TindahanPro' ? styles.activeTierCard : ''}`}
+                className={mergeClasses(
+                  styles.tierCard,
+                  styles.popularTierCard,
+                  currentTier === 'TindahanPro' && styles.activeTierCard
+                )}
                 style={{ overflow: 'visible' }}
               >
                 <Badge color="warning" appearance="filled" className={styles.popularBadge} icon={<StarFilled />}>
@@ -322,7 +351,7 @@ export const SubscriptionModal: React.FC = () => {
 
                   <div className={styles.priceSection}>
                     <Text size={700} weight="bold">
-                      {cycle === 'Weekly' ? '₱35' : '₱129'}
+                      {formatPeso(cycle === 'Weekly' ? 35 : 129)}
                     </Text>
                     <Text size={300} style={{ color: tokens.colorNeutralForeground3 }}>
                       {cycle === 'Weekly' ? (isTagalog ? '/ linggo' : '/ week') : (isTagalog ? '/ buwan' : '/ month')}
@@ -391,7 +420,7 @@ export const SubscriptionModal: React.FC = () => {
 
               {/* NEGOSYO PLUS */}
               <Card
-                className={`${styles.tierCard} ${currentTier === 'NegosyoPlus' ? styles.activeTierCard : ''}`}
+                className={mergeClasses(styles.tierCard, currentTier === 'NegosyoPlus' && styles.activeTierCard)}
                 style={{ overflow: 'visible' }}
               >
                 <div>
@@ -409,7 +438,7 @@ export const SubscriptionModal: React.FC = () => {
 
                   <div className={styles.priceSection}>
                     <Text size={700} weight="bold">
-                      {cycle === 'Weekly' ? '₱89' : '₱349'}
+                      {formatPeso(cycle === 'Weekly' ? 89 : 349)}
                     </Text>
                     <Text size={300} style={{ color: tokens.colorNeutralForeground3 }}>
                       {cycle === 'Weekly' ? (isTagalog ? '/ linggo' : '/ week') : (isTagalog ? '/ buwan' : '/ month')}

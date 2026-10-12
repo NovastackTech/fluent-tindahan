@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { useSubscriptionStore, getTierLimits } from './subscriptionStore';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { useSubscriptionStore, getTierLimits, SUBSCRIPTION_REFRESH_ERROR } from './subscriptionStore';
 import { useAuthStore } from './authStore';
 import { db } from '../db/db';
+import { apiClient } from '../services/apiClient';
 
 describe('subscriptionStore', () => {
   beforeEach(async () => {
@@ -101,6 +102,22 @@ describe('subscriptionStore', () => {
       store.closeUpgradeModal();
       expect(useSubscriptionStore.getState().isUpgradeModalOpen).toBe(false);
     });
+  });
+
+  it('preserves the saved tier and uses a non-raw fallback when subscription refresh fails', async () => {
+    useAuthStore.setState({ tier: 'TindahanPro' });
+    useSubscriptionStore.setState({ tier: 'TindahanPro' });
+    const getSpy = vi.spyOn(apiClient, 'get').mockRejectedValueOnce(
+      new Error('Request failed with status code 500')
+    );
+
+    await useSubscriptionStore.getState().refreshSubscription();
+
+    expect(useSubscriptionStore.getState().tier).toBe('TindahanPro');
+    expect(useSubscriptionStore.getState().isLoading).toBe(false);
+    expect(useSubscriptionStore.getState().error).toBe(SUBSCRIPTION_REFRESH_ERROR);
+    expect(useSubscriptionStore.getState().error).not.toContain('500');
+    getSpy.mockRestore();
   });
 
   describe('simulateMockPayment', () => {

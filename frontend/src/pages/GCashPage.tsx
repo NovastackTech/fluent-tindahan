@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   makeStyles,
   tokens,
@@ -19,11 +19,15 @@ import {
   HistoryRegular
 } from '@fluentui/react-icons';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, type GCashTxnRecord } from '../db/db';
+import { db, isGCashTxnUnresolved, normalizeRef, type GCashTxnRecord } from '../db/db';
 import { useAuthStore } from '../state/authStore';
-import { enqueueSync } from '../sync/syncEngine';
+import { addSyncRecord, kickSync } from '../sync/syncEngine';
 import { useTranslation } from '../state/languageStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
+import { calculateGCashFee, DEFAULT_GCASH_FEE_TIERS, useGCashFeeStore } from '../state/gcashFeeStore';
+import { formatPeso } from '../utils/currency';
+import { toLocalDateKey } from '../utils/date';
+
 
 const useStyles = makeStyles({
   container: {
@@ -72,37 +76,72 @@ export const GCashPage: React.FC = () => {
   const [refNo, setRefNo] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [notes, setNotes] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [resolutionRefDrafts, setResolutionRefDrafts] = useState<Record<string, string>>({});
+  const [resolvingTxnId, setResolvingTxnId] = useState<string | null>(null);
+  const savingRef = useRef(false);
 
   const tenantId = useAuthStore((s) => s.tenantId);
+  const feeTiers = useGCashFeeStore((state) => state.feesByTenant[tenantId] || DEFAULT_GCASH_FEE_TIERS);
 
-  // Calculate default sari-sari store fee tier
+  // Calculate the configured tier fee and any open-ended per-thousand increments.
   const calculatedFee = useMemo(() => {
-    const num = parseFloat(amount) || 0;
-    if (num <= 0) return 0;
-    if (num <= 500) return 10;
-    if (num <= 1000) return 15;
-    if (num <= 2000) return 30;
-    if (num <= 3000) return 45;
-    if (num <= 4000) return 60;
-    if (num <= 5000) return 75;
-    return Math.ceil(num / 1000) * 15; // ₱15 per ₱1,000
-  }, [amount]);
+    return calculateGCashFee(parseFloat(amount) || 0, feeTiers);
+  }, [amount, feeTiers]);
 
   const activeFee = customFee !== null ? parseFloat(customFee) || 0 : calculatedFee;
   const numAmount = parseFloat(amount) || 0;
 
   // Live query for GCash logs
-  const allTxns = useLiveQuery(() => db.gcashTxns.reverse().sortBy('date'), []) || [];
+  const allTxns = useLiveQuery(
+    () => db.gcashTxns.where('tenantId').equals(tenantId).reverse().sortBy('date'),
+    [tenantId]
+  ) || [];
+  const enteredRefNorm = normalizeRef(refNo);
+  const duplicateRefTxn = useLiveQuery(
+    () => enteredRefNorm
+      ? db.gcashTxns.where('[tenantId+refNoNorm]').equals([tenantId, enteredRefNorm]).first()
+      : Promise.resolve(undefined),
+    [tenantId, enteredRefNorm]
+  );
+  const hasDuplicateRef = Boolean(duplicateRefTxn);
+  const resolutions = useLiveQuery(
+    () => db.gcashTxnResolutions.where('tenantId').equals(tenantId).toArray(),
+    [tenantId]
+  );
+  const todayStr = toLocalDateKey(new Date());
+  const currentMonthPrefix = todayStr.slice(0, 7);
+  const resolutionsByTxnId = useMemo(
+    () => new Map((resolutions || []).map((resolution) => [resolution.gcashTxnId, resolution])),
+    [resolutions]
+  );
+  const replacementTxnIdsResolvedToday = useMemo(
+    () => new Set((resolutions || [])
+      .filter((resolution) => resolution.resolution === 'Corrected' && toLocalDateKey(resolution.resolvedAt) === todayStr)
+      .map((resolution) => resolution.replacementTxnId)
+      .filter((id): id is string => Boolean(id))),
+    [resolutions, todayStr]
+  );
+  const todayTxns = allTxns.filter((t) => toLocalDateKey(t.date) === todayStr);
+  const visibleTxns = allTxns.filter((txn) => {
+    const resolution = resolutionsByTxnId.get(txn.id);
+    const resolvedToday = resolution ? toLocalDateKey(resolution.resolvedAt) === todayStr : false;
+    const unresolvedAndUnresolvedLocally = !resolution && isGCashTxnUnresolved(txn);
+    const isCurrentMonthEntry = toLocalDateKey(txn.date).slice(0, 7) === currentMonthPrefix;
+    const isCurrentMonthVoidAudit = isCurrentMonthEntry && resolution?.resolution === 'Voided';
+    return (isCurrentMonthEntry && !resolution) || unresolvedAndUnresolvedLocally || resolvedToday || isCurrentMonthVoidAudit || replacementTxnIdsResolvedToday.has(txn.id);
+  });
+  const countedTodayTxns = todayTxns.filter(
+    (t) => !isGCashTxnUnresolved(t) && !resolutionsByTxnId.has(t.id)
+  );
 
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const todayTxns = allTxns.filter((t) => t.date.slice(0, 10) === todayStr);
+  const currentMonthTxnCount = allTxns.filter(
+    (t) => toLocalDateKey(t.date).slice(0, 7) === currentMonthPrefix && !isGCashTxnUnresolved(t) && !resolutionsByTxnId.has(t.id)
+  ).length;
 
-  const currentMonthPrefix = new Date().toISOString().slice(0, 7);
-  const currentMonthTxnCount = allTxns.filter((t) => t.date.slice(0, 7) === currentMonthPrefix).length;
-
-  const todayCashIn = todayTxns.filter((t) => t.type === 'CashIn').reduce((s, t) => s + t.amount, 0);
-  const todayCashOut = todayTxns.filter((t) => t.type === 'CashOut').reduce((s, t) => s + t.amount, 0);
-  const todayFees = todayTxns.reduce((s, t) => s + t.fee, 0);
+  const todayCashIn = countedTodayTxns.filter((t) => t.type === 'CashIn').reduce((s, t) => s + t.amount, 0);
+  const todayCashOut = countedTodayTxns.filter((t) => t.type === 'CashOut').reduce((s, t) => s + t.amount, 0);
+  const todayFees = countedTodayTxns.reduce((s, t) => s + t.fee, 0);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -121,34 +160,165 @@ export const GCashPage: React.FC = () => {
       return;
     }
 
-    const id = crypto.randomUUID();
-    const now = new Date().toISOString();
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setIsSaving(true);
 
-    const record: GCashTxnRecord = {
-      id,
-      tenantId,
-      type: txnType,
-      amount: numAmount,
-      fee: activeFee,
-      refNo: refNo.trim() || `GC-${Date.now().toString().slice(-6)}`,
-      customerPhone: customerPhone.trim() || undefined,
-      date: now,
-      notes: notes.trim() || undefined
-    };
+    try {
+      const trimmedRef = refNo.trim();
+      // Auto-generated refs are UUID-based (collision-safe) and still go through the same check
+      const finalRef = trimmedRef || `GC-${crypto.randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase()}`;
+      const refNorm = normalizeRef(finalRef);
 
-    // 1. Direct local insert to Dexie
-    await db.gcashTxns.add(record);
+      const record: GCashTxnRecord = {
+        id: crypto.randomUUID(),
+        tenantId,
+        type: txnType,
+        amount: numAmount,
+        fee: activeFee,
+        refNo: finalRef,
+        refNoNorm: refNorm,
+        customerPhone: customerPhone.trim() || undefined,
+        date: new Date().toISOString(),
+        notes: notes.trim() || undefined
+      };
 
-    // 2. Enqueue for background batch sync
-    await enqueueSync('GCashTxn', 'Insert', record);
+      // Atomic lookup + insert + sync enqueue: concurrent submits cannot both pass the check
+      const inserted = await db.transaction('rw', db.gcashTxns, db.syncQueue, async () => {
+        const existing = await db.gcashTxns
+          .where('[tenantId+refNoNorm]')
+          .equals([tenantId, refNorm])
+          .first();
+        if (existing) return false;
+        await db.gcashTxns.add(record);
+        await addSyncRecord('GCashTxn', 'Insert', record);
+        return true;
+      });
 
-    // Reset form
-    setAmount('');
-    setCustomFee(null);
-    setRefNo('');
-    setCustomerPhone('');
-    setNotes('');
+      if (!inserted) {
+        alert(
+          language === 'tl'
+            ? `Ginamit na ang reference number na ${finalRef}. Hindi maaaring magtala ng doble.`
+            : `Reference number ${finalRef} has already been used. Duplicate entries are not allowed.`
+        );
+        return;
+      }
+
+      await kickSync();
+
+      // Reset form
+      setAmount('');
+      setCustomFee(null);
+      setRefNo('');
+      setCustomerPhone('');
+      setNotes('');
+    } finally {
+      savingRef.current = false;
+      setIsSaving(false);
+    }
   };
+
+  const handleCorrectReference = async (txn: GCashTxnRecord) => {
+    const correctedRef = resolutionRefDrafts[txn.id]?.trim() || '';
+    const correctedRefNorm = normalizeRef(correctedRef);
+    if (!correctedRefNorm || txn.tenantId !== tenantId || txn.syncStatus !== 'DuplicateRef') return;
+
+    setResolvingTxnId(txn.id);
+    try {
+      const replacement: GCashTxnRecord = {
+        ...txn,
+        id: crypto.randomUUID(),
+        // Preserve the original transaction date; resolvedAt separately records when the reference was corrected.
+        refNo: correctedRef,
+        refNoNorm: correctedRefNorm,
+        needsAttention: undefined,
+        syncStatus: undefined,
+        conflictReason: undefined
+      };
+
+      const resolved = await db.transaction(
+        'rw',
+        db.gcashTxns,
+        db.gcashTxnResolutions,
+        db.syncQueue,
+        async () => {
+          const current = await db.gcashTxns.get(txn.id);
+          if (!current || current.tenantId !== tenantId || current.syncStatus !== 'DuplicateRef') return 'unavailable';
+          if (await db.gcashTxnResolutions.get(txn.id)) return 'resolved';
+
+          const duplicate = await db.gcashTxns
+            .where('[tenantId+refNoNorm]')
+            .equals([tenantId, correctedRefNorm])
+            .first();
+          if (duplicate) return 'duplicate';
+
+          await db.gcashTxns.add(replacement);
+          await db.gcashTxnResolutions.add({
+            gcashTxnId: txn.id,
+            tenantId,
+            resolution: 'Corrected',
+            resolvedAt: new Date().toISOString(),
+            replacementTxnId: replacement.id,
+            correctedRefNo: correctedRef
+          });
+          await addSyncRecord('GCashTxn', 'Insert', replacement);
+          return 'success';
+        }
+      );
+
+      if (resolved === 'duplicate') {
+        alert(language === 'tl'
+          ? 'Nagamit na ang reference number na ito sa tindahang ito.'
+          : 'That reference number is already used by this tenant.');
+        return;
+      }
+      if (resolved !== 'success') {
+        alert(language === 'tl'
+          ? 'Hindi na maaaring ayusin ang transaksyong ito.'
+          : 'This transaction can no longer be resolved.');
+        return;
+      }
+
+      setResolutionRefDrafts((drafts) => ({ ...drafts, [txn.id]: '' }));
+      await kickSync();
+    } finally {
+      setResolvingTxnId(null);
+    }
+  };
+
+  const handleVoidTransaction = async (txn: GCashTxnRecord) => {
+    if (
+      txn.tenantId !== tenantId ||
+      txn.syncStatus !== 'DuplicateRef' ||
+      !window.confirm(language === 'tl'
+        ? 'Markahan itong transaksyon bilang void? Itatago ito sa totals, pero pananatilihin ang audit record.'
+        : 'Void this transaction? It will stay in the audit log and remain excluded from totals.')
+    ) return;
+
+    setResolvingTxnId(txn.id);
+    try {
+      const resolved = await db.transaction('rw', db.gcashTxns, db.gcashTxnResolutions, async () => {
+        const current = await db.gcashTxns.get(txn.id);
+        if (!current || current.tenantId !== tenantId || current.syncStatus !== 'DuplicateRef') return false;
+        if (await db.gcashTxnResolutions.get(txn.id)) return false;
+        await db.gcashTxnResolutions.add({
+          gcashTxnId: txn.id,
+          tenantId,
+          resolution: 'Voided',
+          resolvedAt: new Date().toISOString()
+        });
+        return true;
+      });
+      if (!resolved) {
+        alert(language === 'tl'
+          ? 'Hindi na maaaring ayusin ang transaksyong ito.'
+          : 'This transaction can no longer be resolved.');
+      }
+    } finally {
+      setResolvingTxnId(null);
+    }
+  };
+
 
   return (
     <div className={styles.container}>
@@ -157,7 +327,7 @@ export const GCashPage: React.FC = () => {
         <Text size={300} style={{ color: tokens.colorNeutralForeground3, display: 'block' }}>
           {t.gcash.subtitle}
           {tier === 'Libre' && (
-            <span> • {language === 'tl' ? 'Ngayong Buwan:' : 'This Month:'} {currentMonthTxnCount}/30 (Libre)</span>
+            <span> • {language === 'tl' ? 'Ngayong Buwan:' : 'This Month:'} <span data-testid="monthly-gcash-count">{currentMonthTxnCount}/30</span> ({t.gcash.freePlanLabel})</span>
           )}
         </Text>
       </div>
@@ -166,22 +336,22 @@ export const GCashPage: React.FC = () => {
       <div className={styles.summaryGrid}>
         <Card className={styles.summaryCard}>
           <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>{t.gcash.todayCashIn}</Text>
-          <Text size={400} weight="bold" style={{ color: tokens.colorPaletteBlueForeground2, display: 'block' }}>
-            ₱{todayCashIn.toFixed(2)}
+          <Text data-testid="today-cash-in-total" size={400} weight="bold" style={{ color: tokens.colorPaletteBlueForeground2, display: 'block' }}>
+            {formatPeso(todayCashIn)}
           </Text>
         </Card>
 
         <Card className={styles.summaryCard}>
           <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>{t.gcash.todayCashOut}</Text>
-          <Text size={400} weight="bold" style={{ color: tokens.colorPaletteGreenForeground1, display: 'block' }}>
-            ₱{todayCashOut.toFixed(2)}
+          <Text data-testid="today-cash-out-total" size={400} weight="bold" style={{ color: tokens.colorPaletteGreenForeground1, display: 'block' }}>
+            {formatPeso(todayCashOut)}
           </Text>
         </Card>
 
         <Card className={styles.summaryCard}>
           <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>{t.gcash.todayFees}</Text>
-          <Text size={400} weight="bold" style={{ color: tokens.colorBrandForeground1, display: 'block' }}>
-            ₱{todayFees.toFixed(2)}
+          <Text data-testid="today-gcash-fees-total" size={400} weight="bold" style={{ color: tokens.colorBrandForeground1, display: 'block' }}>
+            {formatPeso(todayFees)}
           </Text>
         </Card>
       </div>
@@ -203,6 +373,7 @@ export const GCashPage: React.FC = () => {
               <Text size={200} weight="semibold">{t.gcash.amountLabel}</Text>
               <Input
                 type="number"
+                aria-label={t.gcash.amountLabel}
                 style={{ width: '100%', marginTop: '4px' }}
                 value={amount}
                 onChange={(_, data) => {
@@ -222,6 +393,7 @@ export const GCashPage: React.FC = () => {
               </div>
               <Input
                 type="number"
+                aria-label={t.gcash.feeLabel}
                 style={{ width: '100%', marginTop: '4px' }}
                 value={activeFee.toString()}
                 onChange={(_, data) => setCustomFee(data.value)}
@@ -234,16 +406,30 @@ export const GCashPage: React.FC = () => {
             <div>
               <Text size={200} weight="semibold">{t.gcash.refNoLabel}</Text>
               <Input
+                aria-label={t.gcash.refNoLabel}
                 style={{ width: '100%', marginTop: '4px' }}
                 value={refNo}
                 onChange={(_, data) => setRefNo(data.value)}
                 placeholder={t.gcash.refNoPlaceholder}
+                aria-invalid={hasDuplicateRef}
+                aria-describedby={hasDuplicateRef ? 'gcash-duplicate-ref-warning' : undefined}
               />
+              {hasDuplicateRef && (
+                <Text
+                  id="gcash-duplicate-ref-warning"
+                  role="alert"
+                  size={200}
+                  style={{ color: tokens.colorPaletteRedForeground1, display: 'block', marginTop: '4px' }}
+                >
+                  {t.gcash.duplicateRefWarning} ({refNo.trim()})
+                </Text>
+              )}
             </div>
 
             <div>
               <Text size={200} weight="semibold">{t.gcash.phoneLabel}</Text>
               <Input
+                aria-label={t.gcash.phoneLabel}
                 style={{ width: '100%', marginTop: '4px' }}
                 value={customerPhone}
                 onChange={(_, data) => setCustomerPhone(data.value)}
@@ -255,6 +441,7 @@ export const GCashPage: React.FC = () => {
           <div style={{ marginTop: '12px' }}>
             <Text size={200} weight="semibold">{t.gcash.notesLabel}</Text>
             <Input
+              aria-label={t.gcash.notesLabel}
               style={{ width: '100%', marginTop: '4px' }}
               value={notes}
               onChange={(_, data) => setNotes(data.value)}
@@ -269,7 +456,7 @@ export const GCashPage: React.FC = () => {
                   {txnType === 'CashIn' ? t.gcash.totalFromCustomer : t.gcash.totalToCustomer}
                 </Text>
                 <Text size={500} weight="bold" style={{ color: tokens.colorBrandForeground1 }}>
-                  ₱{txnType === 'CashIn' ? (numAmount + activeFee).toFixed(2) : (numAmount - activeFee).toFixed(2)}
+                  {formatPeso(txnType === 'CashIn' ? numAmount + activeFee : numAmount - activeFee)}
                 </Text>
               </div>
             </div>
@@ -279,6 +466,7 @@ export const GCashPage: React.FC = () => {
             type="submit"
             appearance="primary"
             icon={<CheckmarkRegular />}
+            disabled={isSaving || hasDuplicateRef}
             style={{ width: '100%', marginTop: '16px' }}
           >
             {t.gcash.saveTransaction} ({txnType === 'CashIn' ? 'Cash-In' : 'Cash-Out'})
@@ -286,41 +474,130 @@ export const GCashPage: React.FC = () => {
         </form>
       </Card>
 
-      {/* Running Daily GCash Log */}
+      {/* Current-Month GCash Log */}
       <Card className={styles.card}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
           <HistoryRegular fontSize={20} />
-          <Text weight="bold" size={300}>{t.gcash.historyTitle} ({todayTxns.length})</Text>
+          <Text weight="bold" size={300}>{t.gcash.historyTitle} ({visibleTxns.length})</Text>
         </div>
         <Divider />
 
         <div style={{ marginTop: '8px' }}>
-          {todayTxns.length === 0 ? (
+          {visibleTxns.length === 0 ? (
             <Text size={200} style={{ color: tokens.colorNeutralForeground3, textAlign: 'center', display: 'block', padding: '16px' }}>
               {t.gcash.noTransactions}
             </Text>
           ) : (
-            todayTxns.map((txn) => {
+            visibleTxns.map((txn) => {
               const isCashIn = txn.type === 'CashIn';
+              const isToday = toLocalDateKey(txn.date) === todayStr;
+              const resolution = resolutionsByTxnId.get(txn.id);
+              const isCorrectionReplacement = replacementTxnIdsResolvedToday.has(txn.id);
+              const canResolve = !resolution && txn.tenantId === tenantId && txn.syncStatus === 'DuplicateRef';
               return (
-                <div key={txn.id} className={styles.logRow}>
+                <div
+                  key={txn.id}
+                  className={styles.logRow}
+                  data-testid={isCorrectionReplacement ? 'gcash-correction-replacement-row' : undefined}
+                >
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                       <Badge appearance="filled" color={isCashIn ? 'informative' : 'success'} size="small">
                         {isCashIn ? 'CASH-IN' : 'CASH-OUT'}
                       </Badge>
-                      <Text weight="semibold" size={300}>₱{txn.amount.toFixed(2)}</Text>
+                      {isGCashTxnUnresolved(txn) && !resolution && (
+                        <span data-testid="duplicate-ref-badge">
+                          <Badge appearance="filled" color="danger" size="small">
+                            {txn.syncStatus === 'Conflict'
+                              ? (language === 'tl' ? 'Salungatan sa Sync (Kailangan ng Pansin)' : 'Sync Conflict (Needs Attention)')
+                              : (language === 'tl' ? 'Dobleng Ref (Kailangan ng Pansin)' : 'Duplicate Ref (Needs Attention)')}
+                          </Badge>
+                        </span>
+                      )}
+                      {resolution?.resolution === 'Corrected' && (
+                        <Badge appearance="tint" color="success" size="small">
+                          {language === 'tl' ? `Naayos; bagong ref: ${resolution.correctedRefNo}` : `Corrected; new ref: ${resolution.correctedRefNo}`}
+                        </Badge>
+                      )}
+                      {resolution?.resolution === 'Voided' && (
+                        <Badge appearance="tint" color="warning" size="small">
+                          {language === 'tl' ? 'Voided (lokal)' : 'Voided locally'}
+                        </Badge>
+                      )}
+                      {isCorrectionReplacement && (
+                        <Badge
+                          data-testid="gcash-correction-replacement-badge"
+                          appearance="tint"
+                          color="brand"
+                          size="small"
+                        >
+                          {language === 'tl' ? 'Bagong ref na naayos ngayon' : 'Corrected replacement created today'}
+                        </Badge>
+                      )}
+                      <Text weight="semibold" size={300}>{formatPeso(txn.amount)}</Text>
                       <Text size={100} style={{ color: tokens.colorBrandForeground1 }}>
-                        (Fee: ₱{txn.fee.toFixed(2)})
+                        (Fee: {formatPeso(txn.fee)})
                       </Text>
                     </div>
                     <Text size={100} style={{ color: tokens.colorNeutralForeground3, marginTop: '2px', display: 'block' }}>
-                      Ref: {txn.refNo} {txn.customerPhone ? `• ${txn.customerPhone}` : ''} • {new Date(txn.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {!isToday && `${new Date(txn.date).toLocaleDateString()} • `}Ref: {txn.refNo} {txn.customerPhone ? `• ${txn.customerPhone}` : ''} • {new Date(txn.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </Text>
+                    {txn.notes && (
+                      <Text size={200} style={{ color: tokens.colorNeutralForeground2, marginTop: '4px', display: 'block' }}>
+                        {txn.notes}
+                      </Text>
+                    )}
+                    {txn.conflictReason && (
+                      <Text size={100} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
+                        ⚠️ {txn.conflictReason}
+                      </Text>
+                    )}
+                    {isGCashTxnUnresolved(txn) && !resolution && (
+                      <Text size={100} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
+                        {language === 'tl'
+                          ? 'Hindi naka-sync; hindi kasama sa totals o buwanang bilang.'
+                          : 'Not synced; excluded from totals and monthly count.'}
+                      </Text>
+                    )}
+                    {canResolve && (
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
+                        <Input
+                          aria-label={language === 'tl' ? `Bagong reference para sa ${txn.refNo}` : `Corrected reference for ${txn.refNo}`}
+                          value={resolutionRefDrafts[txn.id] ?? ''}
+                          onChange={(_, data) => setResolutionRefDrafts((drafts) => ({ ...drafts, [txn.id]: data.value }))}
+                          placeholder={language === 'tl' ? 'Tamang GCash reference' : 'Correct GCash reference'}
+                        />
+                        <Button
+                          appearance="primary"
+                          disabled={resolvingTxnId !== null || !resolutionRefDrafts[txn.id]?.trim()}
+                          onClick={() => void handleCorrectReference(txn)}
+                        >
+                          {language === 'tl' ? 'Ayusin at i-sync' : 'Correct & sync'}
+                        </Button>
+                        <Button
+                          appearance="secondary"
+                          disabled={resolvingTxnId !== null}
+                          onClick={() => void handleVoidTransaction(txn)}
+                        >
+                          {language === 'tl' ? 'I-void' : 'Void'}
+                        </Button>
+                        {!isToday && (
+                          <Text
+                            data-testid="gcash-correction-date-note"
+                            size={100}
+                            style={{ color: tokens.colorNeutralForeground3, alignSelf: 'center' }}
+                          >
+                            {language === 'tl'
+                              ? 'Pananatilihin ang orihinal na petsa; hindi madadagdag sa totals ngayong araw ang lumang transaksyon.'
+                              : "Keeps the original transaction date; older corrections aren't added to today's totals."}
+                          </Text>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <Text size={200} weight="bold">
-                    Net: ₱{(txn.amount + (isCashIn ? txn.fee : -txn.fee)).toFixed(2)}
+                    Net: {formatPeso(txn.amount + (isCashIn ? txn.fee : -txn.fee))}
                   </Text>
                 </div>
               );

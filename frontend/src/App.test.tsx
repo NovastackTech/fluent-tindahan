@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { App, PRELOAD_ERROR_STORAGE_KEY } from './App';
+import { App } from './App';
 import { usePwaStore } from './state/pwaStore';
 import { useCartStore } from './state/cartStore';
 import { useAuthStore } from './state/authStore';
@@ -41,9 +41,9 @@ describe('App', () => {
     });
   });
 
-  it('keeps in-app navigation and does not reload page when changing tabs even if reloadDeferred is true', async () => {
+  it('keeps in-app navigation and does not reload while an update is available', async () => {
     useCartStore.getState().addItem({ id: 'p1', name: 'Open Sale Item', price: 25 });
-    usePwaStore.getState().setReloadDeferred(true);
+    usePwaStore.getState().setNeedRefresh(true);
 
     render(<App />);
 
@@ -59,7 +59,7 @@ describe('App', () => {
   });
 
   describe('vite:preloadError handling', () => {
-    it('prevents default and reloads when cart is empty and not in cooldown', () => {
+    it('prevents default and presents an update prompt without reloading', () => {
       render(<App />);
 
       const event = new Event('vite:preloadError', { cancelable: true });
@@ -68,22 +68,19 @@ describe('App', () => {
       window.dispatchEvent(event);
 
       expect(preventDefaultSpy).toHaveBeenCalled();
-      expect(reloadMock).toHaveBeenCalledTimes(1);
-      expect(sessionStorage.getItem(PRELOAD_ERROR_STORAGE_KEY)).toBeTruthy();
+      expect(reloadMock).not.toHaveBeenCalled();
+      expect(usePwaStore.getState().needRefresh).toBe(true);
     });
 
-    it('prevents infinite reload loops when error occurs within cooldown window', () => {
-      // Set timestamp within cooldown period
-      const recentTs = Date.now() - 5000;
-      sessionStorage.setItem(PRELOAD_ERROR_STORAGE_KEY, String(recentTs));
-
+    it('does not reload after repeated chunk preload errors', () => {
       render(<App />);
 
       const event = new Event('vite:preloadError', { cancelable: true });
       window.dispatchEvent(event);
+      window.dispatchEvent(new Event('vite:preloadError', { cancelable: true }));
 
-      // Must not reload because cooldown is active
       expect(reloadMock).not.toHaveBeenCalled();
+      expect(usePwaStore.getState().needRefresh).toBe(true);
     });
 
     it('defers reload and does not immediately reload if cart has active items', () => {
@@ -94,10 +91,8 @@ describe('App', () => {
       const event = new Event('vite:preloadError', { cancelable: true });
       window.dispatchEvent(event);
 
-      // Must NOT reload immediately because sale is open
       expect(reloadMock).not.toHaveBeenCalled();
-      // Must have deferred the reload
-      expect(usePwaStore.getState().reloadDeferred).toBe(true);
+      expect(usePwaStore.getState().needRefresh).toBe(true);
     });
   });
 });

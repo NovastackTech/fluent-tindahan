@@ -20,6 +20,7 @@ import {
 } from '@fluentui/react-icons';
 import { parseProductsCsv, importProductsToDexieAndSync, type ParsedProductPreview } from '../services/csvImporter';
 import { useTranslation } from '../state/languageStore';
+import { formatPeso } from '../utils/currency';
 import { useSubscriptionStore } from '../state/subscriptionStore';
 
 const useStyles = makeStyles({
@@ -274,8 +275,8 @@ export const ImportPage: React.FC = () => {
                     <td className={styles.td}>
                       <strong>{item.name || t.importPage.unnamed}</strong>
                     </td>
-                    <td className={styles.td}>₱{item.price.toFixed(2)}</td>
-                    <td className={styles.td}>₱{item.cost.toFixed(2)}</td>
+                    <td className={styles.td}>{formatPeso(item.price)}</td>
+                    <td className={styles.td}>{formatPeso(item.cost)}</td>
                     <td className={styles.td}>{item.barcode || '-'}</td>
                     <td className={styles.td}>{item.category}</td>
                     <td className={styles.td}>{item.stockQty}</td>

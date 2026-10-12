@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { FluentProvider } from '@fluentui/react-components';
 import { UtangPage } from './UtangPage';
@@ -54,10 +54,8 @@ describe('UtangPage', () => {
 
     expect(screen.getByRole('dialog')).toBeInTheDocument();
 
-    const inputs = screen.getAllByRole('textbox');
-    // inputs[0] is search in main page, inputs[1] is Name, inputs[2] is Phone
-    const nameInput = inputs[1];
-    const phoneInput = inputs[2];
+    const nameInput = screen.getByRole('textbox', { name: /Pangalan ng Suki|Customer Name/i });
+    const phoneInput = screen.getByRole('textbox', { name: /Cellphone Number|Mobile Number/i });
     fireEvent.change(nameInput, { target: { value: 'Mang Kanor' } });
     fireEvent.change(phoneInput, { target: { value: '09189998888' } });
 
@@ -74,6 +72,72 @@ describe('UtangPage', () => {
     });
   });
 
+  it('shows inline validation when saving a customer with a blank name', async () => {
+    renderUtang();
+
+    fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Bagong Suki|Add New Customer/i }));
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Suki|Save Customer/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Pakiusap ilagay ang pangalan ng suki|Please enter customer name/i);
+    expect(await db.customers.toArray()).toHaveLength(0);
+    expect(await db.syncQueue.toArray()).toHaveLength(0);
+
+    fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Suki|Customer Name/i }), { target: { value: 'QA-TEST Name' } });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('rejects a negative opening utang balance without writing customer, ledger, or sync data', async () => {
+    const alertMock = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    renderUtang();
+
+    fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Bagong Suki|Add New Customer/i }));
+
+    fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Suki|Customer Name/i }), { target: { value: 'QA-TEST Neg' } });
+    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '-50' } });
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Suki|Save Customer/i }));
+
+    await waitFor(() => {
+      expect(alertMock).toHaveBeenCalledWith(expect.stringMatching(/Hindi maaaring negatibo|cannot be negative/i));
+    });
+    expect(await db.customers.toArray()).toHaveLength(0);
+    expect(await db.utangLedger.toArray()).toHaveLength(0);
+    expect(await db.syncQueue.toArray()).toHaveLength(0);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    alertMock.mockRestore();
+  });
+
+  it('rejects a malformed customer phone without writing customer or sync data', async () => {
+    const alertMock = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    renderUtang();
+
+    fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Bagong Suki|Add New Customer/i }));
+    fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Suki|Customer Name/i }), { target: { value: 'QA-TEST Phone' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /Cellphone Number|Mobile Number/i }), { target: { value: 'abc123' } });
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Suki|Save Customer/i }));
+
+    await waitFor(() => {
+      expect(alertMock).toHaveBeenCalledWith(expect.stringMatching(/wastong Philippine mobile|valid Philippine mobile/i));
+    });
+    expect(await db.customers.toArray()).toHaveLength(0);
+    expect(await db.syncQueue.toArray()).toHaveLength(0);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    alertMock.mockRestore();
+  });
+
+  it('normalizes international Philippine mobile input when creating a customer', async () => {
+    renderUtang();
+    fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Bagong Suki|Add New Customer/i }));
+    fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Suki|Customer Name/i }), { target: { value: 'QA-TEST Phone Valid' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /Cellphone Number|Mobile Number/i }), { target: { value: '+63 917-123-4567' } });
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Suki|Save Customer/i }));
+
+    await waitFor(async () => {
+      const saved = await db.customers.where('name').equals('QA-TEST Phone Valid').first();
+      expect(saved?.phone).toBe('09171234567');
+    });
+  });
+
   it('opens customer details and records payment', async () => {
     await db.customers.add({
       id: 'cust-pay',
@@ -81,6 +145,14 @@ describe('UtangPage', () => {
       name: 'Aling Marites',
       phone: '09170001111',
       totalUtangBalance: 500,
+      updatedAt: new Date().toISOString()
+    });
+    await db.customers.add({
+      id: 'cust-pay-next',
+      tenantId: 'tenant-1',
+      name: 'Mang Jose',
+      phone: '09170003333',
+      totalUtangBalance: 250,
       updatedAt: new Date().toISOString()
     });
 
@@ -112,6 +184,33 @@ describe('UtangPage', () => {
       const updated = await db.customers.get('cust-pay');
       expect(updated?.totalUtangBalance).toBe(300);
     });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText('Mang Jose'));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('shows validation when payment amount is zero', async () => {
+    await db.customers.add({
+      id: 'cust-zero-payment',
+      tenantId: 'tenant-1',
+      name: 'Aling Cora',
+      phone: '09170002222',
+      totalUtangBalance: 500,
+      updatedAt: new Date().toISOString()
+    });
+
+    renderUtang();
+    fireEvent.click(await screen.findByText('Aling Cora'));
+    fireEvent.click(await screen.findByRole('button', { name: /Magbayad|Pay/i }));
+    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '0' } });
+    fireEvent.click(screen.getByRole('button', { name: /Kumpirmahin ang Bayad|Confirm Payment/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/higit sa ₱0/i);
+    expect(await db.customers.get('cust-zero-payment')).toMatchObject({ totalUtangBalance: 500 });
+    expect(await db.utangLedger.where('customerId').equals('cust-zero-payment').toArray()).toHaveLength(0);
   });
 
   it('adds additional credit to customer', async () => {
@@ -193,7 +292,98 @@ describe('UtangPage', () => {
       expect(screen.getByText(/\+[\s\u00A0]*UTANG/i)).toBeInTheDocument();
       expect(screen.getByText(/-[\s\u00A0]*BAYAD/i)).toBeInTheDocument();
       expect(screen.getByText('+₱150.00')).toBeInTheDocument();
-      expect(screen.getByText('-₱15031.00')).toBeInTheDocument();
+      expect(screen.getByText('-₱15,031.00')).toBeInTheDocument();
     });
+  });
+
+  it('rejects recording payment that exceeds customer balance (overpayment check)', async () => {
+    const alertMock = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+    await db.customers.add({
+      id: 'cust-overpay',
+      tenantId: 'tenant-1',
+      name: 'Tatay Berting',
+      phone: '09174445555',
+      totalUtangBalance: 100,
+      updatedAt: new Date().toISOString()
+    });
+
+    renderUtang();
+
+    await waitFor(() => {
+      expect(screen.getByText('Tatay Berting')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Tatay Berting'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Magbayad|Pay/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Magbayad|Pay/i }));
+
+    const spinInput = screen.getByRole('spinbutton');
+    fireEvent.change(spinInput, { target: { value: '150' } });
+
+    const confirmBtn = screen.getByRole('button', { name: /Kumpirmahin ang Bayad|Confirm Payment/i });
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(alertMock).toHaveBeenCalledWith(expect.stringMatching(/Hindi puwedeng lumampas ang bayad|cannot exceed/i));
+    });
+
+    // Verify balance was untouched and no ledger row was added
+    const cust = await db.customers.get('cust-overpay');
+    expect(cust?.totalUtangBalance).toBe(100);
+
+    const ledger = await db.utangLedger.where('customerId').equals('cust-overpay').toArray();
+    expect(ledger).toHaveLength(0);
+
+    alertMock.mockRestore();
+  });
+
+  it('rejects recording payment when customer has ₱0 balance', async () => {
+    const alertMock = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+    await db.customers.add({
+      id: 'cust-zero',
+      tenantId: 'tenant-1',
+      name: 'Ate Liza',
+      phone: '09175556666',
+      totalUtangBalance: 0,
+      updatedAt: new Date().toISOString()
+    });
+
+    renderUtang();
+
+    await waitFor(() => {
+      expect(screen.getByText('Ate Liza')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Ate Liza'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Magbayad|Pay/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Magbayad|Pay/i }));
+
+    const spinInput = screen.getByRole('spinbutton');
+    fireEvent.change(spinInput, { target: { value: '50' } });
+
+    const confirmBtn = screen.getByRole('button', { name: /Kumpirmahin ang Bayad|Confirm Payment/i });
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(alertMock).toHaveBeenCalledWith(expect.stringMatching(/Hindi puwedeng lumampas ang bayad|cannot exceed/i));
+    });
+
+    const cust = await db.customers.get('cust-zero');
+    expect(cust?.totalUtangBalance).toBe(0);
+
+    const ledger = await db.utangLedger.where('customerId').equals('cust-zero').toArray();
+    expect(ledger).toHaveLength(0);
+
+    alertMock.mockRestore();
   });
 });

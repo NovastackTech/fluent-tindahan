@@ -109,6 +109,7 @@ export interface Translations {
     customerAdded: string;
     customerNameLabel: string;
     customerNamePlaceholder: string;
+    customerNameRequired: string;
     phoneLabel: string;
     initialDebtLabel: string;
     saveCustomer: string;
@@ -123,6 +124,7 @@ export interface Translations {
     noTransactions: string;
     recordPaymentTitle: string;
     paymentAmountLabel: string;
+    paymentAmountInvalid: string;
     payAll: string;
     paymentNotesLabel: string;
     paymentNotesPlaceholder: string;
@@ -149,6 +151,7 @@ export interface Translations {
     todayFees: string;
     transactionSuccess: string;
     recentTransactions: string;
+    freePlanLabel: string;
     noTransactions: string;
     amountLabel: string;
     feeLabel: string;
@@ -163,6 +166,7 @@ export interface Translations {
     saveTransaction: string;
     historyTitle: string;
     invalidAmountAlert: string;
+    duplicateRefWarning: string;
   };
   dashboard: {
     title: string;
@@ -336,6 +340,10 @@ export interface Translations {
     printerPaperWidth: string;
     printerTestBtn: string;
     printerTestSuccess: string;
+    gcashFeeSection: string;
+    gcashFeeDesc: string;
+    gcashFeeRange: string;
+    gcashFixedFee: string;
   };
   receipt: {
     watermark: string;
@@ -388,7 +396,6 @@ export interface Translations {
     updateBtn: string;
     updateWaitMsg: string;
     updateOtherTabsWaitMsg: string;
-    updateDeferredMsg: string;
     pwaSection: string;
     pwaDesc: string;
     appStatus: string;
@@ -536,6 +543,7 @@ export const translations: Record<Language, Translations> = {
       customerAdded: 'Matagumpay na naidagdag ang suki!',
       customerNameLabel: 'Pangalan ng Suki:*',
       customerNamePlaceholder: 'Hal. Aling Maria',
+      customerNameRequired: 'Pakiusap ilagay ang pangalan ng suki.',
       phoneLabel: 'Cellphone Number:',
       initialDebtLabel: 'Simulang Utang (Initial Balance - opsyonal):',
       saveCustomer: 'I-save ang Suki',
@@ -550,6 +558,7 @@ export const translations: Record<Language, Translations> = {
       noTransactions: 'Walang tala ng transaksyon.',
       recordPaymentTitle: 'Magtala ng Bayad ni',
       paymentAmountLabel: 'Halaga ng Bayad (₱):',
+      paymentAmountInvalid: 'Maglagay ng halagang higit sa ₱0.',
       payAll: 'Bayaran Lahat',
       paymentNotesLabel: 'Tala / Notes (opsyonal):',
       paymentNotesPlaceholder: 'Hal. Bayad sa GCash o cash',
@@ -576,7 +585,8 @@ export const translations: Record<Language, Translations> = {
       todayFees: 'Kita sa Service Fees',
       transactionSuccess: 'GCash transaksyon matagumpay na naitala!',
       recentTransactions: 'Kamakailang mga Transaksyon',
-      noTransactions: 'Wala pang naitalang transaksyon ngayong araw.',
+      freePlanLabel: 'Libre',
+      noTransactions: 'Wala pang naitalang transaksyon ngayong buwan.',
       amountLabel: 'Halaga (Amount ₱):*',
       feeLabel: 'Kaltas / Singil na Fee (₱):',
       feeAuto: 'Awtomatiko',
@@ -588,8 +598,9 @@ export const translations: Record<Language, Translations> = {
       totalFromCustomer: 'Kabuuang Kukunin sa Customer:',
       totalToCustomer: 'Kabuuang Ibibigay sa Customer:',
       saveTransaction: 'I-save ang Transaksyon',
-      historyTitle: 'Kasaysayan ng GCash Ngayong Araw',
-      invalidAmountAlert: 'Maglagay ng wastong halaga.'
+      historyTitle: 'Kasaysayan ng GCash Ngayong Buwan',
+      invalidAmountAlert: 'Maglagay ng wastong halaga.',
+      duplicateRefWarning: 'Ginamit na ang reference number. Hindi maaaring magtala ng doble.'
     },
     dashboard: {
       title: 'Pangkalahatang Dashboard ng Tindahan',
@@ -762,7 +773,11 @@ export const translations: Record<Language, Translations> = {
       printerDesc: 'I-configure ang sukat ng papel ng thermal receipt printer (58mm o 80mm) at subukan ang pag-print.',
       printerPaperWidth: 'Lapad ng Papel (Paper Width)',
       printerTestBtn: 'Subukang Mag-Print (Test Print)',
-      printerTestSuccess: 'Naipadala ang test receipt sa printer!'
+      printerTestSuccess: 'Naipadala ang test receipt sa printer!',
+      gcashFeeSection: 'Mga Bayad sa GCash',
+      gcashFeeDesc: 'Itakda ang nakapirming singil ayon sa halaga ng transaksyon. Awtomatikong sine-save sa device na ito.',
+      gcashFeeRange: 'Halaga ng Transaksyon',
+      gcashFixedFee: 'Nakapirming Bayad'
     },
     receipt: {
       watermark: 'HINDI OPISYAL NA RESIBO\nPARA SA PAGKILALA LAMANG',
@@ -815,7 +830,6 @@ export const translations: Record<Language, Translations> = {
       updateBtn: 'I-reload para Mag-update',
       updateWaitMsg: 'Pakisara muna ang benta bago i-update.',
       updateOtherTabsWaitMsg: 'May bukas na benta sa isa pang tab. Pakitapos o pakisara muna bago mag-update.',
-      updateDeferredMsg: 'Nakahanda na ang update. Awtomatikong magre-reload ang app pagkatapos ng bentang ito.',
       pwaSection: 'PWA (Progressive Web App)',
       pwaDesc: 'I-install ang app sa iyong Android, iPhone, o computer para sa buong offline experience.',
       appStatus: 'Katayuan ng App:',
@@ -961,6 +975,7 @@ export const translations: Record<Language, Translations> = {
       customerAdded: 'Customer successfully added!',
       customerNameLabel: 'Customer Name:*',
       customerNamePlaceholder: 'e.g. Maria Santos',
+      customerNameRequired: 'Please enter customer name.',
       phoneLabel: 'Mobile Number:',
       initialDebtLabel: 'Initial Credit Balance (optional):',
       saveCustomer: 'Save Customer',
@@ -975,6 +990,7 @@ export const translations: Record<Language, Translations> = {
       noTransactions: 'No transaction records found.',
       recordPaymentTitle: 'Record Payment for',
       paymentAmountLabel: 'Payment Amount (₱):',
+      paymentAmountInvalid: 'Enter a payment amount greater than ₱0.',
       payAll: 'Pay Full Balance',
       paymentNotesLabel: 'Notes (optional):',
       paymentNotesPlaceholder: 'e.g. Paid in cash or GCash',
@@ -1001,7 +1017,8 @@ export const translations: Record<Language, Translations> = {
       todayFees: 'Service Fees Earned',
       transactionSuccess: 'GCash transaction recorded successfully!',
       recentTransactions: 'Recent Transactions',
-      noTransactions: 'No transactions recorded today yet.',
+      freePlanLabel: 'Libre plan',
+      noTransactions: 'No transactions recorded this month yet.',
       amountLabel: 'Amount (₱):*',
       feeLabel: 'Service Fee (₱):',
       feeAuto: 'Automatic',
@@ -1013,8 +1030,9 @@ export const translations: Record<Language, Translations> = {
       totalFromCustomer: 'Total to Collect from Customer:',
       totalToCustomer: 'Total to Disburse to Customer:',
       saveTransaction: 'Save Transaction',
-      historyTitle: "Today's GCash History",
-      invalidAmountAlert: 'Please enter a valid amount.'
+      historyTitle: "This Month's GCash History",
+      invalidAmountAlert: 'Please enter a valid amount.',
+      duplicateRefWarning: 'This reference number has already been used. Duplicate entries are not allowed.'
     },
     dashboard: {
       title: 'Store Performance Dashboard',
@@ -1187,7 +1205,11 @@ export const translations: Record<Language, Translations> = {
       printerDesc: 'Configure thermal receipt printer paper width (58mm or 80mm) and test printer device.',
       printerPaperWidth: 'Paper Width',
       printerTestBtn: 'Print Test Receipt',
-      printerTestSuccess: 'Test receipt sent to printer!'
+      printerTestSuccess: 'Test receipt sent to printer!',
+      gcashFeeSection: 'GCash Transaction Fees',
+      gcashFeeDesc: 'Set the fixed fee for each transaction amount bracket. Fees save automatically on this device.',
+      gcashFeeRange: 'Transaction Amount',
+      gcashFixedFee: 'Fixed Fee'
     },
     receipt: {
       watermark: 'NOT AN OFFICIAL RECEIPT\nFOR ACKNOWLEDGMENT ONLY',
@@ -1240,7 +1262,6 @@ export const translations: Record<Language, Translations> = {
       updateBtn: 'Reload & Update',
       updateWaitMsg: 'Please complete or clear the cart before updating.',
       updateOtherTabsWaitMsg: 'Another open till tab has an active transaction. Complete or clear it before updating.',
-      updateDeferredMsg: 'Update ready. The app will reload automatically once the current transaction is completed.',
       pwaSection: 'Progressive Web App (PWA)',
       pwaDesc: 'Install the app on your Android phone, iPhone, or PC for a native, offline-ready experience.',
       appStatus: 'App Environment:',

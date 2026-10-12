@@ -48,6 +48,47 @@ public class CustomerHandlerTests
         saved!.Name.Should().Be("Nanay Belen");
     }
 
+    [Theory]
+    [InlineData("abc123")]
+    [InlineData("12345678901")]
+    public async Task CreateCustomer_InvalidPhone_RejectsWithoutPersisting(string phone)
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var handler = new CreateCustomerCommandHandler(context, userMock.Object);
+
+        var act = () => handler.Handle(new CreateCustomerCommand("QA Customer", phone), CancellationToken.None);
+
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*valid Philippine mobile number*");
+        (await context.Customers.CountAsync()).Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData("09171239999", "09171239999")]
+    [InlineData("+63 917-123-9999", "09171239999")]
+    [InlineData("639171239999", "09171239999")]
+    [InlineData("9171239999", "09171239999")]
+    public async Task CreateCustomer_ValidPhone_StoresCanonicalLocalFormat(string phone, string expectedPhone)
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var handler = new CreateCustomerCommandHandler(context, userMock.Object);
+
+        var result = await handler.Handle(new CreateCustomerCommand("QA Customer", phone), CancellationToken.None);
+
+        result.Phone.Should().Be(expectedPhone);
+    }
+
+    [Fact]
+    public async Task CreateCustomer_BlankPhone_IsAllowed()
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var handler = new CreateCustomerCommandHandler(context, userMock.Object);
+
+        var result = await handler.Handle(new CreateCustomerCommand("Customer without phone", " "), CancellationToken.None);
+
+        result.Phone.Should().BeEmpty();
+    }
+
     [Fact]
     public async Task GetCustomers_ReturnsCustomersOrderedByName()
     {

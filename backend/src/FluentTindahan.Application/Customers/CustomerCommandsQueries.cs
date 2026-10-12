@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using FluentTindahan.Application.Common.Interfaces;
+using FluentTindahan.Domain.Common;
 using FluentTindahan.Domain.Entities;
 using FluentTindahan.Domain.Interfaces;
 
@@ -63,12 +64,17 @@ public class CreateCustomerCommandHandler : IRequestHandler<CreateCustomerComman
             throw new UnauthorizedAccessException("Tenant is not authenticated or resolved.");
         }
 
+        if (!PhilippineMobileNumber.TryNormalize(request.Phone, out var phone))
+        {
+            throw new ArgumentException("Enter a valid Philippine mobile number.", nameof(request.Phone));
+        }
+
         var customer = new Customer
         {
             Id = Guid.NewGuid(),
             TenantId = tenantId,
             Name = request.Name,
-            Phone = request.Phone,
+            Phone = phone,
             TotalUtangBalance = 0m,
             UpdatedAt = DateTimeOffset.UtcNow
         };

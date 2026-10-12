@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { StrictMode } from 'react';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { FluentProvider } from '@fluentui/react-components';
 import { SubscriptionModal } from './SubscriptionModal';
 import { sariSariLightTheme } from '../theme/theme';
-import { useSubscriptionStore } from '../state/subscriptionStore';
+import { SUBSCRIPTION_REFRESH_ERROR, useSubscriptionStore } from '../state/subscriptionStore';
 import { useAuthStore } from '../state/authStore';
 import { useLanguageStore } from '../state/languageStore';
 import { db } from '../db/db';
@@ -31,7 +32,9 @@ describe('SubscriptionModal', () => {
   const renderModal = () => {
     return render(
       <FluentProvider theme={sariSariLightTheme}>
-        <SubscriptionModal />
+        <StrictMode>
+          <SubscriptionModal />
+        </StrictMode>
       </FluentProvider>
     );
   };
@@ -51,20 +54,46 @@ describe('SubscriptionModal', () => {
     expect(screen.getByText('Negosyo Plus')).toBeInTheDocument();
   });
 
+  it('does not emit Keyborg disposal warnings under StrictMode', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    useSubscriptionStore.setState({ isUpgradeModalOpen: true });
+
+    const view = renderModal();
+    view.unmount();
+
+    const warnings = [...consoleError.mock.calls, ...consoleWarn.mock.calls].flat().join(' ');
+    consoleError.mockRestore();
+    consoleWarn.mockRestore();
+
+    expect(warnings).not.toMatch(/Keyborg instance .* disposed incorrectly|mergeClasses\(\):.*multiple identifiers/i);
+  });
+
   it('toggles pricing between Monthly and Sachet Weekly', () => {
     useSubscriptionStore.setState({ isUpgradeModalOpen: true });
     renderModal();
 
-    // Default is Monthly: ₱129 and ₱349
-    expect(screen.getByText('₱129')).toBeInTheDocument();
-    expect(screen.getByText('₱349')).toBeInTheDocument();
+    // Default is Monthly: ₱129.00 and ₱349.00
+    expect(screen.getByText('₱129.00')).toBeInTheDocument();
+    expect(screen.getByText('₱349.00')).toBeInTheDocument();
 
     // Switch to Weekly Sachet
     const weeklyBtn = screen.getByRole('button', { name: /Lingguhan|Weekly/i });
     fireEvent.click(weeklyBtn);
 
-    expect(screen.getByText('₱35')).toBeInTheDocument();
-    expect(screen.getByText('₱89')).toBeInTheDocument();
+    expect(screen.getByText('₱35.00')).toBeInTheDocument();
+    expect(screen.getByText('₱89.00')).toBeInTheDocument();
+  });
+
+  it('keeps plan prices visible and offers retry when subscription refresh fails', () => {
+    useSubscriptionStore.setState({ isUpgradeModalOpen: true, error: SUBSCRIPTION_REFRESH_ERROR });
+    renderModal();
+
+    expect(screen.getByText('₱129.00')).toBeInTheDocument();
+    expect(screen.getByText('₱349.00')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Subukan muli|Retry/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Mag-upgrade sa Pro|Upgrade to Pro/i })).toBeEnabled();
+    expect(screen.queryByText(/Request failed with status code 500/i)).not.toBeInTheDocument();
   });
 
   it('closes modal when close button is clicked', () => {

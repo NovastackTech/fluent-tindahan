@@ -98,6 +98,13 @@ namespace FluentTindahan.Infrastructure.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<string>("RefNoNorm")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasDefaultValue("");
+
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");
 
@@ -113,6 +120,10 @@ namespace FluentTindahan.Infrastructure.Persistence.Migrations
                     b.HasIndex("TenantId", "Date");
 
                     b.HasIndex("TenantId", "RefNo");
+
+                    b.HasIndex("TenantId", "RefNoNorm")
+                        .IsUnique()
+                        .HasFilter("\"RefNoNorm\" <> ''");
 
                     b.ToTable("GCashTransactions", (string)null);
                 });
@@ -508,8 +519,7 @@ namespace FluentTindahan.Infrastructure.Persistence.Migrations
                     b.HasOne("FluentTindahan.Domain.Entities.Product", "Product")
                         .WithMany()
                         .HasForeignKey("ProductId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("FluentTindahan.Domain.Entities.Sale", "Sale")
                         .WithMany("Items")
@@ -546,8 +556,7 @@ namespace FluentTindahan.Infrastructure.Persistence.Migrations
                     b.HasOne("FluentTindahan.Domain.Entities.Customer", "Customer")
                         .WithMany("UtangLedgers")
                         .HasForeignKey("CustomerId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Cascade);
 
                     b.HasOne("FluentTindahan.Domain.Entities.Sale", "RefSale")
                         .WithMany()

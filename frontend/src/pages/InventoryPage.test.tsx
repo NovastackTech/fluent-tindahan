@@ -99,12 +99,9 @@ describe('InventoryPage', () => {
     fireEvent.change(categoryInput, { target: { value: 'Dairy' } });
     fireEvent.change(barcodeInput, { target: { value: '4800019998887' } });
 
-    // The inputs for cost, price, stock
-    const numberInputs = screen.getAllByRole('spinbutton');
-    // First spinbutton is Cost, second is Price, third is Stock Qty
-    fireEvent.change(numberInputs[0], { target: { value: '12' } });
-    fireEvent.change(numberInputs[1], { target: { value: '15' } });
-    fireEvent.change(numberInputs[2], { target: { value: '50' } });
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Puhunan|Cost Price/i }), { target: { value: '12' } });
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Presyo ng Tinda|Retail Price/i }), { target: { value: '15' } });
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Kasalukuyang Stock|Current Stock Qty/i }), { target: { value: '50' } });
 
     const saveBtn = screen.getByRole('button', { name: /I-save|Save/i });
     fireEvent.click(saveBtn);

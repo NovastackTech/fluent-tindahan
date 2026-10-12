@@ -39,19 +39,9 @@ graph TD
 
 ---
 
-## 2. Standard Convenience Fee Schedule
+## 2. Configurable Convenience Fees
 
-Stores set convenience fees based on transaction tiers. Fluent Tindahan auto-calculates the recommended fee based on standard neighborhood practices:
-
-| Amount Bracket | Standard Neighborhood Fee | Alternative % Model |
-| :--- | :--- | :--- |
-| ₱1 — ₱500 | **₱10.00** | 2% (min ₱10) |
-| ₱501 — ₱1,000 | **₱15.00 — ₱20.00** | 2% |
-| ₱1,001 — ₱2,000 | **₱30.00 — ₱40.00** | 2% |
-| ₱2,001 — ₱5,000 | **₱50.00 — ₱80.00** | 1.5% — 2% |
-| > ₱5,000 | **₱100.00+** | 1.5% — 2% |
-
-Store owners can override the automated fee directly on the screen (`GCashPage.tsx`).
+GCash fees use fixed amounts by transaction bracket. Defaults are ₱5 for ₱1-₱500, ₱10 for ₱501-₱1,000, ₱30 for ₱1,001-₱2,000, ₱45 for ₱2,001-₱3,000, ₱60 for ₱3,001-₱4,000, ₱75 for ₱4,001-₱5,000, and ₱90 above ₱5,000. Store owners can configure each bracket in Settings; the values are saved locally per tenant. They can also override the calculated fee for an individual transaction on the GCash screen (`GCashPage.tsx`).
 
 ---
 
@@ -61,6 +51,10 @@ Fraud and disputes frequently occur when customers claim to have sent funds that
 - The `refNo` field enforces entering GCash's SMS/App reference code (e.g. `901234567890`).
 - Prevents duplicate entry of identical reference numbers within the store tenant.
 - Facilitates immediate search when a customer returns regarding a disputed transaction.
+
+### Duplicate references reported during sync
+
+When the server rejects a GCash reference as a duplicate, the transaction remains on the originating device and is marked for attention; it is not uploaded. These rows remain visible in the GCash log but are excluded from local volume, fee, and monthly transaction-count totals. A cashier can enter a corrected reference and enqueue a replacement transaction, or void the rejected entry. Both actions preserve the original transaction in the local audit log and record a separate local resolution; correction creates a new transaction ID and sync insert, while voiding does not enqueue the row. The replacement retains the original transaction date for accurate historical totals; `resolvedAt` records when it was corrected, and correcting an older row does not add its amount or fee to today's totals. Resolutions are device-local and are only available for confirmed `DuplicateRef` responses, since other conflict states may have an uncertain server outcome.
 
 ---
 

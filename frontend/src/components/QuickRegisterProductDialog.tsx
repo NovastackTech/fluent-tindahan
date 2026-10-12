@@ -25,6 +25,7 @@ import { enqueueSync } from '../sync/syncEngine';
 import { useAuthStore } from '../state/authStore';
 import { useTranslation } from '../state/languageStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
+import { formatPeso } from '../utils/currency';
 
 interface QuickRegisterProductDialogProps {
   isOpen: boolean;
@@ -257,6 +258,7 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
                   {t.barcode.barcodeLabel}
                 </Text>
                 <Input
+                  aria-label={t.barcode.barcodeLabel}
                   style={{ width: '100%', fontFamily: 'monospace' }}
                   value={unrecognizedBarcode}
                   readOnly
@@ -270,6 +272,7 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
                   {t.barcode.productNameLabel}
                 </Text>
                 <Input
+                  aria-label={t.barcode.productNameLabel}
                   style={{ width: '100%' }}
                   placeholder="e.g. San Miguel Pale Pilsen 330ml"
                   value={name}
@@ -284,6 +287,7 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
                   {t.barcode.categoryLabel}
                 </Text>
                 <Input
+                  aria-label={t.barcode.categoryLabel}
                   style={{ width: '100%' }}
                   placeholder="e.g. Beverages"
                   list="quick-reg-categories"
@@ -304,6 +308,7 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
                 </Text>
                 <Input
                   type="number"
+                  aria-label={t.barcode.stockLabel}
                   min="0"
                   step="1"
                   style={{ width: '100%' }}
@@ -319,6 +324,7 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
                 </Text>
                 <Input
                   type="number"
+                  aria-label={t.barcode.costLabel}
                   step="0.25"
                   min="0"
                   style={{ width: '100%' }}
@@ -335,6 +341,7 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
                 </Text>
                 <Input
                   type="number"
+                  aria-label={t.barcode.priceLabel}
                   step="0.25"
                   min="0"
                   style={{ width: '100%' }}
@@ -363,7 +370,7 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
                         : tokens.colorNeutralForeground1
                   }}
                 >
-                  ₱{unitProfit.toFixed(2)}
+                  {formatPeso(unitProfit)}
                 </Text>
               </div>
               <div className={styles.marginPreviewRow}>

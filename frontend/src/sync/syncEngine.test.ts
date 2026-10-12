@@ -24,6 +24,7 @@ describe('syncEngine', () => {
     await db.syncQueue.clear();
     await db.deadLetterQueue.clear();
     await db.products.clear();
+    await db.gcashTxns.clear();
     useSyncStore.setState({
       isOnline: true,
       isSyncing: false,
@@ -91,6 +92,30 @@ describe('syncEngine', () => {
     const remaining = await db.syncQueue.toArray();
     expect(remaining).toHaveLength(0);
     expect(useSyncStore.getState().lastSyncedAt).not.toBeNull();
+  });
+
+  it.each([
+    ['Customer', 'Conflict'],
+    ['Customer', 'DuplicateRef']
+  ])('processSyncQueue retries %s %s responses', async (entity, status) => {
+    const syncId = await enqueueSync(entity as 'Customer' | 'GCashTxn', 'Delete', { id: 'entity-conflict-1' });
+
+    (apiClient.post as any).mockResolvedValueOnce({
+      data: {
+        results: [{ syncId, status, error: 'Operation conflict' }]
+      }
+    });
+
+    const result = await processSyncQueue();
+
+    expect(result.processed).toBe(0);
+    expect(result.errors).toBe(1);
+
+    const queued = await db.syncQueue.get(syncId);
+    expect(queued?.status).toBe('Failed');
+    expect(queued?.retryCount).toBe(1);
+    expect(queued?.errorMessage).toBe('Operation conflict');
+    expect(await db.deadLetterQueue.get(syncId)).toBeUndefined();
   });
 
   it('processSyncQueue treats ConflictIgnored as resolved success', async () => {
@@ -215,15 +240,20 @@ describe('syncEngine', () => {
   });
 
   it('handles server network failure during processSyncQueue gracefully', async () => {
-    await enqueueSync('Customer', 'Insert', { id: 'c-99' });
+    const syncId = await enqueueSync('Customer', 'Insert', { id: 'c-99' });
 
-    (apiClient.post as any).mockRejectedValueOnce(new Error('Network error 500'));
+    (apiClient.post as any).mockRejectedValueOnce({
+      message: 'Request failed with status code 500',
+      response: { status: 500, data: { message: 'Database temporarily unavailable' } }
+    });
 
     const result = await processSyncQueue();
 
     expect(result.processed).toBe(0);
     expect(result.errors).toBe(1);
-    expect(useSyncStore.getState().lastErrorMessage).toContain('Network error 500');
+    expect(useSyncStore.getState().lastErrorMessage).toBe('Database temporarily unavailable');
+    expect(await db.syncQueue.get(syncId)).toBeDefined();
+    expect(await db.deadLetterQueue.get(syncId)).toBeUndefined();
   });
 
   it('orders outbox operations so Customer and Product precede UtangLedger and Sale', async () => {
@@ -322,6 +352,133 @@ describe('syncEngine', () => {
     const result = await processSyncQueue();
     expect(result.processed).toBe(2);
     expect(sentOperations.map((op: any) => op.payload.id)).toEqual(['p-10', 'p-20']);
+  });
+
+  it('processSyncQueue handles DuplicateRef status by clearing queue and flagging local GCashTxn row with needsAttention', async () => {
+    const txnId = 'gcash-dup-test-1';
+    const secondTxnId = 'gcash-dup-test-2';
+    await db.gcashTxns.bulkAdd([
+      {
+        id: txnId,
+        tenantId: 't-1',
+        type: 'CashIn',
+        amount: 1000,
+        fee: 15,
+        refNo: 'REF-DUP-999',
+        refNoNorm: 'ref-dup-999',
+        date: new Date().toISOString()
+      },
+      {
+        id: secondTxnId,
+        tenantId: 't-1',
+        type: 'CashOut',
+        amount: 500,
+        fee: 10,
+        refNo: 'REF-DUP-1000',
+        refNoNorm: 'ref-dup-1000',
+        date: new Date().toISOString()
+      }
+    ]);
+
+    const syncId = await enqueueSync('GCashTxn', 'Insert', {
+      id: txnId,
+      tenantId: 't-1',
+      type: 'CashIn',
+      amount: 1000,
+      fee: 15,
+      refNo: 'REF-DUP-999',
+      date: new Date().toISOString()
+    });
+    const secondSyncId = await enqueueSync('GCashTxn', 'Insert', {
+      id: secondTxnId,
+      tenantId: 't-1',
+      type: 'CashOut',
+      amount: 500,
+      fee: 10,
+      refNo: 'REF-DUP-1000',
+      date: new Date().toISOString()
+    });
+
+    (apiClient.post as any).mockResolvedValueOnce({
+      data: {
+        processedCount: 2,
+        results: [
+          {
+            syncId,
+            status: 'DuplicateRef',
+            error: "Duplicate GCash reference number 'REF-DUP-999' for this tenant."
+          },
+          {
+            syncId: secondSyncId,
+            status: 'DuplicateRef',
+            error: "Duplicate GCash reference number 'REF-DUP-1000' for this tenant."
+          }
+        ]
+      }
+    });
+
+    const result = await processSyncQueue();
+
+    expect(result.processed).toBe(0);
+    expect(result.conflicts).toBe(2);
+    expect(result.errors).toBe(0);
+
+    // Queue is cleared (not kept or retried until dead letter)
+    const remaining = await db.syncQueue.toArray();
+    expect(remaining).toHaveLength(0);
+
+    // Local row is flagged with needsAttention and conflict reason
+    const updatedTxn = await db.gcashTxns.get(txnId);
+    expect(updatedTxn?.needsAttention).toBe(true);
+    expect(updatedTxn?.syncStatus).toBe('DuplicateRef');
+    expect(updatedTxn?.conflictReason).toContain('Duplicate GCash reference number');
+    const secondUpdatedTxn = await db.gcashTxns.get(secondTxnId);
+    expect(secondUpdatedTxn?.needsAttention).toBe(true);
+    expect(secondUpdatedTxn?.syncStatus).toBe('DuplicateRef');
+
+    expect(useSyncStore.getState().lastErrorMessage).toBe('2 duplicate GCash references detected.');
+  });
+
+  it('processSyncQueue handles GCash Conflict as a terminal attention result', async () => {
+    const txnId = 'gcash-conflict-test-1';
+    await db.gcashTxns.add({
+      id: txnId,
+      tenantId: 't-1',
+      type: 'CashIn',
+      amount: 650,
+      fee: 10,
+      refNo: 'REF-CONFLICT-1',
+      refNoNorm: 'ref-conflict-1',
+      date: new Date().toISOString()
+    });
+
+    const syncId = await enqueueSync('GCashTxn', 'Insert', {
+      id: txnId,
+      tenantId: 't-1',
+      type: 'CashIn',
+      amount: 650,
+      fee: 10,
+      refNo: 'REF-CONFLICT-1',
+      date: new Date().toISOString()
+    });
+
+    (apiClient.post as any).mockResolvedValueOnce({
+      data: {
+        results: [{ syncId, status: 'Conflict', error: 'GCash operation conflicted on server' }]
+      }
+    });
+
+    const result = await processSyncQueue();
+
+    expect(result).toEqual({ processed: 0, conflicts: 1, errors: 0 });
+    expect(await db.syncQueue.get(syncId)).toBeUndefined();
+    expect(await db.deadLetterQueue.get(syncId)).toBeUndefined();
+    expect(await db.gcashTxns.get(txnId)).toMatchObject({
+      needsAttention: true,
+      syncStatus: 'Conflict',
+      conflictReason: 'GCash operation conflicted on server'
+    });
+    expect(useSyncStore.getState().lastErrorMessage).toBe('1 GCash transaction conflict detected.');
   });
 
   it('initSyncEngine attaches online and offline event handlers', () => {

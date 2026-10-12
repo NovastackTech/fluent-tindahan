@@ -4,6 +4,7 @@ import { db, type PlanTier } from '../db/db';
 import { useAuthStore } from './authStore';
 
 export type BillingCycle = 'Weekly' | 'Monthly';
+export const SUBSCRIPTION_REFRESH_ERROR = 'SUBSCRIPTION_REFRESH_ERROR';
 
 /**
  * Mock payments exist only in Vite dev builds. In production bundles this is statically `false`,
@@ -150,7 +151,7 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
           daysRemaining: data.daysRemaining,
           isLoading: false
         });
-      } catch (err: any) {
+      } catch {
         // In offline mode, read from Dexie or authStore
         const fallbackTier = useAuthStore.getState().tier || 'Libre';
         const fallbackEndDate = useAuthStore.getState().subscriptionEndDate;
@@ -165,7 +166,7 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
           subscriptionEndDate: fallbackEndDate,
           isActive: effective !== 'Libre',
           isLoading: false,
-          error: err?.message || 'Unable to refresh subscription online.'
+          error: SUBSCRIPTION_REFRESH_ERROR
         });
       }
     },

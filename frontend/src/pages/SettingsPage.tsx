@@ -4,6 +4,7 @@ import {
   tokens,
   shorthands,
   Text,
+  Input,
   Button,
   Card,
   Badge,
@@ -29,12 +30,14 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
 import { useThemeStore } from '../state/themeStore';
 import { usePrinterStore } from '../state/printerStore';
+import { DEFAULT_GCASH_FEE_TIERS, GCASH_FEE_BRACKETS, useGCashFeeStore } from '../state/gcashFeeStore';
 import { usePwaStore } from '../state/pwaStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
 import { printThermalReceipt } from '../services/receiptPrinter';
 import {
   useSyncStore,
   processSyncQueue,
+  updateQueueCounts,
   retryDeadLetterItem,
   clearDeadLetterQueue,
   pullCatalogFromServer
@@ -72,11 +75,14 @@ const useStyles = makeStyles({
 
 export const SettingsPage: React.FC = () => {
   const styles = useStyles();
-  const { isOnline, isSyncing, lastSyncedAt } = useSyncStore();
-  const { tenantId, userId, businessName, logout } = useAuthStore();
+  const { isOnline, isSyncing, lastSyncedAt, pendingCount, deadLetterCount } = useSyncStore();
+  const { tenantId, userId, businessName, logout, role } = useAuthStore();
   const { t, language, setLanguage } = useTranslation();
   const { themeMode, setThemeMode } = useThemeStore();
   const { paperWidth, setPaperWidth } = usePrinterStore();
+  const gcashFees = useGCashFeeStore((state) => state.feesByTenant[tenantId] || DEFAULT_GCASH_FEE_TIERS);
+  const setGcashFee = useGCashFeeStore((state) => state.setFeeForTenant);
+  const [gcashFeeDrafts, setGcashFeeDrafts] = useState<Record<string, string>>({});
   const { isStandalone, isInstalled, isInstallable, isIos, promptInstall } = usePwaStore();
   const { tier, subscriptionEndDate, daysRemaining, openUpgradeModal } = useSubscriptionStore();
 
@@ -100,10 +106,14 @@ export const SettingsPage: React.FC = () => {
   const [storageEstimate, setStorageEstimate] = useState<{ usage: number; quota: number } | null>(null);
   const [isPersisted, setIsPersisted] = useState<boolean | null>(null);
 
-  const pendingItems = useLiveQuery(() => db.syncQueue.toArray(), []) || [];
-  const deadLetterItems = useLiveQuery(() => db.deadLetterQueue.toArray(), []) || [];
+  const pendingItemsResult = useLiveQuery(() => db.syncQueue.toArray(), []);
+  const deadLetterItemsResult = useLiveQuery(() => db.deadLetterQueue.toArray(), []);
+  const pendingItems = pendingItemsResult || [];
+  const deadLetterItems = deadLetterItemsResult || [];
+  const displayedPendingCount = Math.max(pendingCount, pendingItems.length);
 
   useEffect(() => {
+    updateQueueCounts().catch(console.error);
     if (navigator.storage && navigator.storage.estimate) {
       navigator.storage.estimate().then((est) => {
         setStorageEstimate({
@@ -134,6 +144,7 @@ export const SettingsPage: React.FC = () => {
       await db.saleItems.clear();
       await db.utangLedger.clear();
       await db.gcashTxns.clear();
+      await db.gcashTxnResolutions.clear();
       await db.syncQueue.clear();
       await db.deadLetterQueue.clear();
       await seedDexieDatabaseIfNeeded(true);
@@ -253,6 +264,75 @@ export const SettingsPage: React.FC = () => {
           {t.settings.printerTestBtn}
         </Button>
       </Card>
+
+      {/* GCash Transaction Fee Settings */}
+      {role === 'Owner' && (
+      <Card className={styles.card}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+          <PhoneLaptopRegular fontSize={20} />
+          <Text weight="bold" size={400}>{t.settings.gcashFeeSection}</Text>
+        </div>
+        <Text size={200} style={{ color: tokens.colorNeutralForeground3, marginBottom: '12px', display: 'block' }}>
+          {t.settings.gcashFeeDesc}
+        </Text>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: 'left', padding: '8px 4px', borderBottom: `1px solid ${tokens.colorNeutralStroke2}` }}>
+                {t.settings.gcashFeeRange}
+              </th>
+              <th style={{ textAlign: 'left', padding: '8px 4px', borderBottom: `1px solid ${tokens.colorNeutralStroke2}` }}>
+                {t.settings.gcashFixedFee}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {GCASH_FEE_BRACKETS.map((bracket, index) => {
+              const draftKey = `${tenantId}:${index}`;
+              return (
+                <tr key={bracket.label}>
+                  <td style={{ padding: '6px 4px', borderBottom: `1px solid ${tokens.colorNeutralStroke2}` }}>
+                    {bracket.label}
+                  </td>
+                  <td style={{ padding: '6px 4px', borderBottom: `1px solid ${tokens.colorNeutralStroke2}` }}>
+                    <Input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      aria-label={`${t.settings.gcashFixedFee} ${bracket.label}`}
+                      contentBefore="₱"
+                      value={gcashFeeDrafts[draftKey] ?? String(gcashFees[index])}
+                      onChange={(_, data) => {
+                        setGcashFeeDrafts((drafts) => ({ ...drafts, [draftKey]: data.value }));
+                        const fee = Number(data.value);
+                        if (data.value.trim() !== '' && Number.isFinite(fee) && fee >= 0 && fee <= 100000) {
+                          setGcashFee(tenantId, index, fee);
+                        }
+                      }}
+                      onBlur={() => {
+                        const draft = gcashFeeDrafts[draftKey];
+                        if (draft !== undefined) {
+                          const fee = Number(draft);
+                          if (draft.trim() !== '' && Number.isFinite(fee) && fee >= 0 && fee <= 100000) {
+                            setGcashFee(tenantId, index, fee);
+                          }
+                          setGcashFeeDrafts((drafts) => {
+                            const nextDrafts = { ...drafts };
+                            delete nextDrafts[draftKey];
+                            return nextDrafts;
+                          });
+                        }
+                      }}
+                      style={{ width: '120px' }}
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Card>
+      )}
 
       {/* SaaS Subscription & Plan Management */}
       <Card className={styles.card}>
@@ -455,17 +535,38 @@ export const SettingsPage: React.FC = () => {
 
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
           <Text size={200}>{t.settings.pendingSync}</Text>
-          <Badge appearance="filled" color={pendingItems.length > 0 ? 'warning' : 'success'}>
-            {pendingItems.length}
+          <Badge data-testid="sync-pending-count" appearance="filled" color={displayedPendingCount > 0 ? 'warning' : 'success'}>
+            {displayedPendingCount}
           </Badge>
         </div>
 
-        {pendingItems.length === 0 ? (
-          <Text size={200} style={{ color: tokens.colorNeutralForeground3, fontStyle: 'italic' }}>
-            {t.common.allSynced}
+        {displayedPendingCount === 0 ? (
+          pendingItemsResult === undefined ? (
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3, fontStyle: 'italic' }}>
+              {language === 'tl' ? 'Sinusuri ang sync queue…' : 'Checking sync queue…'}
+            </Text>
+          ) : (
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3, fontStyle: 'italic' }}>
+              {deadLetterCount > 0 || deadLetterItems.length > 0
+                ? (language === 'tl' ? 'Walang nakapila, pero may hindi na-sync na item.' : 'No pending items, but some items still need attention.')
+                : t.common.allSynced}
+            </Text>
+          )
+        ) : pendingItems.length === 0 ? (
+          <Text size={200} style={{ color: tokens.colorPaletteRedForeground1 }}>
+            {language === 'tl'
+              ? `${displayedPendingCount} item ang nakapila at hindi pa naka-sync. Hindi pa kumpleto ang detalye ng queue.`
+              : `${displayedPendingCount} items are queued and not synced. Queue details are still loading.`}
           </Text>
         ) : (
           <div style={{ maxHeight: '160px', overflowY: 'auto' }}>
+            {displayedPendingCount > pendingItems.length && (
+              <Text size={100} style={{ color: tokens.colorPaletteRedForeground1, display: 'block', marginBottom: '8px' }}>
+                {language === 'tl'
+                  ? `${displayedPendingCount - pendingItems.length} pang item ang nakapila ngunit hindi pa naipapakita.`
+                  : `${displayedPendingCount - pendingItems.length} additional queued items are not shown yet.`}
+              </Text>
+            )}
             {pendingItems.map((item) => (
               <div key={item.id} className={styles.queueItem}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>

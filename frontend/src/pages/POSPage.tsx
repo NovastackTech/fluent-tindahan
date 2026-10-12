@@ -42,7 +42,8 @@ import { db, type ProductRecord, type CustomerRecord } from '../db/db';
 import { useCartStore } from '../state/cartStore';
 import { useAuthStore } from '../state/authStore';
 import { usePwaStore } from '../state/pwaStore';
-import { notifySaleFinished } from '../pwa/registerServiceWorker';
+import { formatPeso } from '../utils/currency';
+import { normalizePhilippineMobile } from '../utils/philippineMobile';
 import { enqueueSync } from '../sync/syncEngine';
 import { ReceiptModal, type ReceiptData } from '../components/ReceiptModal';
 import { BarcodeScannerModal } from '../components/BarcodeScannerModal';
@@ -177,7 +178,7 @@ const QUICK_PESO_BILLS = [20, 50, 100, 200, 500, 1000];
 
 export const POSPage: React.FC = () => {
   const styles = useStyles();
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -370,10 +371,45 @@ export const POSPage: React.FC = () => {
     return 0;
   }, [paymentMethod, cashReceived, splitCashAmount, splitGCashAmount, totalAmount]);
 
+  // Tender validation in integer centavos
+  const { isTenderValid, tenderError } = useMemo(() => {
+    const totalC = Math.round(totalAmount * 100);
+    const fmt = (c: number) => formatPeso(c / 100);
+    const tl = language === 'tl';
+    if (paymentMethod === 'Cash') {
+      const cashC = Math.round(cashReceived * 100);
+      if (cashC < 0) {
+        return { isTenderValid: false, tenderError: tl ? 'Hindi puwedeng negatibo ang tinanggap na pera.' : 'Cash tendered cannot be negative.' };
+      }
+      if (cashC < totalC) {
+        return { isTenderValid: false, tenderError: tl ? `Kulang ng ${fmt(totalC - cashC)}` : `Short by ${fmt(totalC - cashC)}` };
+      }
+    }
+    if (paymentMethod === 'Split') {
+      const cashC = Math.round(splitCashAmount * 100);
+      const gcashC = Math.round(splitGCashAmount * 100);
+      if (cashC < 0 || gcashC < 0) {
+        return { isTenderValid: false, tenderError: tl ? 'Hindi puwedeng negatibo ang halaga.' : 'Amounts cannot be negative.' };
+      }
+      if (cashC + gcashC < totalC) {
+        return { isTenderValid: false, tenderError: tl ? `Kulang ng ${fmt(totalC - cashC - gcashC)}` : `Short by ${fmt(totalC - cashC - gcashC)}` };
+      }
+    }
+    return { isTenderValid: true, tenderError: '' };
+  }, [paymentMethod, cashReceived, splitCashAmount, splitGCashAmount, totalAmount, language]);
+
   // Quick add new debtor during checkout
   const handleSaveNewDebtor = async () => {
     if (!newDebtorName.trim()) {
       setNewDebtorError(t.pos.debtorNameRequired);
+      return;
+    }
+
+    const phone = normalizePhilippineMobile(newDebtorPhone);
+    if (phone === null) {
+      setNewDebtorError(language === 'tl'
+        ? 'Maglagay ng wastong Philippine mobile number.'
+        : 'Enter a valid Philippine mobile number.');
       return;
     }
 
@@ -383,7 +419,7 @@ export const POSPage: React.FC = () => {
       id: newCustId,
       tenantId,
       name: newDebtorName.trim(),
-      phone: newDebtorPhone.trim() || 'N/A',
+      phone,
       totalUtangBalance: 0,
       updatedAt: now
     };
@@ -401,6 +437,7 @@ export const POSPage: React.FC = () => {
   // Complete checkout
   const handleCompleteSale = async () => {
     if (cartItems.length === 0) return;
+    if (!isTenderValid) return;
 
     if (paymentMethod === 'Utang' && !customerId) {
       alert(t.pos.customerSelectRequired);
@@ -639,7 +676,7 @@ export const POSPage: React.FC = () => {
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
-              <span className={styles.productPrice}>₱{p.price.toFixed(2)}</span>
+              <span className={styles.productPrice}>{formatPeso(p.price)}</span>
               <Button
                 size="small"
                 appearance="subtle"
@@ -666,7 +703,7 @@ export const POSPage: React.FC = () => {
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <Text weight="bold" size={500} style={{ color: '#fff' }}>₱{totalAmount.toFixed(2)}</Text>
+            <Text weight="bold" size={500} style={{ color: '#fff' }}>{formatPeso(totalAmount)}</Text>
             <Button
               appearance="secondary"
               size="medium"
@@ -693,7 +730,7 @@ export const POSPage: React.FC = () => {
                     <div style={{ flexGrow: 1, paddingRight: '8px' }}>
                       <Text weight="semibold" size={300}>{item.name}</Text>
                       <Text size={200} style={{ color: tokens.colorNeutralForeground3, display: 'block' }}>
-                        ₱{item.price.toFixed(2)} {t.pos.each}
+                        {formatPeso(item.price)} {t.pos.each}
                       </Text>
                     </div>
 
@@ -729,7 +766,7 @@ export const POSPage: React.FC = () => {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Text size={400}>{t.pos.totalAmount}:</Text>
                 <Text weight="bold" size={500} style={{ color: tokens.colorBrandForeground1 }}>
-                  ₱{totalAmount.toFixed(2)}
+                  {formatPeso(totalAmount)}
                 </Text>
               </div>
             </DialogContent>
@@ -745,7 +782,7 @@ export const POSPage: React.FC = () => {
                   setIsCheckoutOpen(true);
                 }}
               >
-                {t.pos.checkoutBtn} (₱{totalAmount.toFixed(2)})
+                {t.pos.checkoutBtn} ({formatPeso(totalAmount)})
               </Button>
             </DialogActions>
           </DialogBody>
@@ -772,7 +809,7 @@ export const POSPage: React.FC = () => {
               <div style={{ textAlign: 'center', margin: '8px 0 16px' }}>
                 <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>{t.pos.totalDue}</Text>
                 <div style={{ fontSize: '32px', fontWeight: 'bold', color: tokens.colorBrandForeground1 }}>
-                  ₱{totalAmount.toFixed(2)}
+                  {formatPeso(totalAmount)}
                 </div>
               </div>
 
@@ -791,9 +828,13 @@ export const POSPage: React.FC = () => {
               {/* Cash Payment Mode */}
               {paymentMethod === 'Cash' && (
                 <div>
-                  <Text size={200} weight="semibold">{t.pos.cashTendered}</Text>
+                  <label htmlFor="pos-cash-received">
+                    <Text size={200} weight="semibold">{t.pos.cashTendered}</Text>
+                  </label>
                   <Input
+                    id="pos-cash-received"
                     type="number"
+                    aria-label={language === 'tl' ? 'Tinanggap na pera (Cash received)' : 'Cash received (Tinanggap)'}
                     value={cashReceived === 0 ? '' : cashReceived.toString()}
                     onChange={(_, data) => setCashReceived(parseFloat(data.value) || 0)}
                     placeholder="0.00"
@@ -810,7 +851,7 @@ export const POSPage: React.FC = () => {
                         appearance="secondary"
                         onClick={() => handleQuickBillClick(bill)}
                       >
-                        ₱{bill}
+                        {formatPeso(bill)}
                       </Button>
                     ))}
                   </div>
@@ -821,17 +862,22 @@ export const POSPage: React.FC = () => {
                     style={{ width: '100%', marginTop: '8px' }}
                     onClick={handleExactCashClick}
                   >
-                    {t.pos.exactAmount} (₱{totalAmount.toFixed(2)})
+                    {t.pos.exactAmount} ({formatPeso(totalAmount)})
                   </Button>
 
                   <div style={{ marginTop: '16px', padding: '12px', background: tokens.colorNeutralBackground2, borderRadius: '6px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <Text size={300} weight="bold">{t.pos.changeLabel}</Text>
                       <Text size={500} weight="bold" style={{ color: tokens.colorPaletteGreenForeground1 }}>
-                        ₱{changeAmount.toFixed(2)}
+                        {formatPeso(changeAmount)}
                       </Text>
                     </div>
                   </div>
+                  {!isTenderValid && (
+                    <Text size={200} style={{ color: tokens.colorPaletteRedForeground1, display: 'block', marginTop: '4px' }}>
+                      {tenderError}
+                    </Text>
+                  )}
                 </div>
               )}
 
@@ -882,7 +928,7 @@ export const POSPage: React.FC = () => {
                         <option value="__NEW__">➕ {t.pos.addNewDebtorBtn}...</option>
                         {customers.map((c) => (
                           <option key={c.id} value={c.id}>
-                            {c.name} ({c.phone}) - {t.nav.utang}: ₱{c.totalUtangBalance.toFixed(2)}
+                            {c.name}{c.phone ? ` (${c.phone})` : ''} - {t.nav.utang}: {formatPeso(c.totalUtangBalance)}
                           </option>
                         ))}
                       </Select>
@@ -945,8 +991,13 @@ export const POSPage: React.FC = () => {
                       <div style={{ marginBottom: '12px' }}>
                         <Text size={200} weight="semibold">{t.utang.phoneLabel}</Text>
                         <Input
+                          type="tel"
+                          inputMode="tel"
                           value={newDebtorPhone}
-                          onChange={(_, d) => setNewDebtorPhone(d.value)}
+                          onChange={(_, d) => {
+                            setNewDebtorPhone(d.value);
+                            if (newDebtorError) setNewDebtorError(null);
+                          }}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
                               e.preventDefault();
@@ -990,6 +1041,7 @@ export const POSPage: React.FC = () => {
                     <Text size={200} weight="semibold">{t.pos.cashAmount}</Text>
                     <Input
                       type="number"
+                      aria-label={t.pos.cashAmount}
                       value={splitCashAmount === 0 ? '' : splitCashAmount.toString()}
                       onChange={(_, data) => setSplitAmounts(parseFloat(data.value) || 0, splitGCashAmount)}
                       placeholder="0.00"
@@ -1002,6 +1054,7 @@ export const POSPage: React.FC = () => {
                     <Text size={200} weight="semibold">{t.pos.gcashAmount}</Text>
                     <Input
                       type="number"
+                      aria-label={t.pos.gcashAmount}
                       value={splitGCashAmount === 0 ? '' : splitGCashAmount.toString()}
                       onChange={(_, data) => setSplitAmounts(splitCashAmount, parseFloat(data.value) || 0)}
                       placeholder="0.00"
@@ -1013,9 +1066,14 @@ export const POSPage: React.FC = () => {
                   <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between' }}>
                     <Text size={200}>{t.pos.splitRemaining}</Text>
                     <Text size={200} weight="bold">
-                      ₱{(splitCashAmount + splitGCashAmount - totalAmount).toFixed(2)}
+                      {formatPeso(splitCashAmount + splitGCashAmount - totalAmount)}
                     </Text>
                   </div>
+                  {!isTenderValid && (
+                    <Text size={200} style={{ color: tokens.colorPaletteRedForeground1, display: 'block', marginTop: '4px' }}>
+                      {tenderError}
+                    </Text>
+                  )}
                 </div>
               )}
             </DialogContent>
@@ -1033,7 +1091,7 @@ export const POSPage: React.FC = () => {
               >
                 {t.common.cancel}
               </Button>
-              <Button appearance="primary" icon={<CheckmarkCircleRegular />} onClick={handleCompleteSale}>
+              <Button appearance="primary" icon={<CheckmarkCircleRegular />} onClick={handleCompleteSale} disabled={!isTenderValid}>
                 {t.pos.completeSaleBtn}
               </Button>
             </DialogActions>
@@ -1047,7 +1105,6 @@ export const POSPage: React.FC = () => {
         onClose={() => {
           setReceiptData(null);
           usePwaStore.getState().setHasActiveReceipt(false);
-          notifySaleFinished();
         }}
         data={receiptData}
       />

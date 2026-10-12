@@ -1,9 +1,12 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using FluentTindahan.Application;
 using FluentTindahan.Infrastructure;
 using FluentTindahan.Infrastructure.Persistence;
+using FluentTindahan.WebApi.Authorization;
+using FluentTindahan.WebApi.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -56,7 +59,13 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddScoped<IAuthorizationHandler, TenantResolvedHandler>();
+builder.Services.AddExceptionHandler<ApiExceptionHandler>();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(AuthorizationPolicies.TenantResolved, policy =>
+        policy.AddRequirements(new TenantResolvedRequirement()));
+});
 
 // Swagger / OpenAPI documentation
 builder.Services.AddEndpointsApiExplorer();
@@ -99,6 +108,7 @@ builder.Services.AddSwaggerGen(c =>
 FluentTindahan.Infrastructure.Services.PayMongoPaymentGatewayService.ValidateConfiguration(builder.Configuration, builder.Environment);
 
 var app = builder.Build();
+app.UseExceptionHandler();
 
 // Migrate and seed database
 using (var scope = app.Services.CreateScope())

@@ -62,9 +62,26 @@ export interface GCashTxnRecord {
   amount: number;
   fee: number;
   refNo: string;
+  /** Trimmed, lower-cased refNo used for indexed duplicate detection. */
+  refNoNorm?: string;
   customerPhone?: string;
   date: string;
   notes?: string;
+  /** Flagged if sync detected a duplicate reference number conflict across devices. */
+  needsAttention?: boolean;
+  syncStatus?: 'Synced' | 'DuplicateRef' | 'Conflict' | 'Failed';
+  conflictReason?: string;
+}
+
+/** Local audit record for resolving a GCash transaction rejected before sync. */
+export interface GCashTxnResolutionRecord {
+  /** ID of the original, rejected transaction. */
+  gcashTxnId: string;
+  tenantId: string;
+  resolution: 'Corrected' | 'Voided';
+  resolvedAt: string;
+  replacementTxnId?: string;
+  correctedRefNo?: string;
 }
 
 export interface SyncQueueRecord {
@@ -100,6 +117,14 @@ export interface TenantRecord {
   updatedAt: string;
 }
 
+export function normalizeRef(refNo: string | undefined | null): string {
+  return (refNo || '').trim().toLowerCase();
+}
+
+export function isGCashTxnUnresolved(txn: Pick<GCashTxnRecord, 'needsAttention' | 'syncStatus'>): boolean {
+  return txn.needsAttention === true || txn.syncStatus === 'DuplicateRef' || txn.syncStatus === 'Conflict';
+}
+
 export class FluentTindahanDatabase extends Dexie {
   products!: Table<ProductRecord, string>;
   customers!: Table<CustomerRecord, string>;
@@ -107,12 +132,13 @@ export class FluentTindahanDatabase extends Dexie {
   saleItems!: Table<SaleItemRecord, string>;
   utangLedger!: Table<UtangLedgerRecord, string>;
   gcashTxns!: Table<GCashTxnRecord, string>;
+  gcashTxnResolutions!: Table<GCashTxnResolutionRecord, string>;
   syncQueue!: Table<SyncQueueRecord, string>;
   deadLetterQueue!: Table<DeadLetterRecord, string>;
   tenants!: Table<TenantRecord, string>;
 
-  constructor() {
-    super('FluentTindahanDb');
+  constructor(databaseName = 'FluentTindahanDb') {
+    super(databaseName);
     this.version(1).stores({
       products: 'id, tenantId, name, barcode, category, updatedAt',
       customers: 'id, tenantId, name, phone, totalUtangBalance, updatedAt',
@@ -124,6 +150,47 @@ export class FluentTindahanDatabase extends Dexie {
       deadLetterQueue: 'id, entity, failedAt',
       tenants: 'id, tier, subscriptionEndDate, updatedAt'
     });
+    this.version(2)
+      .stores({
+        gcashTxns: 'id, tenantId, type, date, refNo, refNoNorm'
+      })
+      .upgrade((tx) =>
+        tx
+          .table('gcashTxns')
+          .toCollection()
+          .modify((row: GCashTxnRecord) => {
+            row.refNoNorm = normalizeRef(row.refNo);
+          })
+      );
+    this.version(3)
+      .stores({
+        gcashTxns: 'id, tenantId, type, date, refNo, refNoNorm, [tenantId+refNoNorm]'
+      })
+      .upgrade((tx) =>
+        tx
+          .table('gcashTxns')
+          .toCollection()
+          .modify((row: GCashTxnRecord) => {
+            if (!row.refNoNorm) {
+              row.refNoNorm = normalizeRef(row.refNo);
+            }
+          })
+      );
+    this.version(4).stores({
+      gcashTxnResolutions: 'gcashTxnId, tenantId, resolution, resolvedAt'
+    });
+    this.version(5)
+      .stores({
+        gcashTxns: 'id, tenantId, type, date, refNo, refNoNorm, [tenantId+refNoNorm]'
+      })
+      .upgrade((tx) =>
+        tx
+          .table('gcashTxns')
+          .toCollection()
+          .modify((row: GCashTxnRecord) => {
+            row.refNoNorm = normalizeRef(row.refNo);
+          })
+      );
   }
 }
 

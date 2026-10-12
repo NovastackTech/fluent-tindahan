@@ -96,6 +96,133 @@ public class BatchSyncComprehensiveTests
     }
 
     [Fact]
+    public async Task ProcessBatchSync_CustomerInsertRejectsNegativeOpeningBalance()
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var handler = new ProcessBatchSyncCommandHandler(context, userMock.Object, NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+        var customerId = Guid.NewGuid();
+
+        var batch = new BatchSyncRequestDto
+        {
+            DeviceId = Guid.NewGuid(),
+            Operations = new List<SyncOperationDto>
+            {
+                new SyncOperationDto
+                {
+                    SyncId = Guid.NewGuid().ToString(),
+                    Entity = "Customer",
+                    Action = "Insert",
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Payload = JsonSerializer.SerializeToElement(new
+                    {
+                        id = customerId,
+                        tenantId = _testTenantId,
+                        name = "QA-TEST Neg",
+                        phone = string.Empty,
+                        totalUtangBalance = -50m
+                    })
+                }
+            }
+        };
+
+        var response = await handler.Handle(new ProcessBatchSyncCommand(batch), CancellationToken.None);
+
+        response.Results.Should().ContainSingle();
+        response.Results[0].Status.Should().Be("Failed");
+        response.Results[0].Error.Should().Contain("cannot be negative");
+        (await context.Customers.IgnoreQueryFilters().AnyAsync(c => c.Id == customerId)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ProcessBatchSync_CustomerInsertAcceptsMalformedLegacyPhoneWithoutPhone()
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var handler = new ProcessBatchSyncCommandHandler(context, userMock.Object, NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+        var customerId = Guid.NewGuid();
+        var batch = new BatchSyncRequestDto
+        {
+            DeviceId = Guid.NewGuid(),
+            Operations = new List<SyncOperationDto>
+            {
+                new SyncOperationDto
+                {
+                    SyncId = Guid.NewGuid().ToString(),
+                    Entity = "Customer",
+                    Action = "Insert",
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Payload = JsonSerializer.SerializeToElement(new
+                    {
+                        id = customerId,
+                        tenantId = _testTenantId,
+                        name = "QA Customer",
+                        phone = "abc123",
+                        totalUtangBalance = 0m
+                    })
+                }
+            }
+        };
+
+        var response = await handler.Handle(new ProcessBatchSyncCommand(batch), CancellationToken.None);
+
+        response.Results.Should().ContainSingle();
+        response.Results[0].Status.Should().Be("Success");
+        var customer = await context.Customers.IgnoreQueryFilters().SingleAsync(c => c.Id == customerId);
+        customer.Phone.Should().BeEmpty();
+        customer.Name.Should().Be("QA Customer");
+    }
+
+    [Fact]
+    public async Task ProcessBatchSync_CustomerUpdatePreservesExistingPhoneWhenLegacyPhoneIsMalformed()
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var handler = new ProcessBatchSyncCommandHandler(context, userMock.Object, NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+        var customerId = Guid.NewGuid();
+        var updatedAt = DateTimeOffset.UtcNow;
+        context.Customers.Add(new Customer
+        {
+            Id = customerId,
+            TenantId = _testTenantId,
+            Name = "Original Customer",
+            Phone = "09171234567",
+            TotalUtangBalance = 0m,
+            UpdatedAt = updatedAt.AddMinutes(-1)
+        });
+        await context.SaveChangesAsync();
+
+        var batch = new BatchSyncRequestDto
+        {
+            DeviceId = Guid.NewGuid(),
+            Operations = new List<SyncOperationDto>
+            {
+                new SyncOperationDto
+                {
+                    SyncId = Guid.NewGuid().ToString(),
+                    Entity = "Customer",
+                    Action = "Update",
+                    Timestamp = updatedAt,
+                    Payload = JsonSerializer.SerializeToElement(new
+                    {
+                        id = customerId,
+                        tenantId = _testTenantId,
+                        name = "Updated Customer",
+                        phone = "abc123",
+                        totalUtangBalance = 0m,
+                        updatedAt
+                    })
+                }
+            }
+        };
+
+        var response = await handler.Handle(new ProcessBatchSyncCommand(batch), CancellationToken.None);
+
+        response.Results.Should().ContainSingle();
+        response.Results[0].Status.Should().Be("Success");
+        var customer = await context.Customers.IgnoreQueryFilters().SingleAsync(c => c.Id == customerId);
+        customer.Phone.Should().Be("09171234567");
+        customer.Name.Should().Be("Updated Customer");
+    }
+
+    [Fact]
     public async Task ProcessBatchSync_CustomerDeleteAndStaleUpdate_HandlesLWWCorrectly()
     {
         var (context, userMock) = CreateInMemoryContext();
@@ -642,6 +769,59 @@ public class BatchSyncComprehensiveTests
         var rawPlaceholder = await context.Products.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == placeholderId);
         rawPlaceholder.Should().NotBeNull();
         rawPlaceholder!.IsDeleted.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ProcessBatchSync_DuplicateGCashRef_ReturnsDuplicateRefStatus()
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var handler = new ProcessBatchSyncCommandHandler(context, userMock.Object, NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+
+        // Pre-existing txn
+        context.GCashTransactions.Add(new GCashTxn
+        {
+            Id = Guid.NewGuid(),
+            TenantId = _testTenantId,
+            Type = "CashIn",
+            Amount = 1000m,
+            Fee = 15m,
+            RefNo = "REF-DUPLICATE-999",
+            RefNoNorm = GCashTxn.NormalizeRef("REF-DUPLICATE-999"),
+            Date = DateTimeOffset.UtcNow
+        });
+        await context.SaveChangesAsync();
+
+        var batch = new BatchSyncRequestDto
+        {
+            DeviceId = Guid.NewGuid(),
+            Operations = new List<SyncOperationDto>
+            {
+                new SyncOperationDto
+                {
+                    SyncId = Guid.NewGuid().ToString(),
+                    Entity = "GCashTxn",
+                    Action = "Insert",
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Payload = JsonSerializer.SerializeToElement(new
+                    {
+                        id = Guid.NewGuid(),
+                        type = "CashIn",
+                        amount = 500m,
+                        fee = 10m,
+                        refNo = "  ref-duplicate-999  ",
+                        date = DateTimeOffset.UtcNow
+                    })
+                }
+            }
+        };
+
+        var response = await handler.Handle(new ProcessBatchSyncCommand(batch), CancellationToken.None);
+
+        response.Results.Should().HaveCount(1);
+        response.Results[0].Status.Should().Be("DuplicateRef");
+        response.Results[0].Error.Should().Contain("Duplicate GCash reference number");
+        response.ProcessedCount.Should().Be(0);
+        response.ConflictCount.Should().Be(1);
     }
 
     [Fact]

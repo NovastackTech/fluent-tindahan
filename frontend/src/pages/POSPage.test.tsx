@@ -6,7 +6,7 @@ import { sariSariLightTheme } from '../theme/theme';
 import { db } from '../db/db';
 import { useCartStore } from '../state/cartStore';
 import { usePwaStore } from '../state/pwaStore';
-import { triggerDeferredReloadSubscription, _resetUpdateSWFunctionForTest } from '../pwa/registerServiceWorker';
+import { _resetUpdateSWFunctionForTest } from '../pwa/registerServiceWorker';
 
 describe('POSPage', () => {
   beforeEach(async () => {
@@ -17,6 +17,7 @@ describe('POSPage', () => {
     await db.saleItems.clear();
     await db.utangLedger.clear();
     await db.customers.clear();
+    await db.syncQueue.clear();
 
     await db.products.add({
       id: 'p-1',
@@ -102,6 +103,34 @@ describe('POSPage', () => {
     });
   });
 
+  it('blocks completing a cash sale when tender is short or negative', async () => {
+    renderPOS();
+
+    await waitFor(() => {
+      expect(screen.getByText('Lucky Me Pancit Canton Kalamansi')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Lucky Me Pancit Canton Kalamansi'));
+    fireEvent.click(screen.getByRole('button', { name: /Bayad|Pay/i }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    const completeBtn = screen.getByRole('button', { name: /Kumpletuhin ang Benta|Complete Sale/i });
+    const tenderInput = screen.getByLabelText(/Cash received|Tinanggap/i);
+
+    // Short tender (total is 16)
+    fireEvent.change(tenderInput, { target: { value: '10' } });
+    expect(completeBtn).toBeDisabled();
+    expect(screen.getByText(/Short by|Kulang ng/i)).toBeInTheDocument();
+
+    // Negative tender
+    fireEvent.change(tenderInput, { target: { value: '-10' } });
+    expect(completeBtn).toBeDisabled();
+
+    // Sufficient tender
+    fireEvent.change(tenderInput, { target: { value: '20' } });
+    expect(completeBtn).toBeEnabled();
+  });
+
   it('completes cash checkout and records sale in Dexie', async () => {
     renderPOS();
 
@@ -118,7 +147,8 @@ describe('POSPage', () => {
 
     expect(screen.getByRole('dialog')).toBeInTheDocument();
 
-    // Complete sale
+    // Tender exact cash and complete sale
+    fireEvent.click(screen.getByRole('button', { name: /Eksaktong|Exact/i }));
     const completeBtn = screen.getByRole('button', { name: /Kumpletuhin ang Benta|Complete Sale/i });
     fireEvent.click(completeBtn);
 
@@ -181,6 +211,27 @@ describe('POSPage', () => {
     });
   });
 
+  it('does not render empty parentheses for a customer without a phone', async () => {
+    await db.customers.add({
+      id: 'cust-no-phone',
+      tenantId: 't-1',
+      name: 'Suki Without Phone',
+      phone: '',
+      totalUtangBalance: 0,
+      updatedAt: new Date().toISOString()
+    });
+
+    renderPOS();
+    await waitFor(() => expect(screen.getByText('Lucky Me Pancit Canton Kalamansi')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Lucky Me Pancit Canton Kalamansi'));
+    fireEvent.click(screen.getByRole('button', { name: /Bayad|Pay/i }));
+    fireEvent.click(screen.getByRole('tab', { name: /Utang/i }));
+
+    const customerOption = screen.getByRole('option', { name: /Suki Without Phone/i });
+    expect(customerOption).toHaveTextContent('Suki Without Phone');
+    expect(customerOption).not.toHaveTextContent('()');
+  });
+
   it('completes GCash checkout and records sale in Dexie', async () => {
     renderPOS();
 
@@ -226,9 +277,8 @@ describe('POSPage', () => {
     fireEvent.click(splitTab);
 
     // Input cash and gcash amounts
-    const spinInputs = screen.getAllByRole('spinbutton');
-    fireEvent.change(spinInputs[0], { target: { value: '10' } });
-    fireEvent.change(spinInputs[1], { target: { value: '6' } });
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Halaga sa Cash|Cash Amount/i }), { target: { value: '10' } });
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Halaga sa GCash|GCash Amount/i }), { target: { value: '6' } });
 
     // Complete sale
     const completeBtn = screen.getByRole('button', { name: /Kumpletuhin ang Benta|Complete Sale/i });
@@ -334,6 +384,24 @@ describe('POSPage', () => {
     });
   });
 
+  it('rejects a malformed phone when adding a debtor during checkout', async () => {
+    renderPOS();
+
+    await waitFor(() => expect(screen.getByText('Lucky Me Pancit Canton Kalamansi')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Lucky Me Pancit Canton Kalamansi'));
+    fireEvent.click(screen.getByRole('button', { name: /Bayad|Pay/i }));
+    fireEvent.click(screen.getByRole('tab', { name: /Utang/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Suki|Add New Debtor/i }));
+
+    fireEvent.change(screen.getByPlaceholderText(/Aling Maria/i), { target: { value: 'QA customer' } });
+    fireEvent.change(screen.getByPlaceholderText('09123456789'), { target: { value: 'abc123' } });
+    fireEvent.click(screen.getByRole('button', { name: /I-save at Piliin|Save & Select/i }));
+
+    expect(await screen.findByText(/wastong Philippine mobile|valid Philippine mobile/i)).toBeInTheDocument();
+    expect(await db.customers.toArray()).toHaveLength(0);
+    expect(await db.syncQueue.toArray()).toHaveLength(0);
+  });
+
   it('validates debtor name and supports canceling debtor form in utang checkout', async () => {
     renderPOS();
 
@@ -390,16 +458,17 @@ describe('POSPage', () => {
     fireEvent.click(screen.getByText('Lucky Me Pancit Canton Kalamansi'));
     expect(useCartStore.getState().items).toHaveLength(1);
 
-    // 2. An update is active: reload is deferred
-    triggerDeferredReloadSubscription();
-    expect(usePwaStore.getState().reloadDeferred).toBe(true);
+    // 2. An update is available, but it must not reload without user action.
+    usePwaStore.getState().setNeedRefresh(true);
+    expect(usePwaStore.getState().needRefresh).toBe(true);
 
     // 3. Open checkout dialog
     const payBtn = screen.getByRole('button', { name: /Bayad|Pay/i });
     fireEvent.click(payBtn);
     expect(screen.getByRole('dialog')).toBeInTheDocument();
 
-    // 4. Complete checkout
+    // 4. Tender exact cash and complete checkout
+    fireEvent.click(screen.getByRole('button', { name: /Eksaktong|Exact/i }));
     const completeBtn = screen.getByRole('button', { name: /Kumpletuhin ang Benta|Complete Sale/i });
     fireEvent.click(completeBtn);
 
@@ -425,11 +494,8 @@ describe('POSPage', () => {
     const closeBtn = await screen.findByRole('button', { name: /Isara|Close/i }, { timeout: 4000 });
     fireEvent.click(closeBtn);
 
-    // 8. Verify reload is safely triggered AFTER sale was persisted and receipt closed
-    await waitFor(() => {
-      expect(reloadMock).toHaveBeenCalledTimes(1);
-      expect(usePwaStore.getState().reloadDeferred).toBe(false);
-    }, { timeout: 4000 });
+    // 8. Closing the receipt does not trigger an unsolicited reload.
+    expect(reloadMock).not.toHaveBeenCalled();
 
     Object.defineProperty(window, 'location', {
       value: originalLocation,

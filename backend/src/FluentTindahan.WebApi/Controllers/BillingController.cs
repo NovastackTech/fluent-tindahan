@@ -84,8 +84,21 @@ public class BillingController : ControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<TenantSubscriptionDto>> GetSubscription(CancellationToken cancellationToken)
     {
-        var result = await _mediator.Send(new GetTenantSubscriptionQuery(), cancellationToken);
-        return Ok(result);
+        if (_currentUserService.TenantId == Guid.Empty)
+        {
+            return Unauthorized(new { message = "A valid tenant is required to retrieve subscription details." });
+        }
+
+        try
+        {
+            var result = await _mediator.Send(new GetTenantSubscriptionQuery(), cancellationToken);
+            return Ok(result);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogWarning(ex, "Subscription details requested without a resolved tenant.");
+            return Unauthorized(new { message = "A valid tenant is required to retrieve subscription details." });
+        }
     }
 
     /// <summary>

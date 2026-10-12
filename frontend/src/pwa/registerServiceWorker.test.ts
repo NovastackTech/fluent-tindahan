@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   initServiceWorker,
   reloadAppForUpdate,
-  notifySaleFinished,
   _resetUpdateSWFunctionForTest,
   _getUpdateIntervalIdForTest
 } from './registerServiceWorker';
@@ -146,7 +145,7 @@ describe('registerServiceWorker', () => {
     options.onNeedReload();
 
     expect(reloadMock).not.toHaveBeenCalled();
-    expect(usePwaStore.getState().reloadDeferred).toBe(true);
+    expect(usePwaStore.getState().needRefresh).toBe(true);
 
     Object.defineProperty(window, 'location', {
       value: originalLocation,
@@ -155,7 +154,7 @@ describe('registerServiceWorker', () => {
     });
   });
 
-  it('defers reload when cart has items, then reloads automatically after debounce when cart is cleared', async () => {
+  it('does not reload automatically after an active cart is cleared', async () => {
     vi.useFakeTimers();
     const originalLocation = window.location;
     const reloadMock = vi.fn();
@@ -180,20 +179,17 @@ describe('registerServiceWorker', () => {
 
     // Not reloaded while items are present
     expect(reloadMock).not.toHaveBeenCalled();
-    expect(usePwaStore.getState().reloadDeferred).toBe(true);
+    expect(usePwaStore.getState().needRefresh).toBe(true);
 
     // Cart is cleared without active sale
     useCartStore.getState().clearCart();
 
-    // Debounce is in flight (500ms), not reloaded synchronously
     expect(reloadMock).not.toHaveBeenCalled();
 
-    // Advance 500ms
     vi.advanceTimersByTime(500);
 
-    // Now reload is safely triggered!
-    expect(reloadMock).toHaveBeenCalledTimes(1);
-    expect(usePwaStore.getState().reloadDeferred).toBe(false);
+    expect(reloadMock).not.toHaveBeenCalled();
+    expect(usePwaStore.getState().needRefresh).toBe(true);
 
     Object.defineProperty(window, 'location', {
       value: originalLocation,
@@ -203,7 +199,7 @@ describe('registerServiceWorker', () => {
     vi.useRealTimers();
   });
 
-  it('does not reload while isSaleInProgress or hasActiveReceipt is true, and reloads only after notifySaleFinished', async () => {
+  it('does not reload automatically while an update is available during a sale', async () => {
     const originalLocation = window.location;
     const reloadMock = vi.fn();
     Object.defineProperty(window, 'location', {
@@ -224,7 +220,7 @@ describe('registerServiceWorker', () => {
 
     const options = (registerSW as any).mock.calls[0][0];
     options.onNeedReload();
-    expect(usePwaStore.getState().reloadDeferred).toBe(true);
+    expect(usePwaStore.getState().needRefresh).toBe(true);
 
     // Sale begins: transaction is active and receipt modal is displayed
     usePwaStore.getState().setIsSaleInProgress(true);
@@ -238,13 +234,11 @@ describe('registerServiceWorker', () => {
     usePwaStore.getState().setIsSaleInProgress(false);
     expect(reloadMock).not.toHaveBeenCalled();
 
-    // Cashier dismisses receipt modal
+    // Cashier dismisses receipt modal; the update still requires a deliberate action.
     usePwaStore.getState().setHasActiveReceipt(false);
-    notifySaleFinished();
 
-    // Now reload is safely triggered
-    expect(reloadMock).toHaveBeenCalledTimes(1);
-    expect(usePwaStore.getState().reloadDeferred).toBe(false);
+    expect(reloadMock).not.toHaveBeenCalled();
+    expect(usePwaStore.getState().needRefresh).toBe(true);
 
     Object.defineProperty(window, 'location', {
       value: originalLocation,
@@ -253,7 +247,7 @@ describe('registerServiceWorker', () => {
     });
   });
 
-  it('reloads page via onNeedReload when cart is empty', async () => {
+  it('surfaces onNeedReload as a prompt when cart is empty', async () => {
     const originalLocation = window.location;
     const reloadMock = vi.fn();
     Object.defineProperty(window, 'location', {
@@ -275,7 +269,8 @@ describe('registerServiceWorker', () => {
     const options = (registerSW as any).mock.calls[0][0];
     options.onNeedReload();
 
-    expect(reloadMock).toHaveBeenCalledTimes(1);
+    expect(reloadMock).not.toHaveBeenCalled();
+    expect(usePwaStore.getState().needRefresh).toBe(true);
 
     Object.defineProperty(window, 'location', {
       value: originalLocation,

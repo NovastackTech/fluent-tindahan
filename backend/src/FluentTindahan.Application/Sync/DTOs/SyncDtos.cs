@@ -20,12 +20,13 @@ public class SyncOperationDto
 public class BatchSyncResultDto
 {
     public int ProcessedCount { get; set; }
+    public int ConflictCount { get; set; }
     public List<SyncItemResultDto> Results { get; set; } = new();
 }
 
 public class SyncItemResultDto
 {
     public string SyncId { get; set; } = string.Empty;
-    public string Status { get; set; } = "Success"; // "Success", "Failed", "ConflictIgnored"
+    public string Status { get; set; } = "Success"; // "Success", "Failed", "ConflictIgnored", "DuplicateRef", "Conflict"
     public string? Error { get; set; }
 }

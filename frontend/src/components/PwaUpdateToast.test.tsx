@@ -12,7 +12,6 @@ describe('PwaUpdateToast', () => {
     usePwaStore.setState({
       needRefresh: false,
       otherTabsHaveCart: false,
-      reloadDeferred: false,
       isSaleInProgress: false,
       hasActiveReceipt: false
     });
@@ -137,19 +136,17 @@ describe('PwaUpdateToast', () => {
     reloadSpy.mockRestore();
   });
 
-  it('displays updateDeferredMsg and disables update button when reloadDeferred is true', () => {
+  it('disables the update button while a sale receipt is open', () => {
     usePwaStore.setState({
-      needRefresh: false,
-      reloadDeferred: true
+      needRefresh: true,
+      hasActiveReceipt: true
     });
 
     renderToast();
 
-    expect(
-      screen.getByText(/Nakahanda na ang update|Update ready. The app will reload automatically/i)
-    ).toBeInTheDocument();
     const updateBtn = screen.getByRole('button', { name: /I-reload para Mag-update|Reload & Update/i });
     expect(updateBtn).toBeDisabled();
+    expect(screen.getByText(/Pakisara muna ang benta|Please complete or clear the cart/i)).toBeInTheDocument();
   });
 
   it('dismisses toast when clicking dismiss button', () => {

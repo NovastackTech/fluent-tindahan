@@ -1,4 +1,4 @@
-import { db, type ProductRecord, type CustomerRecord, type UtangLedgerRecord, type GCashTxnRecord } from './db';
+import { db, normalizeRef, type ProductRecord, type CustomerRecord, type UtangLedgerRecord, type GCashTxnRecord } from './db';
 
 export const DEFAULT_TENANT_ID = '11111111-1111-1111-1111-111111111111';
 export const DEFAULT_USER_ID = '22222222-2222-2222-2222-222222222222';
@@ -622,6 +622,7 @@ export async function seedDexieDatabaseIfNeeded(force = false) {
       amount: 1000.00,
       fee: 15.00,
       refNo: '901238471201',
+      refNoNorm: normalizeRef('901238471201'),
       customerPhone: '09175551234',
       date: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
       notes: 'Express send cash in'
@@ -633,6 +634,7 @@ export async function seedDexieDatabaseIfNeeded(force = false) {
       amount: 500.00,
       fee: 10.00,
       refNo: '901238992341',
+      refNoNorm: normalizeRef('901238992341'),
       customerPhone: '09287779911',
       date: new Date(Date.now() - 1 * 3600 * 1000).toISOString(),
       notes: 'Cash out payout'

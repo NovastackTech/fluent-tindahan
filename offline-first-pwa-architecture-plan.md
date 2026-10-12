@@ -120,9 +120,12 @@ The API returns a partial-success map:
 ```json
 {
   "processedCount": 1,
+  "conflictCount": 0,
   "results": [ { "syncId": "uuid-1", "status": "Success" } ]
 }
 ```
+
+`processedCount` includes `Success` and `ConflictIgnored` results. `conflictCount` separately counts `DuplicateRef` and `Conflict` results.
 
 TanStack Query reads the result, deletes `Success` records from Dexie, and increments `RetryCount` on failures. When `RetryCount > 3`, the record moves to a local "Dead Letter" table to unblock the queue, and the user is alerted (Fluent `MessageBar` or `Toast`).
 
