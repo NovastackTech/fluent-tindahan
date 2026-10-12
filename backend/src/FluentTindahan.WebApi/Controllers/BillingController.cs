@@ -6,15 +6,15 @@ using FluentTindahan.Application.Common.Interfaces;
 using FluentTindahan.Domain.Billing;
 using FluentTindahan.Domain.Enums;
 using FluentTindahan.Domain.Interfaces;
+using FluentTindahan.WebApi.Authorization;
 
 namespace FluentTindahan.WebApi.Controllers;
 
 /// <summary>
 /// Handles SaaS plan upgrades, subscription queries, and checkout session generation.
-/// Authenticated endpoints require a valid tenant bearer token; the tenant is resolved
-/// from the caller's verified claims.
+/// Authenticated endpoints require a valid resolved tenant.
 /// </summary>
-[Authorize]
+[Authorize(Policy = AuthorizationPolicies.TenantResolved)]
 [ApiController]
 [Route("api/[controller]")]
 public class BillingController : ControllerBase
@@ -149,4 +149,28 @@ public class BillingController : ControllerBase
 
         return result.Success ? Ok(result) : BadRequest(new { message = result.Message });
     }
+
+    /// <summary>
+    /// DEVELOPMENT ONLY: resets the tenant subscription to the free Libre tier and clears payment history.
+    /// </summary>
+    [HttpPost("reset")]
+    [AllowAnonymous]
+    [ApiExplorerSettings(IgnoreApi = true)]
+    public async Task<IActionResult> ResetSubscription(CancellationToken cancellationToken)
+    {
+        if (!_environment.IsDevelopment())
+        {
+            return NotFound();
+        }
+
+        var tenantId = _currentUserService.TenantId;
+        if (tenantId == Guid.Empty)
+        {
+            return BadRequest(new { message = "No resolved tenant to reset." });
+        }
+
+        await _mediator.Send(new ResetTenantSubscriptionCommand(tenantId), cancellationToken);
+        return Ok(new { message = "Subscription successfully reset to Libre." });
+    }
 }
+

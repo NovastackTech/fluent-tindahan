@@ -20,8 +20,8 @@ public static class DatabaseSeeder
             {
                 Id = tenantId,
                 BusinessName = "Aling Nena's Tindahan & GCash",
-                Tier = PlanTier.TindahanPro,
-                SubscriptionEndDate = DateTimeOffset.UtcNow.AddYears(1),
+                Tier = PlanTier.Libre,
+                SubscriptionEndDate = null,
                 CreatedAt = DateTimeOffset.UtcNow
             };
             context.Tenants.Add(tenant);

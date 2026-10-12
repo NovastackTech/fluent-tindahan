@@ -43,6 +43,7 @@ import {
   pullCatalogFromServer
 } from '../sync/syncEngine';
 import { useAuthStore } from '../state/authStore';
+import { apiClient } from '../services/apiClient';
 import { seedDexieDatabaseIfNeeded } from '../db/seedData';
 import { useTranslation } from '../state/languageStore';
 
@@ -154,7 +155,14 @@ export const SettingsPage: React.FC = () => {
 
   const handleWipeDatabaseOnLogout = async () => {
     if (confirm(t.settings.wipeConfirm)) {
+      try {
+        await apiClient.post('/billing/reset');
+      } catch (err) {
+        console.warn('Backend billing reset skipped or unavailable:', err);
+      }
       await db.delete();
+      localStorage.clear();
+      sessionStorage.clear();
       logout();
       window.location.reload();
     }
