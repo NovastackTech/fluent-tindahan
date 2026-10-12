@@ -60,12 +60,18 @@ $sasUser = if ($cfg.ContainsKey("SAS_USER") -and $cfg["SAS_USER"]) { $cfg["SAS_U
 $sasPort = if ($cfg.ContainsKey("SAS_PORT") -and $cfg["SAS_PORT"]) { $cfg["SAS_PORT"] } else { "22" }
 $sasAppDir = if ($cfg.ContainsKey("SAS_APP_DIR") -and $cfg["SAS_APP_DIR"]) { $cfg["SAS_APP_DIR"] } else { "/opt/fluent-tindahan" }
 $sasKey = if ($cfg.ContainsKey("SAS_SSH_KEY")) { $cfg["SAS_SSH_KEY"] } else { "" }
-$hostPort = if ($cfg.ContainsKey("HOST_HTTP_PORT") -and $cfg["HOST_HTTP_PORT"]) { $cfg["HOST_HTTP_PORT"] } else { "80" }
+$publicHost = if ($cfg.ContainsKey("PUBLIC_HOST") -and $cfg["PUBLIC_HOST"]) { $cfg["PUBLIC_HOST"] } else { "tindahan-dev.novastack-inc.online" }
+$publicOrigin = if ($cfg.ContainsKey("PUBLIC_ORIGIN") -and $cfg["PUBLIC_ORIGIN"]) { $cfg["PUBLIC_ORIGIN"] } else { "https://$publicHost" }
+# Unique port on shared Novastack SAS (8086–8088, 8090 occupied)
+$hostPort = if ($cfg.ContainsKey("HOST_HTTP_PORT") -and $cfg["HOST_HTTP_PORT"]) { $cfg["HOST_HTTP_PORT"] } else { "8089" }
+$certbotEmail = if ($cfg.ContainsKey("SAS_CERTBOT_EMAIL")) { $cfg["SAS_CERTBOT_EMAIL"] } else { "" }
 
 $null = Require-Cfg "POSTGRES_PASSWORD"
 $null = Require-Cfg "PAYMONGO_SECRET_KEY"
 $null = Require-Cfg "PAYMONGO_WEBHOOK_SECRET"
-$null = Require-Cfg "PAYMONGO_FRONTEND_ORIGIN"
+if (-not $cfg.ContainsKey("PAYMONGO_FRONTEND_ORIGIN") -or [string]::IsNullOrWhiteSpace($cfg["PAYMONGO_FRONTEND_ORIGIN"])) {
+    $cfg["PAYMONGO_FRONTEND_ORIGIN"] = $publicOrigin
+}
 
 if (-not (Get-Command ssh -ErrorAction SilentlyContinue)) {
     throw "ssh is required (install OpenSSH Client)."
@@ -86,6 +92,7 @@ function Invoke-Remote([string]$RemoteCommand) {
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "  Fluent Tindahan — deploy-alibaba-sas" -ForegroundColor Cyan
 Write-Host "  Target: $remote (port $sasPort)" -ForegroundColor Cyan
+Write-Host "  Public: $publicOrigin  (host port $hostPort)" -ForegroundColor Cyan
 Write-Host "  App dir: $sasAppDir" -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 
@@ -187,13 +194,13 @@ if ($LASTEXITCODE -ne 0) { throw "Failed to write remote .env" }
 Write-Host "[INFO] Building and starting stack on SAS..." -ForegroundColor Yellow
 Invoke-Remote "cd '$sasAppDir' && docker compose -f docker-compose.yml --env-file .env up -d --build --remove-orphans"
 
-Write-Host "[INFO] Waiting for health..." -ForegroundColor Yellow
+Write-Host "[INFO] Waiting for health on host port $hostPort..." -ForegroundColor Yellow
 $healthy = $false
 for ($i = 1; $i -le 36; $i++) {
     & ssh @sshArgs $remote "curl -fsS --max-time 3 http://127.0.0.1:$hostPort/api/health >/dev/null 2>&1"
     if ($LASTEXITCODE -eq 0) {
         $healthy = $true
-        Write-Host "[OK] Health check passed." -ForegroundColor Green
+        Write-Host "[OK] Health check passed on :$hostPort." -ForegroundColor Green
         break
     }
     Start-Sleep -Seconds 5
@@ -202,11 +209,15 @@ if (-not $healthy) {
     throw "Health check timed out. Inspect logs: ssh $remote `"cd $sasAppDir && docker compose -f docker-compose.yml logs --tail=200`""
 }
 
-$public = if ($cfg.ContainsKey("PUBLIC_ORIGIN") -and $cfg["PUBLIC_ORIGIN"]) { $cfg["PUBLIC_ORIGIN"] } else { "http://$sasHost" }
+Write-Host "[INFO] Installing edge nginx vhost for $publicHost → 127.0.0.1:$hostPort..." -ForegroundColor Yellow
+$vhostCmd = "PUBLIC_HOST='$publicHost' HOST_HTTP_PORT='$hostPort' SAS_APP_DIR='$sasAppDir' SAS_CERTBOT_EMAIL='$certbotEmail' bash '$sasAppDir/deploy/install-host-vhost.sh'"
+Invoke-Remote $vhostCmd
+
 Write-Host ""
 Write-Host "==========================================================" -ForegroundColor Green
 Write-Host "  Deploy complete" -ForegroundColor Green
-Write-Host "  - App:     $public" -ForegroundColor White
-Write-Host "  - Health:  $public/api/health" -ForegroundColor White
-Write-Host "  Reminder: open TCP $hostPort (and 443 if TLS) in the SAS Firewall console." -ForegroundColor Yellow
+Write-Host "  - Public:  $publicOrigin" -ForegroundColor White
+Write-Host "  - Direct:  http://${sasHost}:${hostPort}" -ForegroundColor White
+Write-Host "  - Health:  $publicOrigin/api/health" -ForegroundColor White
+Write-Host "  Reminder: SAS Firewall must allow TCP $hostPort (app) and 80/443 (edge nginx)." -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Green

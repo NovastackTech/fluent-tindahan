@@ -61,7 +61,8 @@ services:
       api:
         condition: service_healthy
     ports:
-      - "${HOST_HTTP_PORT:-80}:80"
+      # Unique host port on shared Novastack SAS (tindahan-dev → 8089)
+      - "${HOST_HTTP_PORT:-8089}:80"
     networks:
       - tindahan
 

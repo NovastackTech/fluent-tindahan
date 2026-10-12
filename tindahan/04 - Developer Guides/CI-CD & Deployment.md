@@ -56,10 +56,16 @@ graph TB
     API --> PG[("PostgreSQL 16\nDocker volume")]
 ```
 
-### Deploy
+### Deploy target
+| | |
+| --- | --- |
+| Public URL | `https://tindahan-dev.novastack-inc.online` |
+| Unique host port | **8089** (shared SAS also uses 8086, 8087, 8088, 8090) |
+| SAS host | `8.220.128.80` |
+
 ```bash
 cp deploy/alibaba-sas.env.example deploy/alibaba-sas.env
-# set SAS_HOST, POSTGRES_PASSWORD, PayMongo secrets, PUBLIC_ORIGIN
+# set POSTGRES_PASSWORD + PayMongo secrets
 
 ./deploy-alibaba-sas.sh --bootstrap   # first time
 ./deploy-alibaba-sas.sh               # ship updates
@@ -69,13 +75,14 @@ PowerShell: `./deploy-alibaba-sas.ps1` (`-Bootstrap` on first run).
 
 | Piece | Role |
 | --- | --- |
-| `docker-compose.yml` | `db` + `api` + `web` stack used on SAS |
-| `deploy/nginx/default.conf` | SPA fallback + `/api` reverse proxy |
+| `docker-compose.yml` | `db` + `api` + `web` stack used on SAS (`HOST_HTTP_PORT=8089`) |
+| `deploy/nginx/default.conf` | App-container SPA fallback + `/api` reverse proxy |
+| `deploy/nginx/host-vhost.conf.template` | Edge nginx: hostname → `127.0.0.1:8089` |
+| `deploy/install-host-vhost.sh` | Installs vhost + optional certbot TLS |
 | `deploy/alibaba-sas.env` | SSH target + production secrets (gitignored) |
 | `deploy/remote-bootstrap.sh` | Idempotent Docker install on Ubuntu/Debian SAS |
 
-Open TCP **80** (and **443** if TLS terminates on the instance) in the SAS Firewall console. Health probe: `GET /api/health`.
-
+Open TCP **8089**, **80**, and **443** in the SAS Firewall console. Health probe: `GET /api/health`.
 ### Local Docker parity
 ```bash
 ./run-local.sh --docker

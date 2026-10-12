@@ -51,15 +51,18 @@ set +a
 : "${SAS_USER:=root}"
 : "${SAS_PORT:=22}"
 : "${SAS_APP_DIR:=/opt/fluent-tindahan}"
-: "${HOST_HTTP_PORT:=80}"
+: "${PUBLIC_HOST:=tindahan-dev.novastack-inc.online}"
+: "${PUBLIC_ORIGIN:=https://${PUBLIC_HOST}}"
+# Unique port on shared Novastack SAS (8086–8088, 8090 occupied)
+: "${HOST_HTTP_PORT:=8089}"
 : "${POSTGRES_DB:=fluent_tindahan}"
 : "${POSTGRES_USER:=fluent}"
 : "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
 : "${ASPNETCORE_ENVIRONMENT:=Production}"
-: "${FIREBASE_PROJECT_ID:=fluent-tindahan-prod}"
+: "${FIREBASE_PROJECT_ID:=fluent-tindahan-dev}"
 : "${PAYMONGO_SECRET_KEY:?PAYMONGO_SECRET_KEY is required for Production}"
 : "${PAYMONGO_WEBHOOK_SECRET:?PAYMONGO_WEBHOOK_SECRET is required for Production}"
-: "${PAYMONGO_FRONTEND_ORIGIN:?PAYMONGO_FRONTEND_ORIGIN is required for Production}"
+: "${PAYMONGO_FRONTEND_ORIGIN:=${PUBLIC_ORIGIN}}"
 
 SSH_OPTS=(-p "$SAS_PORT" -o StrictHostKeyChecking=accept-new)
 if [[ -n "${SAS_SSH_KEY:-}" ]]; then
@@ -98,6 +101,7 @@ rsync_ssh() {
 echo "=========================================================="
 echo "  Fluent Tindahan — deploy-alibaba-sas"
 echo "  Target: ${SAS_USER}@${SAS_HOST}:${SAS_PORT}"
+echo "  Public: ${PUBLIC_ORIGIN}  (host port ${HOST_HTTP_PORT})"
 echo "  App dir: ${SAS_APP_DIR}"
 echo "=========================================================="
 
@@ -139,10 +143,10 @@ EOF
 echo "[INFO] Building and starting stack on SAS (compose file only — no local overrides)..."
 ssh_cmd "cd '${SAS_APP_DIR}' && docker compose -f docker-compose.yml --env-file .env up -d --build --remove-orphans"
 
-echo "[INFO] Waiting for health..."
+echo "[INFO] Waiting for health on host port ${HOST_HTTP_PORT}..."
 for i in $(seq 1 36); do
   if ssh_cmd "curl -fsS --max-time 3 http://127.0.0.1:${HOST_HTTP_PORT}/api/health >/dev/null 2>&1"; then
-    echo "[OK] Health check passed."
+    echo "[OK] Health check passed on :${HOST_HTTP_PORT}."
     break
   fi
   if [[ "$i" -eq 36 ]]; then
@@ -152,11 +156,14 @@ for i in $(seq 1 36); do
   sleep 5
 done
 
-PUBLIC="${PUBLIC_ORIGIN:-http://${SAS_HOST}}"
+echo "[INFO] Installing edge nginx vhost for ${PUBLIC_HOST} → 127.0.0.1:${HOST_HTTP_PORT}..."
+ssh_cmd "PUBLIC_HOST='${PUBLIC_HOST}' HOST_HTTP_PORT='${HOST_HTTP_PORT}' SAS_APP_DIR='${SAS_APP_DIR}' SAS_CERTBOT_EMAIL='${SAS_CERTBOT_EMAIL:-}' bash '${SAS_APP_DIR}/deploy/install-host-vhost.sh'"
+
 echo ""
 echo "=========================================================="
 echo "  Deploy complete"
-echo "  - App:     ${PUBLIC}"
-echo "  - Health:  ${PUBLIC}/api/health"
-echo "  Reminder: open TCP ${HOST_HTTP_PORT} (and 443 if TLS) in the SAS Firewall console."
+echo "  - Public:  ${PUBLIC_ORIGIN}"
+echo "  - Direct:  http://${SAS_HOST}:${HOST_HTTP_PORT}"
+echo "  - Health:  ${PUBLIC_ORIGIN}/api/health"
+echo "  Reminder: SAS Firewall must allow TCP ${HOST_HTTP_PORT} (app) and 80/443 (edge nginx)."
 echo "=========================================================="

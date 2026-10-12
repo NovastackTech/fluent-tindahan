@@ -141,6 +141,7 @@ npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
 ### Deploy (Alibaba Cloud SAS)
+Public: `https://tindahan-dev.novastack-inc.online` on unique host port **8089**.
 ```bash
 cp deploy/alibaba-sas.env.example deploy/alibaba-sas.env
 ./deploy-alibaba-sas.sh --bootstrap   # first time

@@ -81,7 +81,7 @@ Novastack standard remote deploy (SSH + Docker Compose on Simple Application Ser
 
 ```bash
 cp deploy/alibaba-sas.env.example deploy/alibaba-sas.env
-# edit SAS_HOST, secrets, PUBLIC_ORIGIN, PayMongo keys
+# fill POSTGRES_PASSWORD + PayMongo secrets (host/domain/port already set)
 
 ./deploy-alibaba-sas.sh --bootstrap   # first time on a fresh Ubuntu SAS
 ./deploy-alibaba-sas.sh               # subsequent deploys
@@ -89,4 +89,10 @@ cp deploy/alibaba-sas.env.example deploy/alibaba-sas.env
 
 PowerShell equivalent: `./deploy-alibaba-sas.ps1` (use `-Bootstrap` on first run).
 
-Stack on the server: Postgres 16 + .NET 8 API + nginx (PWA + `/api` reverse proxy). Open TCP 80 (and 443 if you terminate TLS) in the SAS Firewall console.
+| | |
+| --- | --- |
+| Public URL | `https://tindahan-dev.novastack-inc.online` |
+| Unique host port | **8089** (other Novastack apps use 8086–8088, 8090) |
+| SAS host | `8.220.128.80` |
+
+Stack: Postgres 16 + .NET 8 API + app nginx, fronted by the host nginx vhost. Open TCP **8089**, **80**, and **443** in the SAS Firewall console.
