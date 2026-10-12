@@ -116,7 +116,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   const gcashResolutions = useLiveQuery(() => db.gcashTxnResolutions.toArray(), []);
   const products = useLiveQuery(() => db.products.toArray(), []) || [];
 
-  const lowStockProducts = products.filter((p) => (p.stockQty || 0) <= 5);
+  const lowStockProducts = products.filter((p) => (p.stockQty || 0) > 0 && (p.stockQty || 0) <= 5);
 
   // Today's boundaries
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -208,9 +208,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
             </div>
             <Text weight="bold" size={300}>{t.nav.inventory}</Text>
             <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              {lowStockProducts.length > 0
-                ? `${lowStockProducts.length} ${t.inventory.lowStockBadge.toLowerCase()}`
-                : `${products.length} items`}
+              {lowStockProducts.length} {t.inventory.lowStockAlerts}
             </Text>
           </Card>
 

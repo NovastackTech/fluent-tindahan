@@ -10,9 +10,11 @@ import { useSyncStore } from '../sync/syncEngine';
 import { usePwaStore } from '../state/pwaStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
 import { db } from '../db/db';
+import { DEFAULT_GCASH_FEE_TIERS, GCASH_FEE_STORAGE_KEY, useGCashFeeStore } from '../state/gcashFeeStore';
 
 describe('SettingsPage', () => {
   beforeEach(async () => {
+    useGCashFeeStore.setState({ feesByTenant: {} });
     useAuthStore.setState({
       businessName: "Aling Nena's Tindahan & GCash",
       role: 'Owner'
@@ -179,6 +181,17 @@ describe('SettingsPage', () => {
     expect(window.alert).toHaveBeenCalled();
 
     printSpy.mockRestore();
+  });
+
+  it('saves tenant-specific fixed GCash fees from the bracket table', () => {
+    renderSettings();
+
+    const firstBracketFee = screen.getByRole('spinbutton', { name: /₱1-₱500/i });
+    fireEvent.change(firstBracketFee, { target: { value: '7' } });
+
+    const tenantId = useAuthStore.getState().tenantId;
+    expect(useGCashFeeStore.getState().feesByTenant[tenantId]).toEqual([7, ...DEFAULT_GCASH_FEE_TIERS.slice(1)]);
+    expect(JSON.parse(localStorage.getItem(GCASH_FEE_STORAGE_KEY) || '{}')[tenantId][0]).toBe(7);
   });
 
   it('renders PWA section and allows installing app when installable', () => {

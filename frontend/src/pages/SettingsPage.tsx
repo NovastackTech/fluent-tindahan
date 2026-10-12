@@ -4,6 +4,7 @@ import {
   tokens,
   shorthands,
   Text,
+  Input,
   Button,
   Card,
   Badge,
@@ -29,6 +30,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
 import { useThemeStore } from '../state/themeStore';
 import { usePrinterStore } from '../state/printerStore';
+import { DEFAULT_GCASH_FEE_TIERS, GCASH_FEE_BRACKETS, useGCashFeeStore } from '../state/gcashFeeStore';
 import { usePwaStore } from '../state/pwaStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
 import { printThermalReceipt } from '../services/receiptPrinter';
@@ -78,6 +80,8 @@ export const SettingsPage: React.FC = () => {
   const { t, language, setLanguage } = useTranslation();
   const { themeMode, setThemeMode } = useThemeStore();
   const { paperWidth, setPaperWidth } = usePrinterStore();
+  const gcashFees = useGCashFeeStore((state) => state.feesByTenant[tenantId] || DEFAULT_GCASH_FEE_TIERS);
+  const setGcashFee = useGCashFeeStore((state) => state.setFeeForTenant);
   const { isStandalone, isInstalled, isInstallable, isIos, promptInstall } = usePwaStore();
   const { tier, subscriptionEndDate, daysRemaining, openUpgradeModal } = useSubscriptionStore();
 
@@ -258,6 +262,52 @@ export const SettingsPage: React.FC = () => {
         >
           {t.settings.printerTestBtn}
         </Button>
+      </Card>
+
+      {/* GCash Transaction Fee Settings */}
+      <Card className={styles.card}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+          <PhoneLaptopRegular fontSize={20} />
+          <Text weight="bold" size={400}>{t.settings.gcashFeeSection}</Text>
+        </div>
+        <Text size={200} style={{ color: tokens.colorNeutralForeground3, marginBottom: '12px', display: 'block' }}>
+          {t.settings.gcashFeeDesc}
+        </Text>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: 'left', padding: '8px 4px', borderBottom: `1px solid ${tokens.colorNeutralStroke2}` }}>
+                {t.settings.gcashFeeRange}
+              </th>
+              <th style={{ textAlign: 'left', padding: '8px 4px', borderBottom: `1px solid ${tokens.colorNeutralStroke2}` }}>
+                {t.settings.gcashFixedFee}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {GCASH_FEE_BRACKETS.map((bracket, index) => (
+              <tr key={bracket.label}>
+                <td style={{ padding: '6px 4px', borderBottom: `1px solid ${tokens.colorNeutralStroke2}` }}>
+                  {bracket.label}
+                </td>
+                <td style={{ padding: '6px 4px', borderBottom: `1px solid ${tokens.colorNeutralStroke2}` }}>
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    aria-label={`${t.settings.gcashFixedFee} ${bracket.label}`}
+                    contentBefore="₱"
+                    value={String(gcashFees[index])}
+                    onChange={(_, data) => {
+                      if (data.value !== '') setGcashFee(tenantId, index, Number(data.value));
+                    }}
+                    style={{ width: '120px' }}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </Card>
 
       {/* SaaS Subscription & Plan Management */}

@@ -110,10 +110,12 @@ export const UtangPage: React.FC = () => {
 
   // Form states
   const [newCustName, setNewCustName] = useState('');
+  const [newCustNameError, setNewCustNameError] = useState('');
   const [newCustPhone, setNewCustPhone] = useState('');
   const [newCustInitialUtang, setNewCustInitialUtang] = useState('');
 
   const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentAmountError, setPaymentAmountError] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
 
   const [creditAmount, setCreditAmount] = useState('');
@@ -153,7 +155,11 @@ export const UtangPage: React.FC = () => {
 
   // Create new customer
   const handleCreateCustomer = async () => {
-    if (!newCustName.trim()) return;
+    if (!newCustName.trim()) {
+      setNewCustNameError(language === 'tl' ? 'Pakiusap ilagay ang pangalan ng suki.' : 'Please enter customer name.');
+      return;
+    }
+    setNewCustNameError('');
 
     const phone = normalizePhilippineMobile(newCustPhone);
     if (phone === null) {
@@ -215,6 +221,7 @@ export const UtangPage: React.FC = () => {
     }
 
     setNewCustName('');
+    setNewCustNameError('');
     setNewCustPhone('');
     setNewCustInitialUtang('');
     setIsNewCustomerOpen(false);
@@ -224,7 +231,11 @@ export const UtangPage: React.FC = () => {
   const handleRecordPayment = async () => {
     if (!selectedCustomer || savingRef.current) return;
     const amount = parseFloat(paymentAmount);
-    if (isNaN(amount) || amount <= 0) return;
+    if (isNaN(amount) || amount <= 0) {
+      setPaymentAmountError(t.utang.paymentAmountInvalid);
+      return;
+    }
+    setPaymentAmountError('');
 
     savingRef.current = true;
     setIsSaving(true);
@@ -277,6 +288,7 @@ export const UtangPage: React.FC = () => {
       setPaymentAmount('');
       setPaymentNotes('');
       setIsPaymentOpen(false);
+      setSelectedCustomer(null);
     } finally {
       savingRef.current = false;
       setIsSaving(false);
@@ -561,10 +573,19 @@ export const UtangPage: React.FC = () => {
                   step="0.01"
                   style={{ width: '100%', marginTop: '4px' }}
                   value={paymentAmount}
-                  onChange={(_, data) => setPaymentAmount(data.value)}
+                  onChange={(_, data) => {
+                    setPaymentAmount(data.value);
+                    setPaymentAmountError('');
+                  }}
                   placeholder="0.00"
                   contentBefore="₱"
+                  aria-invalid={!!paymentAmountError}
                 />
+                {paymentAmountError && (
+                  <Text role="alert" size={200} style={{ color: tokens.colorPaletteRedForeground1, display: 'block', marginTop: '4px' }}>
+                    {paymentAmountError}
+                  </Text>
+                )}
               </div>
 
               {selectedCustomer && selectedCustomer.totalUtangBalance > 0 && (
@@ -642,7 +663,10 @@ export const UtangPage: React.FC = () => {
       </Dialog>
 
       {/* Create New Customer Dialog */}
-      <Dialog open={isNewCustomerOpen} onOpenChange={(_, data) => setIsNewCustomerOpen(data.open)}>
+      <Dialog open={isNewCustomerOpen} onOpenChange={(_, data) => {
+        setIsNewCustomerOpen(data.open);
+        if (!data.open) setNewCustNameError('');
+      }}>
         <DialogSurface>
           <DialogBody>
             <DialogTitle>{t.utang.addNewCustomer}</DialogTitle>
@@ -652,9 +676,17 @@ export const UtangPage: React.FC = () => {
                 <Input
                   style={{ width: '100%', marginTop: '4px' }}
                   value={newCustName}
-                  onChange={(_, data) => setNewCustName(data.value)}
+                  onChange={(_, data) => {
+                    setNewCustName(data.value);
+                    if (newCustNameError) setNewCustNameError('');
+                  }}
                   placeholder={t.utang.customerNamePlaceholder}
                 />
+                {newCustNameError && (
+                  <Text role="alert" size={200} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
+                    {newCustNameError}
+                  </Text>
+                )}
               </div>
 
               <div style={{ margin: '8px 0' }}>

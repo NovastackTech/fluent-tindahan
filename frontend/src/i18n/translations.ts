@@ -123,6 +123,7 @@ export interface Translations {
     noTransactions: string;
     recordPaymentTitle: string;
     paymentAmountLabel: string;
+    paymentAmountInvalid: string;
     payAll: string;
     paymentNotesLabel: string;
     paymentNotesPlaceholder: string;
@@ -163,6 +164,7 @@ export interface Translations {
     saveTransaction: string;
     historyTitle: string;
     invalidAmountAlert: string;
+    duplicateRefWarning: string;
   };
   dashboard: {
     title: string;
@@ -336,6 +338,10 @@ export interface Translations {
     printerPaperWidth: string;
     printerTestBtn: string;
     printerTestSuccess: string;
+    gcashFeeSection: string;
+    gcashFeeDesc: string;
+    gcashFeeRange: string;
+    gcashFixedFee: string;
   };
   receipt: {
     watermark: string;
@@ -388,7 +394,6 @@ export interface Translations {
     updateBtn: string;
     updateWaitMsg: string;
     updateOtherTabsWaitMsg: string;
-    updateDeferredMsg: string;
     pwaSection: string;
     pwaDesc: string;
     appStatus: string;
@@ -550,6 +555,7 @@ export const translations: Record<Language, Translations> = {
       noTransactions: 'Walang tala ng transaksyon.',
       recordPaymentTitle: 'Magtala ng Bayad ni',
       paymentAmountLabel: 'Halaga ng Bayad (₱):',
+      paymentAmountInvalid: 'Maglagay ng halagang higit sa ₱0.',
       payAll: 'Bayaran Lahat',
       paymentNotesLabel: 'Tala / Notes (opsyonal):',
       paymentNotesPlaceholder: 'Hal. Bayad sa GCash o cash',
@@ -589,7 +595,8 @@ export const translations: Record<Language, Translations> = {
       totalToCustomer: 'Kabuuang Ibibigay sa Customer:',
       saveTransaction: 'I-save ang Transaksyon',
       historyTitle: 'Kasaysayan ng GCash Ngayong Buwan',
-      invalidAmountAlert: 'Maglagay ng wastong halaga.'
+      invalidAmountAlert: 'Maglagay ng wastong halaga.',
+      duplicateRefWarning: 'Ginamit na ang reference number. Hindi maaaring magtala ng doble.'
     },
     dashboard: {
       title: 'Pangkalahatang Dashboard ng Tindahan',
@@ -762,7 +769,11 @@ export const translations: Record<Language, Translations> = {
       printerDesc: 'I-configure ang sukat ng papel ng thermal receipt printer (58mm o 80mm) at subukan ang pag-print.',
       printerPaperWidth: 'Lapad ng Papel (Paper Width)',
       printerTestBtn: 'Subukang Mag-Print (Test Print)',
-      printerTestSuccess: 'Naipadala ang test receipt sa printer!'
+      printerTestSuccess: 'Naipadala ang test receipt sa printer!',
+      gcashFeeSection: 'Mga Bayad sa GCash',
+      gcashFeeDesc: 'Itakda ang nakapirming singil ayon sa halaga ng transaksyon. Awtomatikong sine-save bawat tindahan.',
+      gcashFeeRange: 'Halaga ng Transaksyon',
+      gcashFixedFee: 'Nakapirming Bayad'
     },
     receipt: {
       watermark: 'HINDI OPISYAL NA RESIBO\nPARA SA PAGKILALA LAMANG',
@@ -815,7 +826,6 @@ export const translations: Record<Language, Translations> = {
       updateBtn: 'I-reload para Mag-update',
       updateWaitMsg: 'Pakisara muna ang benta bago i-update.',
       updateOtherTabsWaitMsg: 'May bukas na benta sa isa pang tab. Pakitapos o pakisara muna bago mag-update.',
-      updateDeferredMsg: 'Nakahanda na ang update. Awtomatikong magre-reload ang app pagkatapos ng bentang ito.',
       pwaSection: 'PWA (Progressive Web App)',
       pwaDesc: 'I-install ang app sa iyong Android, iPhone, o computer para sa buong offline experience.',
       appStatus: 'Katayuan ng App:',
@@ -975,6 +985,7 @@ export const translations: Record<Language, Translations> = {
       noTransactions: 'No transaction records found.',
       recordPaymentTitle: 'Record Payment for',
       paymentAmountLabel: 'Payment Amount (₱):',
+      paymentAmountInvalid: 'Enter a payment amount greater than ₱0.',
       payAll: 'Pay Full Balance',
       paymentNotesLabel: 'Notes (optional):',
       paymentNotesPlaceholder: 'e.g. Paid in cash or GCash',
@@ -1014,7 +1025,8 @@ export const translations: Record<Language, Translations> = {
       totalToCustomer: 'Total to Disburse to Customer:',
       saveTransaction: 'Save Transaction',
       historyTitle: "This Month's GCash History",
-      invalidAmountAlert: 'Please enter a valid amount.'
+      invalidAmountAlert: 'Please enter a valid amount.',
+      duplicateRefWarning: 'This reference number has already been used. Duplicate entries are not allowed.'
     },
     dashboard: {
       title: 'Store Performance Dashboard',
@@ -1187,7 +1199,11 @@ export const translations: Record<Language, Translations> = {
       printerDesc: 'Configure thermal receipt printer paper width (58mm or 80mm) and test printer device.',
       printerPaperWidth: 'Paper Width',
       printerTestBtn: 'Print Test Receipt',
-      printerTestSuccess: 'Test receipt sent to printer!'
+      printerTestSuccess: 'Test receipt sent to printer!',
+      gcashFeeSection: 'GCash Transaction Fees',
+      gcashFeeDesc: 'Set the fixed fee for each transaction amount bracket. Fees save automatically per store.',
+      gcashFeeRange: 'Transaction Amount',
+      gcashFixedFee: 'Fixed Fee'
     },
     receipt: {
       watermark: 'NOT AN OFFICIAL RECEIPT\nFOR ACKNOWLEDGMENT ONLY',
@@ -1240,7 +1256,6 @@ export const translations: Record<Language, Translations> = {
       updateBtn: 'Reload & Update',
       updateWaitMsg: 'Please complete or clear the cart before updating.',
       updateOtherTabsWaitMsg: 'Another open till tab has an active transaction. Complete or clear it before updating.',
-      updateDeferredMsg: 'Update ready. The app will reload automatically once the current transaction is completed.',
       pwaSection: 'Progressive Web App (PWA)',
       pwaDesc: 'Install the app on your Android phone, iPhone, or PC for a native, offline-ready experience.',
       appStatus: 'App Environment:',

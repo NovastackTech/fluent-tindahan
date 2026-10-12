@@ -24,6 +24,7 @@ import { useAuthStore } from '../state/authStore';
 import { addSyncRecord, kickSync } from '../sync/syncEngine';
 import { useTranslation } from '../state/languageStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
+import { calculateGCashFee, DEFAULT_GCASH_FEE_TIERS, useGCashFeeStore } from '../state/gcashFeeStore';
 import { formatPeso } from '../utils/currency';
 
 export function toLocalDateKey(value: Date | string): string {
@@ -87,19 +88,12 @@ export const GCashPage: React.FC = () => {
   const savingRef = useRef(false);
 
   const tenantId = useAuthStore((s) => s.tenantId);
+  const feeTiers = useGCashFeeStore((state) => state.feesByTenant[tenantId] || DEFAULT_GCASH_FEE_TIERS);
 
-  // Calculate default sari-sari store fee tier
+  // Select the configured fixed fee for the amount bracket.
   const calculatedFee = useMemo(() => {
-    const num = parseFloat(amount) || 0;
-    if (num <= 0) return 0;
-    if (num <= 500) return 10;
-    if (num <= 1000) return 15;
-    if (num <= 2000) return 30;
-    if (num <= 3000) return 45;
-    if (num <= 4000) return 60;
-    if (num <= 5000) return 75;
-    return Math.ceil(num / 1000) * 15; // ₱15 per ₱1,000
-  }, [amount]);
+    return calculateGCashFee(parseFloat(amount) || 0, feeTiers);
+  }, [amount, feeTiers]);
 
   const activeFee = customFee !== null ? parseFloat(customFee) || 0 : calculatedFee;
   const numAmount = parseFloat(amount) || 0;
@@ -109,6 +103,10 @@ export const GCashPage: React.FC = () => {
     () => db.gcashTxns.where('tenantId').equals(tenantId).reverse().sortBy('date'),
     [tenantId]
   ) || [];
+  const enteredRefNorm = normalizeRef(refNo);
+  const hasDuplicateRef = Boolean(enteredRefNorm) && allTxns.some(
+    (txn) => (txn.refNoNorm || normalizeRef(txn.refNo)) === enteredRefNorm
+  );
   const resolutions = useLiveQuery(
     () => db.gcashTxnResolutions.where('tenantId').equals(tenantId).toArray(),
     [tenantId]
@@ -335,7 +333,7 @@ export const GCashPage: React.FC = () => {
         <Text size={300} style={{ color: tokens.colorNeutralForeground3, display: 'block' }}>
           {t.gcash.subtitle}
           {tier === 'Libre' && (
-            <span> • {language === 'tl' ? 'Ngayong Buwan:' : 'This Month:'} <span data-testid="monthly-gcash-count">{currentMonthTxnCount}/30</span> (Libre)</span>
+            <span> • {language === 'tl' ? 'Ngayong Buwan:' : 'This Month:'} <span data-testid="monthly-gcash-count">{currentMonthTxnCount}/30</span> ({language === 'tl' ? 'Libre' : 'Libre plan'})</span>
           )}
         </Text>
       </div>
@@ -416,7 +414,19 @@ export const GCashPage: React.FC = () => {
                 value={refNo}
                 onChange={(_, data) => setRefNo(data.value)}
                 placeholder={t.gcash.refNoPlaceholder}
+                aria-invalid={hasDuplicateRef}
+                aria-describedby={hasDuplicateRef ? 'gcash-duplicate-ref-warning' : undefined}
               />
+              {hasDuplicateRef && (
+                <Text
+                  id="gcash-duplicate-ref-warning"
+                  role="alert"
+                  size={200}
+                  style={{ color: tokens.colorPaletteRedForeground1, display: 'block', marginTop: '4px' }}
+                >
+                  {t.gcash.duplicateRefWarning} ({refNo.trim()})
+                </Text>
+              )}
             </div>
 
             <div>
@@ -457,7 +467,7 @@ export const GCashPage: React.FC = () => {
             type="submit"
             appearance="primary"
             icon={<CheckmarkRegular />}
-            disabled={isSaving}
+            disabled={isSaving || hasDuplicateRef}
             style={{ width: '100%', marginTop: '16px' }}
           >
             {t.gcash.saveTransaction} ({txnType === 'CashIn' ? 'Cash-In' : 'Cash-Out'})
@@ -533,6 +543,11 @@ export const GCashPage: React.FC = () => {
                     <Text size={100} style={{ color: tokens.colorNeutralForeground3, marginTop: '2px', display: 'block' }}>
                       {!isToday && `${new Date(txn.date).toLocaleDateString()} • `}Ref: {txn.refNo} {txn.customerPhone ? `• ${txn.customerPhone}` : ''} • {new Date(txn.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </Text>
+                    {txn.notes && (
+                      <Text size={200} style={{ color: tokens.colorNeutralForeground2, marginTop: '4px', display: 'block' }}>
+                        {txn.notes}
+                      </Text>
+                    )}
                     {txn.conflictReason && (
                       <Text size={100} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
                         ⚠️ {txn.conflictReason}

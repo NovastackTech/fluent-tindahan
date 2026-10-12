@@ -74,6 +74,20 @@ describe('UtangPage', () => {
     });
   });
 
+  it('shows inline validation when saving a customer with a blank name', async () => {
+    renderUtang();
+
+    fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Bagong Suki|Add New Customer/i }));
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Suki|Save Customer/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Pakiusap ilagay ang pangalan ng suki|Please enter customer name/i);
+    expect(await db.customers.toArray()).toHaveLength(0);
+    expect(await db.syncQueue.toArray()).toHaveLength(0);
+
+    fireEvent.change(screen.getAllByRole('textbox')[1], { target: { value: 'QA-TEST Name' } });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('rejects a negative opening utang balance without writing customer, ledger, or sync data', async () => {
     const alertMock = vi.spyOn(window, 'alert').mockImplementation(() => {});
     renderUtang();
@@ -138,6 +152,14 @@ describe('UtangPage', () => {
       totalUtangBalance: 500,
       updatedAt: new Date().toISOString()
     });
+    await db.customers.add({
+      id: 'cust-pay-next',
+      tenantId: 'tenant-1',
+      name: 'Mang Jose',
+      phone: '09170003333',
+      totalUtangBalance: 250,
+      updatedAt: new Date().toISOString()
+    });
 
     renderUtang();
 
@@ -167,6 +189,33 @@ describe('UtangPage', () => {
       const updated = await db.customers.get('cust-pay');
       expect(updated?.totalUtangBalance).toBe(300);
     });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText('Mang Jose'));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('shows validation when payment amount is zero', async () => {
+    await db.customers.add({
+      id: 'cust-zero-payment',
+      tenantId: 'tenant-1',
+      name: 'Aling Cora',
+      phone: '09170002222',
+      totalUtangBalance: 500,
+      updatedAt: new Date().toISOString()
+    });
+
+    renderUtang();
+    fireEvent.click(await screen.findByText('Aling Cora'));
+    fireEvent.click(await screen.findByRole('button', { name: /Magbayad|Pay/i }));
+    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '0' } });
+    fireEvent.click(screen.getByRole('button', { name: /Kumpirmahin ang Bayad|Confirm Payment/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/higit sa ₱0/i);
+    expect(await db.customers.get('cust-zero-payment')).toMatchObject({ totalUtangBalance: 500 });
+    expect(await db.utangLedger.where('customerId').equals('cust-zero-payment').toArray()).toHaveLength(0);
   });
 
   it('adds additional credit to customer', async () => {

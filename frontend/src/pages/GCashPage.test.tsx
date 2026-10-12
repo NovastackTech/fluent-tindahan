@@ -4,9 +4,15 @@ import { FluentProvider } from '@fluentui/react-components';
 import { GCashPage, toLocalDateKey } from './GCashPage';
 import { sariSariLightTheme } from '../theme/theme';
 import { db } from '../db/db';
+import { useLanguageStore } from '../state/languageStore';
+import { DEFAULT_GCASH_FEE_TIERS, useGCashFeeStore } from '../state/gcashFeeStore';
+import { useAuthStore } from '../state/authStore';
 
 describe('GCashPage', () => {
   beforeEach(async () => {
+    useLanguageStore.getState().setLanguage('tl');
+    const tenantId = useAuthStore.getState().tenantId;
+    DEFAULT_GCASH_FEE_TIERS.forEach((fee, index) => useGCashFeeStore.getState().setFeeForTenant(tenantId, index, fee));
     await db.gcashTxns.clear();
     await db.gcashTxnResolutions.clear();
     await db.syncQueue.clear();
@@ -35,16 +41,32 @@ describe('GCashPage', () => {
     expect(screen.getAllByText(/Cash Out/i).length).toBeGreaterThan(0);
   });
 
-  it('calculates default fee tiered based on amount', () => {
+  it('localizes the monthly Libre counter label in English', () => {
+    useLanguageStore.getState().setLanguage('en');
+    renderGCash();
+
+    expect(screen.getByText(/This Month:/i)).toBeInTheDocument();
+    expect(screen.getByText(/Libre plan/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^\(Libre\)$/i)).not.toBeInTheDocument();
+  });
+
+  it('calculates the default percentage fee for small cash-in amounts', () => {
     renderGCash();
 
     const inputs = screen.getAllByRole('spinbutton');
     const amountInput = inputs[0]; // Halaga / Amount
 
-    fireEvent.change(amountInput, { target: { value: '500' } });
+    fireEvent.change(amountInput, { target: { value: '20' } });
 
-    // Under 500, fee is 10
-    expect(screen.getByDisplayValue('10')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('5')).toBeInTheDocument();
+  });
+
+  it('calculates the default fixed fee for cash-out', () => {
+    renderGCash();
+    fireEvent.click(screen.getByRole('tab', { name: /Cash.*Out/i }));
+    fireEvent.change(screen.getAllByRole('spinbutton')[0], { target: { value: '500' } });
+
+    expect(screen.getByDisplayValue('5')).toBeInTheDocument();
   });
 
   it('records cash-in transaction to Dexie', async () => {
@@ -65,8 +87,19 @@ describe('GCashPage', () => {
       const records = await db.gcashTxns.toArray();
       expect(records).toHaveLength(1);
       expect(records[0].amount).toBe(1000);
+      expect(records[0].fee).toBe(10);
       expect(records[0].refNo).toBe('REF-12345678');
     });
+  });
+
+  it('uses the configured tenant-specific fixed fee', () => {
+    const tenantId = useAuthStore.getState().tenantId;
+    useGCashFeeStore.getState().setFeeForTenant(tenantId, 0, 7);
+
+    renderGCash();
+    fireEvent.change(screen.getAllByRole('spinbutton')[0], { target: { value: '20' } });
+
+    expect(screen.getByDisplayValue('7')).toBeInTheDocument();
   });
 
   it('records cash-out transaction with custom fee to Dexie', async () => {
@@ -96,6 +129,7 @@ describe('GCashPage', () => {
       expect(records[0].refNo).toBe('OUT-99887766');
       expect(records[0].notes).toBe('Padala ni Nanay');
     });
+    expect(await screen.findByText('Padala ni Nanay')).toBeInTheDocument();
   });
 
   it('renders existing today transactions in history log', async () => {
@@ -219,9 +253,7 @@ describe('GCashPage', () => {
     });
   });
 
-  it('rejects recording transaction with duplicate reference number', async () => {
-    const alertMock = vi.spyOn(window, 'alert').mockImplementation(() => {});
-
+  it('warns inline and disables save for a duplicate reference number', async () => {
     await db.gcashTxns.add({
       id: 'g-dup-1',
       tenantId: '11111111-1111-1111-1111-111111111111',
@@ -244,21 +276,16 @@ describe('GCashPage', () => {
     fireEvent.change(textInputs[0], { target: { value: '  ref-dup-12345  ' } });
 
     const submitBtn = screen.getByRole('button', { name: /Itala ang GCash|Record GCash|Cash-In/i });
-    fireEvent.click(submitBtn);
-
-    await waitFor(() => {
-      expect(alertMock).toHaveBeenCalledWith(expect.stringMatching(/Ginamit na|already been used|Hindi maaaring magtala ng doble/i));
-    });
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Ginamit na|already been used|Hindi maaaring magtala ng doble/i);
+    expect(submitBtn).toBeDisabled();
+    expect(textInputs[0]).toHaveAttribute('aria-invalid', 'true');
 
     const records = await db.gcashTxns.toArray();
     expect(records).toHaveLength(1);
     expect(records[0].refNo).toBe('REF-DUP-12345');
-
-    alertMock.mockRestore();
   });
 
-  it('rejects a duplicate reference when the existing legacy row lacks refNoNorm', async () => {
-    const alertMock = vi.spyOn(window, 'alert').mockImplementation(() => {});
+  it('warns inline for a duplicate legacy reference when refNoNorm is missing', async () => {
     await db.gcashTxns.add({
       id: 'g-legacy-duplicate',
       tenantId: '11111111-1111-1111-1111-111111111111',
@@ -273,14 +300,10 @@ describe('GCashPage', () => {
 
     fireEvent.change(screen.getAllByRole('spinbutton')[0], { target: { value: '100' } });
     fireEvent.change(screen.getAllByRole('textbox')[0], { target: { value: '901238471201' } });
-    fireEvent.click(screen.getByRole('button', { name: /Itala ang GCash|Record GCash|Cash-In/i }));
-
-    await waitFor(() => {
-      expect(alertMock).toHaveBeenCalledWith(expect.stringMatching(/Ginamit na|already been used/i));
-    });
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Ginamit na|already been used/i);
+    expect(screen.getByRole('button', { name: /Itala ang GCash|Record GCash|Cash-In/i })).toBeDisabled();
     expect(await db.gcashTxns.count()).toBe(1);
     expect(await db.syncQueue.count()).toBe(0);
-    alertMock.mockRestore();
   });
 
   it('allows same reference number for a different tenant due to compound indexing', async () => {

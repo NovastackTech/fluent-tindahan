@@ -6,7 +6,7 @@ import { sariSariLightTheme } from '../theme/theme';
 import { db } from '../db/db';
 import { useCartStore } from '../state/cartStore';
 import { usePwaStore } from '../state/pwaStore';
-import { triggerDeferredReloadSubscription, _resetUpdateSWFunctionForTest } from '../pwa/registerServiceWorker';
+import { _resetUpdateSWFunctionForTest } from '../pwa/registerServiceWorker';
 
 describe('POSPage', () => {
   beforeEach(async () => {
@@ -438,9 +438,9 @@ describe('POSPage', () => {
     fireEvent.click(screen.getByText('Lucky Me Pancit Canton Kalamansi'));
     expect(useCartStore.getState().items).toHaveLength(1);
 
-    // 2. An update is active: reload is deferred
-    triggerDeferredReloadSubscription();
-    expect(usePwaStore.getState().reloadDeferred).toBe(true);
+    // 2. An update is available, but it must not reload without user action.
+    usePwaStore.getState().setNeedRefresh(true);
+    expect(usePwaStore.getState().needRefresh).toBe(true);
 
     // 3. Open checkout dialog
     const payBtn = screen.getByRole('button', { name: /Bayad|Pay/i });
@@ -474,11 +474,8 @@ describe('POSPage', () => {
     const closeBtn = await screen.findByRole('button', { name: /Isara|Close/i }, { timeout: 4000 });
     fireEvent.click(closeBtn);
 
-    // 8. Verify reload is safely triggered AFTER sale was persisted and receipt closed
-    await waitFor(() => {
-      expect(reloadMock).toHaveBeenCalledTimes(1);
-      expect(usePwaStore.getState().reloadDeferred).toBe(false);
-    }, { timeout: 4000 });
+    // 8. Closing the receipt does not trigger an unsolicited reload.
+    expect(reloadMock).not.toHaveBeenCalled();
 
     Object.defineProperty(window, 'location', {
       value: originalLocation,

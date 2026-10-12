@@ -42,7 +42,6 @@ import { db, type ProductRecord, type CustomerRecord } from '../db/db';
 import { useCartStore } from '../state/cartStore';
 import { useAuthStore } from '../state/authStore';
 import { usePwaStore } from '../state/pwaStore';
-import { notifySaleFinished } from '../pwa/registerServiceWorker';
 import { formatPeso } from '../utils/currency';
 import { normalizePhilippineMobile } from '../utils/philippineMobile';
 import { enqueueSync } from '../sync/syncEngine';
@@ -1104,7 +1103,6 @@ export const POSPage: React.FC = () => {
         onClose={() => {
           setReceiptData(null);
           usePwaStore.getState().setHasActiveReceipt(false);
-          notifySaleFinished();
         }}
         data={receiptData}
       />

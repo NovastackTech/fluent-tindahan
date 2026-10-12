@@ -15,7 +15,8 @@ import {
   shorthands,
   Spinner,
   MessageBar,
-  MessageBarBody
+  MessageBarBody,
+  mergeClasses
 } from '@fluentui/react-components';
 import {
   CheckmarkRegular,
@@ -259,7 +260,7 @@ export const SubscriptionModal: React.FC = () => {
             {/* Cards Grid */}
             <div className={styles.cardsGrid}>
               {/* LIBRE */}
-              <Card className={`${styles.tierCard} ${currentTier === 'Libre' ? styles.activeTierCard : ''}`} style={{ overflow: 'visible' }}>
+              <Card className={mergeClasses(styles.tierCard, currentTier === 'Libre' && styles.activeTierCard)} style={{ overflow: 'visible' }}>
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Text weight="bold" size={500}>Libre</Text>
@@ -323,7 +324,11 @@ export const SubscriptionModal: React.FC = () => {
 
               {/* TINDAHAN PRO */}
               <Card
-                className={`${styles.tierCard} ${styles.popularTierCard} ${currentTier === 'TindahanPro' ? styles.activeTierCard : ''}`}
+                className={mergeClasses(
+                  styles.tierCard,
+                  styles.popularTierCard,
+                  currentTier === 'TindahanPro' && styles.activeTierCard
+                )}
                 style={{ overflow: 'visible' }}
               >
                 <Badge color="warning" appearance="filled" className={styles.popularBadge} icon={<StarFilled />}>
@@ -415,7 +420,7 @@ export const SubscriptionModal: React.FC = () => {
 
               {/* NEGOSYO PLUS */}
               <Card
-                className={`${styles.tierCard} ${currentTier === 'NegosyoPlus' ? styles.activeTierCard : ''}`}
+                className={mergeClasses(styles.tierCard, currentTier === 'NegosyoPlus' && styles.activeTierCard)}
                 style={{ overflow: 'visible' }}
               >
                 <div>

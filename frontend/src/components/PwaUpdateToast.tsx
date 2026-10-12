@@ -43,15 +43,16 @@ const useStyles = makeStyles({
 export const PwaUpdateToast: React.FC = () => {
   const styles = useStyles();
   const { t } = useTranslation();
-  const { needRefresh, setNeedRefresh, otherTabsHaveCart, reloadDeferred } = usePwaStore();
+  const { needRefresh, setNeedRefresh, otherTabsHaveCart, isSaleInProgress, hasActiveReceipt } = usePwaStore();
   const cartItemCount = useCartStore((s) => s.items.length);
 
-  if (!needRefresh && !reloadDeferred) {
+  if (!needRefresh) {
     return null;
   }
 
   const hasLocalItems = cartItemCount > 0;
-  const isBlocked = hasLocalItems || otherTabsHaveCart || reloadDeferred;
+  const hasActiveSale = isSaleInProgress || hasActiveReceipt;
+  const isBlocked = hasLocalItems || otherTabsHaveCart || hasActiveSale;
 
   const handleUpdate = async () => {
     if (isBlocked) {
@@ -64,9 +65,7 @@ export const PwaUpdateToast: React.FC = () => {
     setNeedRefresh(false);
   };
 
-  const warningMessage = reloadDeferred
-    ? t.pwa.updateDeferredMsg
-    : hasLocalItems
+  const warningMessage = hasLocalItems || hasActiveSale
       ? t.pwa.updateWaitMsg
       : otherTabsHaveCart
         ? t.pwa.updateOtherTabsWaitMsg

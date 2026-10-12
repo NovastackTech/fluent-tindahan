@@ -19,7 +19,6 @@ export interface PwaState {
   needRefresh: boolean;
   offlineReady: boolean;
   otherTabsHaveCart: boolean;
-  reloadDeferred: boolean;
   isSaleInProgress: boolean;
   hasActiveReceipt: boolean;
 
@@ -29,7 +28,6 @@ export interface PwaState {
   setNeedRefresh: (need: boolean) => void;
   setOfflineReady: (ready: boolean) => void;
   setOtherTabsHaveCart: (have: boolean) => void;
-  setReloadDeferred: (deferred: boolean) => void;
   setIsSaleInProgress: (inProgress: boolean) => void;
   setHasActiveReceipt: (active: boolean) => void;
   checkEnvironment: () => void;
@@ -63,7 +61,6 @@ export const usePwaStore = create<PwaState>((set, get) => ({
   needRefresh: false,
   offlineReady: false,
   otherTabsHaveCart: false,
-  reloadDeferred: false,
   isSaleInProgress: false,
   hasActiveReceipt: false,
 
@@ -116,7 +113,6 @@ export const usePwaStore = create<PwaState>((set, get) => ({
   setNeedRefresh: (need) => set({ needRefresh: need }),
   setOfflineReady: (ready) => set({ offlineReady: ready }),
   setOtherTabsHaveCart: (have) => set({ otherTabsHaveCart: have }),
-  setReloadDeferred: (deferred) => set({ reloadDeferred: deferred }),
   setIsSaleInProgress: (inProgress) => set({ isSaleInProgress: inProgress }),
   setHasActiveReceipt: (active) => set({ hasActiveReceipt: active }),
 

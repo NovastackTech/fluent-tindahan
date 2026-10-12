@@ -84,6 +84,35 @@ describe('DashboardPage', () => {
     });
   });
 
+  it('shows an explicit zero low-stock count instead of total product count', async () => {
+    await db.products.bulkAdd([
+      { id: 'p-out', tenantId: 't-1', name: 'Out', price: 10, cost: 5, stockQty: 0, updatedAt: new Date().toISOString() },
+      { id: 'p-stocked', tenantId: 't-1', name: 'Stocked', price: 10, cost: 5, stockQty: 6, updatedAt: new Date().toISOString() }
+    ]);
+
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByText(/0 Low Stock Alerts \(≤ 5\)|0 Paubos na Paninda \(≤ 5\)/i)).toBeInTheDocument();
+      expect(screen.queryByText(/2 items/i)).not.toBeInTheDocument();
+    });
+  });
+
+  it('counts low-stock products using the same range as Inventory (1 through 5)', async () => {
+    await db.products.bulkAdd([
+      { id: 'p-out', tenantId: 't-1', name: 'Out', price: 10, cost: 5, stockQty: 0, updatedAt: new Date().toISOString() },
+      { id: 'p-low-one', tenantId: 't-1', name: 'Low One', price: 10, cost: 5, stockQty: 1, updatedAt: new Date().toISOString() },
+      { id: 'p-low-five', tenantId: 't-1', name: 'Low Five', price: 10, cost: 5, stockQty: 5, updatedAt: new Date().toISOString() },
+      { id: 'p-stocked', tenantId: 't-1', name: 'Stocked', price: 10, cost: 5, stockQty: 6, updatedAt: new Date().toISOString() }
+    ]);
+
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByText(/2 Low Stock Alerts \(≤ 5\)|2 Paubos na Paninda \(≤ 5\)/i)).toBeInTheDocument();
+    });
+  });
+
   it('excludes unresolved GCash conflicts from dashboard volume and fee totals', async () => {
     const today = new Date().toISOString();
     await db.gcashTxns.bulkAdd([
