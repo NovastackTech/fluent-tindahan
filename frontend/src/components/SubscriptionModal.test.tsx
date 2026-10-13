@@ -8,13 +8,17 @@ import { SUBSCRIPTION_REFRESH_ERROR, useSubscriptionStore } from '../state/subsc
 import { useAuthStore } from '../state/authStore';
 import { useLanguageStore } from '../state/languageStore';
 import { db } from '../db/db';
+import { apiClient } from '../services/apiClient';
+import { DEFAULT_TENANT_ID } from '../db/seedData';
 
 describe('SubscriptionModal', () => {
   beforeEach(async () => {
+    vi.restoreAllMocks();
     localStorage.clear();
     await db.tenants.clear();
     useLanguageStore.setState({ language: 'tl' });
     useAuthStore.setState({
+      tenantId: DEFAULT_TENANT_ID,
       tier: 'Libre',
       subscriptionEndDate: null
     });
@@ -107,6 +111,10 @@ describe('SubscriptionModal', () => {
   });
 
   it('allows simulating upgrade to Pro in development test mode', async () => {
+    const newEndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
+      data: { success: true, tier: 1, newEndDate }
+    } as any);
     useSubscriptionStore.setState({ isUpgradeModalOpen: true });
     renderModal();
 
@@ -117,6 +125,7 @@ describe('SubscriptionModal', () => {
     await waitFor(() => {
       expect(useSubscriptionStore.getState().tier).toBe('TindahanPro');
       expect(useAuthStore.getState().tier).toBe('TindahanPro');
+      expect(localStorage.getItem('fluent_tindahan_tier_v1')).toBe('TindahanPro');
     });
   });
 });

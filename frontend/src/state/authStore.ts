@@ -25,6 +25,7 @@ interface AuthState {
   firebaseToken: string | null;
   consentAccepted: boolean;
   isOnboarded: boolean;
+  isOnboardingStatusReady: boolean;
   isOnboardingOpen: boolean;
   onboardingMode: 'initial' | 'edit';
   setConsentAccepted: (accepted: boolean) => void;
@@ -36,6 +37,7 @@ interface AuthState {
   setSubscription: (tier: PlanTier, subscriptionEndDate?: string | null) => void;
   setFirebaseToken: (token: string | null) => void;
   openOnboarding: (mode?: 'initial' | 'edit') => void;
+  resolveOnboardingStatus: (hasExistingStore: boolean) => void;
   closeOnboarding: () => void;
   completeOnboarding: (payload: OnboardingPayload) => void;
   updateStoreProfile: (payload: StoreProfilePayload) => void;
@@ -60,7 +62,16 @@ const initialUserId = localStorage.getItem(STORAGE_KEY_USER_ID) || DEFAULT_USER_
 const initialBusinessName = localStorage.getItem(STORAGE_KEY_STORE_NAME) || "Aling Nena's Tindahan & GCash";
 const initialOwnerName = localStorage.getItem(STORAGE_KEY_OWNER_NAME) || 'Aling Nena';
 const initialUserPhone = localStorage.getItem(STORAGE_KEY_USER_PHONE) || '09171234567';
-const initialOnboarded = localStorage.getItem(STORAGE_KEY_ONBOARDED) === 'true';
+const hasSavedStoreProfile = Boolean(
+  localStorage.getItem(STORAGE_KEY_STORE_NAME)
+  || localStorage.getItem(STORAGE_KEY_OWNER_NAME)
+  || localStorage.getItem(STORAGE_KEY_USER_PHONE)
+);
+const initialOnboarded = localStorage.getItem(STORAGE_KEY_ONBOARDED) === 'true'
+  || hasSavedStoreProfile
+  || initialTenantId !== DEFAULT_TENANT_ID
+  || initialTier !== 'Libre'
+  || initialSubsEnd !== null;
 
 export const useAuthStore = create<AuthState>((set) => ({
   tenantId: initialTenantId,
@@ -74,6 +85,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   firebaseToken: null,
   consentAccepted: initialConsent,
   isOnboarded: initialOnboarded,
+  isOnboardingStatusReady: initialOnboarded,
   isOnboardingOpen: false,
   onboardingMode: 'initial',
 
@@ -120,6 +132,16 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ isOnboardingOpen: true, onboardingMode: mode });
   },
 
+  resolveOnboardingStatus: (hasExistingStore: boolean) => {
+    if (hasExistingStore) {
+      localStorage.setItem(STORAGE_KEY_ONBOARDED, 'true');
+    }
+    set((state) => ({
+      isOnboarded: state.isOnboarded || hasExistingStore,
+      isOnboardingStatusReady: true
+    }));
+  },
+
   closeOnboarding: () => {
     set({ isOnboardingOpen: false });
   },
@@ -149,6 +171,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       tier: 'Libre',
       subscriptionEndDate: null,
       isOnboarded: true,
+      isOnboardingStatusReady: true,
       isOnboardingOpen: false
     });
   },

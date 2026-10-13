@@ -11,11 +11,13 @@ export async function seedDexieDatabaseIfNeeded(
 ) {
   const now = new Date().toISOString();
 
+  const existingTenant = await db.tenants.get(targetTenantId);
   await db.tenants.put({
+    ...existingTenant,
     id: targetTenantId,
-    businessName,
-    tier: 'Libre',
-    updatedAt: now
+    businessName: existingTenant?.businessName || businessName,
+    tier: existingTenant?.tier || 'Libre',
+    updatedAt: existingTenant?.updatedAt || now
   });
 
   if (emptyCatalog) {

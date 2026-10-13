@@ -3,12 +3,15 @@ import { useSubscriptionStore, getTierLimits, SUBSCRIPTION_REFRESH_ERROR } from 
 import { useAuthStore } from './authStore';
 import { db } from '../db/db';
 import { apiClient } from '../services/apiClient';
+import { DEFAULT_TENANT_ID } from '../db/seedData';
 
 describe('subscriptionStore', () => {
   beforeEach(async () => {
+    vi.restoreAllMocks();
     localStorage.clear();
     await db.tenants.clear();
     useAuthStore.setState({
+      tenantId: DEFAULT_TENANT_ID,
       tier: 'Libre',
       subscriptionEndDate: null
     });
@@ -120,8 +123,53 @@ describe('subscriptionStore', () => {
     getSpy.mockRestore();
   });
 
+  it('restores a paid tier from the server after reload', async () => {
+    const subscriptionEndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const getSpy = vi.spyOn(apiClient, 'get').mockResolvedValueOnce({
+      data: {
+        tier: 1,
+        tierName: 'TindahanPro',
+        subscriptionEndDate,
+        isActive: true,
+        daysRemaining: 30,
+        businessName: 'My Store'
+      }
+    } as any);
+
+    await useSubscriptionStore.getState().refreshSubscription();
+
+    expect(useSubscriptionStore.getState().tier).toBe('TindahanPro');
+    expect(useAuthStore.getState().tier).toBe('TindahanPro');
+    expect(localStorage.getItem('fluent_tindahan_tier_v1')).toBe('TindahanPro');
+    expect((await db.tenants.get(DEFAULT_TENANT_ID))?.tier).toBe('TindahanPro');
+    getSpy.mockRestore();
+  });
+
   describe('simulateMockPayment', () => {
+    it('does not report a local upgrade when the server rejects mock payment', async () => {
+      const serverError = {
+        response: {
+          status: 404,
+          data: { message: 'Mock payments are disabled on this server.' }
+        }
+      };
+      const postSpy = vi.spyOn(apiClient, 'post').mockRejectedValueOnce(serverError);
+
+      await expect(
+        useSubscriptionStore.getState().simulateMockPayment('TindahanPro', 'Monthly')
+      ).rejects.toBe(serverError);
+
+      expect(useAuthStore.getState().tier).toBe('Libre');
+      expect(useSubscriptionStore.getState().tier).toBe('Libre');
+      expect(useSubscriptionStore.getState().error).toBe('Mock payments are disabled on this server.');
+      postSpy.mockRestore();
+    });
+
     it('upgrades tier locally to TindahanPro with future expiration', async () => {
+      const newEndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
+        data: { success: true, tier: 1, newEndDate }
+      } as any);
       const store = useSubscriptionStore.getState();
       await store.simulateMockPayment('TindahanPro', 'Monthly');
 
@@ -134,11 +182,16 @@ describe('subscriptionStore', () => {
 
       // Verify synced with authStore and Dexie
       expect(useAuthStore.getState().tier).toBe('TindahanPro');
+      expect(localStorage.getItem('fluent_tindahan_tier_v1')).toBe('TindahanPro');
       const localTenant = await db.tenants.get(useAuthStore.getState().tenantId);
       expect(localTenant?.tier).toBe('TindahanPro');
     });
 
     it('upgrades tier locally to NegosyoPlus for weekly cycle', async () => {
+      const newEndDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
+        data: { success: true, tier: 2, newEndDate }
+      } as any);
       const store = useSubscriptionStore.getState();
       await store.simulateMockPayment('NegosyoPlus', 'Weekly');
 

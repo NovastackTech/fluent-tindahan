@@ -1,5 +1,5 @@
 import { db, type SyncQueueRecord } from '../db/db';
-import { apiClient } from '../services/apiClient';
+import { apiClient, ensureTenantProvisioned } from '../services/apiClient';
 import { useAuthStore } from '../state/authStore';
 import { create } from 'zustand';
 
@@ -190,6 +190,8 @@ export async function processSyncQueue(): Promise<{ processed: number; conflicts
   store.setSyncing(true);
 
   try {
+    await ensureTenantProvisioned();
+
     const payload = {
       deviceId: getDeviceId(),
       operations: pendingItems.map((item) => ({

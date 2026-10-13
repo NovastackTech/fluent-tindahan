@@ -275,8 +275,14 @@ export const POSPage: React.FC = () => {
   const [newDebtorError, setNewDebtorError] = useState<string | null>(null);
 
   // Live queries from Dexie
-  const products = useLiveQuery(() => db.products.toArray(), []) || [];
-  const customers = useLiveQuery(() => db.customers.toArray(), []) || [];
+  const products = useLiveQuery(
+    () => db.products.where('tenantId').equals(tenantId).toArray(),
+    [tenantId]
+  ) || [];
+  const customers = useLiveQuery(
+    () => db.customers.where('tenantId').equals(tenantId).toArray(),
+    [tenantId]
+  ) || [];
 
   // Extract unique categories
   const categories = useMemo(() => {

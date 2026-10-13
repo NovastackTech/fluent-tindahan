@@ -7,10 +7,12 @@ import { db } from '../db/db';
 
 import { useLanguageStore } from '../state/languageStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
+import { useAuthStore } from '../state/authStore';
 
 describe('InventoryPage', () => {
   beforeEach(async () => {
     useLanguageStore.setState({ language: 'tl' });
+    useAuthStore.setState({ tenantId: 't-1' });
     useSubscriptionStore.setState({ tier: 'Libre', isUpgradeModalOpen: false });
     await db.products.clear();
     await db.syncQueue.clear();
@@ -58,6 +60,25 @@ describe('InventoryPage', () => {
       expect(screen.getAllByText(/Lucky Me Pancit Canton Kalamansi/i).length).toBeGreaterThan(0);
       expect(screen.getAllByText(/Datu Puti Vinegar 350ml/i).length).toBeGreaterThan(0);
     });
+  });
+
+  it('only lists products belonging to the active tenant', async () => {
+    await db.products.add({
+      id: 'other-tenant-product',
+      tenantId: 't-2',
+      name: 'Other Store Product',
+      price: 10,
+      cost: 8,
+      stockQty: 4,
+      updatedAt: new Date().toISOString()
+    });
+
+    renderInventory();
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/Lucky Me Pancit Canton Kalamansi/i).length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByText('Other Store Product')).not.toBeInTheDocument();
   });
 
   it('filters by low stock items', async () => {

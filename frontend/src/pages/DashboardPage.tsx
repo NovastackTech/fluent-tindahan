@@ -21,6 +21,7 @@ import {
 } from '@fluentui/react-icons';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, isGCashTxnUnresolved } from '../db/db';
+import { useAuthStore } from '../state/authStore';
 import { useSyncStore } from '../sync/syncEngine';
 import type { NavTab } from '../components/Navigation';
 import { useTranslation } from '../state/languageStore';
@@ -109,13 +110,14 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   const styles = useStyles();
   const { t } = useTranslation();
   const { isOnline, pendingCount } = useSyncStore();
+  const tenantId = useAuthStore((state) => state.tenantId);
 
   // Live queries straight from local Dexie database for instant offline UI
-  const sales = useLiveQuery(() => db.sales.toArray(), []);
-  const customers = useLiveQuery(() => db.customers.toArray(), []);
-  const gcashTxns = useLiveQuery(() => db.gcashTxns.toArray(), []);
-  const gcashResolutions = useLiveQuery(() => db.gcashTxnResolutions.toArray(), []);
-  const products = useLiveQuery(() => db.products.toArray(), []) || [];
+  const sales = useLiveQuery(() => db.sales.where('tenantId').equals(tenantId).toArray(), [tenantId]);
+  const customers = useLiveQuery(() => db.customers.where('tenantId').equals(tenantId).toArray(), [tenantId]);
+  const gcashTxns = useLiveQuery(() => db.gcashTxns.where('tenantId').equals(tenantId).toArray(), [tenantId]);
+  const gcashResolutions = useLiveQuery(() => db.gcashTxnResolutions.where('tenantId').equals(tenantId).toArray(), [tenantId]);
+  const products = useLiveQuery(() => db.products.where('tenantId').equals(tenantId).toArray(), [tenantId]) || [];
 
   const lowStockProducts = products.filter((p) => (p.stockQty || 0) > 0 && (p.stockQty || 0) <= 5);
 

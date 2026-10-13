@@ -7,9 +7,11 @@ import { db } from '../db/db';
 import { useCartStore } from '../state/cartStore';
 import { usePwaStore } from '../state/pwaStore';
 import { _resetUpdateSWFunctionForTest } from '../pwa/registerServiceWorker';
+import { useAuthStore } from '../state/authStore';
 
 describe('POSPage', () => {
   beforeEach(async () => {
+    useAuthStore.setState({ tenantId: 't-1' });
     _resetUpdateSWFunctionForTest();
     useCartStore.getState().clearCart();
     await db.products.clear();

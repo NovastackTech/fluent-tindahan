@@ -11,13 +11,16 @@ import {
 } from './syncEngine';
 import { db } from '../db/db';
 import { apiClient } from '../services/apiClient';
+import { ensureTenantProvisioned } from '../services/apiClient';
 import { useAuthStore } from '../state/authStore';
 
 vi.mock('../services/apiClient', () => ({
   apiClient: {
     post: vi.fn(),
+    put: vi.fn(),
     get: vi.fn()
-  }
+  },
+  ensureTenantProvisioned: vi.fn()
 }));
 
 describe('syncEngine', () => {
@@ -37,6 +40,8 @@ describe('syncEngine', () => {
       batchFailureCount: 0,
       nextRetryAt: null
     });
+    (apiClient.put as any).mockResolvedValue({ data: {} });
+    (ensureTenantProvisioned as any).mockResolvedValue(undefined);
     useAuthStore.setState({ firebaseToken: null });
     vi.resetAllMocks();
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
@@ -97,6 +102,27 @@ describe('syncEngine', () => {
     const remaining = await db.syncQueue.toArray();
     expect(remaining).toHaveLength(0);
     expect(useSyncStore.getState().lastSyncedAt).not.toBeNull();
+  });
+
+  it('provisions tenant identity before uploading queued operations', async () => {
+    const syncId = await enqueueSync('Product', 'Insert', { id: 'p-provisioned', name: 'Sabon' });
+    useAuthStore.setState({
+      tenantId: '33333333-3333-4333-8333-333333333333',
+      userId: '44444444-4444-4444-8444-444444444444',
+      businessName: 'My Store',
+      userPhone: '09171234567'
+    });
+    (apiClient.post as any).mockResolvedValueOnce({
+      data: { results: [{ syncId, status: 'Success' }] }
+    });
+
+    const result = await processSyncQueue();
+
+    expect(result.processed).toBe(1);
+    expect(ensureTenantProvisioned).toHaveBeenCalledOnce();
+    expect((ensureTenantProvisioned as any).mock.invocationCallOrder[0])
+      .toBeLessThan((apiClient.post as any).mock.invocationCallOrder[0]);
+    expect(await db.syncQueue.get(syncId)).toBeUndefined();
   });
 
   it.each([

@@ -7,6 +7,7 @@ describe('seedData', () => {
     await db.products.clear();
     await db.customers.clear();
     await db.utangLedger.clear();
+    await db.tenants.clear();
   });
 
   it('exports default constant IDs', () => {
@@ -54,5 +55,20 @@ describe('seedData', () => {
     expect(await db.utangLedger.where('tenantId').equals(newTenantId).count()).toBe(0);
     expect(await db.gcashTxns.where('tenantId').equals(newTenantId).count()).toBe(0);
     expect((await db.tenants.get(newTenantId))?.businessName).toBe('New Store');
+  });
+
+  it('preserves existing tenant profile and tier when startup seeding runs', async () => {
+    await db.tenants.put({
+      id: DEFAULT_TENANT_ID,
+      businessName: 'My Existing Store',
+      tier: 'TindahanPro',
+      updatedAt: '2025-01-01T00:00:00.000Z'
+    });
+
+    await seedDexieDatabaseIfNeeded();
+
+    const tenant = await db.tenants.get(DEFAULT_TENANT_ID);
+    expect(tenant?.businessName).toBe('My Existing Store');
+    expect(tenant?.tier).toBe('TindahanPro');
   });
 });

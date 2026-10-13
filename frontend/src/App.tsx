@@ -20,6 +20,8 @@ import { usePwaStore, initPwaListeners } from './state/pwaStore';
 import { initServiceWorker } from './pwa/registerServiceWorker';
 import { initPwaTabCoordinator } from './pwa/pwaTabCoordinator';
 import { useSubscriptionStore } from './state/subscriptionStore';
+import { useAuthStore } from './state/authStore';
+import { db } from './db/db';
 
 // Route-level code splitting for performance on low-end Android devices (Section 1 & 11)
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then(m => ({ default: m.DashboardPage })));
@@ -86,8 +88,38 @@ export const App: React.FC = () => {
     };
     window.addEventListener('vite:preloadError', handlePreloadError);
 
-    // 1. Initialize local Dexie database seed
-    seedDexieDatabaseIfNeeded().catch(console.error);
+    // Resolve legacy stores before showing onboarding or seeding the default tenant.
+    const initializeLocalStore = async () => {
+      const auth = useAuthStore.getState();
+      let hasExistingStore = auth.isOnboarded;
+
+      if (!hasExistingStore) {
+        try {
+          const tenantId = auth.tenantId;
+          const [products, salesCount, customerCount, ledgerCount, gcashCount, tenant] = await Promise.all([
+            db.products.where('tenantId').equals(tenantId).toArray(),
+            db.sales.where('tenantId').equals(tenantId).count(),
+            db.customers.where('tenantId').equals(tenantId).count(),
+            db.utangLedger.where('tenantId').equals(tenantId).count(),
+            db.gcashTxns.where('tenantId').equals(tenantId).count(),
+            db.tenants.get(tenantId)
+          ]);
+
+          hasExistingStore = salesCount > 0
+            || products.some((product) => !product.id.startsWith('a1000000-0000-0000-0000-'))
+            || customerCount > 3
+            || ledgerCount > 2
+            || gcashCount > 2
+            || Boolean(tenant && tenant.businessName !== "Aling Nena's Tindahan & GCash");
+        } catch (error) {
+          console.error('[Onboarding] Could not inspect existing local store data:', error);
+        }
+      }
+
+      useAuthStore.getState().resolveOnboardingStatus(hasExistingStore);
+      await seedDexieDatabaseIfNeeded();
+    };
+    initializeLocalStore().catch(console.error);
 
     // 2. Initialize offline sync engine and storage persistence
     initSyncEngine();

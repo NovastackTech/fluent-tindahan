@@ -159,8 +159,23 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
         var authBytes = Encoding.UTF8.GetBytes($"{secretKey!.Trim()}:");
         requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Basic", Convert.ToBase64String(authBytes));
 
-        var response = await _httpClient.SendAsync(requestMessage, cancellationToken);
-        var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+        HttpResponseMessage response;
+        string responseContent;
+        try
+        {
+            response = await _httpClient.SendAsync(requestMessage, cancellationToken);
+            responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "Could not connect to PayMongo while creating a checkout session for tenant {TenantId}.", tenantId);
+            throw new PaymentGatewayException("Payment gateway is temporarily unavailable. Please try again later.", ex);
+        }
+        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogError(ex, "PayMongo timed out while creating a checkout session for tenant {TenantId}.", tenantId);
+            throw new PaymentGatewayException("Payment gateway timed out. Please try again later.", ex);
+        }
 
         if (!response.IsSuccessStatusCode)
         {

@@ -65,7 +65,9 @@ const useStyles = makeStyles({
   },
   titleArea: {
     display: 'flex',
-    flexDirection: 'column'
+    flexDirection: 'column',
+    minWidth: 0,
+    gap: tokens.spacingVerticalXS
   },
   formSection: {
     display: 'flex',
@@ -105,6 +107,7 @@ export const OnboardingModal: React.FC = () => {
     userPhone,
     consentAccepted,
     isOnboarded,
+    isOnboardingStatusReady,
     isOnboardingOpen,
     onboardingMode,
     closeOnboarding,
@@ -112,7 +115,7 @@ export const OnboardingModal: React.FC = () => {
     updateStoreProfile
   } = useAuthStore();
 
-  const isOpen = isOnboardingOpen || (consentAccepted && !isOnboarded);
+  const isOpen = isOnboardingOpen || (isOnboardingStatusReady && consentAccepted && !isOnboarded);
   const isEditMode = onboardingMode === 'edit' && isOnboarded;
 
   const [formBusinessName, setFormBusinessName] = useState('');
@@ -250,12 +253,8 @@ export const OnboardingModal: React.FC = () => {
               <BuildingShopRegular />
             </div>
             <div className={styles.titleArea}>
-              <DialogTitle>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span>{isEditMode ? t.onboarding.editTitle : t.onboarding.welcomeTitle}</span>
-                  {!isEditMode && <Badge appearance="filled" color="brand">Bago</Badge>}
-                </div>
-              </DialogTitle>
+              <DialogTitle>{isEditMode ? t.onboarding.editTitle : t.onboarding.welcomeTitle}</DialogTitle>
+              {!isEditMode && <Badge appearance="filled" color="brand">Bago</Badge>}
               <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
                 {isEditMode ? t.onboarding.editSubtitle : t.onboarding.welcomeSubtitle}
               </Text>

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { apiClient } from '../services/apiClient';
+import { apiClient, ensureTenantProvisioned } from '../services/apiClient';
 import { db, type PlanTier } from '../db/db';
 import { useAuthStore } from './authStore';
 
@@ -174,6 +174,7 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
     createCheckoutSession: async (targetTier: PlanTier, cycle: BillingCycle) => {
       set({ isLoading: true, error: null });
       try {
+        await ensureTenantProvisioned();
         // Redirect URLs are built server-side from configuration (prevents open redirects).
         const response = await apiClient.post('/billing/checkout', {
           targetTier: targetTier === 'TindahanPro' ? 1 : 2,
@@ -195,45 +196,49 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
 
       set({ isLoading: true, error: null });
       try {
-        let apiCallSucceeded = false;
-        try {
-          await apiClient.post('/billing/mock-pay', {
-            targetTier: targetTier === 'TindahanPro' ? 1 : 2,
-            cycle: cycle === 'Weekly' ? 0 : 1
-          });
-          apiCallSucceeded = true;
-        } catch (apiErr) {
-          // In development environments without a live backend (e.g. offline dev or unit tests),
-          // simulate the upgrade locally so dev workflow and tests continue working.
-          console.warn('[subscriptionStore] /billing/mock-pay endpoint unreachable or failed; applying local mock upgrade for development.', apiErr);
-          const durationDays = cycle === 'Weekly' ? 7 : 30;
-          const newEndDate = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString();
+        await ensureTenantProvisioned();
+        const response = await apiClient.post('/billing/mock-pay', {
+          targetTier: targetTier === 'TindahanPro' ? 1 : 2,
+          cycle: cycle === 'Weekly' ? 0 : 1
+        });
+        const payment = response.data;
+        if (payment?.success === false) {
+          throw new Error(payment.message || 'The server rejected the mock payment.');
+        }
 
-          useAuthStore.getState().setSubscription(targetTier, newEndDate);
-          const tenantId = useAuthStore.getState().tenantId;
-          if (tenantId) {
-            await db.tenants.put({
-              id: tenantId,
-              businessName: useAuthStore.getState().businessName,
-              tier: targetTier,
-              subscriptionEndDate: newEndDate,
-              updatedAt: new Date().toISOString()
-            });
-          }
+        const responseTier = typeof payment?.tier === 'string'
+          ? payment.tier as PlanTier
+          : payment?.tier === 1
+            ? 'TindahanPro'
+            : payment?.tier === 2
+              ? 'NegosyoPlus'
+              : targetTier;
+        const subscriptionEndDate = payment?.newEndDate || null;
+        const auth = useAuthStore.getState();
+        auth.setSubscription(responseTier, subscriptionEndDate);
 
-          set({
-            tier: targetTier,
-            subscriptionEndDate: newEndDate,
-            isActive: true,
-            daysRemaining: durationDays
+        if (auth.tenantId) {
+          const existingTenant = await db.tenants.get(auth.tenantId);
+          await db.tenants.put({
+            ...existingTenant,
+            id: auth.tenantId,
+            businessName: existingTenant?.businessName || auth.businessName,
+            tier: responseTier,
+            subscriptionEndDate: subscriptionEndDate || undefined,
+            updatedAt: new Date().toISOString()
           });
         }
 
-        if (apiCallSucceeded) {
-          await get().refreshSubscription();
-        }
-
+        const daysRemaining = subscriptionEndDate
+          ? Math.max(0, Math.ceil((Date.parse(subscriptionEndDate) - Date.now()) / (24 * 60 * 60 * 1000)))
+          : null;
         set({ isUpgradeModalOpen: false, isLoading: false });
+        set({
+          tier: responseTier,
+          subscriptionEndDate,
+          isActive: responseTier !== 'Libre',
+          daysRemaining
+        });
       } catch (err: any) {
         set({ isLoading: false, error: err?.response?.data?.message || err.message });
         throw err;

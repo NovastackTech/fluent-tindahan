@@ -14,6 +14,7 @@ describe('OnboardingModal', () => {
     useAuthStore.setState({
       consentAccepted: true,
       isOnboarded: false,
+      isOnboardingStatusReady: true,
       isOnboardingOpen: false,
       onboardingMode: 'initial',
       businessName: "Aling Nena's Tindahan & GCash",

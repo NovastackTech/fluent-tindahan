@@ -124,20 +124,21 @@ export const UtangPage: React.FC = () => {
   const tenantId = useAuthStore((s) => s.tenantId);
 
   // Live queries
-  const customers = useLiveQuery(() => db.customers.toArray(), []) || [];
+  const customers = useLiveQuery(
+    () => db.customers.where('tenantId').equals(tenantId).toArray(),
+    [tenantId]
+  ) || [];
   const selectedCustomerId = selectedCustomer?.id;
 
   const ledgerEntries = useLiveQuery(
     async (): Promise<UtangLedgerRecord[]> => {
       if (!selectedCustomerId) return [];
-      const list = await db.utangLedger
-        .where('customerId')
-        .equals(selectedCustomerId)
-        .reverse()
-        .sortBy('date');
-      return list;
+      const list = await db.utangLedger.where('tenantId').equals(tenantId).toArray();
+      return list
+        .filter((entry) => entry.customerId === selectedCustomerId)
+        .sort((a, b) => b.date.localeCompare(a.date));
     },
-    [selectedCustomerId]
+    [tenantId, selectedCustomerId]
   ) || [];
 
   // Filtered debtors
@@ -229,7 +230,7 @@ export const UtangPage: React.FC = () => {
 
   // Record payment
   const handleRecordPayment = async () => {
-    if (!selectedCustomer || savingRef.current) return;
+    if (!selectedCustomer || selectedCustomer.tenantId !== tenantId || savingRef.current) return;
     const amount = parseFloat(paymentAmount);
     if (isNaN(amount) || amount <= 0) {
       setPaymentAmountError(t.utang.paymentAmountInvalid);
@@ -297,7 +298,7 @@ export const UtangPage: React.FC = () => {
 
   // Add credit
   const handleAddCredit = async () => {
-    if (!selectedCustomer || savingRef.current) return;
+    if (!selectedCustomer || selectedCustomer.tenantId !== tenantId || savingRef.current) return;
     const amount = parseFloat(creditAmount);
     if (isNaN(amount) || amount <= 0) return;
 

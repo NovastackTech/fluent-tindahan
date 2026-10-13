@@ -327,7 +327,10 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
   const { tier, canAddProduct, openUpgradeModal } = useSubscriptionStore();
 
   // Live Query from local Dexie database
-  const products = useLiveQuery(() => db.products.toArray(), []) || [];
+  const products = useLiveQuery(
+    () => db.products.where('tenantId').equals(tenantId).toArray(),
+    [tenantId]
+  ) || [];
 
   // Filtering states
   const [searchQuery, setSearchQuery] = useState('');

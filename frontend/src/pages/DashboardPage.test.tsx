@@ -4,9 +4,11 @@ import { FluentProvider } from '@fluentui/react-components';
 import { DashboardPage } from './DashboardPage';
 import { sariSariLightTheme } from '../theme/theme';
 import { db } from '../db/db';
+import { useAuthStore } from '../state/authStore';
 
 describe('DashboardPage', () => {
   beforeEach(async () => {
+    useAuthStore.setState({ tenantId: 't-1' });
     await db.sales.clear();
     await db.customers.clear();
     await db.gcashTxns.clear();

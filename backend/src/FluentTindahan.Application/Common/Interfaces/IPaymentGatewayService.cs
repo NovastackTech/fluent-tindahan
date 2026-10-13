@@ -19,6 +19,7 @@ public record CheckoutSessionResult(
 public class PaymentGatewayException : Exception
 {
     public PaymentGatewayException(string safeMessage) : base(safeMessage) { }
+    public PaymentGatewayException(string safeMessage, Exception innerException) : base(safeMessage, innerException) { }
 }
 
 public interface IPaymentGatewayService

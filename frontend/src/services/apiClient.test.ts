@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { apiClient } from './apiClient';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { apiClient, ensureTenantProvisioned } from './apiClient';
 import { useAuthStore } from '../state/authStore';
 
 describe('apiClient', () => {
@@ -38,5 +38,28 @@ describe('apiClient', () => {
 
     expect(updated.headers['X-Tenant-Id']).toBe('tenant-456');
     expect(updated.headers['Authorization']).toBe('Bearer jwt-bearer-xyz');
+  });
+
+  it('provisions the current tenant and owner before remote writes', async () => {
+    const tenantId = crypto.randomUUID();
+    const userId = crypto.randomUUID();
+    useAuthStore.setState({
+      tenantId,
+      userId,
+      businessName: 'Ate Rose Tindahan',
+      userPhone: '09181234567'
+    });
+    const putSpy = vi.spyOn(apiClient, 'put').mockResolvedValue({
+      data: { tenantId }
+    } as any);
+
+    await ensureTenantProvisioned();
+
+    expect(putSpy).toHaveBeenCalledWith('/tenant/provision', {
+      userId,
+      businessName: 'Ate Rose Tindahan',
+      phone: '09181234567'
+    });
+    putSpy.mockRestore();
   });
 });
