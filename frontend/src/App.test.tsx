@@ -1,9 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { App } from './App';
 import { usePwaStore } from './state/pwaStore';
 import { useCartStore } from './state/cartStore';
 import { useAuthStore } from './state/authStore';
+import { useSubscriptionStore } from './state/subscriptionStore';
+import { DEFAULT_TENANT_ID } from './db/seedData';
+import { db } from './db/db';
 import { _resetUpdateSWFunctionForTest } from './pwa/registerServiceWorker';
 import { _resetPwaTabCoordinatorForTest } from './pwa/pwaTabCoordinator';
 
@@ -11,10 +14,23 @@ describe('App', () => {
   const originalLocation = window.location;
   let reloadMock: ReturnType<typeof vi.fn>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     sessionStorage.clear();
     localStorage.clear();
+    await db.products.clear();
+    await db.customers.clear();
+    await db.sales.clear();
+    await db.saleItems.clear();
+    await db.utangLedger.clear();
+    await db.gcashTxns.clear();
+    await db.gcashTxnResolutions.clear();
+    await db.tenants.clear();
     useAuthStore.getState().setConsentAccepted(true);
+    useAuthStore.setState({
+      tenantId: DEFAULT_TENANT_ID,
+      isOnboarded: false,
+      isOnboardingStatusReady: false
+    });
     useCartStore.getState().clearCart();
     _resetUpdateSWFunctionForTest();
     _resetPwaTabCoordinatorForTest();
@@ -56,6 +72,107 @@ describe('App', () => {
     // Cart is still intact
     expect(useCartStore.getState().items).toHaveLength(1);
     expect(useCartStore.getState().items[0].name).toBe('Open Sale Item');
+  });
+
+  it('recognizes a legacy store with sales and skips onboarding', async () => {
+    useAuthStore.setState({ consentAccepted: false });
+    await db.sales.add({
+      id: 'legacy-sale',
+      tenantId: DEFAULT_TENANT_ID,
+      totalAmount: 42,
+      paymentMethod: 'Cash',
+      date: new Date().toISOString(),
+      userId: 'legacy-user'
+    });
+
+    render(<App />);
+
+    await waitFor(() => expect(useAuthStore.getState().isOnboardingStatusReady).toBe(true));
+    expect(useAuthStore.getState().isOnboarded).toBe(true);
+    expect(screen.queryByText(/Welcome to Fluent Tindahan|Maligayang Pagdating sa Fluent Tindahan/i)).not.toBeInTheDocument();
+  });
+
+  it('migrates a previously consented install without changing its tenant', async () => {
+    render(<App />);
+
+    await waitFor(() => expect(useAuthStore.getState().isOnboardingStatusReady).toBe(true));
+
+    expect(useAuthStore.getState().isOnboarded).toBe(true);
+    expect(useAuthStore.getState().tenantId).toBe(DEFAULT_TENANT_ID);
+    expect(localStorage.getItem('fluent_tindahan_onboarded_v1')).toBe('true');
+    expect(screen.queryByText(/Welcome to Fluent Tindahan|Maligayang Pagdating sa Fluent Tindahan/i)).not.toBeInTheDocument();
+  });
+
+  it('does not seed demo data before a fresh tenant completes onboarding', async () => {
+    useAuthStore.setState({ consentAccepted: false });
+    render(<App />);
+
+    await waitFor(() => expect(useAuthStore.getState().isOnboardingStatusReady).toBe(true));
+
+    expect(await db.products.count()).toBe(0);
+    expect(await db.customers.count()).toBe(0);
+    expect(await db.utangLedger.count()).toBe(0);
+    expect(await db.gcashTxns.count()).toBe(0);
+    expect(await db.tenants.get(DEFAULT_TENANT_ID)).toBeUndefined();
+  });
+
+  it('keeps onboarding available if a fresh user accepts consent and reloads before setup', async () => {
+    useAuthStore.setState({ consentAccepted: false });
+    const firstRender = render(<App />);
+
+    await waitFor(() => expect(useAuthStore.getState().isOnboardingStatusReady).toBe(true));
+    fireEvent.click(screen.getByRole('button', { name: /Sumasang-ayon Ako|I Agree/i }));
+
+    expect(await screen.findByText(/Welcome to Fluent Tindahan|Maligayang Pagdating sa Fluent Tindahan/i)).toBeInTheDocument();
+    expect(useAuthStore.getState().isOnboarded).toBe(false);
+
+    firstRender.unmount();
+    localStorage.setItem('fluent_tindahan_tier_v1', 'TindahanPro');
+    localStorage.setItem('fluent_tindahan_subs_end_v1', '2030-01-01T00:00:00.000Z');
+    await db.tenants.put({
+      id: DEFAULT_TENANT_ID,
+      businessName: 'Demo Tindahan',
+      tier: 'TindahanPro',
+      subscriptionEndDate: '2030-01-01T00:00:00.000Z',
+      updatedAt: new Date().toISOString()
+    });
+    useAuthStore.setState({
+      consentAccepted: true,
+      tenantId: DEFAULT_TENANT_ID,
+      tier: 'TindahanPro',
+      subscriptionEndDate: '2030-01-01T00:00:00.000Z',
+      isOnboarded: false,
+      isOnboardingStatusReady: false,
+      isOnboardingOpen: false
+    });
+
+    render(<App />);
+    await waitFor(() => expect(useAuthStore.getState().isOnboardingStatusReady).toBe(true));
+
+    expect(useAuthStore.getState().isOnboarded).toBe(false);
+    expect(await screen.findByText(/Welcome to Fluent Tindahan|Maligayang Pagdating sa Fluent Tindahan/i)).toBeInTheDocument();
+  });
+
+  it('starts store services and refreshes subscription only after onboarding completes', async () => {
+    localStorage.setItem('fluent_tindahan_onboarding_started_v1', 'true');
+    useAuthStore.setState({
+      consentAccepted: true,
+      isOnboarded: false,
+      isOnboardingStatusReady: false
+    });
+    const refreshSpy = vi.spyOn(useSubscriptionStore.getState(), 'refreshSubscription').mockResolvedValue();
+
+    render(<App />);
+    await waitFor(() => expect(useAuthStore.getState().isOnboardingStatusReady).toBe(true));
+    expect(refreshSpy).not.toHaveBeenCalled();
+
+    useAuthStore.getState().completeOnboarding({
+      businessName: 'Tindahan ni Maria',
+      tenantId: crypto.randomUUID(),
+      userId: crypto.randomUUID()
+    });
+
+    await waitFor(() => expect(refreshSpy).toHaveBeenCalledOnce());
   });
 
   describe('vite:preloadError handling', () => {

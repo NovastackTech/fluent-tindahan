@@ -57,6 +57,11 @@ Swagger Documentation: `http://localhost:5000/swagger`
 | `GET` | `/api/gcash` | Lists GCash transaction records | Returns array of `GCashTxnDto` |
 | `POST`| `/api/gcash` | Records a Cash-In or Cash-Out | Accepts `CreateGCashTxnCommand` |
 | `GET` | `/api/dashboard/metrics`| Aggregates KPI totals | Returns sales, profit, utang, fees |
+| `PUT` | `/api/tenant/provision` | Ensures the resolved server tenant and owner exist | Returns authoritative `tenantId`, `userId`, and tier |
+
+### Tenant ID Reconciliation
+
+The verified JWT `tenant_id` claim is authoritative in production; `X-Tenant-Id` is only a Development/Demo fallback. Before sync, subscription refresh, billing, or catalog pull, the client calls `PUT /api/tenant/provision`. If the returned tenant ID differs from the locally generated offline ID, the client atomically rekeys that tenant's Dexie records and queued payloads, migrates tenant-keyed GCash fee settings, and persists the returned ID. Subsequent reads and writes then use the server tenant. Do not replace an authenticated tenant ID with a client-generated ID.
 
 ---
 

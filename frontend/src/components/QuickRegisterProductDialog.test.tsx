@@ -4,9 +4,13 @@ import { FluentProvider } from '@fluentui/react-components';
 import { QuickRegisterProductDialog } from './QuickRegisterProductDialog';
 import { sariSariLightTheme } from '../theme/theme';
 import { db } from '../db/db';
+import { useAuthStore } from '../state/authStore';
+import { useSubscriptionStore } from '../state/subscriptionStore';
 
 describe('QuickRegisterProductDialog', () => {
   beforeEach(async () => {
+    useAuthStore.setState({ tenantId: 'quick-register-tenant' });
+    useSubscriptionStore.setState({ tier: 'Libre' });
     await db.products.clear();
     await db.syncQueue.clear();
   });
@@ -91,5 +95,28 @@ describe('QuickRegisterProductDialog', () => {
     expect(saved).toBeDefined();
     expect(saved?.name).toBe('Chippy Barbecue 110g');
     expect(saved?.price).toBe(25);
+  });
+
+  it('allows the active tenant to add a product when another tenant has 50', async () => {
+    await db.products.bulkAdd(Array.from({ length: 50 }, (_, index) => ({
+      id: `other-product-${index}`,
+      tenantId: 'other-tenant',
+      name: `Other Product ${index}`,
+      price: 10,
+      cost: 8,
+      stockQty: 1,
+      updatedAt: new Date().toISOString()
+    })));
+
+    renderDialog();
+    fireEvent.click(screen.getByRole('button', { name: /Oo, Irehistro ang Produkto|Yes, Register Product|Irehistro/i }));
+    fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }), { target: { value: 'My First Product' } });
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Presyo ng Tinda|Retail Price/i }), { target: { value: '15' } });
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Produkto|Save Product/i }));
+
+    await waitFor(async () => {
+      const product = await db.products.where('name').equals('My First Product').first();
+      expect(product?.tenantId).toBe('quick-register-tenant');
+    });
   });
 });

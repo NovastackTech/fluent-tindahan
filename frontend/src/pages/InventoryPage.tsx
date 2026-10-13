@@ -327,7 +327,10 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
   const { tier, canAddProduct, openUpgradeModal } = useSubscriptionStore();
 
   // Live Query from local Dexie database
-  const products = useLiveQuery(() => db.products.toArray(), []) || [];
+  const products = useLiveQuery(
+    () => db.products.where('tenantId').equals(tenantId).toArray(),
+    [tenantId]
+  ) || [];
 
   // Filtering states
   const [searchQuery, setSearchQuery] = useState('');
@@ -694,7 +697,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
               </div>
               {tier === 'Libre' && metrics.totalProducts >= 45 && (
                 <Badge appearance="tint" color="warning" size="small">
-                  {metrics.totalProducts >= 50 ? 'Puno na' : 'Halos Puno'}
+                  {metrics.totalProducts >= 50 ? t.inventory.fullCapacityBadge : t.inventory.nearCapacityBadge}
                 </Badge>
               )}
             </div>
@@ -724,7 +727,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
               {metrics.lowStockCount}
             </div>
             <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>
-              {stockFilter === 'low' ? `Filtering Low Stock (Click to show all)` : `≤ 5 units remaining`}
+              {stockFilter === 'low' ? t.inventory.filteringLowStockHint : t.inventory.lowStockRemainingHint}
             </Text>
           </Card>
 

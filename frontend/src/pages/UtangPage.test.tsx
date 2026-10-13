@@ -4,9 +4,11 @@ import { FluentProvider } from '@fluentui/react-components';
 import { UtangPage } from './UtangPage';
 import { sariSariLightTheme } from '../theme/theme';
 import { db } from '../db/db';
+import { useAuthStore } from '../state/authStore';
 
 describe('UtangPage', () => {
   beforeEach(async () => {
+    useAuthStore.setState({ tenantId: 'tenant-1' });
     await db.customers.clear();
     await db.utangLedger.clear();
     await db.syncQueue.clear();
@@ -44,6 +46,32 @@ describe('UtangPage', () => {
       expect(screen.getByText('Nanay Rosa')).toBeInTheDocument();
       expect(screen.getAllByText(/350\.00/).length).toBeGreaterThan(0);
     });
+  });
+
+  it('does not display customers from another tenant', async () => {
+    await db.customers.bulkAdd([
+      {
+        id: 'cust-active',
+        tenantId: 'tenant-1',
+        name: 'Active Tenant Customer',
+        phone: '09171112222',
+        totalUtangBalance: 0,
+        updatedAt: new Date().toISOString()
+      },
+      {
+        id: 'cust-other',
+        tenantId: 'other-tenant',
+        name: 'Aling Rosa Santos',
+        phone: '09204445566',
+        totalUtangBalance: 150,
+        updatedAt: new Date().toISOString()
+      }
+    ]);
+
+    renderUtang();
+
+    await waitFor(() => expect(screen.getByText('Active Tenant Customer')).toBeInTheDocument());
+    expect(screen.queryByText('Aling Rosa Santos')).not.toBeInTheDocument();
   });
 
   it('opens Add Customer dialog and creates a new customer in Dexie', async () => {

@@ -24,7 +24,8 @@ import {
   PrintRegular,
   PhoneLaptopRegular,
   ArrowDownloadRegular,
-  SparkleRegular
+  SparkleRegular,
+  EditRegular
 } from '@fluentui/react-icons';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
@@ -77,7 +78,7 @@ const useStyles = makeStyles({
 export const SettingsPage: React.FC = () => {
   const styles = useStyles();
   const { isOnline, isSyncing, lastSyncedAt, pendingCount, deadLetterCount } = useSyncStore();
-  const { tenantId, userId, businessName, logout, role } = useAuthStore();
+  const { tenantId, userId, businessName, ownerName, userPhone, openOnboarding, logout, role } = useAuthStore();
   const { t, language, setLanguage } = useTranslation();
   const { themeMode, setThemeMode } = useThemeStore();
   const { paperWidth, setPaperWidth } = usePrinterStore();
@@ -139,16 +140,40 @@ export const SettingsPage: React.FC = () => {
 
   const handleResetSeed = async () => {
     if (window.confirm(t.settings.resetSeedConfirm)) {
-      await db.products.clear();
-      await db.customers.clear();
-      await db.sales.clear();
-      await db.saleItems.clear();
-      await db.utangLedger.clear();
-      await db.gcashTxns.clear();
-      await db.gcashTxnResolutions.clear();
-      await db.syncQueue.clear();
-      await db.deadLetterQueue.clear();
-      await seedDexieDatabaseIfNeeded(true);
+      await db.transaction(
+        'rw',
+        [
+          db.products,
+          db.customers,
+          db.sales,
+          db.saleItems,
+          db.utangLedger,
+          db.gcashTxns,
+          db.gcashTxnResolutions,
+          db.syncQueue,
+          db.deadLetterQueue
+        ],
+        async () => {
+          await db.products.where('tenantId').equals(tenantId).delete();
+          await db.customers.where('tenantId').equals(tenantId).delete();
+          await db.sales.where('tenantId').equals(tenantId).delete();
+          await db.saleItems.where('tenantId').equals(tenantId).delete();
+          await db.utangLedger.where('tenantId').equals(tenantId).delete();
+          await db.gcashTxns.where('tenantId').equals(tenantId).delete();
+          await db.gcashTxnResolutions.where('tenantId').equals(tenantId).delete();
+
+          const syncQueue = await db.syncQueue.toArray();
+          await db.syncQueue.bulkDelete(syncQueue
+            .filter((item) => item.payload?.tenantId === tenantId)
+            .map((item) => item.id));
+
+          const deadLetters = await db.deadLetterQueue.toArray();
+          await db.deadLetterQueue.bulkDelete(deadLetters
+            .filter((item) => item.payload?.tenantId === tenantId)
+            .map((item) => item.id));
+        }
+      );
+      await seedDexieDatabaseIfNeeded(true, tenantId, false, businessName);
       window.alert(t.settings.resetSuccess);
     }
   };
@@ -434,13 +459,35 @@ export const SettingsPage: React.FC = () => {
 
       {/* Account & Multi-tenant isolation */}
       <Card className={styles.card}>
-        <Text weight="bold" size={400} style={{ marginBottom: '8px', display: 'block' }}>
-          {t.settings.deviceInfoSection}
-        </Text>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+          <Text weight="bold" size={400}>
+            {t.settings.deviceInfoSection}
+          </Text>
+          <Button
+            appearance="subtle"
+            size="small"
+            icon={<EditRegular />}
+            onClick={() => openOnboarding('edit')}
+          >
+            {t.settings.editProfileBtn}
+          </Button>
+        </div>
         <div className={styles.infoRow}>
           <Text size={200}>{t.settings.storeNameLabel}</Text>
           <Text size={200} weight="bold">{businessName}</Text>
         </div>
+        {ownerName && (
+          <div className={styles.infoRow}>
+            <Text size={200}>{t.settings.ownerNameLabel}</Text>
+            <Text size={200}>{ownerName}</Text>
+          </div>
+        )}
+        {userPhone && (
+          <div className={styles.infoRow}>
+            <Text size={200}>{t.settings.userPhoneLabel}</Text>
+            <Text size={200} style={{ fontFamily: 'monospace' }}>{userPhone}</Text>
+          </div>
+        )}
         <div className={styles.infoRow}>
           <Text size={200}>{t.settings.tenantId}:</Text>
           <Text size={200} style={{ fontFamily: 'monospace' }}>{tenantId}</Text>

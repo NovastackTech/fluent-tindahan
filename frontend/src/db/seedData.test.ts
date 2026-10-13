@@ -7,6 +7,7 @@ describe('seedData', () => {
     await db.products.clear();
     await db.customers.clear();
     await db.utangLedger.clear();
+    await db.tenants.clear();
   });
 
   it('exports default constant IDs', () => {
@@ -36,5 +37,60 @@ describe('seedData', () => {
     const count2 = await db.products.count();
 
     expect(count2).toBe(count1);
+  });
+
+  it('seeds an isolated catalog for a new tenant without changing default data or copying demo activity', async () => {
+    await seedDexieDatabaseIfNeeded();
+    const defaultProduct = await db.products.orderBy('id').first();
+    const newTenantId = '99999999-9999-4999-8999-999999999999';
+
+    await seedDexieDatabaseIfNeeded(false, newTenantId, false, 'New Store');
+
+    const tenantProducts = await db.products.where('tenantId').equals(newTenantId).toArray();
+    const retainedDefaultProduct = await db.products.get(defaultProduct!.id);
+    expect(tenantProducts).toHaveLength(50);
+    expect(tenantProducts.every((product) => product.id !== defaultProduct!.id)).toBe(true);
+    expect(retainedDefaultProduct?.tenantId).toBe(DEFAULT_TENANT_ID);
+    expect(await db.customers.where('tenantId').equals(newTenantId).count()).toBe(0);
+    expect(await db.utangLedger.where('tenantId').equals(newTenantId).count()).toBe(0);
+    expect(await db.gcashTxns.where('tenantId').equals(newTenantId).count()).toBe(0);
+    expect((await db.tenants.get(newTenantId))?.businessName).toBe('New Store');
+  });
+
+  it('keeps a custom tenant catalog at 50 when two non-forced seeds race', async () => {
+    const tenantId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+    await Promise.all([
+      seedDexieDatabaseIfNeeded(false, tenantId, false, 'Concurrent Store'),
+      seedDexieDatabaseIfNeeded(false, tenantId, false, 'Concurrent Store')
+    ]);
+
+    expect(await db.products.where('tenantId').equals(tenantId).count()).toBe(50);
+    expect((await db.tenants.get(tenantId))?.businessName).toBe('Concurrent Store');
+  });
+
+  it('preserves existing tenant profile and tier when startup seeding runs', async () => {
+    await db.tenants.put({
+      id: DEFAULT_TENANT_ID,
+      businessName: 'My Existing Store',
+      tier: 'TindahanPro',
+      subscriptionEndDate: '2026-12-31T00:00:00.000Z',
+      updatedAt: '2025-01-01T00:00:00.000Z'
+    });
+
+    await seedDexieDatabaseIfNeeded();
+
+    const tenant = await db.tenants.get(DEFAULT_TENANT_ID);
+    expect(tenant?.businessName).toBe('My Existing Store');
+    expect(tenant?.tier).toBe('TindahanPro');
+    expect(tenant?.subscriptionEndDate).toBe('2026-12-31T00:00:00.000Z');
+  });
+
+  it('creates a missing tenant without assigning a subscription tier', async () => {
+    await seedDexieDatabaseIfNeeded(true, DEFAULT_TENANT_ID, true);
+
+    const tenant = await db.tenants.get(DEFAULT_TENANT_ID);
+    expect(tenant?.businessName).toBe("Aling Nena's Tindahan & GCash");
+    expect(tenant).not.toHaveProperty('tier');
   });
 });

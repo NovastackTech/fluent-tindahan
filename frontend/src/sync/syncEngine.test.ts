@@ -10,14 +10,29 @@ import {
   initSyncEngine
 } from './syncEngine';
 import { db } from '../db/db';
-import { apiClient } from '../services/apiClient';
+import {
+  apiClient,
+  ensureTenantProvisioned,
+  TenantAccountMismatchError,
+  TenantProvisioningError
+} from '../services/apiClient';
 import { useAuthStore } from '../state/authStore';
 
 vi.mock('../services/apiClient', () => ({
+  TenantAccountMismatchError: class TenantAccountMismatchError extends Error {},
+  TenantProvisioningError: class TenantProvisioningError extends Error {
+    status: number;
+    constructor(status: number) {
+      super('Provisioning blocked');
+      this.status = status;
+    }
+  },
   apiClient: {
     post: vi.fn(),
+    put: vi.fn(),
     get: vi.fn()
-  }
+  },
+  ensureTenantProvisioned: vi.fn()
 }));
 
 describe('syncEngine', () => {
@@ -37,7 +52,13 @@ describe('syncEngine', () => {
       batchFailureCount: 0,
       nextRetryAt: null
     });
-    useAuthStore.setState({ firebaseToken: null });
+    (apiClient.put as any).mockResolvedValue({ data: {} });
+    (ensureTenantProvisioned as any).mockResolvedValue(undefined);
+    useAuthStore.setState({
+      firebaseToken: null,
+      isOnboarded: true,
+      isOnboardingStatusReady: true
+    });
     vi.resetAllMocks();
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
   });
@@ -97,6 +118,72 @@ describe('syncEngine', () => {
     const remaining = await db.syncQueue.toArray();
     expect(remaining).toHaveLength(0);
     expect(useSyncStore.getState().lastSyncedAt).not.toBeNull();
+  });
+
+  it('does not sync queued operations before onboarding is resolved', async () => {
+    await enqueueSync('Customer', 'Insert', { id: 'c-pending', name: 'Pending Customer' });
+    useAuthStore.setState({
+      isOnboarded: false,
+      isOnboardingStatusReady: false
+    });
+
+    const result = await processSyncQueue();
+
+    expect(result).toEqual({ processed: 0, conflicts: 0, errors: 0 });
+    expect(apiClient.post).not.toHaveBeenCalled();
+    expect(await db.syncQueue.count()).toBe(1);
+  });
+
+  it('provisions tenant identity before uploading queued operations', async () => {
+    const syncId = await enqueueSync('Product', 'Insert', { id: 'p-provisioned', name: 'Sabon' });
+    useAuthStore.setState({
+      tenantId: '33333333-3333-4333-8333-333333333333',
+      userId: '44444444-4444-4444-8444-444444444444',
+      businessName: 'My Store',
+      userPhone: '09171234567'
+    });
+    (apiClient.post as any).mockResolvedValueOnce({
+      data: { results: [{ syncId, status: 'Success' }] }
+    });
+
+    const result = await processSyncQueue();
+
+    expect(result.processed).toBe(1);
+    expect(ensureTenantProvisioned).toHaveBeenCalledOnce();
+    expect((ensureTenantProvisioned as any).mock.invocationCallOrder[0])
+      .toBeLessThan((apiClient.post as any).mock.invocationCallOrder[0]);
+    expect(await db.syncQueue.get(syncId)).toBeUndefined();
+  });
+
+  it('blocks pending sync with the account-mismatch message without retrying or removing data', async () => {
+    const syncId = await enqueueSync('Customer', 'Insert', { id: 'c-account-mismatch' });
+    const mismatch = new TenantAccountMismatchError();
+    (ensureTenantProvisioned as any).mockRejectedValueOnce(mismatch);
+
+    const result = await processSyncQueue();
+
+    expect(result).toEqual({ processed: 0, conflicts: 0, errors: 1 });
+    expect(useSyncStore.getState().lastErrorMessage).toBe(mismatch.message);
+    expect(useSyncStore.getState().authBlockedSessionKey).not.toBeNull();
+    expect(useSyncStore.getState().batchFailureCount).toBe(0);
+    expect(useSyncStore.getState().nextRetryAt).toBeNull();
+    expect(apiClient.post).not.toHaveBeenCalled();
+    expect(await db.syncQueue.get(syncId)).toMatchObject({ status: 'Pending', retryCount: 0 });
+  });
+
+  it('auth-blocks pending sync on a tenant provisioning conflict without retrying', async () => {
+    const syncId = await enqueueSync('Customer', 'Insert', { id: 'c-provision-conflict' });
+    const error = new TenantProvisioningError(409);
+    (ensureTenantProvisioned as any).mockRejectedValueOnce(error);
+
+    const result = await processSyncQueue();
+
+    expect(result).toEqual({ processed: 0, conflicts: 0, errors: 1 });
+    expect(useSyncStore.getState().lastErrorMessage).toBe(error.message);
+    expect(useSyncStore.getState().authBlockedSessionKey).not.toBeNull();
+    expect(useSyncStore.getState().batchFailureCount).toBe(0);
+    expect(useSyncStore.getState().nextRetryAt).toBeNull();
+    expect(await db.syncQueue.get(syncId)).toMatchObject({ status: 'Pending', retryCount: 0 });
   });
 
   it.each([

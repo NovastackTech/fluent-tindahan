@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import {
   FluentProvider,
   makeStyles,
@@ -13,12 +13,17 @@ import { OfflineSyncBanner } from './components/OfflineSyncBanner';
 import { PwaInstallBanner } from './components/PwaInstallBanner';
 import { PwaUpdateToast } from './components/PwaUpdateToast';
 import { PrivacyConsentDialog } from './components/PrivacyConsentDialog';
+import { OnboardingModal } from './components/OnboardingModal';
 import { initSyncEngine } from './sync/syncEngine';
-import { seedDexieDatabaseIfNeeded } from './db/seedData';
 import { usePwaStore, initPwaListeners } from './state/pwaStore';
 import { initServiceWorker } from './pwa/registerServiceWorker';
 import { initPwaTabCoordinator } from './pwa/pwaTabCoordinator';
 import { useSubscriptionStore } from './state/subscriptionStore';
+import { useAuthStore } from './state/authStore';
+import { db } from './db/db';
+import { DEFAULT_TENANT_ID } from './db/seedData';
+
+const STORAGE_KEY_ONBOARDING_STARTED = 'fluent_tindahan_onboarding_started_v1';
 
 // Route-level code splitting for performance on low-end Android devices (Section 1 & 11)
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then(m => ({ default: m.DashboardPage })));
@@ -65,7 +70,10 @@ const useStyles = makeStyles({
 export const App: React.FC = () => {
   const styles = useStyles();
   const isDarkMode = useThemeStore((s) => s.isDarkMode);
+  const isOnboarded = useAuthStore((s) => s.isOnboarded);
+  const isOnboardingStatusReady = useAuthStore((s) => s.isOnboardingStatusReady);
   const [activeTab, setActiveTab] = useState<NavTab>(getInitialNavTab);
+  const storeServicesStarted = useRef(false);
 
   const handleTabChange = (newTab: NavTab) => {
     setActiveTab(newTab);
@@ -85,18 +93,64 @@ export const App: React.FC = () => {
     };
     window.addEventListener('vite:preloadError', handlePreloadError);
 
-    // 1. Initialize local Dexie database seed
-    seedDexieDatabaseIfNeeded().catch(console.error);
+    // Resolve legacy stores before showing onboarding; fresh stores stay empty until setup completes.
+    const initializeLocalStore = async () => {
+      const auth = useAuthStore.getState();
+      const onboardingWasStarted = localStorage.getItem(STORAGE_KEY_ONBOARDING_STARTED) === 'true';
+      let hasExistingStore = auth.isOnboarded || (auth.consentAccepted && !onboardingWasStarted);
 
-    // 2. Initialize offline sync engine and storage persistence
-    initSyncEngine();
+      if (!hasExistingStore) {
+        try {
+          const tenantId = auth.tenantId;
+          const [productCount, salesCount, saleItemCount, customerCount, ledgerCount, gcashCount, resolutionCount, tenant] = await Promise.all([
+            db.products.where('tenantId').equals(tenantId).count(),
+            db.sales.where('tenantId').equals(tenantId).count(),
+            db.saleItems.where('tenantId').equals(tenantId).count(),
+            db.customers.where('tenantId').equals(tenantId).count(),
+            db.utangLedger.where('tenantId').equals(tenantId).count(),
+            db.gcashTxns.where('tenantId').equals(tenantId).count(),
+            db.gcashTxnResolutions.where('tenantId').equals(tenantId).count(),
+            db.tenants.get(tenantId)
+          ]);
 
-    // 3. Initialize PWA event listeners, multi-tab coordination, and Service Worker
+          hasExistingStore = productCount > 0
+            || salesCount > 0
+            || saleItemCount > 0
+            || customerCount > 0
+            || ledgerCount > 0
+            || gcashCount > 0
+            || resolutionCount > 0
+            || Boolean(tenant && tenant.id !== DEFAULT_TENANT_ID);
+        } catch (error) {
+          console.error('[Onboarding] Could not inspect existing local store data:', error);
+        }
+      }
+
+      if (!hasExistingStore) {
+        localStorage.setItem(STORAGE_KEY_ONBOARDING_STARTED, 'true');
+      }
+      useAuthStore.getState().resolveOnboardingStatus(hasExistingStore);
+    };
+    initializeLocalStore().catch(console.error);
+
+    // Initialize PWA event listeners, multi-tab coordination, and Service Worker
     const cleanupPwa = initPwaListeners();
     const cleanupTabCoord = initPwaTabCoordinator();
     initServiceWorker().catch(console.error);
 
-    // 4. Initialize subscription state and check for PayMongo return URL
+    return () => {
+      window.removeEventListener('vite:preloadError', handlePreloadError);
+      cleanupPwa();
+      cleanupTabCoord();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isOnboardingStatusReady || !isOnboarded || storeServicesStarted.current) return;
+    storeServicesStarted.current = true;
+
+    initSyncEngine();
+
     const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
     const isBillingSuccess = searchParams?.get('billing') === 'success';
 
@@ -110,13 +164,7 @@ export const App: React.FC = () => {
         }
       }
     }).catch(console.error);
-
-    return () => {
-      window.removeEventListener('vite:preloadError', handlePreloadError);
-      cleanupPwa();
-      cleanupTabCoord();
-    };
-  }, []);
+  }, [isOnboarded, isOnboardingStatusReady]);
 
   return (
     <FluentProvider theme={isDarkMode ? sariSariDarkTheme : sariSariLightTheme}>
@@ -144,6 +192,7 @@ export const App: React.FC = () => {
 
         <Navigation activeTab={activeTab} onTabChange={handleTabChange} />
         <PrivacyConsentDialog />
+        <OnboardingModal />
       </div>
     </FluentProvider>
   );

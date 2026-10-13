@@ -2,15 +2,20 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useSubscriptionStore, getTierLimits, SUBSCRIPTION_REFRESH_ERROR } from './subscriptionStore';
 import { useAuthStore } from './authStore';
 import { db } from '../db/db';
-import { apiClient } from '../services/apiClient';
+import { apiClient, TenantProvisioningError } from '../services/apiClient';
+import { DEFAULT_TENANT_ID } from '../db/seedData';
 
 describe('subscriptionStore', () => {
   beforeEach(async () => {
+    vi.restoreAllMocks();
     localStorage.clear();
     await db.tenants.clear();
     useAuthStore.setState({
+      tenantId: DEFAULT_TENANT_ID,
       tier: 'Libre',
-      subscriptionEndDate: null
+      subscriptionEndDate: null,
+      isOnboarded: true,
+      isOnboardingStatusReady: true
     });
     useSubscriptionStore.setState({
       tier: 'Libre',
@@ -21,6 +26,9 @@ describe('subscriptionStore', () => {
       error: null,
       isUpgradeModalOpen: false
     });
+    vi.spyOn(apiClient, 'put').mockImplementation(async () => ({
+      data: { tenantId: useAuthStore.getState().tenantId }
+    } as any));
   });
 
   describe('getTierLimits', () => {
@@ -120,8 +128,106 @@ describe('subscriptionStore', () => {
     getSpy.mockRestore();
   });
 
+  it('surfaces a provisioning conflict instead of treating it as an offline refresh', async () => {
+    useAuthStore.setState({
+      tenantId: crypto.randomUUID(),
+      locallyCreatedTenantId: null,
+      serverConfirmedTenantId: null,
+      serverConfirmedUserId: null
+    });
+    vi.spyOn(apiClient, 'put').mockRejectedValueOnce({ response: { status: 409 } });
+
+    await useSubscriptionStore.getState().refreshSubscription();
+
+    expect(useSubscriptionStore.getState().error).toBe(new TenantProvisioningError(409).message);
+    expect(useSubscriptionStore.getState().error).not.toBe(SUBSCRIPTION_REFRESH_ERROR);
+    expect(useSubscriptionStore.getState().isLoading).toBe(false);
+  });
+
+  it('restores a paid tier from the server after reload', async () => {
+    const subscriptionEndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    await db.tenants.put({
+      id: DEFAULT_TENANT_ID,
+      businessName: 'My Store',
+      tier: 'Libre',
+      updatedAt: new Date().toISOString()
+    });
+    const getSpy = vi.spyOn(apiClient, 'get').mockResolvedValueOnce({
+      data: {
+        tier: 1,
+        tierName: 'TindahanPro',
+        subscriptionEndDate,
+        isActive: true,
+        daysRemaining: 30,
+        businessName: 'My Store'
+      }
+    } as any);
+
+    await useSubscriptionStore.getState().refreshSubscription();
+
+    expect(useSubscriptionStore.getState().tier).toBe('TindahanPro');
+    expect(useAuthStore.getState().tier).toBe('TindahanPro');
+    expect(localStorage.getItem('fluent_tindahan_tier_v1')).toBe('TindahanPro');
+    expect((await db.tenants.get(DEFAULT_TENANT_ID))?.tier).toBe('TindahanPro');
+    expect((await db.tenants.get(DEFAULT_TENANT_ID))?.businessName).toBe('My Store');
+    getSpy.mockRestore();
+  });
+
+  it('updates a tenant row only when one already exists', async () => {
+    vi.spyOn(apiClient, 'get').mockResolvedValueOnce({
+      data: {
+        tierName: 'Libre',
+        isActive: false,
+        daysRemaining: null,
+        businessName: 'My Store'
+      }
+    } as any);
+
+    await useSubscriptionStore.getState().refreshSubscription();
+
+    expect(await db.tenants.get(DEFAULT_TENANT_ID)).toBeUndefined();
+  });
+
+  it('does not refresh or provision before onboarding is resolved', async () => {
+    useAuthStore.setState({
+      isOnboarded: false,
+      isOnboardingStatusReady: false
+    });
+    const getSpy = vi.spyOn(apiClient, 'get');
+    const putSpy = vi.spyOn(apiClient, 'put');
+
+    await useSubscriptionStore.getState().refreshSubscription();
+
+    expect(getSpy).not.toHaveBeenCalled();
+    expect(putSpy).not.toHaveBeenCalled();
+    expect(useSubscriptionStore.getState().isLoading).toBe(false);
+  });
+
   describe('simulateMockPayment', () => {
+    it('does not report a local upgrade when the server rejects mock payment', async () => {
+      const serverError = {
+        response: {
+          status: 404,
+          data: { message: 'Mock payments are disabled on this server.' }
+        }
+      };
+      const postSpy = vi.spyOn(apiClient, 'post').mockRejectedValueOnce(serverError);
+
+      await expect(
+        useSubscriptionStore.getState().simulateMockPayment('TindahanPro', 'Monthly')
+      ).rejects.toBe(serverError);
+
+      expect(useAuthStore.getState().tier).toBe('Libre');
+      expect(useSubscriptionStore.getState().tier).toBe('Libre');
+      expect(useSubscriptionStore.getState().error).toBe('Mock payments are disabled on this server.');
+      postSpy.mockRestore();
+    });
+
     it('upgrades tier locally to TindahanPro with future expiration', async () => {
+      const newEndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
+        data: { success: true, tier: 1, newEndDate }
+      } as any);
       const store = useSubscriptionStore.getState();
       await store.simulateMockPayment('TindahanPro', 'Monthly');
 
@@ -134,11 +240,16 @@ describe('subscriptionStore', () => {
 
       // Verify synced with authStore and Dexie
       expect(useAuthStore.getState().tier).toBe('TindahanPro');
+      expect(localStorage.getItem('fluent_tindahan_tier_v1')).toBe('TindahanPro');
       const localTenant = await db.tenants.get(useAuthStore.getState().tenantId);
       expect(localTenant?.tier).toBe('TindahanPro');
     });
 
     it('upgrades tier locally to NegosyoPlus for weekly cycle', async () => {
+      const newEndDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
+        data: { success: true, tier: 2, newEndDate }
+      } as any);
       const store = useSubscriptionStore.getState();
       await store.simulateMockPayment('NegosyoPlus', 'Weekly');
 
