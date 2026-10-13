@@ -194,6 +194,8 @@ export const Header: React.FC = () => {
               className={styles.langButton}
               icon={<GlobeRegular />}
               onClick={toggleLanguage}
+              aria-label={t.common.languageToggle}
+              data-testid="language-toggle-btn"
             >
               {language === 'tl' ? '🇵🇭 TL' : '🇺🇸 EN'}
             </Button>

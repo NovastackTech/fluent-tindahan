@@ -112,6 +112,7 @@ export const UtangPage: React.FC = () => {
   const [newCustName, setNewCustName] = useState('');
   const [newCustNameError, setNewCustNameError] = useState('');
   const [newCustPhone, setNewCustPhone] = useState('');
+  const [newCustPhoneError, setNewCustPhoneError] = useState('');
   const [newCustInitialUtang, setNewCustInitialUtang] = useState('');
 
   const [paymentAmount, setPaymentAmount] = useState('');
@@ -156,17 +157,17 @@ export const UtangPage: React.FC = () => {
 
   // Create new customer
   const handleCreateCustomer = async () => {
+    setNewCustNameError('');
+    setNewCustPhoneError('');
+
     if (!newCustName.trim()) {
       setNewCustNameError(t.utang.customerNameRequired);
       return;
     }
-    setNewCustNameError('');
 
     const phone = normalizePhilippineMobile(newCustPhone);
     if (phone === null) {
-      alert(language === 'tl'
-        ? 'Maglagay ng wastong Philippine mobile number.'
-        : 'Enter a valid Philippine mobile number.');
+      setNewCustPhoneError(t.onboarding.phoneInvalid);
       return;
     }
 
@@ -224,6 +225,7 @@ export const UtangPage: React.FC = () => {
     setNewCustName('');
     setNewCustNameError('');
     setNewCustPhone('');
+    setNewCustPhoneError('');
     setNewCustInitialUtang('');
     setIsNewCustomerOpen(false);
   };
@@ -669,7 +671,10 @@ export const UtangPage: React.FC = () => {
       {/* Create New Customer Dialog */}
       <Dialog open={isNewCustomerOpen} onOpenChange={(_, data) => {
         setIsNewCustomerOpen(data.open);
-        if (!data.open) setNewCustNameError('');
+        if (!data.open) {
+          setNewCustNameError('');
+          setNewCustPhoneError('');
+        }
       }}>
         <DialogSurface>
           <DialogBody>
@@ -679,6 +684,8 @@ export const UtangPage: React.FC = () => {
                 <Text size={200} weight="semibold">{t.utang.customerNameLabel}</Text>
                 <Input
                   aria-label={t.utang.customerNameLabel}
+                  aria-invalid={Boolean(newCustNameError)}
+                  aria-describedby={newCustNameError ? 'utang-customer-name-error' : undefined}
                   style={{ width: '100%', marginTop: '4px' }}
                   value={newCustName}
                   onChange={(_, data) => {
@@ -688,7 +695,7 @@ export const UtangPage: React.FC = () => {
                   placeholder={t.utang.customerNamePlaceholder}
                 />
                 {newCustNameError && (
-                  <Text role="alert" size={200} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
+                  <Text id="utang-customer-name-error" role="alert" size={200} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
                     {newCustNameError}
                   </Text>
                 )}
@@ -699,12 +706,22 @@ export const UtangPage: React.FC = () => {
                 <Input
                   type="tel"
                   aria-label={t.utang.phoneLabel}
+                  aria-invalid={Boolean(newCustPhoneError)}
+                  aria-describedby={newCustPhoneError ? 'utang-customer-phone-error' : undefined}
                   inputMode="tel"
                   style={{ width: '100%', marginTop: '4px' }}
                   value={newCustPhone}
-                  onChange={(_, data) => setNewCustPhone(data.value)}
+                  onChange={(_, data) => {
+                    setNewCustPhone(data.value);
+                    if (newCustPhoneError) setNewCustPhoneError('');
+                  }}
                   placeholder="09XXXXXXXXX"
                 />
+                {newCustPhoneError && (
+                  <Text id="utang-customer-phone-error" role="alert" size={200} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
+                    {newCustPhoneError}
+                  </Text>
+                )}
               </div>
 
               <div style={{ margin: '8px 0' }}>

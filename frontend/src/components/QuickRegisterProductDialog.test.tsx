@@ -57,6 +57,84 @@ describe('QuickRegisterProductDialog', () => {
     expect(screen.getByDisplayValue('4800012345678')).toBeInTheDocument();
   });
 
+  it('shows inline validation when quick-registering a product with a blank name', () => {
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    renderDialog();
+    fireEvent.click(screen.getByRole('button', { name: /Oo, Irehistro ang Produkto|Yes, Register Product|Irehistro/i }));
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Produkto|Save Product/i }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Ilagay ang pangalan ng produkto.');
+    expect(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }))
+      .toHaveAttribute('aria-invalid', 'true');
+    expect(alertSpy).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+  });
+
+  it('shows inline validation when quick-register retail price is not positive', async () => {
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    renderDialog();
+    fireEvent.click(screen.getByRole('button', { name: /Oo, Irehistro ang Produkto|Yes, Register Product|Irehistro/i }));
+    fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }), {
+      target: { value: 'No Price Product' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Produkto|Save Product/i }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/Dapat mas mataas sa ₱0|Retail price must be greater than ₱0/i);
+    expect(screen.getByRole('spinbutton', { name: /Presyo ng Tinda|Retail Price/i }))
+      .toHaveAttribute('aria-invalid', 'true');
+    expect(alertSpy).not.toHaveBeenCalled();
+    await expect(db.products.where('name').equals('No Price Product').count()).resolves.toBe(0);
+
+    // Blank the name and re-submit: name error should show and price error should be cleared
+    fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }), {
+      target: { value: '' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Produkto|Save Product/i }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/Ilagay ang pangalan ng produkto|Product name is required/i);
+    expect(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }))
+      .toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('spinbutton', { name: /Presyo ng Tinda|Retail Price/i }))
+      .toHaveAttribute('aria-invalid', 'false');
+
+    alertSpy.mockRestore();
+  });
+
+  it('shows inline validation when quick-register cost is negative', async () => {
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    renderDialog();
+    fireEvent.click(screen.getByRole('button', { name: /Oo, Irehistro ang Produkto|Yes, Register Product|Irehistro/i }));
+    fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }), {
+      target: { value: 'Negative Cost Product' }
+    });
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Puhunan|Cost Price/i }), {
+      target: { value: '-1' }
+    });
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Presyo ng Tinda|Retail Price/i }), {
+      target: { value: '10' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Produkto|Save Product/i }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/Hindi maaaring negatibo ang puhunan|Cost price cannot be negative/i);
+    expect(screen.getByRole('spinbutton', { name: /Puhunan|Cost Price/i })).toHaveAttribute('aria-invalid', 'true');
+    expect(alertSpy).not.toHaveBeenCalled();
+    await expect(db.products.where('name').equals('Negative Cost Product').count()).resolves.toBe(0);
+
+    // Blank the name and re-submit: name error should show and cost error should be cleared
+    fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }), {
+      target: { value: '' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Produkto|Save Product/i }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/Ilagay ang pangalan ng produkto|Product name is required/i);
+    expect(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }))
+      .toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('spinbutton', { name: /Puhunan|Cost Price/i }))
+      .toHaveAttribute('aria-invalid', 'false');
+
+    alertSpy.mockRestore();
+  });
+
   it('calculates profit and margin preview live', () => {
     renderDialog();
 

@@ -40,6 +40,10 @@ export interface Translations {
   pos: {
     title: string;
     searchPlaceholder: string;
+    noProductsFound: string;
+    emptyInventory: string;
+    emptyInventorySub: string;
+    goToInventoryBtn: string;
     allCategories: string;
     inStock: string;
     outOfStock: string;
@@ -265,10 +269,13 @@ export interface Translations {
     addModalTitle: string;
     editModalTitle: string;
     productNameLabel: string;
+    productNameRequired: string;
     categoryLabel: string;
     barcodeLabel: string;
     costLabel: string;
+    costCannotBeNegative: string;
     priceLabel: string;
+    priceMustBePositive: string;
     stockLabel: string;
     profitPreview: string;
     marginPreview: string;
@@ -295,9 +302,12 @@ export interface Translations {
     registeredSuccess: string;
     barcodeLabel: string;
     productNameLabel: string;
+    productNameRequired: string;
     categoryLabel: string;
     costLabel: string;
+    costCannotBeNegative: string;
     priceLabel: string;
+    priceMustBePositive: string;
     stockLabel: string;
     saveAndAddToCart: string;
     saveProduct: string;
@@ -509,6 +519,10 @@ export const translations: Record<Language, Translations> = {
     pos: {
       title: 'Tindahan Point of Sale',
       searchPlaceholder: 'Mag-scan ng barcode o maghanap ng produkto...',
+      noProductsFound: 'Walang nahanap na paninda. Subukan ang ibang paghahanap o kategorya.',
+      emptyInventory: 'Wala pang paninda sa tindahan.',
+      emptyInventorySub: 'Magdagdag ng produkto sa Imbentaryo upang magsimulang magbenta.',
+      goToInventoryBtn: 'Pumunta sa Imbentaryo',
       allCategories: 'Lahat',
       inStock: 'stock',
       outOfStock: 'Ubos na',
@@ -734,10 +748,13 @@ export const translations: Record<Language, Translations> = {
       addModalTitle: 'Magdagdag ng Bagong Produkto',
       editModalTitle: 'Baguhin ang Detalye ng Produkto',
       productNameLabel: 'Pangalan ng Produkto:*',
+      productNameRequired: 'Ilagay ang pangalan ng produkto.',
       categoryLabel: 'Kategorya:*',
       barcodeLabel: 'Barcode (Opsyonal):',
       costLabel: 'Puhunan (Cost Price ₱):*',
+      costCannotBeNegative: 'Hindi maaaring negatibo ang puhunan.',
       priceLabel: 'Presyo ng Tinda (SRP ₱):*',
+      priceMustBePositive: 'Dapat mas mataas sa ₱0 ang presyo ng tinda.',
       stockLabel: 'Kasalukuyang Stock:*',
       profitPreview: 'Tinatayang Kita bawat piraso:',
       marginPreview: 'Profit Margin:',
@@ -764,9 +781,12 @@ export const translations: Record<Language, Translations> = {
       registeredSuccess: 'Matagumpay na narehistro ang bagong produkto!',
       barcodeLabel: 'Nai-scan na Barcode:',
       productNameLabel: 'Pangalan ng Produkto:*',
+      productNameRequired: 'Ilagay ang pangalan ng produkto.',
       categoryLabel: 'Kategorya:*',
       costLabel: 'Puhunan (Cost Price ₱):*',
+      costCannotBeNegative: 'Hindi maaaring negatibo ang puhunan.',
       priceLabel: 'Presyo ng Tinda (SRP ₱):*',
+      priceMustBePositive: 'Dapat mas mataas sa ₱0 ang presyo ng tinda.',
       stockLabel: 'Panimulang Stock:*',
       saveAndAddToCart: 'I-save at Idagdag sa Cart',
       saveProduct: 'I-save ang Produkto',
@@ -976,6 +996,10 @@ export const translations: Record<Language, Translations> = {
     pos: {
       title: 'Point of Sale',
       searchPlaceholder: 'Scan barcode or search product name...',
+      noProductsFound: 'No products found. Try another search or category.',
+      emptyInventory: 'No products in inventory yet.',
+      emptyInventorySub: 'Add products in Inventory to start making sales.',
+      goToInventoryBtn: 'Go to Inventory',
       allCategories: 'All',
       inStock: 'stock',
       outOfStock: 'Out of stock',
@@ -1201,10 +1225,13 @@ export const translations: Record<Language, Translations> = {
       addModalTitle: 'Add New Product',
       editModalTitle: 'Edit Product Details',
       productNameLabel: 'Product Name:*',
+      productNameRequired: 'Enter a product name.',
       categoryLabel: 'Category:*',
       barcodeLabel: 'Barcode (Optional):',
       costLabel: 'Cost Price (₱):*',
+      costCannotBeNegative: 'Cost price cannot be negative.',
       priceLabel: 'Retail Price (SRP ₱):*',
+      priceMustBePositive: 'Retail price must be greater than ₱0.',
       stockLabel: 'Current Stock Qty:*',
       profitPreview: 'Estimated Profit per unit:',
       marginPreview: 'Profit Margin:',
@@ -1231,9 +1258,12 @@ export const translations: Record<Language, Translations> = {
       registeredSuccess: 'Product successfully registered!',
       barcodeLabel: 'Scanned Barcode:',
       productNameLabel: 'Product Name:*',
+      productNameRequired: 'Enter a product name.',
       categoryLabel: 'Category:*',
       costLabel: 'Cost Price (₱):*',
+      costCannotBeNegative: 'Cost price cannot be negative.',
       priceLabel: 'Retail Price (SRP ₱):*',
+      priceMustBePositive: 'Retail price must be greater than ₱0.',
       stockLabel: 'Initial Stock:*',
       saveAndAddToCart: 'Save & Add to Cart',
       saveProduct: 'Save Product',

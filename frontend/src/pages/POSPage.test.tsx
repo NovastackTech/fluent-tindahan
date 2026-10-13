@@ -8,9 +8,11 @@ import { useCartStore } from '../state/cartStore';
 import { usePwaStore } from '../state/pwaStore';
 import { _resetUpdateSWFunctionForTest } from '../pwa/registerServiceWorker';
 import { useAuthStore } from '../state/authStore';
+import { useLanguageStore } from '../state/languageStore';
 
 describe('POSPage', () => {
   beforeEach(async () => {
+    useLanguageStore.setState({ language: 'tl' });
     useAuthStore.setState({ tenantId: 't-1' });
     _resetUpdateSWFunctionForTest();
     useCartStore.getState().clearCart();
@@ -34,13 +36,29 @@ describe('POSPage', () => {
     });
   });
 
-  const renderPOS = () => {
+  const renderPOS = (props?: { onNavigate?: (tab: any) => void }) => {
     return render(
       <FluentProvider theme={sariSariLightTheme}>
-        <POSPage />
+        <POSPage {...props} />
       </FluentProvider>
     );
   };
+
+  it('shows an empty inventory state with CTA when the store has no products yet', async () => {
+    await db.products.clear();
+    const onNavigateMock = vi.fn();
+    renderPOS({ onNavigate: onNavigateMock });
+
+    await waitFor(() => {
+      expect(screen.getByText('Wala pang paninda sa tindahan.')).toBeInTheDocument();
+      expect(screen.getByText('Magdagdag ng produkto sa Imbentaryo upang magsimulang magbenta.')).toBeInTheDocument();
+      expect(screen.queryByText('Walang nahanap na paninda. Subukan ang ibang paghahanap o kategorya.')).not.toBeInTheDocument();
+    });
+
+    const ctaBtn = screen.getByRole('button', { name: /Pumunta sa Imbentaryo|Go to Inventory/i });
+    fireEvent.click(ctaBtn);
+    expect(onNavigateMock).toHaveBeenCalledWith('inventory');
+  });
 
   it('renders search input, category filters, and product grid', async () => {
     renderPOS();
@@ -91,6 +109,18 @@ describe('POSPage', () => {
       expect(screen.getByText('Coca Cola 1.5L')).toBeInTheDocument();
       expect(screen.queryByText('Lucky Me Pancit Canton Kalamansi')).not.toBeInTheDocument();
     });
+  });
+
+  it('shows a localized empty state when product search has no matches', async () => {
+    renderPOS();
+
+    fireEvent.change(screen.getByPlaceholderText(/barcode|produkto|product/i), {
+      target: { value: 'Product That Does Not Exist' }
+    });
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Walang nahanap na paninda. Subukan ang ibang paghahanap o kategorya.'
+    );
   });
 
   it('prompts quick registration when barcode is not found on Enter key', async () => {
@@ -387,6 +417,7 @@ describe('POSPage', () => {
   });
 
   it('rejects a malformed phone when adding a debtor during checkout', async () => {
+    const alertMock = vi.spyOn(window, 'alert').mockImplementation(() => {});
     renderPOS();
 
     await waitFor(() => expect(screen.getByText('Lucky Me Pancit Canton Kalamansi')).toBeInTheDocument());
@@ -399,9 +430,21 @@ describe('POSPage', () => {
     fireEvent.change(screen.getByPlaceholderText('09123456789'), { target: { value: 'abc123' } });
     fireEvent.click(screen.getByRole('button', { name: /I-save at Piliin|Save & Select/i }));
 
-    expect(await screen.findByText(/wastong Philippine mobile|valid Philippine mobile/i)).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent(/wastong 11-digit Philippine mobile|valid 11-digit Philippine mobile/i);
+    expect(screen.getByPlaceholderText('09123456789')).toHaveAttribute('aria-invalid', 'true');
+    expect(alertMock).not.toHaveBeenCalled();
     expect(await db.customers.toArray()).toHaveLength(0);
     expect(await db.syncQueue.toArray()).toHaveLength(0);
+
+    // Blank the name and re-submit: debtor name error should show and phone error should be cleared
+    fireEvent.change(screen.getByPlaceholderText(/Aling Maria/i), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: /I-save at Piliin|Save & Select/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Pakiusap ilagay ang pangalan ng suki|Please enter customer name/i);
+    expect(screen.getByPlaceholderText('09123456789')).toHaveAttribute('aria-invalid', 'false');
+    expect(screen.getByPlaceholderText(/Aling Maria/i)).toHaveAttribute('aria-invalid', 'true');
+
+    alertMock.mockRestore();
   });
 
   it('validates debtor name and supports canceling debtor form in utang checkout', async () => {
@@ -429,7 +472,15 @@ describe('POSPage', () => {
     const saveDebtorBtn = screen.getByRole('button', { name: /I-save at Piliin|Save & Select/i });
     fireEvent.click(saveDebtorBtn);
 
+    const nameInput = screen.getByRole('textbox', { name: /Pangalan ng Suki|Customer Name/i });
     expect(screen.getByText(/Pakiusap ilagay ang pangalan ng suki|Please enter customer name/i)).toBeInTheDocument();
+    expect(nameInput).toHaveAttribute('aria-invalid', 'true');
+    expect(nameInput).toHaveAttribute('aria-describedby', 'pos-debtor-name-error');
+
+    // Enter name to clear error
+    fireEvent.change(nameInput, { target: { value: 'Debtor One' } });
+    expect(nameInput).toHaveAttribute('aria-invalid', 'false');
+    expect(nameInput).not.toHaveAttribute('aria-describedby');
 
     // Cancel form using cancel button within debtor registration card
     const debtorCard = screen.getByText(/Magrehistro ng Bagong Suki|Register New Debtor/i).closest('div')!;
