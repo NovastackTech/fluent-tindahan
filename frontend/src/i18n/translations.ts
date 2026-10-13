@@ -40,6 +40,7 @@ export interface Translations {
   pos: {
     title: string;
     searchPlaceholder: string;
+    noProductsFound: string;
     allCategories: string;
     inStock: string;
     outOfStock: string;
@@ -265,6 +266,7 @@ export interface Translations {
     addModalTitle: string;
     editModalTitle: string;
     productNameLabel: string;
+    productNameRequired: string;
     categoryLabel: string;
     barcodeLabel: string;
     costLabel: string;
@@ -295,6 +297,7 @@ export interface Translations {
     registeredSuccess: string;
     barcodeLabel: string;
     productNameLabel: string;
+    productNameRequired: string;
     categoryLabel: string;
     costLabel: string;
     priceLabel: string;
@@ -509,6 +512,7 @@ export const translations: Record<Language, Translations> = {
     pos: {
       title: 'Tindahan Point of Sale',
       searchPlaceholder: 'Mag-scan ng barcode o maghanap ng produkto...',
+      noProductsFound: 'Walang nahanap na paninda. Subukan ang ibang paghahanap o kategorya.',
       allCategories: 'Lahat',
       inStock: 'stock',
       outOfStock: 'Ubos na',
@@ -734,6 +738,7 @@ export const translations: Record<Language, Translations> = {
       addModalTitle: 'Magdagdag ng Bagong Produkto',
       editModalTitle: 'Baguhin ang Detalye ng Produkto',
       productNameLabel: 'Pangalan ng Produkto:*',
+      productNameRequired: 'Ilagay ang pangalan ng produkto.',
       categoryLabel: 'Kategorya:*',
       barcodeLabel: 'Barcode (Opsyonal):',
       costLabel: 'Puhunan (Cost Price ₱):*',
@@ -764,6 +769,7 @@ export const translations: Record<Language, Translations> = {
       registeredSuccess: 'Matagumpay na narehistro ang bagong produkto!',
       barcodeLabel: 'Nai-scan na Barcode:',
       productNameLabel: 'Pangalan ng Produkto:*',
+      productNameRequired: 'Ilagay ang pangalan ng produkto.',
       categoryLabel: 'Kategorya:*',
       costLabel: 'Puhunan (Cost Price ₱):*',
       priceLabel: 'Presyo ng Tinda (SRP ₱):*',
@@ -976,6 +982,7 @@ export const translations: Record<Language, Translations> = {
     pos: {
       title: 'Point of Sale',
       searchPlaceholder: 'Scan barcode or search product name...',
+      noProductsFound: 'No products found. Try another search or category.',
       allCategories: 'All',
       inStock: 'stock',
       outOfStock: 'Out of stock',
@@ -1201,6 +1208,7 @@ export const translations: Record<Language, Translations> = {
       addModalTitle: 'Add New Product',
       editModalTitle: 'Edit Product Details',
       productNameLabel: 'Product Name:*',
+      productNameRequired: 'Enter a product name.',
       categoryLabel: 'Category:*',
       barcodeLabel: 'Barcode (Optional):',
       costLabel: 'Cost Price (₱):*',
@@ -1231,6 +1239,7 @@ export const translations: Record<Language, Translations> = {
       registeredSuccess: 'Product successfully registered!',
       barcodeLabel: 'Scanned Barcode:',
       productNameLabel: 'Product Name:*',
+      productNameRequired: 'Enter a product name.',
       categoryLabel: 'Category:*',
       costLabel: 'Cost Price (₱):*',
       priceLabel: 'Retail Price (SRP ₱):*',

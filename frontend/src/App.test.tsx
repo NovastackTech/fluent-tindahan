@@ -92,6 +92,52 @@ describe('App', () => {
     expect(screen.queryByText(/Welcome to Fluent Tindahan|Maligayang Pagdating sa Fluent Tindahan/i)).not.toBeInTheDocument();
   });
 
+  it('recovers an existing tenant when auth storage points to the default tenant', async () => {
+    const tenantId = crypto.randomUUID();
+    localStorage.setItem('fluent_tindahan_onboarding_started_v1', 'true');
+    useAuthStore.setState({
+      tenantId: DEFAULT_TENANT_ID,
+      consentAccepted: true,
+      tier: 'Libre',
+      isOnboarded: false,
+      isOnboardingStatusReady: false
+    });
+    await db.tenants.put({
+      id: tenantId,
+      businessName: 'Existing Store',
+      tier: 'TindahanPro',
+      subscriptionEndDate: '2030-01-01T00:00:00.000Z',
+      updatedAt: new Date().toISOString()
+    });
+    await db.products.bulkAdd(Array.from({ length: 50 }, (_, index) => ({
+      id: `existing-product-${index}`,
+      tenantId,
+      name: `Existing Product ${index}`,
+      price: 10,
+      cost: 8,
+      stockQty: 5,
+      updatedAt: new Date().toISOString()
+    })));
+    useSubscriptionStore.setState({
+      tier: 'Libre',
+      isUpgradeModalOpen: false
+    });
+    vi.spyOn(useSubscriptionStore.getState(), 'refreshSubscription').mockResolvedValue();
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(useAuthStore.getState().isOnboardingStatusReady).toBe(true);
+      expect(useAuthStore.getState().isOnboarded).toBe(true);
+      expect(useAuthStore.getState().tenantId).toBe(tenantId);
+    });
+
+    expect(useAuthStore.getState().tier).toBe('TindahanPro');
+    expect((await db.tenants.get(tenantId))?.tier).toBe('TindahanPro');
+    expect(await db.products.where('tenantId').equals(tenantId).count()).toBe(50);
+    expect(screen.queryByText(/Welcome to Fluent Tindahan|Maligayang Pagdating sa Fluent Tindahan/i)).not.toBeInTheDocument();
+  });
+
   it('migrates a previously consented install without changing its tenant', async () => {
     render(<App />);
 

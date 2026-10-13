@@ -57,6 +57,19 @@ describe('QuickRegisterProductDialog', () => {
     expect(screen.getByDisplayValue('4800012345678')).toBeInTheDocument();
   });
 
+  it('shows inline validation when quick-registering a product with a blank name', () => {
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    renderDialog();
+    fireEvent.click(screen.getByRole('button', { name: /Oo, Irehistro ang Produkto|Yes, Register Product|Irehistro/i }));
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Produkto|Save Product/i }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Ilagay ang pangalan ng produkto.');
+    expect(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }))
+      .toHaveAttribute('aria-invalid', 'true');
+    expect(alertSpy).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+  });
+
   it('calculates profit and margin preview live', () => {
     renderDialog();
 

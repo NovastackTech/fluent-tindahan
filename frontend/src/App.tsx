@@ -102,7 +102,7 @@ export const App: React.FC = () => {
       if (!hasExistingStore) {
         try {
           const tenantId = auth.tenantId;
-          const [productCount, salesCount, saleItemCount, customerCount, ledgerCount, gcashCount, resolutionCount, tenant] = await Promise.all([
+          const [productCount, salesCount, saleItemCount, customerCount, ledgerCount, gcashCount, resolutionCount, tenant, persistedTenants] = await Promise.all([
             db.products.where('tenantId').equals(tenantId).count(),
             db.sales.where('tenantId').equals(tenantId).count(),
             db.saleItems.where('tenantId').equals(tenantId).count(),
@@ -110,7 +110,8 @@ export const App: React.FC = () => {
             db.utangLedger.where('tenantId').equals(tenantId).count(),
             db.gcashTxns.where('tenantId').equals(tenantId).count(),
             db.gcashTxnResolutions.where('tenantId').equals(tenantId).count(),
-            db.tenants.get(tenantId)
+            db.tenants.get(tenantId),
+            db.tenants.toArray()
           ]);
 
           hasExistingStore = productCount > 0
@@ -121,6 +122,19 @@ export const App: React.FC = () => {
             || gcashCount > 0
             || resolutionCount > 0
             || Boolean(tenant && tenant.id !== DEFAULT_TENANT_ID);
+
+          if (!hasExistingStore) {
+            const otherTenants = persistedTenants.filter((candidate) => candidate.id !== DEFAULT_TENANT_ID);
+            if (otherTenants.length > 0) {
+              hasExistingStore = true;
+              if (otherTenants.length === 1) {
+                const recoveredTenant = otherTenants[0];
+                const currentAuth = useAuthStore.getState();
+                currentAuth.setTenantId(recoveredTenant.id);
+                currentAuth.setSubscription(recoveredTenant.tier || 'Libre', recoveredTenant.subscriptionEndDate);
+              }
+            }
+          }
         } catch (error) {
           console.error('[Onboarding] Could not inspect existing local store data:', error);
         }

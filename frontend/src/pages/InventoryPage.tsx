@@ -344,6 +344,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
 
   // Form states
   const [formName, setFormName] = useState('');
+  const [formNameError, setFormNameError] = useState('');
   const [formCategory, setFormCategory] = useState('');
   const [formBarcode, setFormBarcode] = useState('');
   const [formCost, setFormCost] = useState<number | ''>('');
@@ -521,6 +522,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
     setModalMode('add');
     setEditingProduct(null);
     setFormName('');
+    setFormNameError('');
     setFormCategory('');
     setFormBarcode('');
     setFormCost('');
@@ -534,6 +536,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
     setModalMode('edit');
     setEditingProduct(product);
     setFormName(product.name);
+    setFormNameError('');
     setFormCategory(product.category || '');
     setFormBarcode(product.barcode || '');
     setFormCost(product.cost);
@@ -545,9 +548,10 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
   // Save Add/Edit Product
   const handleSaveProduct = async () => {
     if (!formName.trim()) {
-      alert(t.inventory.productNameLabel);
+      setFormNameError(t.inventory.productNameRequired);
       return;
     }
+    setFormNameError('');
     const costNum = Number(formCost) || 0;
     const priceNum = Number(formPrice) || 0;
     const stockNum = Number(formStock) || 0;
@@ -1192,11 +1196,26 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                   </Text>
                   <Input
                     aria-label={t.inventory.productNameLabel}
+                    aria-invalid={Boolean(formNameError)}
+                    aria-describedby={formNameError ? 'inventory-product-name-error' : undefined}
                     style={{ width: '100%' }}
                     placeholder="e.g. Lucky Me Pancit Canton Kalamansi"
                     value={formName}
-                    onChange={(_, data) => setFormName(data.value)}
+                    onChange={(_, data) => {
+                      setFormName(data.value);
+                      if (formNameError) setFormNameError('');
+                    }}
                   />
+                  {formNameError && (
+                    <Text
+                      id="inventory-product-name-error"
+                      role="alert"
+                      size={200}
+                      style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}
+                    >
+                      {formNameError}
+                    </Text>
+                  )}
                 </div>
 
                 {/* Category */}

@@ -100,6 +100,7 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
 
   // Form states
   const [name, setName] = useState('');
+  const [nameError, setNameError] = useState('');
   const [category, setCategory] = useState('');
   const [cost, setCost] = useState<number | ''>('');
   const [price, setPrice] = useState<number | ''>('');
@@ -110,6 +111,7 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
     if (isOpen) {
       setStage('prompt');
       setName('');
+      setNameError('');
       setCategory('');
       setCost('');
       setPrice('');
@@ -134,9 +136,10 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
 
   const handleSave = async () => {
     if (!name.trim()) {
-      alert(t.barcode.productNameLabel);
+      setNameError(t.barcode.productNameRequired);
       return;
     }
+    setNameError('');
     if (priceNum <= 0) {
       alert(t.barcode.priceLabel);
       return;
@@ -273,12 +276,27 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
                 </Text>
                 <Input
                   aria-label={t.barcode.productNameLabel}
+                  aria-invalid={Boolean(nameError)}
+                  aria-describedby={nameError ? 'quick-register-product-name-error' : undefined}
                   style={{ width: '100%' }}
                   placeholder="e.g. San Miguel Pale Pilsen 330ml"
                   value={name}
-                  onChange={(_, data) => setName(data.value)}
+                  onChange={(_, data) => {
+                    setName(data.value);
+                    if (nameError) setNameError('');
+                  }}
                   autoFocus
                 />
+                {nameError && (
+                  <Text
+                    id="quick-register-product-name-error"
+                    role="alert"
+                    size={200}
+                    style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}
+                  >
+                    {nameError}
+                  </Text>
+                )}
               </div>
 
               {/* Category */}

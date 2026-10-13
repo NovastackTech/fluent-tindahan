@@ -8,9 +8,11 @@ import { useCartStore } from '../state/cartStore';
 import { usePwaStore } from '../state/pwaStore';
 import { _resetUpdateSWFunctionForTest } from '../pwa/registerServiceWorker';
 import { useAuthStore } from '../state/authStore';
+import { useLanguageStore } from '../state/languageStore';
 
 describe('POSPage', () => {
   beforeEach(async () => {
+    useLanguageStore.setState({ language: 'tl' });
     useAuthStore.setState({ tenantId: 't-1' });
     _resetUpdateSWFunctionForTest();
     useCartStore.getState().clearCart();
@@ -91,6 +93,18 @@ describe('POSPage', () => {
       expect(screen.getByText('Coca Cola 1.5L')).toBeInTheDocument();
       expect(screen.queryByText('Lucky Me Pancit Canton Kalamansi')).not.toBeInTheDocument();
     });
+  });
+
+  it('shows a localized empty state when product search has no matches', async () => {
+    renderPOS();
+
+    fireEvent.change(screen.getByPlaceholderText(/barcode|produkto|product/i), {
+      target: { value: 'Product That Does Not Exist' }
+    });
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Walang nahanap na paninda. Subukan ang ibang paghahanap o kategorya.'
+    );
   });
 
   it('prompts quick registration when barcode is not found on Enter key', async () => {
@@ -387,6 +401,7 @@ describe('POSPage', () => {
   });
 
   it('rejects a malformed phone when adding a debtor during checkout', async () => {
+    const alertMock = vi.spyOn(window, 'alert').mockImplementation(() => {});
     renderPOS();
 
     await waitFor(() => expect(screen.getByText('Lucky Me Pancit Canton Kalamansi')).toBeInTheDocument());
@@ -399,9 +414,12 @@ describe('POSPage', () => {
     fireEvent.change(screen.getByPlaceholderText('09123456789'), { target: { value: 'abc123' } });
     fireEvent.click(screen.getByRole('button', { name: /I-save at Piliin|Save & Select/i }));
 
-    expect(await screen.findByText(/wastong Philippine mobile|valid Philippine mobile/i)).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent(/wastong 11-digit Philippine mobile|valid 11-digit Philippine mobile/i);
+    expect(screen.getByPlaceholderText('09123456789')).toHaveAttribute('aria-invalid', 'true');
+    expect(alertMock).not.toHaveBeenCalled();
     expect(await db.customers.toArray()).toHaveLength(0);
     expect(await db.syncQueue.toArray()).toHaveLength(0);
+    alertMock.mockRestore();
   });
 
   it('validates debtor name and supports canceling debtor form in utang checkout', async () => {

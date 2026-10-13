@@ -106,6 +106,13 @@ const useStyles = makeStyles({
     gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
     ...shorthands.gap(tokens.spacingHorizontalM)
   },
+  emptyProducts: {
+    gridColumn: '1 / -1',
+    textAlign: 'center',
+    color: tokens.colorNeutralForeground3,
+    paddingTop: tokens.spacingVerticalXL,
+    paddingBottom: tokens.spacingVerticalXL
+  },
   productCard: {
     ...shorthands.padding(tokens.spacingVerticalS, tokens.spacingHorizontalS),
     cursor: 'pointer',
@@ -273,12 +280,14 @@ export const POSPage: React.FC = () => {
   const [newDebtorName, setNewDebtorName] = useState('');
   const [newDebtorPhone, setNewDebtorPhone] = useState('');
   const [newDebtorError, setNewDebtorError] = useState<string | null>(null);
+  const [newDebtorPhoneError, setNewDebtorPhoneError] = useState<string | null>(null);
 
   // Live queries from Dexie
-  const products = useLiveQuery(
+  const productResults = useLiveQuery(
     () => db.products.where('tenantId').equals(tenantId).toArray(),
     [tenantId]
-  ) || [];
+  );
+  const products = productResults || [];
   const customers = useLiveQuery(
     () => db.customers.where('tenantId').equals(tenantId).toArray(),
     [tenantId]
@@ -429,14 +438,14 @@ export const POSPage: React.FC = () => {
       setNewDebtorError(t.pos.debtorNameRequired);
       return;
     }
+    setNewDebtorError(null);
 
     const phone = normalizePhilippineMobile(newDebtorPhone);
     if (phone === null) {
-      setNewDebtorError(language === 'tl'
-        ? 'Maglagay ng wastong Philippine mobile number.'
-        : 'Enter a valid Philippine mobile number.');
+      setNewDebtorPhoneError(t.onboarding.phoneInvalid);
       return;
     }
+    setNewDebtorPhoneError(null);
 
     const newCustId = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -456,6 +465,7 @@ export const POSPage: React.FC = () => {
     setNewDebtorName('');
     setNewDebtorPhone('');
     setNewDebtorError(null);
+    setNewDebtorPhoneError(null);
     setIsAddDebtorOpen(false);
   };
 
@@ -604,6 +614,7 @@ export const POSPage: React.FC = () => {
       setNewDebtorName('');
       setNewDebtorPhone('');
       setNewDebtorError(null);
+      setNewDebtorPhoneError(null);
     } finally {
       usePwaStore.getState().setIsSaleInProgress(false);
     }
@@ -685,7 +696,11 @@ export const POSPage: React.FC = () => {
 
       {/* Product Grid */}
       <div className={styles.productGrid}>
-        {filteredProducts.map((p) => (
+        {productResults && filteredProducts.length === 0 ? (
+          <Text className={styles.emptyProducts} role="status" aria-live="polite">
+            {t.pos.noProductsFound}
+          </Text>
+        ) : filteredProducts.map((p) => (
           <Card
             key={p.id}
             className={styles.productCard}
@@ -825,6 +840,7 @@ export const POSPage: React.FC = () => {
             setNewDebtorName('');
             setNewDebtorPhone('');
             setNewDebtorError(null);
+            setNewDebtorPhoneError(null);
             if (receiptData || pendingReceiptData) {
               setReceiptData(null);
               setPendingReceiptData(null);
@@ -1000,6 +1016,7 @@ export const POSPage: React.FC = () => {
                           onClick={() => {
                             setIsAddDebtorOpen(false);
                             setNewDebtorError(null);
+                            setNewDebtorPhoneError(null);
                           }}
                           aria-label={t.common.cancel}
                         />
@@ -1024,7 +1041,7 @@ export const POSPage: React.FC = () => {
                           autoFocus
                         />
                         {newDebtorError && (
-                          <Text size={200} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
+                          <Text role="alert" size={200} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
                             {newDebtorError}
                           </Text>
                         )}
@@ -1035,10 +1052,12 @@ export const POSPage: React.FC = () => {
                         <Input
                           type="tel"
                           inputMode="tel"
+                          aria-invalid={Boolean(newDebtorPhoneError)}
+                          aria-describedby={newDebtorPhoneError ? 'pos-debtor-phone-error' : undefined}
                           value={newDebtorPhone}
                           onChange={(_, d) => {
                             setNewDebtorPhone(d.value);
-                            if (newDebtorError) setNewDebtorError(null);
+                            if (newDebtorPhoneError) setNewDebtorPhoneError(null);
                           }}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
@@ -1049,6 +1068,11 @@ export const POSPage: React.FC = () => {
                           placeholder="09123456789"
                           style={{ width: '100%', marginTop: '4px' }}
                         />
+                        {newDebtorPhoneError && (
+                          <Text id="pos-debtor-phone-error" role="alert" size={200} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
+                            {newDebtorPhoneError}
+                          </Text>
+                        )}
                       </div>
 
                       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
@@ -1058,6 +1082,7 @@ export const POSPage: React.FC = () => {
                           onClick={() => {
                             setIsAddDebtorOpen(false);
                             setNewDebtorError(null);
+                            setNewDebtorPhoneError(null);
                           }}
                         >
                           {t.common.cancel}
@@ -1129,6 +1154,7 @@ export const POSPage: React.FC = () => {
                   setNewDebtorName('');
                   setNewDebtorPhone('');
                   setNewDebtorError(null);
+                  setNewDebtorPhoneError(null);
                 }}
               >
                 {t.common.cancel}

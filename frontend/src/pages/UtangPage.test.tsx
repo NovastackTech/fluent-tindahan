@@ -139,7 +139,7 @@ describe('UtangPage', () => {
     alertMock.mockRestore();
   });
 
-  it('rejects a malformed customer phone without writing customer or sync data', async () => {
+  it('shows inline validation for malformed customer phone without writing customer or sync data', async () => {
     const alertMock = vi.spyOn(window, 'alert').mockImplementation(() => {});
     renderUtang();
 
@@ -148,12 +148,19 @@ describe('UtangPage', () => {
     fireEvent.change(screen.getByRole('textbox', { name: /Cellphone Number|Mobile Number/i }), { target: { value: 'abc123' } });
     fireEvent.click(screen.getByRole('button', { name: /I-save ang Suki|Save Customer/i }));
 
-    await waitFor(() => {
-      expect(alertMock).toHaveBeenCalledWith(expect.stringMatching(/wastong Philippine mobile|valid Philippine mobile/i));
-    });
+    const phoneError = await screen.findByRole('alert');
+    expect(phoneError).toHaveTextContent(/wastong 11-digit Philippine mobile|valid 11-digit Philippine mobile/i);
+    expect(screen.getByRole('textbox', { name: /Cellphone Number|Mobile Number/i }))
+      .toHaveAttribute('aria-invalid', 'true');
+    expect(alertMock).not.toHaveBeenCalled();
     expect(await db.customers.toArray()).toHaveLength(0);
     expect(await db.syncQueue.toArray()).toHaveLength(0);
     expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('textbox', { name: /Cellphone Number|Mobile Number/i }), {
+      target: { value: '09171234567' }
+    });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     alertMock.mockRestore();
   });
 

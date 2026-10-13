@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { FluentProvider } from '@fluentui/react-components';
 import { InventoryPage } from './InventoryPage';
+import { Header } from '../components/Header';
 import { sariSariLightTheme } from '../theme/theme';
 import { db } from '../db/db';
 
@@ -73,17 +74,20 @@ describe('InventoryPage', () => {
       updatedAt: new Date().toISOString()
     }));
     await db.products.bulkAdd(makeProducts(43, 0));
-    const { unmount } = renderInventory();
+    render(
+      <FluentProvider theme={sariSariLightTheme}>
+        <Header />
+        <InventoryPage />
+      </FluentProvider>
+    );
 
     expect(await screen.findByText('Halos puno')).toBeInTheDocument();
     expect(screen.getByText('≤ 5 piraso ang natitira')).toBeInTheDocument();
 
     await db.products.bulkAdd(makeProducts(5, 43));
     await waitFor(() => expect(screen.getByText('Puno na')).toBeInTheDocument());
-    unmount();
 
-    useLanguageStore.setState({ language: 'en' });
-    renderInventory();
+    fireEvent.click(screen.getByText('🇵🇭 TL').closest('button')!);
 
     expect(await screen.findByText('Full')).toBeInTheDocument();
     expect(screen.getByText('≤ 5 units remaining')).toBeInTheDocument();
@@ -131,6 +135,19 @@ describe('InventoryPage', () => {
     fireEvent.click(addBtn);
 
     expect(screen.getByText(/Magdagdag ng Bagong Produkto|Add New Product/i)).toBeInTheDocument();
+  });
+
+  it('shows inline validation when saving a product with a blank name', () => {
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    renderInventory();
+    fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Produkto|Add Product/i }));
+    fireEvent.click(screen.getByRole('button', { name: /I-save|Save/i }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Ilagay ang pangalan ng produkto.');
+    expect(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }))
+      .toHaveAttribute('aria-invalid', 'true');
+    expect(alertSpy).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
   });
 
   it('creates and saves a new product to Dexie via modal', async () => {
