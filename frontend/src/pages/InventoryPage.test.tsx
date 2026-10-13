@@ -62,6 +62,33 @@ describe('InventoryPage', () => {
     });
   });
 
+  it('translates capacity badges and low-stock hints in the selected language', async () => {
+    const makeProducts = (count: number, offset: number) => Array.from({ length: count }, (_, index) => ({
+      id: `capacity-${offset + index}`,
+      tenantId: 't-1',
+      name: `Capacity Product ${offset + index}`,
+      price: 10,
+      cost: 8,
+      stockQty: 6,
+      updatedAt: new Date().toISOString()
+    }));
+    await db.products.bulkAdd(makeProducts(43, 0));
+    const { unmount } = renderInventory();
+
+    expect(await screen.findByText('Halos puno')).toBeInTheDocument();
+    expect(screen.getByText('≤ 5 piraso ang natitira')).toBeInTheDocument();
+
+    await db.products.bulkAdd(makeProducts(5, 43));
+    await waitFor(() => expect(screen.getByText('Puno na')).toBeInTheDocument());
+    unmount();
+
+    useLanguageStore.setState({ language: 'en' });
+    renderInventory();
+
+    expect(await screen.findByText('Full')).toBeInTheDocument();
+    expect(screen.getByText('≤ 5 units remaining')).toBeInTheDocument();
+  });
+
   it('only lists products belonging to the active tenant', async () => {
     await db.products.add({
       id: 'other-tenant-product',

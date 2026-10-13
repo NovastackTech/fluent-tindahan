@@ -228,7 +228,11 @@ export interface Translations {
     title: string;
     subtitle: string;
     totalProducts: string;
+    fullCapacityBadge: string;
+    nearCapacityBadge: string;
     lowStockAlerts: string;
+    filteringLowStockHint: string;
+    lowStockRemainingHint: string;
     inventoryCost: string;
     retailValue: string;
     potentialProfit: string;
@@ -693,7 +697,11 @@ export const translations: Record<Language, Translations> = {
       title: 'Talaan ng Imbentaryo at Stocks',
       subtitle: 'Subaybayan ang dami ng paninda, baguhin ang presyo, suriin ang kita at margin, at mag-restock.',
       totalProducts: 'Kabuuang Paninda',
+      fullCapacityBadge: 'Puno na',
+      nearCapacityBadge: 'Halos puno',
       lowStockAlerts: 'Paubos na Paninda (≤ 5)',
+      filteringLowStockHint: 'Ipinapakita ang paubos na paninda (pindutin para ipakita lahat)',
+      lowStockRemainingHint: '≤ 5 piraso ang natitira',
       inventoryCost: 'Kabuuang Puhunan',
       retailValue: 'Kabuuang Benta',
       potentialProfit: 'Inaasahang Kita',
@@ -1156,7 +1164,11 @@ export const translations: Record<Language, Translations> = {
       title: 'Inventory & Stock Management',
       subtitle: 'Monitor stock levels, edit prices, inspect profit margins, and restock supplies.',
       totalProducts: 'Total Products',
+      fullCapacityBadge: 'Full',
+      nearCapacityBadge: 'Almost full',
       lowStockAlerts: 'Low Stock Alerts (≤ 5)',
+      filteringLowStockHint: 'Filtering low stock (click to show all)',
+      lowStockRemainingHint: '≤ 5 units remaining',
       inventoryCost: 'Total Cost Value',
       retailValue: 'Total Retail Value',
       potentialProfit: 'Projected Gross Profit',
