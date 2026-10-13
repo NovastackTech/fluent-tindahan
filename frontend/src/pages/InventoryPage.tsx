@@ -553,11 +553,14 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
 
   // Save Add/Edit Product
   const handleSaveProduct = async () => {
+    setFormNameError('');
+    setFormCostError('');
+    setFormPriceError('');
+
     if (!formName.trim()) {
       setFormNameError(t.inventory.productNameRequired);
       return;
     }
-    setFormNameError('');
     const costNum = Number(formCost) || 0;
     const priceNum = Number(formPrice) || 0;
     const stockNum = Number(formStock) || 0;
@@ -566,13 +569,11 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
       setFormCostError(t.inventory.costCannotBeNegative);
       return;
     }
-    setFormCostError('');
 
     if (priceNum <= 0) {
       setFormPriceError(t.inventory.priceMustBePositive);
       return;
     }
-    setFormPriceError('');
 
     const nowIso = new Date().toISOString();
 

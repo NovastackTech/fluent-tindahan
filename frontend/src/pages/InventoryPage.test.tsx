@@ -1,8 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { FluentProvider } from '@fluentui/react-components';
 import { InventoryPage } from './InventoryPage';
-import { Header } from '../components/Header';
 import { sariSariLightTheme } from '../theme/theme';
 import { db } from '../db/db';
 
@@ -74,12 +73,7 @@ describe('InventoryPage', () => {
       updatedAt: new Date().toISOString()
     }));
     await db.products.bulkAdd(makeProducts(43, 0));
-    render(
-      <FluentProvider theme={sariSariLightTheme}>
-        <Header />
-        <InventoryPage />
-      </FluentProvider>
-    );
+    renderInventory();
 
     expect(await screen.findByText('Halos puno')).toBeInTheDocument();
     expect(screen.getByText('≤ 5 piraso ang natitira')).toBeInTheDocument();
@@ -87,7 +81,9 @@ describe('InventoryPage', () => {
     await db.products.bulkAdd(makeProducts(5, 43));
     await waitFor(() => expect(screen.getByText('Puno na')).toBeInTheDocument());
 
-    fireEvent.click(screen.getByText('🇵🇭 TL').closest('button')!);
+    act(() => {
+      useLanguageStore.getState().setLanguage('en');
+    });
 
     expect(await screen.findByText('Full')).toBeInTheDocument();
     expect(screen.getByText('≤ 5 units remaining')).toBeInTheDocument();
@@ -164,6 +160,19 @@ describe('InventoryPage', () => {
       .toHaveAttribute('aria-invalid', 'true');
     expect(alertSpy).not.toHaveBeenCalled();
     expect(await db.products.where('name').equals('No Price Product').count()).toBe(0);
+
+    // Blank the name and re-submit: name error should show and price error should be cleared
+    fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }), {
+      target: { value: '' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: /I-save|Save/i }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/Ilagay ang pangalan ng produkto|Product name is required/i);
+    expect(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }))
+      .toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('spinbutton', { name: /Presyo ng Tinda|Retail Price/i }))
+      .toHaveAttribute('aria-invalid', 'false');
+
     alertSpy.mockRestore();
   });
 
@@ -186,6 +195,19 @@ describe('InventoryPage', () => {
     expect(screen.getByRole('spinbutton', { name: /Puhunan|Cost Price/i })).toHaveAttribute('aria-invalid', 'true');
     expect(alertSpy).not.toHaveBeenCalled();
     expect(await db.products.where('name').equals('Negative Cost Product').count()).toBe(0);
+
+    // Blank the name and re-submit: name error should show and cost error should be cleared
+    fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }), {
+      target: { value: '' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: /I-save|Save/i }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/Ilagay ang pangalan ng produkto|Product name is required/i);
+    expect(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }))
+      .toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('spinbutton', { name: /Puhunan|Cost Price/i }))
+      .toHaveAttribute('aria-invalid', 'false');
+
     alertSpy.mockRestore();
   });
 

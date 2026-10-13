@@ -84,6 +84,19 @@ describe('QuickRegisterProductDialog', () => {
       .toHaveAttribute('aria-invalid', 'true');
     expect(alertSpy).not.toHaveBeenCalled();
     await expect(db.products.where('name').equals('No Price Product').count()).resolves.toBe(0);
+
+    // Blank the name and re-submit: name error should show and price error should be cleared
+    fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }), {
+      target: { value: '' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Produkto|Save Product/i }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/Ilagay ang pangalan ng produkto|Product name is required/i);
+    expect(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }))
+      .toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('spinbutton', { name: /Presyo ng Tinda|Retail Price/i }))
+      .toHaveAttribute('aria-invalid', 'false');
+
     alertSpy.mockRestore();
   });
 
@@ -106,6 +119,19 @@ describe('QuickRegisterProductDialog', () => {
     expect(screen.getByRole('spinbutton', { name: /Puhunan|Cost Price/i })).toHaveAttribute('aria-invalid', 'true');
     expect(alertSpy).not.toHaveBeenCalled();
     await expect(db.products.where('name').equals('Negative Cost Product').count()).resolves.toBe(0);
+
+    // Blank the name and re-submit: name error should show and cost error should be cleared
+    fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }), {
+      target: { value: '' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Produkto|Save Product/i }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/Ilagay ang pangalan ng produkto|Product name is required/i);
+    expect(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }))
+      .toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('spinbutton', { name: /Puhunan|Cost Price/i }))
+      .toHaveAttribute('aria-invalid', 'false');
+
     alertSpy.mockRestore();
   });
 

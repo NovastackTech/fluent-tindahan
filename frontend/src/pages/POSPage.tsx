@@ -455,18 +455,19 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
 
   // Quick add new debtor during checkout
   const handleSaveNewDebtor = async () => {
+    setNewDebtorError(null);
+    setNewDebtorPhoneError(null);
+
     if (!newDebtorName.trim()) {
       setNewDebtorError(t.pos.debtorNameRequired);
       return;
     }
-    setNewDebtorError(null);
 
     const phone = normalizePhilippineMobile(newDebtorPhone);
     if (phone === null) {
       setNewDebtorPhoneError(t.onboarding.phoneInvalid);
       return;
     }
-    setNewDebtorPhoneError(null);
 
     const newCustId = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -1069,6 +1070,9 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
                       <div style={{ marginBottom: '8px' }}>
                         <Text size={200} weight="semibold">{t.utang.customerNameLabel}</Text>
                         <Input
+                          aria-label={t.utang.customerNameLabel}
+                          aria-invalid={Boolean(newDebtorError)}
+                          aria-describedby={newDebtorError ? 'pos-debtor-name-error' : undefined}
                           value={newDebtorName}
                           onChange={(_, d) => {
                             setNewDebtorName(d.value);
@@ -1085,7 +1089,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
                           autoFocus
                         />
                         {newDebtorError && (
-                          <Text role="alert" size={200} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
+                          <Text id="pos-debtor-name-error" role="alert" size={200} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
                             {newDebtorError}
                           </Text>
                         )}

@@ -435,6 +435,15 @@ describe('POSPage', () => {
     expect(alertMock).not.toHaveBeenCalled();
     expect(await db.customers.toArray()).toHaveLength(0);
     expect(await db.syncQueue.toArray()).toHaveLength(0);
+
+    // Blank the name and re-submit: debtor name error should show and phone error should be cleared
+    fireEvent.change(screen.getByPlaceholderText(/Aling Maria/i), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: /I-save at Piliin|Save & Select/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Pakiusap ilagay ang pangalan ng suki|Please enter customer name/i);
+    expect(screen.getByPlaceholderText('09123456789')).toHaveAttribute('aria-invalid', 'false');
+    expect(screen.getByPlaceholderText(/Aling Maria/i)).toHaveAttribute('aria-invalid', 'true');
+
     alertMock.mockRestore();
   });
 
@@ -463,7 +472,15 @@ describe('POSPage', () => {
     const saveDebtorBtn = screen.getByRole('button', { name: /I-save at Piliin|Save & Select/i });
     fireEvent.click(saveDebtorBtn);
 
+    const nameInput = screen.getByRole('textbox', { name: /Pangalan ng Suki|Customer Name/i });
     expect(screen.getByText(/Pakiusap ilagay ang pangalan ng suki|Please enter customer name/i)).toBeInTheDocument();
+    expect(nameInput).toHaveAttribute('aria-invalid', 'true');
+    expect(nameInput).toHaveAttribute('aria-describedby', 'pos-debtor-name-error');
+
+    // Enter name to clear error
+    fireEvent.change(nameInput, { target: { value: 'Debtor One' } });
+    expect(nameInput).toHaveAttribute('aria-invalid', 'false');
+    expect(nameInput).not.toHaveAttribute('aria-describedby');
 
     // Cancel form using cancel button within debtor registration card
     const debtorCard = screen.getByText(/Magrehistro ng Bagong Suki|Register New Debtor/i).closest('div')!;

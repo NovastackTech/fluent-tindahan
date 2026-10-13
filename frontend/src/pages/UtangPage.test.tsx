@@ -110,11 +110,16 @@ describe('UtangPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Bagong Suki|Add New Customer/i }));
     fireEvent.click(screen.getByRole('button', { name: /I-save ang Suki|Save Customer/i }));
 
+    const nameInput = screen.getByRole('textbox', { name: /Pangalan ng Suki|Customer Name/i });
     expect(await screen.findByRole('alert')).toHaveTextContent(/Pakiusap ilagay ang pangalan ng suki|Please enter customer name/i);
+    expect(nameInput).toHaveAttribute('aria-invalid', 'true');
+    expect(nameInput).toHaveAttribute('aria-describedby', 'utang-customer-name-error');
     expect(await db.customers.toArray()).toHaveLength(0);
     expect(await db.syncQueue.toArray()).toHaveLength(0);
 
-    fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Suki|Customer Name/i }), { target: { value: 'QA-TEST Name' } });
+    fireEvent.change(nameInput, { target: { value: 'QA-TEST Name' } });
+    expect(nameInput).toHaveAttribute('aria-invalid', 'false');
+    expect(nameInput).not.toHaveAttribute('aria-describedby');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
@@ -162,6 +167,31 @@ describe('UtangPage', () => {
     });
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     alertMock.mockRestore();
+  });
+
+  it('clears phone error when subsequent submit fails early on empty customer name', async () => {
+    renderUtang();
+    fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Bagong Suki|Add New Customer/i }));
+
+    const nameInput = screen.getByRole('textbox', { name: /Pangalan ng Suki|Customer Name/i });
+    const phoneInput = screen.getByRole('textbox', { name: /Cellphone Number|Mobile Number/i });
+    const saveBtn = screen.getByRole('button', { name: /I-save ang Suki|Save Customer/i });
+
+    // Enter valid name and invalid phone
+    fireEvent.change(nameInput, { target: { value: 'Customer A' } });
+    fireEvent.change(phoneInput, { target: { value: 'invalid-phone' } });
+    fireEvent.click(saveBtn);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/wastong 11-digit Philippine mobile|valid 11-digit Philippine mobile/i);
+    expect(phoneInput).toHaveAttribute('aria-invalid', 'true');
+
+    // Blank the name and re-submit: name error should show and phone error should be cleared
+    fireEvent.change(nameInput, { target: { value: '   ' } });
+    fireEvent.click(saveBtn);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Pakiusap ilagay ang pangalan ng suki|Please enter customer name/i);
+    expect(phoneInput).toHaveAttribute('aria-invalid', 'false');
+    expect(nameInput).toHaveAttribute('aria-invalid', 'true');
   });
 
   it('normalizes international Philippine mobile input when creating a customer', async () => {

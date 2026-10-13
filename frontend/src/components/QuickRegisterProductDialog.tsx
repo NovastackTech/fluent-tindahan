@@ -139,21 +139,22 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
   const marginPct = priceNum > 0 ? ((priceNum - costNum) / priceNum) * 100 : 0;
 
   const handleSave = async () => {
+    setNameError('');
+    setCostError('');
+    setPriceError('');
+
     if (!name.trim()) {
       setNameError(t.barcode.productNameRequired);
       return;
     }
-    setNameError('');
     if (costNum < 0) {
       setCostError(t.barcode.costCannotBeNegative);
       return;
     }
-    setCostError('');
     if (priceNum <= 0) {
       setPriceError(t.barcode.priceMustBePositive);
       return;
     }
-    setPriceError('');
 
     const currentCount = await db.products.where('tenantId').equals(tenantId).count();
     const { canAddProduct, openUpgradeModal } = useSubscriptionStore.getState();
