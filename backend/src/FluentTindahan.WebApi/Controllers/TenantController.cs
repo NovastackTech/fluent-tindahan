@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using FluentTindahan.Application.Common.Interfaces;
 using FluentTindahan.Domain.Entities;
 using FluentTindahan.Domain.Enums;
@@ -189,7 +190,54 @@ public class TenantController : ControllerBase
             user.Phone = request.Phone.Trim();
         }
 
-        await _context.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            _context.ChangeTracker.Clear();
+
+            var existingTenant = await _context.Tenants.IgnoreQueryFilters()
+                .AsNoTracking()
+                .FirstOrDefaultAsync(candidate => candidate.Id == tenantId, cancellationToken);
+            var existingOwner = await _context.Users.IgnoreQueryFilters()
+                .AsNoTracking()
+                .FirstOrDefaultAsync(candidate => candidate.Id == ownerId, cancellationToken);
+
+            if (existingTenant != null && existingOwner?.TenantId == tenantId)
+            {
+                return Ok(new ProvisionTenantResponse(tenantId, ownerId, existingTenant.Tier));
+            }
+
+            if (existingOwner != null && existingOwner.TenantId != tenantId)
+            {
+                return Conflict(new { message = "The owner ID is already associated with another tenant." });
+            }
+
+            if (existingTenant != null && await _context.Users.IgnoreQueryFilters()
+                    .AnyAsync(candidate => candidate.TenantId == tenantId, cancellationToken))
+            {
+                return Forbid();
+            }
+
+            throw;
+        }
+
         return Ok(new ProvisionTenantResponse(tenantId, ownerId, tenant.Tier));
+    }
+
+    private static bool IsUniqueConstraintViolation(DbUpdateException exception)
+    {
+        for (Exception? current = exception; current != null; current = current.InnerException)
+        {
+            if (current is PostgresException postgresException
+                && postgresException.SqlState == PostgresErrorCodes.UniqueViolation)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

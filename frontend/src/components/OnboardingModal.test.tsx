@@ -5,6 +5,7 @@ import { OnboardingModal } from './OnboardingModal';
 import { sariSariLightTheme } from '../theme/theme';
 import { DEMO_BUSINESS_NAME, DEMO_OWNER, DEMO_PHONE, useAuthStore } from '../state/authStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
+import { calculateGCashFee, DEFAULT_GCASH_FEE_TIERS, useGCashFeeStore } from '../state/gcashFeeStore';
 import { db } from '../db/db';
 
 describe('OnboardingModal', () => {
@@ -13,6 +14,7 @@ describe('OnboardingModal', () => {
     await db.tenants.clear();
     await db.products.clear();
     await db.products.clear();
+    useGCashFeeStore.setState({ feesByTenant: {} });
     useAuthStore.setState({
       consentAccepted: true,
       isOnboarded: false,
@@ -124,7 +126,45 @@ describe('OnboardingModal', () => {
     const localTenant = await db.tenants.get(tenantId);
     expect(localTenant).toBeDefined();
     expect(localTenant?.businessName).toBe('Maria Sari-Sari Store');
+    expect(useGCashFeeStore.getState().feesByTenant[tenantId]).toEqual(DEFAULT_GCASH_FEE_TIERS);
     refreshSpy.mockRestore();
+  });
+
+  it('completes onboarding with a blank catalog when selected', async () => {
+    renderModal();
+    fireEvent.change(
+      screen.getByPlaceholderText(/Hal. Tindahan ni Aling Maria|e.g. Maria's Sari-Sari Store/i),
+      { target: { value: 'Blank Catalog Store' } }
+    );
+    fireEvent.click(screen.getByRole('radio', { name: /Start with Blank Store|Magsimula sa Malinis na Tindahan/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Simulan ang Aking Tindahan|Launch My Store/i }));
+
+    await waitFor(() => expect(useAuthStore.getState().isOnboarded).toBe(true));
+
+    const tenantId = useAuthStore.getState().tenantId;
+    expect(await db.tenants.get(tenantId)).toMatchObject({
+      id: tenantId,
+      businessName: 'Blank Catalog Store'
+    });
+    expect(await db.products.where('tenantId').equals(tenantId).count()).toBe(0);
+  });
+
+  it('sets zero GCash fees when the option is unchecked', async () => {
+    renderModal();
+    fireEvent.change(
+      screen.getByPlaceholderText(/Hal. Tindahan ni Aling Maria|e.g. Maria's Sari-Sari Store/i),
+      { target: { value: 'No GCash Store' } }
+    );
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: /Simulan ang Aking Tindahan|Launch My Store/i }));
+
+    await waitFor(() => expect(useAuthStore.getState().isOnboarded).toBe(true));
+
+    const tenantId = useAuthStore.getState().tenantId;
+    const fees = useGCashFeeStore.getState().feesByTenant[tenantId];
+    expect(fees).toEqual(DEFAULT_GCASH_FEE_TIERS.map(() => 0));
+    expect(calculateGCashFee(500, fees)).toBe(0);
+    expect(calculateGCashFee(6000, fees)).toBe(0);
   });
 
   it('completes onboarding with empty optional owner and phone fields', async () => {
@@ -187,13 +227,21 @@ describe('OnboardingModal', () => {
   });
 
   it('renders in edit mode and allows updating store profile without re-seeding', async () => {
+    const tenantId = crypto.randomUUID();
     useAuthStore.setState({
+      tenantId,
       isOnboarded: true,
       isOnboardingOpen: true,
       onboardingMode: 'edit',
       businessName: 'Original Store',
       ownerName: 'Juan Dela Cruz',
       userPhone: '09191234567'
+    });
+    await db.tenants.put({
+      id: tenantId,
+      businessName: 'Original Store',
+      tier: 'Libre',
+      updatedAt: '2026-01-01T00:00:00.000Z'
     });
 
     renderModal();
@@ -213,7 +261,10 @@ describe('OnboardingModal', () => {
       expect(useAuthStore.getState().businessName).toBe('Updated Store Name');
       expect(useAuthStore.getState().isOnboardingOpen).toBe(false);
     });
-
+    expect(await db.tenants.get(tenantId)).toMatchObject({
+      id: tenantId,
+      businessName: 'Updated Store Name'
+    });
   });
 
   it('allows clearing owner and phone in edit mode', async () => {

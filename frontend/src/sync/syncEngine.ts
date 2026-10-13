@@ -1,6 +1,12 @@
 import { db, type SyncQueueRecord } from '../db/db';
-import { apiClient, ensureTenantProvisioned } from '../services/apiClient';
+import {
+  apiClient,
+  ensureTenantProvisioned,
+  TenantAccountMismatchError,
+  TenantProvisioningError
+} from '../services/apiClient';
 import { useAuthStore } from '../state/authStore';
+import { createClientUuid } from '../utils/uuid';
 import { create } from 'zustand';
 
 interface SyncStoreState {
@@ -41,7 +47,7 @@ function getDeviceId(): string {
   const KEY = 'fluent_tindahan_device_id';
   let deviceId = localStorage.getItem(KEY);
   if (!deviceId) {
-    deviceId = crypto.randomUUID();
+    deviceId = createClientUuid();
     localStorage.setItem(KEY, deviceId);
   }
   return deviceId;
@@ -58,7 +64,7 @@ export async function addSyncRecord(
   action: 'Insert' | 'Update' | 'Delete',
   payload: any
 ): Promise<string> {
-  const syncId = crypto.randomUUID();
+  const syncId = createClientUuid();
   const record: SyncQueueRecord = {
     id: syncId,
     entity,
@@ -297,6 +303,16 @@ export async function processSyncQueue(): Promise<{ processed: number; conflicts
     return { processed: successCount, conflicts: conflictCount, errors: failCount };
   } catch (err: any) {
     console.error('Batch sync network/server failure:', err);
+    if (err instanceof TenantAccountMismatchError || err instanceof TenantProvisioningError) {
+      useSyncStore.setState({
+        authBlockedSessionKey: authSessionKey,
+        batchFailureCount: 0,
+        nextRetryAt: null
+      });
+      store.setLastErrorMessage(err.message);
+      return { processed: 0, conflicts: 0, errors: pendingItems.length };
+    }
+
     const status = err?.response?.status;
     const serverMessage = err?.response?.data?.message;
     if (status === 401 || status === 403) {

@@ -1,5 +1,10 @@
 import { create } from 'zustand';
-import { apiClient, ensureTenantProvisioned } from '../services/apiClient';
+import {
+  apiClient,
+  ensureTenantProvisioned,
+  TenantAccountMismatchError,
+  TenantProvisioningError
+} from '../services/apiClient';
 import { db, type PlanTier } from '../db/db';
 import { useAuthStore } from './authStore';
 
@@ -154,7 +159,15 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
           daysRemaining: data.daysRemaining,
           isLoading: false
         });
-      } catch {
+      } catch (err) {
+        if (err instanceof TenantAccountMismatchError || err instanceof TenantProvisioningError) {
+          set({
+            isLoading: false,
+            error: err.message
+          });
+          return;
+        }
+
         // In offline mode, read from Dexie or authStore
         const fallbackTier = useAuthStore.getState().tier || 'Libre';
         const fallbackEndDate = useAuthStore.getState().subscriptionEndDate;

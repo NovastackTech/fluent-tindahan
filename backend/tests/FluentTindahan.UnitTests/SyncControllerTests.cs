@@ -16,6 +16,7 @@ using FluentTindahan.Application.Sync.DTOs;
 using FluentTindahan.Domain.Interfaces;
 using FluentTindahan.WebApi.Authorization;
 using FluentTindahan.WebApi.Controllers;
+using Npgsql;
 using Xunit;
 
 namespace FluentTindahan.UnitTests;
@@ -230,5 +231,90 @@ public class SyncControllerTests
         owner.Id.Should().Be(authenticatedUserId);
         owner.TenantId.Should().Be(tenantId);
         owner.Role.Should().Be("Owner");
+    }
+
+    [Fact]
+    public async Task Provision_WhenConcurrentCreateWins_ReturnsTheExistingTenant()
+    {
+        var tenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var contextOptions = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.Setup(service => service.TenantId).Returns(tenantId);
+        currentUser.Setup(service => service.UserId).Returns(userId);
+        await using var context = new ProvisionRaceDbContext(contextOptions, currentUser.Object, tenantId, userId);
+        var controller = new TenantController(context, currentUser.Object);
+
+        var result = await controller.Provision(new TenantController.ProvisionTenantRequest
+        {
+            UserId = userId,
+            BusinessName = "Stale Local Name"
+        }, CancellationToken.None);
+
+        var response = result.Result.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<TenantController.ProvisionTenantResponse>().Subject;
+        response.TenantId.Should().Be(tenantId);
+        response.UserId.Should().Be(userId);
+        response.Tier.Should().Be(PlanTier.TindahanPro);
+        (await context.Tenants.IgnoreQueryFilters().SingleAsync(candidate => candidate.Id == tenantId))
+            .BusinessName.Should().Be("Committed Store");
+    }
+
+    private sealed class ProvisionRaceDbContext : AppDbContext
+    {
+        private readonly DbContextOptions<AppDbContext> _options;
+        private readonly ICurrentUserService _currentUser;
+        private readonly Guid _tenantId;
+        private readonly Guid _userId;
+        private bool _simulateConcurrentInsert = true;
+
+        public ProvisionRaceDbContext(
+            DbContextOptions<AppDbContext> options,
+            ICurrentUserService currentUser,
+            Guid tenantId,
+            Guid userId) : base(options, currentUser)
+        {
+            _options = options;
+            _currentUser = currentUser;
+            _tenantId = tenantId;
+            _userId = userId;
+        }
+
+        public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            if (!_simulateConcurrentInsert)
+            {
+                return await base.SaveChangesAsync(cancellationToken);
+            }
+
+            _simulateConcurrentInsert = false;
+            await using (var competingContext = new AppDbContext(_options, _currentUser))
+            {
+                competingContext.Tenants.Add(new FluentTindahan.Domain.Entities.Tenant
+                {
+                    Id = _tenantId,
+                    BusinessName = "Committed Store",
+                    Tier = PlanTier.TindahanPro
+                });
+                competingContext.Users.Add(new FluentTindahan.Domain.Entities.User
+                {
+                    Id = _userId,
+                    TenantId = _tenantId,
+                    Phone = "09171234567",
+                    Role = "Owner"
+                });
+                await competingContext.SaveChangesAsync(cancellationToken);
+            }
+
+            var uniqueViolation = new PostgresException(
+                "duplicate key",
+                "ERROR",
+                "ERROR",
+                PostgresErrorCodes.UniqueViolation,
+                constraintName: "PK_Tenants");
+            throw new DbUpdateException("A concurrent provision already created this tenant.", uniqueViolation);
+        }
     }
 }

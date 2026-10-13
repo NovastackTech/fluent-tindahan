@@ -19,6 +19,9 @@ export interface OnboardingPayload extends StoreProfilePayload {
 interface AuthState {
   tenantId: string;
   userId: string;
+  locallyCreatedTenantId: string | null;
+  serverConfirmedTenantId: string | null;
+  serverConfirmedUserId: string | null;
   businessName: string;
   ownerName: string;
   userPhone: string;
@@ -33,6 +36,8 @@ interface AuthState {
   onboardingMode: 'initial' | 'edit';
   setConsentAccepted: (accepted: boolean) => void;
   setTenantId: (tenantId: string) => void;
+  setUserId: (userId: string) => void;
+  confirmServerIdentity: (tenantId: string, userId: string) => void;
   setBusinessName: (businessName: string) => void;
   setOwnerName: (ownerName: string) => void;
   setUserPhone: (userPhone: string) => void;
@@ -52,6 +57,9 @@ const STORAGE_KEY_TIER = 'fluent_tindahan_tier_v1';
 const STORAGE_KEY_SUBS_END = 'fluent_tindahan_subs_end_v1';
 const STORAGE_KEY_TENANT_ID = 'fluent_tindahan_tenant_id_v1';
 const STORAGE_KEY_USER_ID = 'fluent_tindahan_user_id_v1';
+const STORAGE_KEY_LOCAL_TENANT_ID = 'fluent_tindahan_local_tenant_id_v1';
+const STORAGE_KEY_CONFIRMED_TENANT_ID = 'fluent_tindahan_server_confirmed_tenant_id_v1';
+const STORAGE_KEY_CONFIRMED_USER_ID = 'fluent_tindahan_server_confirmed_user_id_v1';
 const STORAGE_KEY_STORE_NAME = 'fluent_tindahan_store_name_v1';
 const STORAGE_KEY_OWNER_NAME = 'fluent_tindahan_owner_name_v1';
 const STORAGE_KEY_USER_PHONE = 'fluent_tindahan_user_phone_v1';
@@ -62,6 +70,9 @@ const initialTier = (localStorage.getItem(STORAGE_KEY_TIER) as PlanTier) || 'Lib
 const initialSubsEnd = localStorage.getItem(STORAGE_KEY_SUBS_END);
 const initialTenantId = localStorage.getItem(STORAGE_KEY_TENANT_ID) || DEFAULT_TENANT_ID;
 const initialUserId = localStorage.getItem(STORAGE_KEY_USER_ID) || DEFAULT_USER_ID;
+const initialLocallyCreatedTenantId = localStorage.getItem(STORAGE_KEY_LOCAL_TENANT_ID);
+const initialServerConfirmedTenantId = localStorage.getItem(STORAGE_KEY_CONFIRMED_TENANT_ID);
+const initialServerConfirmedUserId = localStorage.getItem(STORAGE_KEY_CONFIRMED_USER_ID);
 const initialBusinessName = localStorage.getItem(STORAGE_KEY_STORE_NAME) ?? DEMO_BUSINESS_NAME;
 const initialOwnerName = localStorage.getItem(STORAGE_KEY_OWNER_NAME) ?? DEMO_OWNER;
 const initialUserPhone = localStorage.getItem(STORAGE_KEY_USER_PHONE) ?? DEMO_PHONE;
@@ -77,6 +88,9 @@ const initialOnboarded = localStorage.getItem(STORAGE_KEY_ONBOARDED) === 'true'
 export const useAuthStore = create<AuthState>((set, get) => ({
   tenantId: initialTenantId,
   userId: initialUserId,
+  locallyCreatedTenantId: initialLocallyCreatedTenantId,
+  serverConfirmedTenantId: initialServerConfirmedTenantId,
+  serverConfirmedUserId: initialServerConfirmedUserId,
   businessName: initialBusinessName,
   ownerName: initialOwnerName,
   userPhone: initialUserPhone,
@@ -98,6 +112,26 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   setTenantId: (tenantId: string) => {
     localStorage.setItem(STORAGE_KEY_TENANT_ID, tenantId);
     set({ tenantId });
+  },
+
+  setUserId: (userId: string) => {
+    localStorage.setItem(STORAGE_KEY_USER_ID, userId);
+    set({ userId });
+  },
+
+  confirmServerIdentity: (tenantId: string, userId: string) => {
+    localStorage.setItem(STORAGE_KEY_TENANT_ID, tenantId);
+    localStorage.setItem(STORAGE_KEY_USER_ID, userId);
+    localStorage.setItem(STORAGE_KEY_CONFIRMED_TENANT_ID, tenantId);
+    localStorage.setItem(STORAGE_KEY_CONFIRMED_USER_ID, userId);
+    localStorage.removeItem(STORAGE_KEY_LOCAL_TENANT_ID);
+    set({
+      tenantId,
+      userId,
+      locallyCreatedTenantId: null,
+      serverConfirmedTenantId: tenantId,
+      serverConfirmedUserId: userId
+    });
   },
 
   setBusinessName: (businessName: string) => {
@@ -172,6 +206,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     localStorage.setItem(STORAGE_KEY_USER_PHONE, userPhone);
     localStorage.setItem(STORAGE_KEY_ONBOARDED, 'true');
     if (startsNewTenant) {
+      localStorage.setItem(STORAGE_KEY_LOCAL_TENANT_ID, tenantId);
+      localStorage.removeItem(STORAGE_KEY_CONFIRMED_TENANT_ID);
+      localStorage.removeItem(STORAGE_KEY_CONFIRMED_USER_ID);
       localStorage.setItem(STORAGE_KEY_TIER, 'Libre');
       localStorage.removeItem(STORAGE_KEY_SUBS_END);
     }
@@ -179,6 +216,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({
       tenantId,
       userId,
+      ...(startsNewTenant ? {
+        locallyCreatedTenantId: tenantId,
+        serverConfirmedTenantId: null,
+        serverConfirmedUserId: null
+      } : {}),
       businessName,
       ownerName,
       userPhone,

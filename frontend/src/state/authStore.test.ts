@@ -9,6 +9,9 @@ describe('authStore', () => {
     useAuthStore.setState({
       tenantId: DEFAULT_TENANT_ID,
       userId: DEFAULT_USER_ID,
+      locallyCreatedTenantId: null,
+      serverConfirmedTenantId: null,
+      serverConfirmedUserId: null,
       businessName: DEMO_BUSINESS_NAME,
       ownerName: DEMO_OWNER,
       userPhone: DEMO_PHONE,
@@ -54,6 +57,19 @@ describe('authStore', () => {
     useAuthStore.getState().setTenantId(customTenant);
 
     expect(useAuthStore.getState().tenantId).toBe(customTenant);
+  });
+
+  it('persists server-confirmed tenant and user identity', () => {
+    const tenantId = crypto.randomUUID();
+    const userId = crypto.randomUUID();
+    useAuthStore.getState().confirmServerIdentity(tenantId, userId);
+
+    expect(useAuthStore.getState().serverConfirmedTenantId).toBe(tenantId);
+    expect(useAuthStore.getState().serverConfirmedUserId).toBe(userId);
+    expect(localStorage.getItem('fluent_tindahan_server_confirmed_tenant_id_v1')).toBe(tenantId);
+    expect(localStorage.getItem('fluent_tindahan_server_confirmed_user_id_v1')).toBe(userId);
+    expect(localStorage.getItem('fluent_tindahan_tenant_id_v1')).toBe(tenantId);
+    expect(localStorage.getItem('fluent_tindahan_user_id_v1')).toBe(userId);
   });
 
   it('replaces and persists the shared default owner ID when migrating a legacy store', () => {
@@ -108,6 +124,9 @@ describe('authStore', () => {
     expect(state.userPhone).toBe('09198765432');
     expect(state.tenantId).toBe('custom-tenant-uuid');
     expect(state.userId).toBe('custom-user-uuid');
+    expect(state.locallyCreatedTenantId).toBe('custom-tenant-uuid');
+    expect(state.serverConfirmedTenantId).toBeNull();
+    expect(localStorage.getItem('fluent_tindahan_local_tenant_id_v1')).toBe('custom-tenant-uuid');
     expect(state.tier).toBe('Libre');
     expect(state.subscriptionEndDate).toBeNull();
 

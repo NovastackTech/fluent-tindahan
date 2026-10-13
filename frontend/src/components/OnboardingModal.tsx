@@ -129,7 +129,7 @@ export const OnboardingModal: React.FC = () => {
   const [submissionError, setSubmissionError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submissionInFlight = useRef(false);
-  const onboardingIds = useRef<{ tenantId: string; userId: string } | null>(null);
+  const onboardingIds = useRef<{ tenantId: string } | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -210,11 +210,10 @@ export const OnboardingModal: React.FC = () => {
       } else {
         if (!onboardingIds.current) {
           onboardingIds.current = {
-            tenantId: createClientUuid(),
-            userId: createClientUuid()
+            tenantId: createClientUuid()
           };
         }
-        const { tenantId: newTenantId, userId: newUserId } = onboardingIds.current;
+        const { tenantId: newTenantId } = onboardingIds.current;
 
         await seedDexieDatabaseIfNeeded(
           false,
@@ -223,22 +222,22 @@ export const OnboardingModal: React.FC = () => {
           trimmedBusinessName
         );
 
-        if (offersGcash) {
-          try {
-            DEFAULT_GCASH_FEE_TIERS.forEach((fee, tierIndex) => {
-              useGCashFeeStore.getState().setFeeForTenant(newTenantId, tierIndex, fee);
-            });
-          } catch (feeError) {
-            console.warn('[OnboardingModal] Could not save default GCash fees:', feeError);
-          }
+        try {
+          const fees = offersGcash
+            ? DEFAULT_GCASH_FEE_TIERS
+            : DEFAULT_GCASH_FEE_TIERS.map(() => 0);
+          fees.forEach((fee, tierIndex) => {
+            useGCashFeeStore.getState().setFeeForTenant(newTenantId, tierIndex, fee);
+          });
+        } catch (feeError) {
+          console.warn('[OnboardingModal] Could not save GCash fees:', feeError);
         }
 
         completeOnboarding({
           businessName: trimmedBusinessName,
           ownerName: trimmedOwnerName,
           userPhone: normalizedPhone,
-          tenantId: newTenantId,
-          userId: newUserId
+          tenantId: newTenantId
         });
         void useSubscriptionStore.getState().refreshSubscription();
       }

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useSubscriptionStore, getTierLimits, SUBSCRIPTION_REFRESH_ERROR } from './subscriptionStore';
 import { useAuthStore } from './authStore';
 import { db } from '../db/db';
-import { apiClient } from '../services/apiClient';
+import { apiClient, TenantProvisioningError } from '../services/apiClient';
 import { DEFAULT_TENANT_ID } from '../db/seedData';
 
 describe('subscriptionStore', () => {
@@ -126,6 +126,22 @@ describe('subscriptionStore', () => {
     expect(useSubscriptionStore.getState().error).toBe(SUBSCRIPTION_REFRESH_ERROR);
     expect(useSubscriptionStore.getState().error).not.toContain('500');
     getSpy.mockRestore();
+  });
+
+  it('surfaces a provisioning conflict instead of treating it as an offline refresh', async () => {
+    useAuthStore.setState({
+      tenantId: crypto.randomUUID(),
+      locallyCreatedTenantId: null,
+      serverConfirmedTenantId: null,
+      serverConfirmedUserId: null
+    });
+    vi.spyOn(apiClient, 'put').mockRejectedValueOnce({ response: { status: 409 } });
+
+    await useSubscriptionStore.getState().refreshSubscription();
+
+    expect(useSubscriptionStore.getState().error).toBe(new TenantProvisioningError(409).message);
+    expect(useSubscriptionStore.getState().error).not.toBe(SUBSCRIPTION_REFRESH_ERROR);
+    expect(useSubscriptionStore.getState().isLoading).toBe(false);
   });
 
   it('restores a paid tier from the server after reload', async () => {

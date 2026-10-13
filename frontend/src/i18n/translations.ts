@@ -10,6 +10,8 @@ export interface Translations {
     queued: string;
     allSynced: string;
     dlqWarning: string;
+    differentAccountSyncBlocked: string;
+    tenantProvisioningSyncBlocked: string;
     forceSync: string;
     themeToggleDark: string;
     themeToggleLight: string;
@@ -473,6 +475,8 @@ export const translations: Record<Language, Translations> = {
       queued: 'pila',
       allSynced: 'Lahat ay naka-sync sa cloud',
       dlqWarning: 'mga bagsak na item sa Dead Letter queue',
+      differentAccountSyncBlocked: 'Naka-link ang tindahan sa device na ito sa ibang account. Mag-sign in muli sa tamang account para mag-sync. Nananatili sa device na ito ang mga nakabinbing pagbabago.',
+      tenantProvisioningSyncBlocked: 'Hindi ma-verify ang tindahan sa server. Mag-sign in muli o kontakin ang suporta bago mag-sync. Nananatili sa device na ito ang mga nakabinbing pagbabago.',
       forceSync: 'Puwersahing mag-sync ngayon',
       themeToggleDark: 'Lumipat sa Dark theme',
       themeToggleLight: 'Lumipat sa Light theme',
@@ -934,6 +938,8 @@ export const translations: Record<Language, Translations> = {
       queued: 'queued',
       allSynced: 'All data synced with cloud',
       dlqWarning: 'failed items in Dead Letter queue',
+      differentAccountSyncBlocked: 'This device’s store is linked to a different account. Sign in to the matching account to sync. Pending changes remain on this device.',
+      tenantProvisioningSyncBlocked: 'The server could not verify this store. Sign in again or contact support before syncing. Pending changes remain on this device.',
       forceSync: 'Force sync now',
       themeToggleDark: 'Switch to Dark theme',
       themeToggleLight: 'Switch to Light theme',
@@ -1386,4 +1392,3 @@ export const translations: Record<Language, Translations> = {
     }
   }
 };
-
