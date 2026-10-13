@@ -194,6 +194,20 @@ describe('SettingsPage', () => {
     });
   });
 
+  it('displays saved last sync time from persisted storage even when all data is synced', async () => {
+    const lastSyncedAt = new Date('2026-10-14T07:39:00.000Z');
+    useSyncStore.getState().setLastSyncedAt(lastSyncedAt);
+    useSyncStore.setState({ pendingCount: 0, deadLetterCount: 0 });
+
+    renderSettings();
+
+    await waitFor(() => {
+      expect(screen.getByText(/Lahat ay naka-sync sa cloud|All data synced/i)).toBeInTheDocument();
+      expect(screen.getByText(/Last sync:/i)).not.toHaveTextContent('Never');
+      expect(screen.getByText(/Last sync:/i)).toHaveTextContent(lastSyncedAt.toLocaleTimeString());
+    });
+  });
+
   it('allows configuring printer paper width and running test print', () => {
     vi.spyOn(window, 'alert').mockImplementation(() => {});
     const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {});

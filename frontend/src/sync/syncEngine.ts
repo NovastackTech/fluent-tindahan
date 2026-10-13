@@ -9,6 +9,33 @@ import { useAuthStore } from '../state/authStore';
 import { createClientUuid } from '../utils/uuid';
 import { create } from 'zustand';
 
+export const STORAGE_KEY_LAST_SYNCED = 'fluent_tindahan_last_synced_at';
+
+export function getSavedLastSyncedAt(): Date | null {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    const raw = localStorage.getItem(STORAGE_KEY_LAST_SYNCED);
+    if (!raw) return null;
+    const date = new Date(raw);
+    return isNaN(date.getTime()) ? null : date;
+  } catch {
+    return null;
+  }
+}
+
+export function persistLastSyncedAt(date: Date | null): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    if (date) {
+      localStorage.setItem(STORAGE_KEY_LAST_SYNCED, date.toISOString());
+    } else {
+      localStorage.removeItem(STORAGE_KEY_LAST_SYNCED);
+    }
+  } catch {
+    // Ignore storage quota or access errors
+  }
+}
+
 interface SyncStoreState {
   isOnline: boolean;
   isSyncing: boolean;
@@ -22,14 +49,14 @@ interface SyncStoreState {
   setOnline: (online: boolean) => void;
   setSyncing: (syncing: boolean) => void;
   setCounts: (pending: number, deadLetter: number) => void;
-  setLastSyncedAt: (date: Date) => void;
+  setLastSyncedAt: (date: Date | null) => void;
   setLastErrorMessage: (msg: string | null) => void;
 }
 
 export const useSyncStore = create<SyncStoreState>((set) => ({
   isOnline: navigator.onLine,
   isSyncing: false,
-  lastSyncedAt: null,
+  lastSyncedAt: getSavedLastSyncedAt(),
   pendingCount: 0,
   deadLetterCount: 0,
   lastErrorMessage: null,
@@ -39,9 +66,18 @@ export const useSyncStore = create<SyncStoreState>((set) => ({
   setOnline: (online) => set({ isOnline: online }),
   setSyncing: (syncing) => set({ isSyncing: syncing }),
   setCounts: (pending, deadLetter) => set({ pendingCount: pending, deadLetterCount: deadLetter }),
-  setLastSyncedAt: (date) => set({ lastSyncedAt: date, lastErrorMessage: null }),
+  setLastSyncedAt: (date) => {
+    persistLastSyncedAt(date);
+    set({ lastSyncedAt: date, lastErrorMessage: null });
+  },
   setLastErrorMessage: (msg) => set({ lastErrorMessage: msg })
 }));
+
+useSyncStore.subscribe((state, prevState) => {
+  if (state.lastSyncedAt !== prevState.lastSyncedAt) {
+    persistLastSyncedAt(state.lastSyncedAt);
+  }
+});
 
 function getDeviceId(): string {
   const KEY = 'fluent_tindahan_device_id';
@@ -390,6 +426,7 @@ export async function pullCatalogFromServer(): Promise<number> {
           updatedAt: p.updatedAt
         });
       }
+      useSyncStore.getState().setLastSyncedAt(new Date());
       return products.length;
     }
     return 0;

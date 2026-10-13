@@ -7,7 +7,9 @@ import {
   retryDeadLetterItem,
   clearDeadLetterQueue,
   pullCatalogFromServer,
-  initSyncEngine
+  initSyncEngine,
+  STORAGE_KEY_LAST_SYNCED,
+  getSavedLastSyncedAt
 } from './syncEngine';
 import { db } from '../db/db';
 import {
@@ -78,9 +80,23 @@ describe('syncEngine', () => {
     const date = new Date('2026-10-09T10:00:00Z');
     store.setLastSyncedAt(date);
     expect(useSyncStore.getState().lastSyncedAt).toEqual(date);
+    expect(localStorage.getItem(STORAGE_KEY_LAST_SYNCED)).toBe(date.toISOString());
 
     store.setLastErrorMessage('Connection error');
     expect(useSyncStore.getState().lastErrorMessage).toBe('Connection error');
+  });
+
+  it('persists lastSyncedAt to localStorage and restores it across reloads', () => {
+    const testDate = new Date('2026-10-14T07:39:00.000Z');
+    useSyncStore.getState().setLastSyncedAt(testDate);
+
+    expect(localStorage.getItem(STORAGE_KEY_LAST_SYNCED)).toBe(testDate.toISOString());
+    expect(getSavedLastSyncedAt()).toEqual(testDate);
+
+    // Setting to null removes from localStorage
+    useSyncStore.getState().setLastSyncedAt(null);
+    expect(localStorage.getItem(STORAGE_KEY_LAST_SYNCED)).toBeNull();
+    expect(getSavedLastSyncedAt()).toBeNull();
   });
 
   it('enqueueSync adds an operation to Dexie syncQueue and updates pending count', async () => {

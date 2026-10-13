@@ -214,6 +214,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       localStorage.removeItem(STORAGE_KEY_CONFIRMED_USER_ID);
       localStorage.setItem(STORAGE_KEY_TIER, 'Libre');
       localStorage.removeItem(STORAGE_KEY_SUBS_END);
+      localStorage.removeItem('fluent_tindahan_last_synced_at');
     }
 
     set({
