@@ -328,6 +328,9 @@ export interface Translations {
     wipeConfirm: string;
     resetSuccess: string;
     storeNameLabel: string;
+    ownerNameLabel: string;
+    userPhoneLabel: string;
+    editProfileBtn: string;
     pendingSync: string;
     dlqTitle: string;
     dlqClearBtn: string;
@@ -430,6 +433,31 @@ export interface Translations {
     pricingToggleWeekly: string;
     pricingToggleMonthly: string;
     popularBadge: string;
+  };
+  onboarding: {
+    welcomeTitle: string;
+    welcomeSubtitle: string;
+    editTitle: string;
+    editSubtitle: string;
+    storeNameLabel: string;
+    storeNamePlaceholder: string;
+    storeNameRequired: string;
+    ownerNameLabel: string;
+    ownerNamePlaceholder: string;
+    userPhoneLabel: string;
+    userPhonePlaceholder: string;
+    phoneInvalid: string;
+    catalogSectionTitle: string;
+    catalogSectionDesc: string;
+    catalogStandardTitle: string;
+    catalogStandardDesc: string;
+    catalogEmptyTitle: string;
+    catalogEmptyDesc: string;
+    gcashToggleTitle: string;
+    gcashToggleDesc: string;
+    launchBtn: string;
+    saveProfileBtn: string;
+    cancelBtn: string;
   };
 }
 
@@ -762,6 +790,9 @@ export const translations: Record<Language, Translations> = {
       wipeConfirm: 'BABALA: Ito ay mag-wawipe ng lahat ng lokal na data sa teleponong ito at magla-logout. Sigurado ka ba?',
       resetSuccess: 'Na-reset at na-seed muli ang local tindahan database!',
       storeNameLabel: 'Pangalan ng Tindahan:',
+      ownerNameLabel: 'May-ari / Tindera:',
+      userPhoneLabel: 'Telepono / GCash:',
+      editProfileBtn: 'I-edit ang Profile',
       pendingSync: 'Nakabinbing Sync Operations:',
       dlqTitle: 'Dead Letter Queue (Mga Bagsak na Sync):',
       dlqClearBtn: 'Linisin ang DLQ',
@@ -838,6 +869,31 @@ export const translations: Record<Language, Translations> = {
       installHeaderTooltip: 'I-install ang Fluent Tindahan sa device',
       browserInstallTip: 'Para i-install: Pindutin ang install icon sa address bar ng iyong browser (itaas-kanan), o buksan ang browser menu (tatlong tuldok ⋮) at piliin ang "Install Fluent Tindahan" o "Add to Home screen".',
       browserInstallNote: 'Tandaan: Hindi puwedeng mag-install kung nasa Incognito / Private window.'
+    },
+    onboarding: {
+      welcomeTitle: 'Maligayang Pagdating sa Fluent Tindahan! 🛒🇵🇭',
+      welcomeSubtitle: 'I-setup ang impormasyon ng iyong tindahan para makapagsimula nang maayos.',
+      editTitle: 'I-edit ang Profile ng Tindahan',
+      editSubtitle: 'Baguhin ang pangalan ng tindahan, may-ari, o numero ng telepono.',
+      storeNameLabel: 'Pangalan ng Tindahan',
+      storeNamePlaceholder: 'Hal. Tindahan ni Aling Maria',
+      storeNameRequired: 'Kailangan ang pangalan ng tindahan (hindi bababa sa 2 letra).',
+      ownerNameLabel: 'Pangalan ng May-ari / Tindera (Opsyonal)',
+      ownerNamePlaceholder: 'Hal. Maria Santos',
+      userPhoneLabel: 'Numero ng Telepono / GCash (Opsyonal)',
+      userPhonePlaceholder: 'Hal. 09171234567',
+      phoneInvalid: 'Dapat ay wastong 11-digit Philippine mobile number (09XXXXXXXXX).',
+      catalogSectionTitle: 'Panimulang Imbentaryo (Catalog)',
+      catalogSectionDesc: 'Piliin kung nais mong i-load agad ang mga karaniwang paninda sa sari-sari store.',
+      catalogStandardTitle: 'I-load ang 50 Karaniwang Paninda',
+      catalogStandardDesc: 'Hanggang 50 panimulang produkto: Lucky Me, Kopiko, de-lata, kape, shampoo sachet, atbp.',
+      catalogEmptyTitle: 'Magsimula sa Malinis na Tindahan',
+      catalogEmptyDesc: 'Walang paunang paninda; manu-manong i-encode o i-import via CSV ang iyong mga produkto.',
+      gcashToggleTitle: 'Nag-aalok ng GCash Cash-In / Cash-Out',
+      gcashToggleDesc: 'I-enable upang ma-preconfigure ang karaniwang bayarin sa serbisyo ng GCash.',
+      launchBtn: 'Simulan ang Aking Tindahan',
+      saveProfileBtn: 'I-save ang Profile',
+      cancelBtn: 'Kanselahin'
     },
     subscription: {
       planSection: 'Plano at Subscription',
@@ -1194,6 +1250,9 @@ export const translations: Record<Language, Translations> = {
       wipeConfirm: 'WARNING: This will wipe all local data on this device and sign you out. Are you sure?',
       resetSuccess: 'Local store database reset and re-seeded!',
       storeNameLabel: 'Store Name:',
+      ownerNameLabel: 'Owner / Cashier:',
+      userPhoneLabel: 'Phone / GCash:',
+      editProfileBtn: 'Edit Store Profile',
       pendingSync: 'Pending Sync Operations:',
       dlqTitle: 'Dead Letter Queue (Poison Pills):',
       dlqClearBtn: 'Clear DLQ',
@@ -1296,6 +1355,31 @@ export const translations: Record<Language, Translations> = {
       pricingToggleWeekly: 'Sachet (Weekly)',
       pricingToggleMonthly: 'Monthly',
       popularBadge: 'MOST POPULAR'
+    },
+    onboarding: {
+      welcomeTitle: 'Welcome to Fluent Tindahan! 🛒🇵🇭',
+      welcomeSubtitle: 'Set up your store details to get started with zero friction.',
+      editTitle: 'Edit Store Profile',
+      editSubtitle: 'Update your store name, owner name, or contact number.',
+      storeNameLabel: 'Store Name',
+      storeNamePlaceholder: 'e.g. Maria\'s Sari-Sari Store',
+      storeNameRequired: 'Store name is required (minimum 2 characters).',
+      ownerNameLabel: 'Owner / Cashier Name (Optional)',
+      ownerNamePlaceholder: 'e.g. Maria Santos',
+      userPhoneLabel: 'Contact / GCash Mobile (Optional)',
+      userPhonePlaceholder: 'e.g. 09171234567',
+      phoneInvalid: 'Must be a valid 11-digit Philippine mobile number (09XXXXXXXXX).',
+      catalogSectionTitle: 'Initial Inventory Setup',
+      catalogSectionDesc: 'Choose whether to pre-load standard sari-sari store FMCG goods.',
+      catalogStandardTitle: 'Pre-load 50 Standard Products',
+      catalogStandardDesc: 'Up to 50 starter products, including instant noodles, coffee mixes, canned goods, sachets, etc.',
+      catalogEmptyTitle: 'Start with Blank Store',
+      catalogEmptyDesc: 'No pre-loaded items; enter your products manually or import via CSV.',
+      gcashToggleTitle: 'Offers GCash Cash-In / Cash-Out',
+      gcashToggleDesc: 'Pre-configures default transaction fee brackets for GCash remittance.',
+      launchBtn: 'Launch My Store',
+      saveProfileBtn: 'Save Profile',
+      cancelBtn: 'Cancel'
     }
   }
 };

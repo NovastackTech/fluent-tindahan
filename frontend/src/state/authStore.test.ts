@@ -50,4 +50,47 @@ describe('authStore', () => {
     useAuthStore.getState().logout();
     expect(useAuthStore.getState().firebaseToken).toBeNull();
   });
+
+  it('completes onboarding and persists store identity to localStorage', () => {
+    useAuthStore.setState({
+      tier: 'TindahanPro',
+      subscriptionEndDate: '2030-01-01T00:00:00.000Z'
+    });
+    useAuthStore.getState().completeOnboarding({
+      businessName: 'Tindahan ni Pedro',
+      ownerName: 'Pedro Penduko',
+      userPhone: '09198765432',
+      tenantId: 'custom-tenant-uuid',
+      userId: 'custom-user-uuid'
+    });
+
+    const state = useAuthStore.getState();
+    expect(state.isOnboarded).toBe(true);
+    expect(state.businessName).toBe('Tindahan ni Pedro');
+    expect(state.ownerName).toBe('Pedro Penduko');
+    expect(state.userPhone).toBe('09198765432');
+    expect(state.tenantId).toBe('custom-tenant-uuid');
+    expect(state.userId).toBe('custom-user-uuid');
+    expect(state.tier).toBe('Libre');
+    expect(state.subscriptionEndDate).toBeNull();
+
+    expect(localStorage.getItem('fluent_tindahan_store_name_v1')).toBe('Tindahan ni Pedro');
+    expect(localStorage.getItem('fluent_tindahan_onboarded_v1')).toBe('true');
+    expect(localStorage.getItem('fluent_tindahan_tier_v1')).toBe('Libre');
+    expect(localStorage.getItem('fluent_tindahan_subs_end_v1')).toBeNull();
+  });
+
+  it('updates store profile metadata cleanly', () => {
+    useAuthStore.getState().updateStoreProfile({
+      businessName: 'Pedro Mini Mart',
+      ownerName: 'Pedro P.',
+      userPhone: '09190001122'
+    });
+
+    const state = useAuthStore.getState();
+    expect(state.businessName).toBe('Pedro Mini Mart');
+    expect(state.ownerName).toBe('Pedro P.');
+    expect(state.userPhone).toBe('09190001122');
+    expect(localStorage.getItem('fluent_tindahan_store_name_v1')).toBe('Pedro Mini Mart');
+  });
 });

@@ -250,6 +250,28 @@ describe('SettingsPage', () => {
     fireEvent.click(upgradeBtn);
     expect(useSubscriptionStore.getState().isUpgradeModalOpen).toBe(true);
   });
+
+  it('triggers openOnboarding in edit mode when clicking edit profile button', () => {
+    useAuthStore.setState({
+      businessName: 'My Tindahan',
+      ownerName: 'Maria Santos',
+      userPhone: '09171112233'
+    });
+
+    renderSettings();
+
+    expect(screen.getByText('My Tindahan')).toBeInTheDocument();
+    expect(screen.getByText('Maria Santos')).toBeInTheDocument();
+    expect(screen.getByText('09171112233')).toBeInTheDocument();
+
+    const editBtn = screen.getByRole('button', { name: /I-edit ang Profile|Edit Store Profile/i });
+    expect(editBtn).toBeInTheDocument();
+
+    fireEvent.click(editBtn);
+
+    expect(useAuthStore.getState().isOnboardingOpen).toBe(true);
+    expect(useAuthStore.getState().onboardingMode).toBe('edit');
+  });
 });
 
 

@@ -24,7 +24,8 @@ import {
   PrintRegular,
   PhoneLaptopRegular,
   ArrowDownloadRegular,
-  SparkleRegular
+  SparkleRegular,
+  EditRegular
 } from '@fluentui/react-icons';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
@@ -77,7 +78,7 @@ const useStyles = makeStyles({
 export const SettingsPage: React.FC = () => {
   const styles = useStyles();
   const { isOnline, isSyncing, lastSyncedAt, pendingCount, deadLetterCount } = useSyncStore();
-  const { tenantId, userId, businessName, logout, role } = useAuthStore();
+  const { tenantId, userId, businessName, ownerName, userPhone, openOnboarding, logout, role } = useAuthStore();
   const { t, language, setLanguage } = useTranslation();
   const { themeMode, setThemeMode } = useThemeStore();
   const { paperWidth, setPaperWidth } = usePrinterStore();
@@ -434,13 +435,35 @@ export const SettingsPage: React.FC = () => {
 
       {/* Account & Multi-tenant isolation */}
       <Card className={styles.card}>
-        <Text weight="bold" size={400} style={{ marginBottom: '8px', display: 'block' }}>
-          {t.settings.deviceInfoSection}
-        </Text>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+          <Text weight="bold" size={400}>
+            {t.settings.deviceInfoSection}
+          </Text>
+          <Button
+            appearance="subtle"
+            size="small"
+            icon={<EditRegular />}
+            onClick={() => openOnboarding('edit')}
+          >
+            {t.settings.editProfileBtn}
+          </Button>
+        </div>
         <div className={styles.infoRow}>
           <Text size={200}>{t.settings.storeNameLabel}</Text>
           <Text size={200} weight="bold">{businessName}</Text>
         </div>
+        {ownerName && (
+          <div className={styles.infoRow}>
+            <Text size={200}>{t.settings.ownerNameLabel}</Text>
+            <Text size={200}>{ownerName}</Text>
+          </div>
+        )}
+        {userPhone && (
+          <div className={styles.infoRow}>
+            <Text size={200}>{t.settings.userPhoneLabel}</Text>
+            <Text size={200} style={{ fontFamily: 'monospace' }}>{userPhone}</Text>
+          </div>
+        )}
         <div className={styles.infoRow}>
           <Text size={200}>{t.settings.tenantId}:</Text>
           <Text size={200} style={{ fontFamily: 'monospace' }}>{tenantId}</Text>

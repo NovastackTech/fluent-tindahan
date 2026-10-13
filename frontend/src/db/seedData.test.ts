@@ -37,4 +37,22 @@ describe('seedData', () => {
 
     expect(count2).toBe(count1);
   });
+
+  it('seeds an isolated catalog for a new tenant without changing default data or copying demo activity', async () => {
+    await seedDexieDatabaseIfNeeded();
+    const defaultProduct = await db.products.orderBy('id').first();
+    const newTenantId = '99999999-9999-4999-8999-999999999999';
+
+    await seedDexieDatabaseIfNeeded(false, newTenantId, false, 'New Store');
+
+    const tenantProducts = await db.products.where('tenantId').equals(newTenantId).toArray();
+    const retainedDefaultProduct = await db.products.get(defaultProduct!.id);
+    expect(tenantProducts).toHaveLength(50);
+    expect(tenantProducts.every((product) => product.id !== defaultProduct!.id)).toBe(true);
+    expect(retainedDefaultProduct?.tenantId).toBe(DEFAULT_TENANT_ID);
+    expect(await db.customers.where('tenantId').equals(newTenantId).count()).toBe(0);
+    expect(await db.utangLedger.where('tenantId').equals(newTenantId).count()).toBe(0);
+    expect(await db.gcashTxns.where('tenantId').equals(newTenantId).count()).toBe(0);
+    expect((await db.tenants.get(newTenantId))?.businessName).toBe('New Store');
+  });
 });

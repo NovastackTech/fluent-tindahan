@@ -3,11 +3,27 @@ import { db, normalizeRef, type ProductRecord, type CustomerRecord, type UtangLe
 export const DEFAULT_TENANT_ID = '11111111-1111-1111-1111-111111111111';
 export const DEFAULT_USER_ID = '22222222-2222-2222-2222-222222222222';
 
-export async function seedDexieDatabaseIfNeeded(force = false) {
-  const productCount = await db.products.count();
-  if (!force && productCount >= 50) return;
-
+export async function seedDexieDatabaseIfNeeded(
+  force = false,
+  targetTenantId = DEFAULT_TENANT_ID,
+  emptyCatalog = false,
+  businessName = "Aling Nena's Tindahan & GCash"
+) {
   const now = new Date().toISOString();
+
+  await db.tenants.put({
+    id: targetTenantId,
+    businessName,
+    tier: 'Libre',
+    updatedAt: now
+  });
+
+  if (emptyCatalog) {
+    return;
+  }
+
+  const productCount = await db.products.where('tenantId').equals(targetTenantId).count();
+  if (!force && productCount >= 50) return;
 
   const products: ProductRecord[] = [
     {
@@ -641,6 +657,17 @@ export async function seedDexieDatabaseIfNeeded(force = false) {
     }
   ];
 
+  if (targetTenantId !== DEFAULT_TENANT_ID) {
+    const tenantProducts = products.map((product) => ({
+      ...product,
+      id: crypto.randomUUID(),
+      tenantId: targetTenantId
+    }));
+
+    await db.products.bulkPut(tenantProducts);
+    return;
+  }
+
   await db.transaction('rw', db.products, db.customers, db.utangLedger, db.gcashTxns, async () => {
     await db.products.bulkPut(products);
     await db.customers.bulkPut(customers);
@@ -648,3 +675,4 @@ export async function seedDexieDatabaseIfNeeded(force = false) {
     await db.gcashTxns.bulkPut(gcashTxns);
   });
 }
+

@@ -13,6 +13,7 @@ import { OfflineSyncBanner } from './components/OfflineSyncBanner';
 import { PwaInstallBanner } from './components/PwaInstallBanner';
 import { PwaUpdateToast } from './components/PwaUpdateToast';
 import { PrivacyConsentDialog } from './components/PrivacyConsentDialog';
+import { OnboardingModal } from './components/OnboardingModal';
 import { initSyncEngine } from './sync/syncEngine';
 import { seedDexieDatabaseIfNeeded } from './db/seedData';
 import { usePwaStore, initPwaListeners } from './state/pwaStore';
@@ -144,6 +145,7 @@ export const App: React.FC = () => {
 
         <Navigation activeTab={activeTab} onTabChange={handleTabChange} />
         <PrivacyConsentDialog />
+        <OnboardingModal />
       </div>
     </FluentProvider>
   );
