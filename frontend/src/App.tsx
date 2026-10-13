@@ -99,7 +99,7 @@ export const App: React.FC = () => {
       const onboardingWasStarted = localStorage.getItem(STORAGE_KEY_ONBOARDING_STARTED) === 'true';
       let hasExistingStore = auth.isOnboarded || (auth.consentAccepted && !onboardingWasStarted);
 
-      if (!hasExistingStore) {
+      if (!hasExistingStore || auth.tenantId === DEFAULT_TENANT_ID) {
         try {
           const tenantId = auth.tenantId;
           const [productCount, salesCount, saleItemCount, customerCount, ledgerCount, gcashCount, resolutionCount, tenant, persistedTenants] = await Promise.all([
@@ -114,26 +114,40 @@ export const App: React.FC = () => {
             db.tenants.toArray()
           ]);
 
-          hasExistingStore = productCount > 0
-            || salesCount > 0
-            || saleItemCount > 0
-            || customerCount > 0
-            || ledgerCount > 0
-            || gcashCount > 0
-            || resolutionCount > 0
-            || Boolean(tenant && tenant.id !== DEFAULT_TENANT_ID);
+          const otherTenants = persistedTenants.filter((candidate) => candidate.id !== DEFAULT_TENANT_ID);
 
-          if (!hasExistingStore) {
-            const otherTenants = persistedTenants.filter((candidate) => candidate.id !== DEFAULT_TENANT_ID);
-            if (otherTenants.length > 0) {
+          if (tenantId === DEFAULT_TENANT_ID && otherTenants.length > 0) {
+            // Sort descending by updatedAt to recover the most recently active tenant
+            const sortedTenants = [...otherTenants].sort((a, b) => {
+              const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+              const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+              return timeB - timeA;
+            });
+            const recoveredTenant = sortedTenants[0];
+            if (recoveredTenant) {
               hasExistingStore = true;
-              if (otherTenants.length === 1) {
-                const recoveredTenant = otherTenants[0];
-                const currentAuth = useAuthStore.getState();
-                currentAuth.setTenantId(recoveredTenant.id);
-                currentAuth.setSubscription(recoveredTenant.tier || 'Libre', recoveredTenant.subscriptionEndDate);
+              const currentAuth = useAuthStore.getState();
+              currentAuth.setTenantId(recoveredTenant.id);
+              currentAuth.setSubscription(recoveredTenant.tier || 'Libre', recoveredTenant.subscriptionEndDate);
+              if (recoveredTenant.businessName) {
+                currentAuth.setBusinessName(recoveredTenant.businessName);
               }
             }
+          } else {
+            hasExistingStore = productCount > 0
+              || salesCount > 0
+              || saleItemCount > 0
+              || customerCount > 0
+              || ledgerCount > 0
+              || gcashCount > 0
+              || resolutionCount > 0
+              || Boolean(tenant && tenant.id !== DEFAULT_TENANT_ID)
+              || (auth.consentAccepted && !onboardingWasStarted);
+          }
+
+          // Invariant: never mark onboarded while still on DEFAULT_TENANT_ID if other tenants exist.
+          if (useAuthStore.getState().tenantId === DEFAULT_TENANT_ID && otherTenants.length > 0) {
+            hasExistingStore = false;
           }
         } catch (error) {
           console.error('[Onboarding] Could not inspect existing local store data:', error);
@@ -195,7 +209,7 @@ export const App: React.FC = () => {
             </div>
           }>
             {activeTab === 'dashboard' && <DashboardPage onNavigate={handleTabChange} />}
-            {activeTab === 'pos' && <POSPage />}
+            {activeTab === 'pos' && <POSPage onNavigate={handleTabChange} />}
             {activeTab === 'inventory' && <InventoryPage onNavigate={handleTabChange} />}
             {activeTab === 'utang' && <UtangPage />}
             {activeTab === 'gcash' && <GCashPage />}

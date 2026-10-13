@@ -103,7 +103,9 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
   const [nameError, setNameError] = useState('');
   const [category, setCategory] = useState('');
   const [cost, setCost] = useState<number | ''>('');
+  const [costError, setCostError] = useState('');
   const [price, setPrice] = useState<number | ''>('');
+  const [priceError, setPriceError] = useState('');
   const [stock, setStock] = useState<number | ''>(10);
   const [categories, setCategories] = useState<string[]>([]);
 
@@ -114,7 +116,9 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
       setNameError('');
       setCategory('');
       setCost('');
+      setCostError('');
       setPrice('');
+      setPriceError('');
       setStock(10);
 
       // Load distinct categories for datalist
@@ -140,10 +144,16 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
       return;
     }
     setNameError('');
-    if (priceNum <= 0) {
-      alert(t.barcode.priceLabel);
+    if (costNum < 0) {
+      setCostError(t.barcode.costCannotBeNegative);
       return;
     }
+    setCostError('');
+    if (priceNum <= 0) {
+      setPriceError(t.barcode.priceMustBePositive);
+      return;
+    }
+    setPriceError('');
 
     const currentCount = await db.products.where('tenantId').equals(tenantId).count();
     const { canAddProduct, openUpgradeModal } = useSubscriptionStore.getState();
@@ -235,9 +245,18 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
     );
   }
 
-  // 2. Stage Form: Quick Register Form with Pre-filled Barcode
   return (
-    <Dialog open={isOpen} onOpenChange={(_, data) => !data.open && onClose()}>
+    <Dialog
+      open={isOpen}
+      onOpenChange={(_, data) => {
+        if (!data.open) {
+          setNameError('');
+          setCostError('');
+          setPriceError('');
+          onClose();
+        }
+      }}
+    >
       <DialogSurface className={styles.surface}>
         <DialogBody>
           <DialogTitle
@@ -343,13 +362,23 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
                 <Input
                   type="number"
                   aria-label={t.barcode.costLabel}
+                  aria-invalid={Boolean(costError)}
+                  aria-describedby={costError ? 'quick-register-cost-error' : undefined}
                   step="0.25"
                   min="0"
                   style={{ width: '100%' }}
                   placeholder="0.00"
                   value={cost === '' ? '' : cost.toString()}
-                  onChange={(_, data) => setCost(data.value === '' ? '' : Number(data.value))}
+                  onChange={(_, data) => {
+                    setCost(data.value === '' ? '' : Number(data.value));
+                    if (costError) setCostError('');
+                  }}
                 />
+                {costError && (
+                  <Text id="quick-register-cost-error" role="alert" size={200} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
+                    {costError}
+                  </Text>
+                )}
               </div>
 
               {/* Selling Price (SRP) */}
@@ -360,13 +389,23 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
                 <Input
                   type="number"
                   aria-label={t.barcode.priceLabel}
+                  aria-invalid={Boolean(priceError)}
+                  aria-describedby={priceError ? 'quick-register-price-error' : undefined}
                   step="0.25"
                   min="0"
                   style={{ width: '100%' }}
                   placeholder="0.00"
                   value={price === '' ? '' : price.toString()}
-                  onChange={(_, data) => setPrice(data.value === '' ? '' : Number(data.value))}
+                  onChange={(_, data) => {
+                    setPrice(data.value === '' ? '' : Number(data.value));
+                    if (priceError) setPriceError('');
+                  }}
                 />
+                {priceError && (
+                  <Text id="quick-register-price-error" role="alert" size={200} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
+                    {priceError}
+                  </Text>
+                )}
               </div>
             </div>
 

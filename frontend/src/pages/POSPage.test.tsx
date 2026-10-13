@@ -36,13 +36,29 @@ describe('POSPage', () => {
     });
   });
 
-  const renderPOS = () => {
+  const renderPOS = (props?: { onNavigate?: (tab: any) => void }) => {
     return render(
       <FluentProvider theme={sariSariLightTheme}>
-        <POSPage />
+        <POSPage {...props} />
       </FluentProvider>
     );
   };
+
+  it('shows an empty inventory state with CTA when the store has no products yet', async () => {
+    await db.products.clear();
+    const onNavigateMock = vi.fn();
+    renderPOS({ onNavigate: onNavigateMock });
+
+    await waitFor(() => {
+      expect(screen.getByText('Wala pang paninda sa tindahan.')).toBeInTheDocument();
+      expect(screen.getByText('Magdagdag ng produkto sa Imbentaryo upang magsimulang magbenta.')).toBeInTheDocument();
+      expect(screen.queryByText('Walang nahanap na paninda. Subukan ang ibang paghahanap o kategorya.')).not.toBeInTheDocument();
+    });
+
+    const ctaBtn = screen.getByRole('button', { name: /Pumunta sa Imbentaryo|Go to Inventory/i });
+    fireEvent.click(ctaBtn);
+    expect(onNavigateMock).toHaveBeenCalledWith('inventory');
+  });
 
   it('renders search input, category filters, and product grid', async () => {
     renderPOS();

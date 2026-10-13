@@ -150,6 +150,45 @@ describe('InventoryPage', () => {
     alertSpy.mockRestore();
   });
 
+  it('shows inline validation when retail price is not positive', async () => {
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    renderInventory();
+    fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Produkto|Add Product/i }));
+    fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }), {
+      target: { value: 'No Price Product' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: /I-save|Save/i }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/Dapat mas mataas sa ₱0|Retail price must be greater than ₱0/i);
+    expect(screen.getByRole('spinbutton', { name: /Presyo ng Tinda|Retail Price/i }))
+      .toHaveAttribute('aria-invalid', 'true');
+    expect(alertSpy).not.toHaveBeenCalled();
+    expect(await db.products.where('name').equals('No Price Product').count()).toBe(0);
+    alertSpy.mockRestore();
+  });
+
+  it('shows inline validation when cost is negative', async () => {
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    renderInventory();
+    fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Produkto|Add Product/i }));
+    fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }), {
+      target: { value: 'Negative Cost Product' }
+    });
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Puhunan|Cost Price/i }), {
+      target: { value: '-1' }
+    });
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Presyo ng Tinda|Retail Price/i }), {
+      target: { value: '10' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: /I-save|Save/i }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/Hindi maaaring negatibo ang puhunan|Cost price cannot be negative/i);
+    expect(screen.getByRole('spinbutton', { name: /Puhunan|Cost Price/i })).toHaveAttribute('aria-invalid', 'true');
+    expect(alertSpy).not.toHaveBeenCalled();
+    expect(await db.products.where('name').equals('Negative Cost Product').count()).toBe(0);
+    alertSpy.mockRestore();
+  });
+
   it('creates and saves a new product to Dexie via modal', async () => {
     renderInventory();
 

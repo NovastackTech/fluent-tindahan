@@ -35,8 +35,10 @@ import {
   ChevronRightRegular,
   PersonAddRegular,
   DismissRegular,
-  CheckmarkRegular
+  CheckmarkRegular,
+  BoxRegular
 } from '@fluentui/react-icons';
+import { type NavTab } from '../components/Navigation';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type ProductRecord, type CustomerRecord } from '../db/db';
 import { useCartStore } from '../state/cartStore';
@@ -113,6 +115,21 @@ const useStyles = makeStyles({
     paddingTop: tokens.spacingVerticalXL,
     paddingBottom: tokens.spacingVerticalXL
   },
+  emptyInventoryContainer: {
+    gridColumn: '1 / -1',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    textAlign: 'center',
+    ...shorthands.padding(tokens.spacingVerticalXXL, tokens.spacingHorizontalM),
+    ...shorthands.gap(tokens.spacingVerticalM)
+  },
+  emptyInventoryIcon: {
+    fontSize: '48px',
+    color: tokens.colorNeutralForeground4,
+    marginBottom: tokens.spacingVerticalXS
+  },
   productCard: {
     ...shorthands.padding(tokens.spacingVerticalS, tokens.spacingHorizontalS),
     cursor: 'pointer',
@@ -183,7 +200,11 @@ const useStyles = makeStyles({
 
 const QUICK_PESO_BILLS = [20, 50, 100, 200, 500, 1000];
 
-export const POSPage: React.FC = () => {
+export interface POSPageProps {
+  onNavigate?: (tab: NavTab) => void;
+}
+
+export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
   const styles = useStyles();
   const { t, language } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
@@ -697,9 +718,32 @@ export const POSPage: React.FC = () => {
       {/* Product Grid */}
       <div className={styles.productGrid}>
         {productResults && filteredProducts.length === 0 ? (
-          <Text className={styles.emptyProducts} role="status" aria-live="polite">
-            {t.pos.noProductsFound}
-          </Text>
+          products.length === 0 ? (
+            <div className={styles.emptyInventoryContainer} role="status" aria-live="polite">
+              <BoxRegular className={styles.emptyInventoryIcon} />
+              <div>
+                <Text weight="semibold" size={400} style={{ display: 'block', color: tokens.colorNeutralForeground1 }}>
+                  {t.pos.emptyInventory}
+                </Text>
+                <Text size={200} style={{ color: tokens.colorNeutralForeground3, marginTop: '4px', display: 'block' }}>
+                  {t.pos.emptyInventorySub}
+                </Text>
+              </div>
+              {onNavigate && (
+                <Button
+                  appearance="primary"
+                  icon={<AddRegular />}
+                  onClick={() => onNavigate('inventory')}
+                >
+                  {t.pos.goToInventoryBtn}
+                </Button>
+              )}
+            </div>
+          ) : (
+            <Text className={styles.emptyProducts} role="status" aria-live="polite">
+              {t.pos.noProductsFound}
+            </Text>
+          )
         ) : filteredProducts.map((p) => (
           <Card
             key={p.id}

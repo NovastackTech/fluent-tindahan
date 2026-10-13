@@ -348,7 +348,9 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
   const [formCategory, setFormCategory] = useState('');
   const [formBarcode, setFormBarcode] = useState('');
   const [formCost, setFormCost] = useState<number | ''>('');
+  const [formCostError, setFormCostError] = useState('');
   const [formPrice, setFormPrice] = useState<number | ''>('');
+  const [formPriceError, setFormPriceError] = useState('');
   const [formStock, setFormStock] = useState<number | ''>('');
 
   // Delete dialog state
@@ -526,7 +528,9 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
     setFormCategory('');
     setFormBarcode('');
     setFormCost('');
+    setFormCostError('');
     setFormPrice('');
+    setFormPriceError('');
     setFormStock(10);
     setIsModalOpen(true);
   };
@@ -540,7 +544,9 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
     setFormCategory(product.category || '');
     setFormBarcode(product.barcode || '');
     setFormCost(product.cost);
+    setFormCostError('');
     setFormPrice(product.price);
+    setFormPriceError('');
     setFormStock(product.stockQty);
     setIsModalOpen(true);
   };
@@ -556,10 +562,17 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
     const priceNum = Number(formPrice) || 0;
     const stockNum = Number(formStock) || 0;
 
-    if (priceNum <= 0) {
-      alert(t.inventory.priceLabel);
+    if (costNum < 0) {
+      setFormCostError(t.inventory.costCannotBeNegative);
       return;
     }
+    setFormCostError('');
+
+    if (priceNum <= 0) {
+      setFormPriceError(t.inventory.priceMustBePositive);
+      return;
+    }
+    setFormPriceError('');
 
     const nowIso = new Date().toISOString();
 
@@ -1181,7 +1194,17 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
       </div>
 
       {/* ADD / EDIT PRODUCT MODAL */}
-      <Dialog open={isModalOpen} onOpenChange={(_, data) => setIsModalOpen(data.open)}>
+      <Dialog
+        open={isModalOpen}
+        onOpenChange={(_, data) => {
+          setIsModalOpen(data.open);
+          if (!data.open) {
+            setFormNameError('');
+            setFormCostError('');
+            setFormPriceError('');
+          }
+        }}
+      >
         <DialogSurface style={{ maxWidth: '520px', width: '92%' }}>
           <DialogBody>
             <DialogTitle>
@@ -1268,12 +1291,22 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                   <Input
                     type="number"
                     aria-label={t.inventory.costLabel}
+                    aria-invalid={Boolean(formCostError)}
+                    aria-describedby={formCostError ? 'inventory-product-cost-error' : undefined}
                     step="0.25"
                     min="0"
                     style={{ width: '100%' }}
                     value={formCost === '' ? '' : formCost.toString()}
-                    onChange={(_, data) => setFormCost(data.value === '' ? '' : Number(data.value))}
+                    onChange={(_, data) => {
+                      setFormCost(data.value === '' ? '' : Number(data.value));
+                      if (formCostError) setFormCostError('');
+                    }}
                   />
+                  {formCostError && (
+                    <Text id="inventory-product-cost-error" role="alert" size={200} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
+                      {formCostError}
+                    </Text>
+                  )}
                 </div>
 
                 {/* Retail Price (SRP) */}
@@ -1284,12 +1317,22 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                   <Input
                     type="number"
                     aria-label={t.inventory.priceLabel}
+                    aria-invalid={Boolean(formPriceError)}
+                    aria-describedby={formPriceError ? 'inventory-product-price-error' : undefined}
                     step="0.25"
                     min="0"
                     style={{ width: '100%' }}
                     value={formPrice === '' ? '' : formPrice.toString()}
-                    onChange={(_, data) => setFormPrice(data.value === '' ? '' : Number(data.value))}
+                    onChange={(_, data) => {
+                      setFormPrice(data.value === '' ? '' : Number(data.value));
+                      if (formPriceError) setFormPriceError('');
+                    }}
                   />
+                  {formPriceError && (
+                    <Text id="inventory-product-price-error" role="alert" size={200} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
+                      {formPriceError}
+                    </Text>
+                  )}
                 </div>
 
                 {/* Stock Qty */}
