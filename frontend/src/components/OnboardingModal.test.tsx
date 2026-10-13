@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { FluentProvider } from '@fluentui/react-components';
 import { OnboardingModal } from './OnboardingModal';
 import { sariSariLightTheme } from '../theme/theme';
-import { useAuthStore } from '../state/authStore';
+import { DEMO_BUSINESS_NAME, DEMO_OWNER, DEMO_PHONE, useAuthStore } from '../state/authStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
 import { db } from '../db/db';
 
@@ -19,9 +19,9 @@ describe('OnboardingModal', () => {
       isOnboardingStatusReady: true,
       isOnboardingOpen: false,
       onboardingMode: 'initial',
-      businessName: "Aling Nena's Tindahan & GCash",
-      ownerName: 'Aling Nena',
-      userPhone: '09171234567'
+      businessName: DEMO_BUSINESS_NAME,
+      ownerName: DEMO_OWNER,
+      userPhone: DEMO_PHONE
     });
     useSubscriptionStore.setState({
       tier: 'Libre',
@@ -91,6 +91,7 @@ describe('OnboardingModal', () => {
       isActive: true,
       daysRemaining: 30
     });
+
     renderModal();
 
     const storeInput = screen.getByPlaceholderText(/Hal. Tindahan ni Aling Maria|e.g. Maria's Sari-Sari Store/i);
@@ -121,6 +122,19 @@ describe('OnboardingModal', () => {
     const localTenant = await db.tenants.get(tenantId);
     expect(localTenant).toBeDefined();
     expect(localTenant?.businessName).toBe('Maria Sari-Sari Store');
+  });
+
+  it('completes onboarding with empty optional owner and phone fields', async () => {
+    renderModal();
+    fireEvent.change(
+      screen.getByPlaceholderText(/Hal. Tindahan ni Aling Maria|e.g. Maria's Sari-Sari Store/i),
+      { target: { value: 'Tindahan ni Maria' } }
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Simulan ang Aking Tindahan|Launch My Store/i }));
+
+    await waitFor(() => expect(useAuthStore.getState().isOnboarded).toBe(true));
+    expect(useAuthStore.getState().ownerName).toBe('');
+    expect(useAuthStore.getState().userPhone).toBe('');
   });
 
   it('does not duplicate the starter catalog when the form is submitted twice immediately', async () => {
@@ -192,5 +206,32 @@ describe('OnboardingModal', () => {
       expect(useAuthStore.getState().businessName).toBe('Updated Store Name');
       expect(useAuthStore.getState().isOnboardingOpen).toBe(false);
     });
+
+  });
+
+  it('allows clearing owner and phone in edit mode', async () => {
+    useAuthStore.setState({
+      isOnboarded: true,
+      isOnboardingOpen: true,
+      onboardingMode: 'edit',
+      businessName: 'Original Store',
+      ownerName: 'Juan Dela Cruz',
+      userPhone: '09191234567'
+    });
+
+    renderModal();
+    fireEvent.change(
+      screen.getByPlaceholderText(/Hal. Maria Santos|e.g. Maria Santos/i),
+      { target: { value: '' } }
+    );
+    fireEvent.change(
+      screen.getByPlaceholderText(/Hal. 09171234567|e.g. 09171234567/i),
+      { target: { value: '' } }
+    );
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Profile|Save Profile/i }));
+
+    await waitFor(() => expect(useAuthStore.getState().isOnboardingOpen).toBe(false));
+    expect(useAuthStore.getState().ownerName).toBe('');
+    expect(useAuthStore.getState().userPhone).toBe('');
   });
 });

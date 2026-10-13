@@ -29,7 +29,7 @@ import {
   SparkleRegular,
   PhoneLaptopRegular
 } from '@fluentui/react-icons';
-import { useAuthStore } from '../state/authStore';
+import { DEMO_BUSINESS_NAME, DEMO_OWNER, DEMO_PHONE, useAuthStore } from '../state/authStore';
 import { useTranslation } from '../state/languageStore';
 import { createClientUuid, seedDexieDatabaseIfNeeded } from '../db/seedData';
 import { db } from '../db/db';
@@ -136,9 +136,9 @@ export const OnboardingModal: React.FC = () => {
         setFormOwnerName(ownerName || '');
         setFormUserPhone(userPhone || '');
       } else {
-        setFormBusinessName(businessName === "Aling Nena's Tindahan & GCash" ? '' : businessName);
-        setFormOwnerName(ownerName === 'Aling Nena' ? '' : ownerName);
-        setFormUserPhone(userPhone === '09171234567' ? '' : userPhone);
+        setFormBusinessName(businessName === DEMO_BUSINESS_NAME ? '' : businessName);
+        setFormOwnerName(ownerName === DEMO_OWNER ? '' : ownerName);
+        setFormUserPhone(userPhone === DEMO_PHONE ? '' : userPhone);
       }
       setBusinessNameError('');
       setPhoneError('');

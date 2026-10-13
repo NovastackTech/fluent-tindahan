@@ -1,4 +1,5 @@
 import { db, normalizeRef, type ProductRecord, type CustomerRecord, type UtangLedgerRecord, type GCashTxnRecord } from './db';
+import { DEMO_BUSINESS_NAME } from '../constants/demoProfile';
 
 export const DEFAULT_TENANT_ID = '11111111-1111-1111-1111-111111111111';
 export const DEFAULT_USER_ID = '22222222-2222-2222-2222-222222222222';
@@ -23,7 +24,7 @@ export async function seedDexieDatabaseIfNeeded(
   force = false,
   targetTenantId = DEFAULT_TENANT_ID,
   emptyCatalog = false,
-  businessName = "Aling Nena's Tindahan & GCash"
+  businessName = DEMO_BUSINESS_NAME
 ) {
   const now = new Date().toISOString();
 
@@ -33,6 +34,7 @@ export async function seedDexieDatabaseIfNeeded(
       await db.tenants.add({
         id: targetTenantId,
         businessName,
+        tier: 'Libre',
         updatedAt: now
       });
     }
@@ -704,4 +706,3 @@ export async function seedDexieDatabaseIfNeeded(
     await db.gcashTxns.bulkPut(gcashTxns);
   });
 }
-

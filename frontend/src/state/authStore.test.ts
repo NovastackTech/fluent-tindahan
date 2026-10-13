@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useAuthStore } from './authStore';
 import { DEFAULT_TENANT_ID, DEFAULT_USER_ID } from '../db/seedData';
+import { DEMO_BUSINESS_NAME, DEMO_OWNER, DEMO_PHONE } from '../constants/demoProfile';
 
 describe('authStore', () => {
   beforeEach(() => {
@@ -8,8 +9,9 @@ describe('authStore', () => {
     useAuthStore.setState({
       tenantId: DEFAULT_TENANT_ID,
       userId: DEFAULT_USER_ID,
-      businessName: "Aling Nena's Tindahan & GCash",
-      userPhone: '09171234567',
+      businessName: DEMO_BUSINESS_NAME,
+      ownerName: DEMO_OWNER,
+      userPhone: DEMO_PHONE,
       role: 'Owner',
       firebaseToken: null,
       consentAccepted: false
@@ -20,7 +22,7 @@ describe('authStore', () => {
     const state = useAuthStore.getState();
     expect(state.tenantId).toBe(DEFAULT_TENANT_ID);
     expect(state.userId).toBe(DEFAULT_USER_ID);
-    expect(state.businessName).toBe("Aling Nena's Tindahan & GCash");
+    expect(state.businessName).toBe(DEMO_BUSINESS_NAME);
     expect(state.role).toBe('Owner');
     expect(state.consentAccepted).toBe(false);
   });
@@ -58,6 +60,7 @@ describe('authStore', () => {
       tier: 'TindahanPro',
       subscriptionEndDate: '2030-01-01T00:00:00.000Z'
     });
+
     useAuthStore.getState().completeOnboarding({
       businessName: 'Tindahan ni Pedro',
       ownerName: 'Pedro Penduko',
@@ -82,6 +85,20 @@ describe('authStore', () => {
     expect(localStorage.getItem('fluent_tindahan_subs_end_v1')).toBe('2030-01-01T00:00:00.000Z');
   });
 
+  it('stores blank optional profile fields without restoring demo values', () => {
+    useAuthStore.getState().completeOnboarding({
+      businessName: 'Tindahan ni Maria',
+      ownerName: '  ',
+      userPhone: ''
+    });
+
+    const state = useAuthStore.getState();
+    expect(state.ownerName).toBe('');
+    expect(state.userPhone).toBe('');
+    expect(localStorage.getItem('fluent_tindahan_owner_name_v1')).toBe('');
+    expect(localStorage.getItem('fluent_tindahan_user_phone_v1')).toBe('');
+  });
+
   it('updates store profile metadata cleanly', () => {
     useAuthStore.getState().updateStoreProfile({
       businessName: 'Pedro Mini Mart',
@@ -94,5 +111,20 @@ describe('authStore', () => {
     expect(state.ownerName).toBe('Pedro P.');
     expect(state.userPhone).toBe('09190001122');
     expect(localStorage.getItem('fluent_tindahan_store_name_v1')).toBe('Pedro Mini Mart');
+  });
+
+  it('allows clearing owner and phone while updating the store profile', () => {
+    useAuthStore.setState({ ownerName: 'Pedro P.', userPhone: '09190001122' });
+    useAuthStore.getState().updateStoreProfile({
+      businessName: 'Pedro Mini Mart',
+      ownerName: '',
+      userPhone: ''
+    });
+
+    const state = useAuthStore.getState();
+    expect(state.ownerName).toBe('');
+    expect(state.userPhone).toBe('');
+    expect(localStorage.getItem('fluent_tindahan_owner_name_v1')).toBe('');
+    expect(localStorage.getItem('fluent_tindahan_user_phone_v1')).toBe('');
   });
 });
