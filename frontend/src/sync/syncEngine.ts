@@ -105,6 +105,11 @@ function getAuthSessionKey(): string {
 }
 
 export async function processSyncQueue(): Promise<{ processed: number; conflicts: number; errors: number }> {
+  const auth = useAuthStore.getState();
+  if (!auth.isOnboardingStatusReady || !auth.isOnboarded) {
+    return { processed: 0, conflicts: 0, errors: 0 };
+  }
+
   const store = useSyncStore.getState();
   if (store.isSyncing) return { processed: 0, conflicts: 0, errors: 0 };
 

@@ -14,7 +14,9 @@ describe('apiClient', () => {
     useGCashFeeStore.setState({ feesByTenant: {} });
     useAuthStore.setState({
       tenantId: 'tenant-123',
-      firebaseToken: null
+      firebaseToken: null,
+      isOnboarded: true,
+      isOnboardingStatusReady: true
     });
   });
 
@@ -69,6 +71,18 @@ describe('apiClient', () => {
       phone: '09181234567'
     });
     putSpy.mockRestore();
+  });
+
+  it('does not provision a tenant before onboarding is resolved', async () => {
+    useAuthStore.setState({
+      isOnboarded: false,
+      isOnboardingStatusReady: false
+    });
+    const putSpy = vi.spyOn(apiClient, 'put');
+
+    await ensureTenantProvisioned();
+
+    expect(putSpy).not.toHaveBeenCalled();
   });
 
   it('adopts the server tenant ID and rekeys local data and pending operations', async () => {

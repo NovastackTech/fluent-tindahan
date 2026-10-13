@@ -4,6 +4,7 @@ import { App } from './App';
 import { usePwaStore } from './state/pwaStore';
 import { useCartStore } from './state/cartStore';
 import { useAuthStore } from './state/authStore';
+import { useSubscriptionStore } from './state/subscriptionStore';
 import { DEFAULT_TENANT_ID } from './db/seedData';
 import { db } from './db/db';
 import { _resetUpdateSWFunctionForTest } from './pwa/registerServiceWorker';
@@ -117,13 +118,61 @@ describe('App', () => {
 
   it('keeps onboarding available if a fresh user accepts consent and reloads before setup', async () => {
     useAuthStore.setState({ consentAccepted: false });
-    render(<App />);
+    const firstRender = render(<App />);
 
     await waitFor(() => expect(useAuthStore.getState().isOnboardingStatusReady).toBe(true));
     fireEvent.click(screen.getByRole('button', { name: /Sumasang-ayon Ako|I Agree/i }));
 
     expect(await screen.findByText(/Welcome to Fluent Tindahan|Maligayang Pagdating sa Fluent Tindahan/i)).toBeInTheDocument();
     expect(useAuthStore.getState().isOnboarded).toBe(false);
+
+    firstRender.unmount();
+    localStorage.setItem('fluent_tindahan_tier_v1', 'TindahanPro');
+    localStorage.setItem('fluent_tindahan_subs_end_v1', '2030-01-01T00:00:00.000Z');
+    await db.tenants.put({
+      id: DEFAULT_TENANT_ID,
+      businessName: 'Demo Tindahan',
+      tier: 'TindahanPro',
+      subscriptionEndDate: '2030-01-01T00:00:00.000Z',
+      updatedAt: new Date().toISOString()
+    });
+    useAuthStore.setState({
+      consentAccepted: true,
+      tenantId: DEFAULT_TENANT_ID,
+      tier: 'TindahanPro',
+      subscriptionEndDate: '2030-01-01T00:00:00.000Z',
+      isOnboarded: false,
+      isOnboardingStatusReady: false,
+      isOnboardingOpen: false
+    });
+
+    render(<App />);
+    await waitFor(() => expect(useAuthStore.getState().isOnboardingStatusReady).toBe(true));
+
+    expect(useAuthStore.getState().isOnboarded).toBe(false);
+    expect(await screen.findByText(/Welcome to Fluent Tindahan|Maligayang Pagdating sa Fluent Tindahan/i)).toBeInTheDocument();
+  });
+
+  it('starts store services and refreshes subscription only after onboarding completes', async () => {
+    localStorage.setItem('fluent_tindahan_onboarding_started_v1', 'true');
+    useAuthStore.setState({
+      consentAccepted: true,
+      isOnboarded: false,
+      isOnboardingStatusReady: false
+    });
+    const refreshSpy = vi.spyOn(useSubscriptionStore.getState(), 'refreshSubscription').mockResolvedValue();
+
+    render(<App />);
+    await waitFor(() => expect(useAuthStore.getState().isOnboardingStatusReady).toBe(true));
+    expect(refreshSpy).not.toHaveBeenCalled();
+
+    useAuthStore.getState().completeOnboarding({
+      businessName: 'Tindahan ni Maria',
+      tenantId: crypto.randomUUID(),
+      userId: crypto.randomUUID()
+    });
+
+    await waitFor(() => expect(refreshSpy).toHaveBeenCalledOnce());
   });
 
   describe('vite:preloadError handling', () => {

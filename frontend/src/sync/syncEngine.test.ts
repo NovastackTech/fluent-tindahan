@@ -42,7 +42,11 @@ describe('syncEngine', () => {
     });
     (apiClient.put as any).mockResolvedValue({ data: {} });
     (ensureTenantProvisioned as any).mockResolvedValue(undefined);
-    useAuthStore.setState({ firebaseToken: null });
+    useAuthStore.setState({
+      firebaseToken: null,
+      isOnboarded: true,
+      isOnboardingStatusReady: true
+    });
     vi.resetAllMocks();
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
   });
@@ -102,6 +106,20 @@ describe('syncEngine', () => {
     const remaining = await db.syncQueue.toArray();
     expect(remaining).toHaveLength(0);
     expect(useSyncStore.getState().lastSyncedAt).not.toBeNull();
+  });
+
+  it('does not sync queued operations before onboarding is resolved', async () => {
+    await enqueueSync('Customer', 'Insert', { id: 'c-pending', name: 'Pending Customer' });
+    useAuthStore.setState({
+      isOnboarded: false,
+      isOnboardingStatusReady: false
+    });
+
+    const result = await processSyncQueue();
+
+    expect(result).toEqual({ processed: 0, conflicts: 0, errors: 0 });
+    expect(apiClient.post).not.toHaveBeenCalled();
+    expect(await db.syncQueue.count()).toBe(1);
   });
 
   it('provisions tenant identity before uploading queued operations', async () => {

@@ -28,20 +28,32 @@ export async function seedDexieDatabaseIfNeeded(
 ) {
   const now = new Date().toISOString();
 
-  await db.transaction('rw', db.tenants, async () => {
-    const existingTenant = await db.tenants.get(targetTenantId);
-    if (!existingTenant) {
-      await db.tenants.add({
-        id: targetTenantId,
-        businessName,
-        tier: 'Libre',
-        updatedAt: now
-      });
-    }
-  });
-
   if (emptyCatalog) {
+    await db.transaction('rw', db.tenants, async () => {
+      const existingTenant = await db.tenants.get(targetTenantId);
+      if (!existingTenant) {
+        await db.tenants.add({
+          id: targetTenantId,
+          businessName,
+          updatedAt: now
+        });
+      }
+    });
     return;
+  }
+
+  if (targetTenantId === DEFAULT_TENANT_ID) {
+    await db.transaction('rw', db.tenants, async () => {
+      const existingTenant = await db.tenants.get(targetTenantId);
+      if (!existingTenant) {
+        await db.tenants.add({
+          id: targetTenantId,
+          businessName,
+          tier: 'Libre',
+          updatedAt: now
+        });
+      }
+    });
   }
 
   if (targetTenantId === DEFAULT_TENANT_ID) {
@@ -688,7 +700,17 @@ export async function seedDexieDatabaseIfNeeded(
       tenantId: targetTenantId
     }));
 
-    await db.transaction('rw', db.products, async () => {
+    await db.transaction('rw', db.tenants, db.products, async () => {
+      const existingTenant = await db.tenants.get(targetTenantId);
+      if (!existingTenant) {
+        await db.tenants.add({
+          id: targetTenantId,
+          businessName,
+          tier: 'Libre',
+          updatedAt: now
+        });
+      }
+
       const productCount = await db.products.where('tenantId').equals(targetTenantId).count();
       if (!force && productCount >= 50) {
         return;

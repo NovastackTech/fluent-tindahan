@@ -13,7 +13,9 @@ describe('subscriptionStore', () => {
     useAuthStore.setState({
       tenantId: DEFAULT_TENANT_ID,
       tier: 'Libre',
-      subscriptionEndDate: null
+      subscriptionEndDate: null,
+      isOnboarded: true,
+      isOnboardingStatusReady: true
     });
     useSubscriptionStore.setState({
       tier: 'Libre',
@@ -128,6 +130,12 @@ describe('subscriptionStore', () => {
 
   it('restores a paid tier from the server after reload', async () => {
     const subscriptionEndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    await db.tenants.put({
+      id: DEFAULT_TENANT_ID,
+      businessName: 'My Store',
+      tier: 'Libre',
+      updatedAt: new Date().toISOString()
+    });
     const getSpy = vi.spyOn(apiClient, 'get').mockResolvedValueOnce({
       data: {
         tier: 1,
@@ -145,7 +153,38 @@ describe('subscriptionStore', () => {
     expect(useAuthStore.getState().tier).toBe('TindahanPro');
     expect(localStorage.getItem('fluent_tindahan_tier_v1')).toBe('TindahanPro');
     expect((await db.tenants.get(DEFAULT_TENANT_ID))?.tier).toBe('TindahanPro');
+    expect((await db.tenants.get(DEFAULT_TENANT_ID))?.businessName).toBe('My Store');
     getSpy.mockRestore();
+  });
+
+  it('updates a tenant row only when one already exists', async () => {
+    vi.spyOn(apiClient, 'get').mockResolvedValueOnce({
+      data: {
+        tierName: 'Libre',
+        isActive: false,
+        daysRemaining: null,
+        businessName: 'My Store'
+      }
+    } as any);
+
+    await useSubscriptionStore.getState().refreshSubscription();
+
+    expect(await db.tenants.get(DEFAULT_TENANT_ID)).toBeUndefined();
+  });
+
+  it('does not refresh or provision before onboarding is resolved', async () => {
+    useAuthStore.setState({
+      isOnboarded: false,
+      isOnboardingStatusReady: false
+    });
+    const getSpy = vi.spyOn(apiClient, 'get');
+    const putSpy = vi.spyOn(apiClient, 'put');
+
+    await useSubscriptionStore.getState().refreshSubscription();
+
+    expect(getSpy).not.toHaveBeenCalled();
+    expect(putSpy).not.toHaveBeenCalled();
+    expect(useSubscriptionStore.getState().isLoading).toBe(false);
   });
 
   describe('simulateMockPayment', () => {

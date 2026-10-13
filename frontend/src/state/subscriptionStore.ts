@@ -121,6 +121,9 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
     },
 
     refreshSubscription: async () => {
+      const auth = useAuthStore.getState();
+      if (!auth.isOnboardingStatusReady || !auth.isOnboarded || get().isLoading) return;
+
       set({ isLoading: true, error: null });
       try {
         await ensureTenantProvisioned();
@@ -136,8 +139,7 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
         // Update Dexie tenant table
         const tenantId = useAuthStore.getState().tenantId;
         if (tenantId) {
-          await db.tenants.put({
-            id: tenantId,
+          await db.tenants.update(tenantId, {
             businessName: data.businessName || useAuthStore.getState().businessName,
             tier: effectiveTier,
             subscriptionEndDate: endDate || undefined,

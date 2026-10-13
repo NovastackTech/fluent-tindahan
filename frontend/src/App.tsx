@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import {
   FluentProvider,
   makeStyles,
@@ -21,6 +21,7 @@ import { initPwaTabCoordinator } from './pwa/pwaTabCoordinator';
 import { useSubscriptionStore } from './state/subscriptionStore';
 import { useAuthStore } from './state/authStore';
 import { db } from './db/db';
+import { DEFAULT_TENANT_ID } from './db/seedData';
 
 const STORAGE_KEY_ONBOARDING_STARTED = 'fluent_tindahan_onboarding_started_v1';
 
@@ -69,7 +70,10 @@ const useStyles = makeStyles({
 export const App: React.FC = () => {
   const styles = useStyles();
   const isDarkMode = useThemeStore((s) => s.isDarkMode);
+  const isOnboarded = useAuthStore((s) => s.isOnboarded);
+  const isOnboardingStatusReady = useAuthStore((s) => s.isOnboardingStatusReady);
   const [activeTab, setActiveTab] = useState<NavTab>(getInitialNavTab);
+  const storeServicesStarted = useRef(false);
 
   const handleTabChange = (newTab: NavTab) => {
     setActiveTab(newTab);
@@ -116,7 +120,7 @@ export const App: React.FC = () => {
             || ledgerCount > 0
             || gcashCount > 0
             || resolutionCount > 0
-            || Boolean(tenant);
+            || Boolean(tenant && tenant.id !== DEFAULT_TENANT_ID);
         } catch (error) {
           console.error('[Onboarding] Could not inspect existing local store data:', error);
         }
@@ -129,15 +133,24 @@ export const App: React.FC = () => {
     };
     initializeLocalStore().catch(console.error);
 
-    // 2. Initialize offline sync engine and storage persistence
-    initSyncEngine();
-
-    // 3. Initialize PWA event listeners, multi-tab coordination, and Service Worker
+    // Initialize PWA event listeners, multi-tab coordination, and Service Worker
     const cleanupPwa = initPwaListeners();
     const cleanupTabCoord = initPwaTabCoordinator();
     initServiceWorker().catch(console.error);
 
-    // 4. Initialize subscription state and check for PayMongo return URL
+    return () => {
+      window.removeEventListener('vite:preloadError', handlePreloadError);
+      cleanupPwa();
+      cleanupTabCoord();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isOnboardingStatusReady || !isOnboarded || storeServicesStarted.current) return;
+    storeServicesStarted.current = true;
+
+    initSyncEngine();
+
     const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
     const isBillingSuccess = searchParams?.get('billing') === 'success';
 
@@ -151,13 +164,7 @@ export const App: React.FC = () => {
         }
       }
     }).catch(console.error);
-
-    return () => {
-      window.removeEventListener('vite:preloadError', handlePreloadError);
-      cleanupPwa();
-      cleanupTabCoord();
-    };
-  }, []);
+  }, [isOnboarded, isOnboardingStatusReady]);
 
   return (
     <FluentProvider theme={isDarkMode ? sariSariDarkTheme : sariSariLightTheme}>

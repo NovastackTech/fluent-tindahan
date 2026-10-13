@@ -30,6 +30,7 @@ import {
   PhoneLaptopRegular
 } from '@fluentui/react-icons';
 import { DEMO_BUSINESS_NAME, DEMO_OWNER, DEMO_PHONE, useAuthStore } from '../state/authStore';
+import { useSubscriptionStore } from '../state/subscriptionStore';
 import { useTranslation } from '../state/languageStore';
 import { createClientUuid, seedDexieDatabaseIfNeeded } from '../db/seedData';
 import { db } from '../db/db';
@@ -128,6 +129,7 @@ export const OnboardingModal: React.FC = () => {
   const [submissionError, setSubmissionError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submissionInFlight = useRef(false);
+  const onboardingIds = useRef<{ tenantId: string; userId: string } | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -144,6 +146,8 @@ export const OnboardingModal: React.FC = () => {
       setPhoneError('');
       setSubmissionError('');
       setIsSubmitting(false);
+    } else {
+      onboardingIds.current = null;
     }
   }, [isOpen, isEditMode, businessName, ownerName, userPhone]);
 
@@ -204,8 +208,13 @@ export const OnboardingModal: React.FC = () => {
           updatedAt: new Date().toISOString()
         }).catch(console.warn);
       } else {
-        const newTenantId = createClientUuid();
-        const newUserId = createClientUuid();
+        if (!onboardingIds.current) {
+          onboardingIds.current = {
+            tenantId: createClientUuid(),
+            userId: createClientUuid()
+          };
+        }
+        const { tenantId: newTenantId, userId: newUserId } = onboardingIds.current;
 
         await seedDexieDatabaseIfNeeded(
           false,
@@ -231,6 +240,7 @@ export const OnboardingModal: React.FC = () => {
           tenantId: newTenantId,
           userId: newUserId
         });
+        void useSubscriptionStore.getState().refreshSubscription();
       }
 
       closeOnboarding();

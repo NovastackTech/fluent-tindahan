@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using FluentTindahan.Application.Common.Interfaces;
 using FluentTindahan.Domain.Entities;
@@ -98,6 +99,7 @@ public class TenantController : ControllerBase
     /// </summary>
     [HttpPut("provision")]
     [Authorize(Policy = AuthorizationPolicies.TenantResolved)]
+    [EnableRateLimiting("AnonymousDemoProvision")]
     [ProducesResponseType(typeof(ProvisionTenantResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -118,8 +120,29 @@ public class TenantController : ControllerBase
             return BadRequest(new { message = "A valid owner ID and store name are required." });
         }
 
+        Guid ownerId;
+        if (_currentUserService.IsAuthenticated)
+        {
+            var authenticatedUserId = _currentUserService.UserId;
+            if (!authenticatedUserId.HasValue || authenticatedUserId.Value == Guid.Empty)
+            {
+                return Unauthorized(new { message = "The authenticated user does not have a valid user ID." });
+            }
+            if (request.UserId != authenticatedUserId.Value)
+            {
+                return BadRequest(new { message = "The owner ID must match the authenticated user." });
+            }
+
+            ownerId = authenticatedUserId.Value;
+        }
+        else
+        {
+            ownerId = request.UserId;
+        }
+
         var tenant = await _context.Tenants.IgnoreQueryFilters()
             .FirstOrDefaultAsync(candidate => candidate.Id == tenantId, cancellationToken);
+        var createsTenant = tenant == null;
         if (tenant == null)
         {
             tenant = new Tenant
@@ -137,17 +160,24 @@ public class TenantController : ControllerBase
         }
 
         var user = await _context.Users.IgnoreQueryFilters()
-            .FirstOrDefaultAsync(candidate => candidate.Id == request.UserId, cancellationToken);
+            .FirstOrDefaultAsync(candidate => candidate.Id == ownerId, cancellationToken);
         if (user != null && user.TenantId != tenantId)
         {
             return Conflict(new { message = "The owner ID is already associated with another tenant." });
         }
 
+        var tenantHasUsers = await _context.Users.IgnoreQueryFilters()
+            .AnyAsync(candidate => candidate.TenantId == tenantId, cancellationToken);
         if (user == null)
         {
+            if (!createsTenant && tenantHasUsers)
+            {
+                return Forbid();
+            }
+
             _context.Users.Add(new User
             {
-                Id = request.UserId,
+                Id = ownerId,
                 TenantId = tenantId,
                 Phone = request.Phone?.Trim() ?? string.Empty,
                 Role = "Owner",
@@ -160,6 +190,6 @@ public class TenantController : ControllerBase
         }
 
         await _context.SaveChangesAsync(cancellationToken);
-        return Ok(new ProvisionTenantResponse(tenantId, request.UserId, tenant.Tier));
+        return Ok(new ProvisionTenantResponse(tenantId, ownerId, tenant.Tier));
     }
 }

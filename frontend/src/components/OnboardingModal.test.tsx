@@ -91,6 +91,7 @@ describe('OnboardingModal', () => {
       isActive: true,
       daysRemaining: 30
     });
+    const refreshSpy = vi.spyOn(useSubscriptionStore.getState(), 'refreshSubscription');
 
     renderModal();
 
@@ -107,14 +108,15 @@ describe('OnboardingModal', () => {
     fireEvent.click(submitBtn);
 
     await waitFor(() => {
+      expect(refreshSpy).toHaveBeenCalledOnce();
       expect(useAuthStore.getState().isOnboarded).toBe(true);
       expect(useAuthStore.getState().businessName).toBe('Maria Sari-Sari Store');
       expect(useAuthStore.getState().ownerName).toBe('Maria Santos');
       expect(useAuthStore.getState().userPhone).toBe('09181234567');
-      expect(useAuthStore.getState().tier).toBe('TindahanPro');
-      expect(useAuthStore.getState().subscriptionEndDate).toBe('2030-01-01T00:00:00.000Z');
-      expect(useSubscriptionStore.getState().tier).toBe('TindahanPro');
-      expect(useSubscriptionStore.getState().isActive).toBe(true);
+      expect(useAuthStore.getState().tier).toBe('Libre');
+      expect(useAuthStore.getState().subscriptionEndDate).toBeNull();
+      expect(useSubscriptionStore.getState().tier).toBe('Libre');
+      expect(useSubscriptionStore.getState().isActive).toBe(false);
     });
 
     const tenantId = useAuthStore.getState().tenantId;
@@ -122,6 +124,7 @@ describe('OnboardingModal', () => {
     const localTenant = await db.tenants.get(tenantId);
     expect(localTenant).toBeDefined();
     expect(localTenant?.businessName).toBe('Maria Sari-Sari Store');
+    refreshSpy.mockRestore();
   });
 
   it('completes onboarding with empty optional owner and phone fields', async () => {
@@ -157,6 +160,7 @@ describe('OnboardingModal', () => {
   it('keeps onboarding open and retryable when catalog seeding fails', async () => {
     const originalTenantId = useAuthStore.getState().tenantId;
     const bulkPutSpy = vi.spyOn(db.products, 'bulkPut').mockRejectedValueOnce(new Error('QuotaExceededError'));
+    const tenantAddSpy = vi.spyOn(db.tenants, 'add');
     renderModal();
 
     fireEvent.change(
@@ -177,6 +181,9 @@ describe('OnboardingModal', () => {
 
     await waitFor(() => expect(useAuthStore.getState().isOnboarded).toBe(true));
     expect(await db.products.count()).toBe(50);
+    expect(tenantAddSpy.mock.calls).toHaveLength(2);
+    expect(tenantAddSpy.mock.calls[0][0].id).toBe(tenantAddSpy.mock.calls[1][0].id);
+    tenantAddSpy.mockRestore();
   });
 
   it('renders in edit mode and allows updating store profile without re-seeding', async () => {

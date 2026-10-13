@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { DEFAULT_TENANT_ID, DEFAULT_USER_ID } from '../db/seedData';
+import { createClientUuid, DEFAULT_TENANT_ID, DEFAULT_USER_ID } from '../db/seedData';
 import type { PlanTier } from '../db/db';
 import { DEMO_BUSINESS_NAME, DEMO_OWNER, DEMO_PHONE } from '../constants/demoProfile';
 
@@ -72,11 +72,9 @@ const hasSavedStoreProfile = Boolean(
 );
 const initialOnboarded = localStorage.getItem(STORAGE_KEY_ONBOARDED) === 'true'
   || hasSavedStoreProfile
-  || initialTenantId !== DEFAULT_TENANT_ID
-  || initialTier !== 'Libre'
-  || initialSubsEnd !== null;
+  || initialTenantId !== DEFAULT_TENANT_ID;
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   tenantId: initialTenantId,
   userId: initialUserId,
   businessName: initialBusinessName,
@@ -136,11 +134,20 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   resolveOnboardingStatus: (hasExistingStore: boolean) => {
+    const currentUserId = get().userId;
+    const userId = hasExistingStore && currentUserId === DEFAULT_USER_ID
+      ? createClientUuid()
+      : currentUserId;
+
+    if (userId !== currentUserId) {
+      localStorage.setItem(STORAGE_KEY_USER_ID, userId);
+    }
     if (hasExistingStore) {
       localStorage.setItem(STORAGE_KEY_ONBOARDED, 'true');
     }
     set((state) => ({
       isOnboarded: state.isOnboarded || hasExistingStore,
+      userId,
       isOnboardingStatusReady: true
     }));
   },
@@ -151,6 +158,8 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   completeOnboarding: (payload: OnboardingPayload) => {
     const tenantId = payload.tenantId || localStorage.getItem(STORAGE_KEY_TENANT_ID) || DEFAULT_TENANT_ID;
+    const previousTenantId = localStorage.getItem(STORAGE_KEY_TENANT_ID) || DEFAULT_TENANT_ID;
+    const startsNewTenant = tenantId !== previousTenantId;
     const userId = payload.userId || localStorage.getItem(STORAGE_KEY_USER_ID) || DEFAULT_USER_ID;
     const businessName = payload.businessName.trim();
     const ownerName = (payload.ownerName || '').trim();
@@ -162,6 +171,10 @@ export const useAuthStore = create<AuthState>((set) => ({
     localStorage.setItem(STORAGE_KEY_OWNER_NAME, ownerName);
     localStorage.setItem(STORAGE_KEY_USER_PHONE, userPhone);
     localStorage.setItem(STORAGE_KEY_ONBOARDED, 'true');
+    if (startsNewTenant) {
+      localStorage.setItem(STORAGE_KEY_TIER, 'Libre');
+      localStorage.removeItem(STORAGE_KEY_SUBS_END);
+    }
 
     set({
       tenantId,
@@ -169,6 +182,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       businessName,
       ownerName,
       userPhone,
+      ...(startsNewTenant ? { tier: 'Libre', subscriptionEndDate: null } : {}),
       isOnboarded: true,
       isOnboardingStatusReady: true,
       isOnboardingOpen: false

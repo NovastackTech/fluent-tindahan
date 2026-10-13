@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useAuthStore } from './authStore';
 import { DEFAULT_TENANT_ID, DEFAULT_USER_ID } from '../db/seedData';
 import { DEMO_BUSINESS_NAME, DEMO_OWNER, DEMO_PHONE } from '../constants/demoProfile';
@@ -27,6 +27,17 @@ describe('authStore', () => {
     expect(state.consentAccepted).toBe(false);
   });
 
+  it('does not treat the default tenant subscription as completed onboarding after reload', async () => {
+    localStorage.setItem('fluent_tindahan_tier_v1', 'TindahanPro');
+    localStorage.setItem('fluent_tindahan_subs_end_v1', '2030-01-01T00:00:00.000Z');
+    vi.resetModules();
+
+    const { useAuthStore: reloadedAuthStore } = await import('./authStore');
+
+    expect(reloadedAuthStore.getState().tier).toBe('TindahanPro');
+    expect(reloadedAuthStore.getState().isOnboarded).toBe(false);
+  });
+
   it('updates consentAccepted and persists to localStorage', () => {
     useAuthStore.getState().setConsentAccepted(true);
 
@@ -45,6 +56,27 @@ describe('authStore', () => {
     expect(useAuthStore.getState().tenantId).toBe(customTenant);
   });
 
+  it('replaces and persists the shared default owner ID when migrating a legacy store', () => {
+    useAuthStore.setState({ userId: DEFAULT_USER_ID });
+
+    useAuthStore.getState().resolveOnboardingStatus(true);
+
+    const migratedUserId = useAuthStore.getState().userId;
+    expect(migratedUserId).not.toBe(DEFAULT_USER_ID);
+    expect(migratedUserId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    expect(localStorage.getItem('fluent_tindahan_user_id_v1')).toBe(migratedUserId);
+    expect(useAuthStore.getState().isOnboarded).toBe(true);
+  });
+
+  it('does not replace the default owner ID before onboarding', () => {
+    useAuthStore.setState({ userId: DEFAULT_USER_ID });
+
+    useAuthStore.getState().resolveOnboardingStatus(false);
+
+    expect(useAuthStore.getState().userId).toBe(DEFAULT_USER_ID);
+    expect(localStorage.getItem('fluent_tindahan_user_id_v1')).toBeNull();
+  });
+
   it('sets firebase token and clears it on logout', () => {
     useAuthStore.getState().setFirebaseToken('sample-jwt-token');
     expect(useAuthStore.getState().firebaseToken).toBe('sample-jwt-token');
@@ -53,7 +85,7 @@ describe('authStore', () => {
     expect(useAuthStore.getState().firebaseToken).toBeNull();
   });
 
-  it('completes onboarding without overwriting a saved subscription', () => {
+  it('resets subscription state when onboarding creates a new tenant', () => {
     localStorage.setItem('fluent_tindahan_tier_v1', 'TindahanPro');
     localStorage.setItem('fluent_tindahan_subs_end_v1', '2030-01-01T00:00:00.000Z');
     useAuthStore.setState({
@@ -76,13 +108,13 @@ describe('authStore', () => {
     expect(state.userPhone).toBe('09198765432');
     expect(state.tenantId).toBe('custom-tenant-uuid');
     expect(state.userId).toBe('custom-user-uuid');
-    expect(state.tier).toBe('TindahanPro');
-    expect(state.subscriptionEndDate).toBe('2030-01-01T00:00:00.000Z');
+    expect(state.tier).toBe('Libre');
+    expect(state.subscriptionEndDate).toBeNull();
 
     expect(localStorage.getItem('fluent_tindahan_store_name_v1')).toBe('Tindahan ni Pedro');
     expect(localStorage.getItem('fluent_tindahan_onboarded_v1')).toBe('true');
-    expect(localStorage.getItem('fluent_tindahan_tier_v1')).toBe('TindahanPro');
-    expect(localStorage.getItem('fluent_tindahan_subs_end_v1')).toBe('2030-01-01T00:00:00.000Z');
+    expect(localStorage.getItem('fluent_tindahan_tier_v1')).toBe('Libre');
+    expect(localStorage.getItem('fluent_tindahan_subs_end_v1')).toBeNull();
   });
 
   it('stores blank optional profile fields without restoring demo values', () => {

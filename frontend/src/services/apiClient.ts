@@ -14,8 +14,8 @@ export const apiClient = axios.create({
 const provisionedTenantIds = new Set<string>();
 
 export async function ensureTenantProvisioned(): Promise<void> {
-  const { tenantId, userId, businessName, userPhone } = useAuthStore.getState();
-  if (!tenantId || provisionedTenantIds.has(tenantId)) return;
+  const { tenantId, userId, businessName, userPhone, isOnboarded, isOnboardingStatusReady } = useAuthStore.getState();
+  if (!isOnboardingStatusReady || !isOnboarded || !tenantId || provisionedTenantIds.has(tenantId)) return;
 
   const response = await apiClient.put('/tenant/provision', {
     userId,

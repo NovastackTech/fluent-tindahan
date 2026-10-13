@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using System.Reflection;
@@ -21,6 +22,17 @@ namespace FluentTindahan.UnitTests;
 
 public class SyncControllerTests
 {
+    [Fact]
+    public void Provision_RateLimitsAnonymousDemoRequests()
+    {
+        var rateLimitAttribute = typeof(TenantController)
+            .GetMethod(nameof(TenantController.Provision))!
+            .GetCustomAttribute<EnableRateLimitingAttribute>();
+
+        rateLimitAttribute.Should().NotBeNull();
+        rateLimitAttribute!.PolicyName.Should().Be("AnonymousDemoProvision");
+    }
+
     [Fact]
     public void Controller_RequiresResolvedTenantPolicy()
     {
@@ -118,5 +130,105 @@ public class SyncControllerTests
         syncResult.ProcessedCount.Should().Be(1);
         (await context.Products.IgnoreQueryFilters().SingleAsync(product => product.Id == productId))
             .TenantId.Should().Be(tenantId);
+    }
+
+    [Fact]
+    public async Task Provision_RejectsAuthenticatedOwnerIdThatDiffersFromCaller()
+    {
+        var tenantId = Guid.NewGuid();
+        var authenticatedUserId = Guid.NewGuid();
+        var contextOptions = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.Setup(service => service.TenantId).Returns(tenantId);
+        currentUser.Setup(service => service.UserId).Returns(authenticatedUserId);
+        currentUser.Setup(service => service.IsAuthenticated).Returns(true);
+        await using var context = new AppDbContext(contextOptions, currentUser.Object);
+        var controller = new TenantController(context, currentUser.Object);
+
+        var result = await controller.Provision(new TenantController.ProvisionTenantRequest
+        {
+            UserId = Guid.NewGuid(),
+            BusinessName = "Caller Tindahan"
+        }, CancellationToken.None);
+
+        result.Result.Should().BeOfType<BadRequestObjectResult>();
+        (await context.Tenants.IgnoreQueryFilters().CountAsync()).Should().Be(0);
+        (await context.Users.IgnoreQueryFilters().CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Provision_DoesNotAddAnOwnerToAnExistingTenantThatAlreadyHasUsers()
+    {
+        var tenantId = Guid.NewGuid();
+        var authenticatedUserId = Guid.NewGuid();
+        var contextOptions = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.Setup(service => service.TenantId).Returns(tenantId);
+        currentUser.Setup(service => service.UserId).Returns(authenticatedUserId);
+        currentUser.Setup(service => service.IsAuthenticated).Returns(true);
+        await using var context = new AppDbContext(contextOptions, currentUser.Object);
+        context.Tenants.Add(new FluentTindahan.Domain.Entities.Tenant
+        {
+            Id = tenantId,
+            BusinessName = "Existing Tindahan",
+            Tier = PlanTier.Libre
+        });
+        context.Users.Add(new FluentTindahan.Domain.Entities.User
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            Phone = "09171234567",
+            Role = "Owner"
+        });
+        await context.SaveChangesAsync();
+        var controller = new TenantController(context, currentUser.Object);
+
+        var result = await controller.Provision(new TenantController.ProvisionTenantRequest
+        {
+            UserId = authenticatedUserId,
+            BusinessName = "Existing Tindahan"
+        }, CancellationToken.None);
+
+        result.Result.Should().BeOfType<ForbidResult>();
+        (await context.Users.IgnoreQueryFilters().CountAsync()).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Provision_CanCreateAnOwnerForAnExistingTenantWithNoUsers()
+    {
+        var tenantId = Guid.NewGuid();
+        var authenticatedUserId = Guid.NewGuid();
+        var contextOptions = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.Setup(service => service.TenantId).Returns(tenantId);
+        currentUser.Setup(service => service.UserId).Returns(authenticatedUserId);
+        currentUser.Setup(service => service.IsAuthenticated).Returns(true);
+        await using var context = new AppDbContext(contextOptions, currentUser.Object);
+        context.Tenants.Add(new FluentTindahan.Domain.Entities.Tenant
+        {
+            Id = tenantId,
+            BusinessName = "Unclaimed Tindahan",
+            Tier = PlanTier.Libre
+        });
+        await context.SaveChangesAsync();
+        var controller = new TenantController(context, currentUser.Object);
+
+        var result = await controller.Provision(new TenantController.ProvisionTenantRequest
+        {
+            UserId = authenticatedUserId,
+            BusinessName = "Unclaimed Tindahan"
+        }, CancellationToken.None);
+
+        result.Result.Should().BeOfType<OkObjectResult>();
+        var owner = await context.Users.IgnoreQueryFilters().SingleAsync();
+        owner.Id.Should().Be(authenticatedUserId);
+        owner.TenantId.Should().Be(tenantId);
+        owner.Role.Should().Be("Owner");
     }
 }
