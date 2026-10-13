@@ -8,6 +8,7 @@ import {
 import { useAuthStore } from '../state/authStore';
 import { db } from '../db/db';
 import { GCASH_FEE_STORAGE_KEY, useGCashFeeStore } from '../state/gcashFeeStore';
+import { DEFAULT_USER_ID } from '../db/seedData';
 
 describe('apiClient', () => {
   beforeEach(async () => {
@@ -107,14 +108,19 @@ describe('apiClient', () => {
 
   it('shares one in-flight provision request between concurrent callers', async () => {
     const tenantId = crypto.randomUUID();
-    const userId = crypto.randomUUID();
     useAuthStore.setState({
       tenantId,
-      userId,
+      userId: DEFAULT_USER_ID,
       locallyCreatedTenantId: tenantId,
       serverConfirmedTenantId: null,
       serverConfirmedUserId: null
     });
+    useAuthStore.getState().completeOnboarding({
+      tenantId,
+      businessName: 'New Tindahan'
+    });
+    const userId = useAuthStore.getState().userId;
+    expect(userId).not.toBe(DEFAULT_USER_ID);
     let resolveProvision!: (response: { data: { tenantId: string; userId: string } }) => void;
     const putSpy = vi.spyOn(apiClient, 'put').mockImplementation(() => new Promise((resolve) => {
       resolveProvision = resolve;

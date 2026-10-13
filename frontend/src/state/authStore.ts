@@ -194,7 +194,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const tenantId = payload.tenantId || localStorage.getItem(STORAGE_KEY_TENANT_ID) || DEFAULT_TENANT_ID;
     const previousTenantId = localStorage.getItem(STORAGE_KEY_TENANT_ID) || DEFAULT_TENANT_ID;
     const startsNewTenant = tenantId !== previousTenantId;
-    const userId = payload.userId || localStorage.getItem(STORAGE_KEY_USER_ID) || DEFAULT_USER_ID;
+    const existingUserId = payload.userId || localStorage.getItem(STORAGE_KEY_USER_ID) || DEFAULT_USER_ID;
+    const userId = startsNewTenant && existingUserId === DEFAULT_USER_ID
+      ? createClientUuid()
+      : existingUserId;
     const businessName = payload.businessName.trim();
     const ownerName = (payload.ownerName || '').trim();
     const userPhone = (payload.userPhone || '').trim();

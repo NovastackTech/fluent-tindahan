@@ -136,6 +136,20 @@ describe('authStore', () => {
     expect(localStorage.getItem('fluent_tindahan_subs_end_v1')).toBeNull();
   });
 
+  it('mints and persists a real owner ID when onboarding creates a tenant from the default identity', () => {
+    useAuthStore.setState({ userId: DEFAULT_USER_ID });
+
+    useAuthStore.getState().completeOnboarding({
+      businessName: 'Bagong Tindahan',
+      tenantId: 'new-tenant-id'
+    });
+
+    const userId = useAuthStore.getState().userId;
+    expect(userId).not.toBe(DEFAULT_USER_ID);
+    expect(userId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    expect(localStorage.getItem('fluent_tindahan_user_id_v1')).toBe(userId);
+  });
+
   it('stores blank optional profile fields without restoring demo values', () => {
     useAuthStore.getState().completeOnboarding({
       businessName: 'Tindahan ni Maria',
