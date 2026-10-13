@@ -57,11 +57,24 @@ describe('seedData', () => {
     expect((await db.tenants.get(newTenantId))?.businessName).toBe('New Store');
   });
 
+  it('keeps a custom tenant catalog at 50 when two non-forced seeds race', async () => {
+    const tenantId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+    await Promise.all([
+      seedDexieDatabaseIfNeeded(false, tenantId, false, 'Concurrent Store'),
+      seedDexieDatabaseIfNeeded(false, tenantId, false, 'Concurrent Store')
+    ]);
+
+    expect(await db.products.where('tenantId').equals(tenantId).count()).toBe(50);
+    expect((await db.tenants.get(tenantId))?.businessName).toBe('Concurrent Store');
+  });
+
   it('preserves existing tenant profile and tier when startup seeding runs', async () => {
     await db.tenants.put({
       id: DEFAULT_TENANT_ID,
       businessName: 'My Existing Store',
       tier: 'TindahanPro',
+      subscriptionEndDate: '2026-12-31T00:00:00.000Z',
       updatedAt: '2025-01-01T00:00:00.000Z'
     });
 
@@ -70,5 +83,14 @@ describe('seedData', () => {
     const tenant = await db.tenants.get(DEFAULT_TENANT_ID);
     expect(tenant?.businessName).toBe('My Existing Store');
     expect(tenant?.tier).toBe('TindahanPro');
+    expect(tenant?.subscriptionEndDate).toBe('2026-12-31T00:00:00.000Z');
+  });
+
+  it('creates a missing tenant without assigning a subscription tier', async () => {
+    await seedDexieDatabaseIfNeeded(true, DEFAULT_TENANT_ID, true);
+
+    const tenant = await db.tenants.get(DEFAULT_TENANT_ID);
+    expect(tenant?.businessName).toBe("Aling Nena's Tindahan & GCash");
+    expect(tenant).not.toHaveProperty('tier');
   });
 });

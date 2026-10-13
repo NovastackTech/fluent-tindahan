@@ -24,6 +24,9 @@ describe('subscriptionStore', () => {
       error: null,
       isUpgradeModalOpen: false
     });
+    vi.spyOn(apiClient, 'put').mockImplementation(async () => ({
+      data: { tenantId: useAuthStore.getState().tenantId }
+    } as any));
   });
 
   describe('getTierLimits', () => {

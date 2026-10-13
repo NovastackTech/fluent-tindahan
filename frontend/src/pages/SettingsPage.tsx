@@ -140,16 +140,40 @@ export const SettingsPage: React.FC = () => {
 
   const handleResetSeed = async () => {
     if (window.confirm(t.settings.resetSeedConfirm)) {
-      await db.products.clear();
-      await db.customers.clear();
-      await db.sales.clear();
-      await db.saleItems.clear();
-      await db.utangLedger.clear();
-      await db.gcashTxns.clear();
-      await db.gcashTxnResolutions.clear();
-      await db.syncQueue.clear();
-      await db.deadLetterQueue.clear();
-      await seedDexieDatabaseIfNeeded(true);
+      await db.transaction(
+        'rw',
+        [
+          db.products,
+          db.customers,
+          db.sales,
+          db.saleItems,
+          db.utangLedger,
+          db.gcashTxns,
+          db.gcashTxnResolutions,
+          db.syncQueue,
+          db.deadLetterQueue
+        ],
+        async () => {
+          await db.products.where('tenantId').equals(tenantId).delete();
+          await db.customers.where('tenantId').equals(tenantId).delete();
+          await db.sales.where('tenantId').equals(tenantId).delete();
+          await db.saleItems.where('tenantId').equals(tenantId).delete();
+          await db.utangLedger.where('tenantId').equals(tenantId).delete();
+          await db.gcashTxns.where('tenantId').equals(tenantId).delete();
+          await db.gcashTxnResolutions.where('tenantId').equals(tenantId).delete();
+
+          const syncQueue = await db.syncQueue.toArray();
+          await db.syncQueue.bulkDelete(syncQueue
+            .filter((item) => item.payload?.tenantId === tenantId)
+            .map((item) => item.id));
+
+          const deadLetters = await db.deadLetterQueue.toArray();
+          await db.deadLetterQueue.bulkDelete(deadLetters
+            .filter((item) => item.payload?.tenantId === tenantId)
+            .map((item) => item.id));
+        }
+      );
+      await seedDexieDatabaseIfNeeded(true, tenantId, false, businessName);
       window.alert(t.settings.resetSuccess);
     }
   };

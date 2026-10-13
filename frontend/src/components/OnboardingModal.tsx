@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Dialog,
   DialogSurface,
@@ -31,11 +31,10 @@ import {
 } from '@fluentui/react-icons';
 import { useAuthStore } from '../state/authStore';
 import { useTranslation } from '../state/languageStore';
-import { seedDexieDatabaseIfNeeded } from '../db/seedData';
+import { createClientUuid, seedDexieDatabaseIfNeeded } from '../db/seedData';
 import { db } from '../db/db';
 import { normalizePhilippineMobile } from '../utils/philippineMobile';
 import { DEFAULT_GCASH_FEE_TIERS, useGCashFeeStore } from '../state/gcashFeeStore';
-import { useSubscriptionStore } from '../state/subscriptionStore';
 
 const useStyles = makeStyles({
   surface: {
@@ -126,11 +125,13 @@ export const OnboardingModal: React.FC = () => {
 
   const [businessNameError, setBusinessNameError] = useState('');
   const [phoneError, setPhoneError] = useState('');
+  const [submissionError, setSubmissionError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submissionInFlight = useRef(false);
 
   useEffect(() => {
     if (isOpen) {
-      if (isEditMode) {
+      if (isEditMode || isOnboarded) {
         setFormBusinessName(businessName || '');
         setFormOwnerName(ownerName || '');
         setFormUserPhone(userPhone || '');
@@ -141,6 +142,7 @@ export const OnboardingModal: React.FC = () => {
       }
       setBusinessNameError('');
       setPhoneError('');
+      setSubmissionError('');
       setIsSubmitting(false);
     }
   }, [isOpen, isEditMode, businessName, ownerName, userPhone]);
@@ -176,8 +178,11 @@ export const OnboardingModal: React.FC = () => {
 
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (submissionInFlight.current || isSubmitting) return;
     if (!validate()) return;
 
+    submissionInFlight.current = true;
+    setSubmissionError('');
     setIsSubmitting(true);
     try {
       const trimmedBusinessName = formBusinessName.trim();
@@ -186,7 +191,7 @@ export const OnboardingModal: React.FC = () => {
         ? normalizePhilippineMobile(formUserPhone) || formUserPhone.trim()
         : '';
 
-      if (isEditMode) {
+      if (isEditMode || isOnboarded) {
         updateStoreProfile({
           businessName: trimmedBusinessName,
           ownerName: trimmedOwnerName,
@@ -199,14 +204,25 @@ export const OnboardingModal: React.FC = () => {
           updatedAt: new Date().toISOString()
         }).catch(console.warn);
       } else {
-        // Generate new unique client UUIDs for the new tenant and user
-        const newTenantId = typeof crypto !== 'undefined' && crypto.randomUUID
-          ? crypto.randomUUID()
-          : `t_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        const newTenantId = createClientUuid();
+        const newUserId = createClientUuid();
 
-        const newUserId = typeof crypto !== 'undefined' && crypto.randomUUID
-          ? crypto.randomUUID()
-          : `u_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        await seedDexieDatabaseIfNeeded(
+          false,
+          newTenantId,
+          catalogChoice === 'empty',
+          trimmedBusinessName
+        );
+
+        if (offersGcash) {
+          try {
+            DEFAULT_GCASH_FEE_TIERS.forEach((fee, tierIndex) => {
+              useGCashFeeStore.getState().setFeeForTenant(newTenantId, tierIndex, fee);
+            });
+          } catch (feeError) {
+            console.warn('[OnboardingModal] Could not save default GCash fees:', feeError);
+          }
+        }
 
         completeOnboarding({
           businessName: trimmedBusinessName,
@@ -215,32 +231,15 @@ export const OnboardingModal: React.FC = () => {
           tenantId: newTenantId,
           userId: newUserId
         });
-        useSubscriptionStore.setState({
-          tier: 'Libre',
-          subscriptionEndDate: null,
-          isActive: false,
-          daysRemaining: null
-        });
-
-        // Seed or initialize catalog for the new tenant
-        await seedDexieDatabaseIfNeeded(
-          true,
-          newTenantId,
-          catalogChoice === 'empty',
-          trimmedBusinessName
-        );
-
-        if (offersGcash) {
-          DEFAULT_GCASH_FEE_TIERS.forEach((fee, tierIndex) => {
-            useGCashFeeStore.getState().setFeeForTenant(newTenantId, tierIndex, fee);
-          });
-        }
       }
+
+      closeOnboarding();
     } catch (err) {
       console.error('[OnboardingModal] Failed to submit store profile:', err);
+      setSubmissionError(t.onboarding.submitError);
     } finally {
+      submissionInFlight.current = false;
       setIsSubmitting(false);
-      closeOnboarding();
     }
   };
 
@@ -262,6 +261,11 @@ export const OnboardingModal: React.FC = () => {
           </div>
 
           <DialogContent>
+            {submissionError && (
+              <Text role="alert" size={200} style={{ color: tokens.colorPaletteRedForeground1, display: 'block', marginBottom: tokens.spacingVerticalM }}>
+                {submissionError}
+              </Text>
+            )}
             <form onSubmit={handleSubmit} id="onboarding-form">
               <div className={styles.formSection}>
                 {/* Store Name */}

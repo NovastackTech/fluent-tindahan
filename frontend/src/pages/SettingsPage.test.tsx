@@ -16,6 +16,7 @@ describe('SettingsPage', () => {
   beforeEach(async () => {
     useGCashFeeStore.setState({ feesByTenant: {} });
     useAuthStore.setState({
+      tenantId: 'settings-test-tenant',
       businessName: "Aling Nena's Tindahan & GCash",
       role: 'Owner'
     });
@@ -28,6 +29,14 @@ describe('SettingsPage', () => {
     useLanguageStore.setState({ language: 'tl' });
     useThemeStore.setState({ themeMode: 'light', isDarkMode: false });
     usePwaStore.setState({ isInstallable: false, isStandalone: false, isInstalled: false, isIos: false });
+    await db.products.clear();
+    await db.customers.clear();
+    await db.sales.clear();
+    await db.saleItems.clear();
+    await db.utangLedger.clear();
+    await db.gcashTxns.clear();
+    await db.gcashTxnResolutions.clear();
+    await db.tenants.clear();
     await db.syncQueue.clear();
     await db.deadLetterQueue.clear();
   });
@@ -98,6 +107,26 @@ describe('SettingsPage', () => {
   it('triggers reset seed data when confirmed by user', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     vi.spyOn(window, 'alert').mockImplementation(() => {});
+    await db.products.bulkAdd([
+      {
+        id: 'active-product',
+        tenantId: 'settings-test-tenant',
+        name: 'Active Product',
+        price: 10,
+        cost: 8,
+        stockQty: 1,
+        updatedAt: new Date().toISOString()
+      },
+      {
+        id: 'other-product',
+        tenantId: 'other-tenant',
+        name: 'Other Product',
+        price: 10,
+        cost: 8,
+        stockQty: 1,
+        updatedAt: new Date().toISOString()
+      }
+    ]);
 
     renderSettings();
 
@@ -106,6 +135,11 @@ describe('SettingsPage', () => {
     fireEvent.click(resetBtn);
 
     expect(window.confirm).toHaveBeenCalled();
+    await waitFor(async () => {
+      expect(await db.products.where('tenantId').equals('settings-test-tenant').count()).toBe(50);
+    });
+    expect(await db.products.get('other-product')).toBeDefined();
+    expect(await db.products.get('active-product')).toBeUndefined();
   });
 
   it('renders pending queue items and dead letter queue items', async () => {

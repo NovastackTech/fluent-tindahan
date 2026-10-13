@@ -123,6 +123,7 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
     refreshSubscription: async () => {
       set({ isLoading: true, error: null });
       try {
+        await ensureTenantProvisioned();
         const response = await apiClient.get('/billing/subscription');
         const data = response.data;
 

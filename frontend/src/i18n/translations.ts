@@ -442,6 +442,7 @@ export interface Translations {
     storeNameLabel: string;
     storeNamePlaceholder: string;
     storeNameRequired: string;
+    submitError: string;
     ownerNameLabel: string;
     ownerNamePlaceholder: string;
     userPhoneLabel: string;
@@ -878,6 +879,7 @@ export const translations: Record<Language, Translations> = {
       storeNameLabel: 'Pangalan ng Tindahan',
       storeNamePlaceholder: 'Hal. Tindahan ni Aling Maria',
       storeNameRequired: 'Kailangan ang pangalan ng tindahan (hindi bababa sa 2 letra).',
+      submitError: 'Hindi na-save ang setup ng tindahan. Tingnan ang storage ng device at subukan muli.',
       ownerNameLabel: 'Pangalan ng May-ari / Tindera (Opsyonal)',
       ownerNamePlaceholder: 'Hal. Maria Santos',
       userPhoneLabel: 'Numero ng Telepono / GCash (Opsyonal)',
@@ -1364,6 +1366,7 @@ export const translations: Record<Language, Translations> = {
       storeNameLabel: 'Store Name',
       storeNamePlaceholder: 'e.g. Maria\'s Sari-Sari Store',
       storeNameRequired: 'Store name is required (minimum 2 characters).',
+      submitError: 'Store setup could not be saved. Check device storage and try again.',
       ownerNameLabel: 'Owner / Cashier Name (Optional)',
       ownerNamePlaceholder: 'e.g. Maria Santos',
       userPhoneLabel: 'Contact / GCash Mobile (Optional)',

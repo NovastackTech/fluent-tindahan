@@ -25,6 +25,7 @@ import {
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
 import { useCartStore } from '../state/cartStore';
+import { useAuthStore } from '../state/authStore';
 import { useTranslation } from '../state/languageStore';
 
 export type NavTab = 'dashboard' | 'pos' | 'inventory' | 'utang' | 'gcash' | 'import' | 'settings';
@@ -119,7 +120,11 @@ const useStyles = makeStyles({
 export const Navigation: React.FC<NavigationProps> = ({ activeTab, onTabChange }) => {
   const styles = useStyles();
   const cartItemCount = useCartStore((s) => s.getTotalCount());
-  const lowStockCount = useLiveQuery(() => db.products.filter(p => p.stockQty <= 5).count()) || 0;
+  const tenantId = useAuthStore((state) => state.tenantId);
+  const lowStockCount = useLiveQuery(
+    () => db.products.where('tenantId').equals(tenantId).filter((product) => product.stockQty <= 5).count(),
+    [tenantId]
+  ) || 0;
   const { t } = useTranslation();
 
   const tabs: Array<{

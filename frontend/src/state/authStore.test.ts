@@ -51,7 +51,9 @@ describe('authStore', () => {
     expect(useAuthStore.getState().firebaseToken).toBeNull();
   });
 
-  it('completes onboarding and persists store identity to localStorage', () => {
+  it('completes onboarding without overwriting a saved subscription', () => {
+    localStorage.setItem('fluent_tindahan_tier_v1', 'TindahanPro');
+    localStorage.setItem('fluent_tindahan_subs_end_v1', '2030-01-01T00:00:00.000Z');
     useAuthStore.setState({
       tier: 'TindahanPro',
       subscriptionEndDate: '2030-01-01T00:00:00.000Z'
@@ -71,13 +73,13 @@ describe('authStore', () => {
     expect(state.userPhone).toBe('09198765432');
     expect(state.tenantId).toBe('custom-tenant-uuid');
     expect(state.userId).toBe('custom-user-uuid');
-    expect(state.tier).toBe('Libre');
-    expect(state.subscriptionEndDate).toBeNull();
+    expect(state.tier).toBe('TindahanPro');
+    expect(state.subscriptionEndDate).toBe('2030-01-01T00:00:00.000Z');
 
     expect(localStorage.getItem('fluent_tindahan_store_name_v1')).toBe('Tindahan ni Pedro');
     expect(localStorage.getItem('fluent_tindahan_onboarded_v1')).toBe('true');
-    expect(localStorage.getItem('fluent_tindahan_tier_v1')).toBe('Libre');
-    expect(localStorage.getItem('fluent_tindahan_subs_end_v1')).toBeNull();
+    expect(localStorage.getItem('fluent_tindahan_tier_v1')).toBe('TindahanPro');
+    expect(localStorage.getItem('fluent_tindahan_subs_end_v1')).toBe('2030-01-01T00:00:00.000Z');
   });
 
   it('updates store profile metadata cleanly', () => {

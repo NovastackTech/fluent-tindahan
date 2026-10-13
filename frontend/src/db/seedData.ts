@@ -3,6 +3,22 @@ import { db, normalizeRef, type ProductRecord, type CustomerRecord, type UtangLe
 export const DEFAULT_TENANT_ID = '11111111-1111-1111-1111-111111111111';
 export const DEFAULT_USER_ID = '22222222-2222-2222-2222-222222222222';
 
+export function createClientUuid(): string {
+  const cryptoApi = globalThis.crypto;
+  if (typeof cryptoApi?.randomUUID === 'function') {
+    return cryptoApi.randomUUID();
+  }
+  if (typeof cryptoApi?.getRandomValues !== 'function') {
+    throw new Error('Secure random UUID generation is unavailable on this device.');
+  }
+
+  const bytes = cryptoApi.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 export async function seedDexieDatabaseIfNeeded(
   force = false,
   targetTenantId = DEFAULT_TENANT_ID,
@@ -11,21 +27,25 @@ export async function seedDexieDatabaseIfNeeded(
 ) {
   const now = new Date().toISOString();
 
-  const existingTenant = await db.tenants.get(targetTenantId);
-  await db.tenants.put({
-    ...existingTenant,
-    id: targetTenantId,
-    businessName: existingTenant?.businessName || businessName,
-    tier: existingTenant?.tier || 'Libre',
-    updatedAt: existingTenant?.updatedAt || now
+  await db.transaction('rw', db.tenants, async () => {
+    const existingTenant = await db.tenants.get(targetTenantId);
+    if (!existingTenant) {
+      await db.tenants.add({
+        id: targetTenantId,
+        businessName,
+        updatedAt: now
+      });
+    }
   });
 
   if (emptyCatalog) {
     return;
   }
 
-  const productCount = await db.products.where('tenantId').equals(targetTenantId).count();
-  if (!force && productCount >= 50) return;
+  if (targetTenantId === DEFAULT_TENANT_ID) {
+    const productCount = await db.products.where('tenantId').equals(targetTenantId).count();
+    if (!force && productCount >= 50) return;
+  }
 
   const products: ProductRecord[] = [
     {
@@ -662,11 +682,18 @@ export async function seedDexieDatabaseIfNeeded(
   if (targetTenantId !== DEFAULT_TENANT_ID) {
     const tenantProducts = products.map((product) => ({
       ...product,
-      id: crypto.randomUUID(),
+      id: createClientUuid(),
       tenantId: targetTenantId
     }));
 
-    await db.products.bulkPut(tenantProducts);
+    await db.transaction('rw', db.products, async () => {
+      const productCount = await db.products.where('tenantId').equals(targetTenantId).count();
+      if (!force && productCount >= 50) {
+        return;
+      }
+
+      await db.products.bulkPut(tenantProducts);
+    });
     return;
   }
 

@@ -156,8 +156,6 @@ export const useAuthStore = create<AuthState>((set) => ({
     localStorage.setItem(STORAGE_KEY_TENANT_ID, tenantId);
     localStorage.setItem(STORAGE_KEY_USER_ID, userId);
     localStorage.setItem(STORAGE_KEY_STORE_NAME, businessName);
-    localStorage.setItem(STORAGE_KEY_TIER, 'Libre');
-    localStorage.removeItem(STORAGE_KEY_SUBS_END);
     if (ownerName) localStorage.setItem(STORAGE_KEY_OWNER_NAME, ownerName);
     if (userPhone) localStorage.setItem(STORAGE_KEY_USER_PHONE, userPhone);
     localStorage.setItem(STORAGE_KEY_ONBOARDED, 'true');
@@ -168,8 +166,6 @@ export const useAuthStore = create<AuthState>((set) => ({
       businessName,
       ownerName: ownerName || initialOwnerName,
       userPhone: userPhone || initialUserPhone,
-      tier: 'Libre',
-      subscriptionEndDate: null,
       isOnboarded: true,
       isOnboardingStatusReady: true,
       isOnboardingOpen: false

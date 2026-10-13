@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { FluentProvider } from '@fluentui/react-components';
 import { OnboardingModal } from './OnboardingModal';
@@ -11,6 +11,8 @@ describe('OnboardingModal', () => {
   beforeEach(async () => {
     localStorage.clear();
     await db.tenants.clear();
+    await db.products.clear();
+    await db.products.clear();
     useAuthStore.setState({
       consentAccepted: true,
       isOnboarded: false,
@@ -108,9 +110,10 @@ describe('OnboardingModal', () => {
       expect(useAuthStore.getState().businessName).toBe('Maria Sari-Sari Store');
       expect(useAuthStore.getState().ownerName).toBe('Maria Santos');
       expect(useAuthStore.getState().userPhone).toBe('09181234567');
-      expect(useAuthStore.getState().tier).toBe('Libre');
-      expect(useSubscriptionStore.getState().tier).toBe('Libre');
-      expect(useSubscriptionStore.getState().isActive).toBe(false);
+      expect(useAuthStore.getState().tier).toBe('TindahanPro');
+      expect(useAuthStore.getState().subscriptionEndDate).toBe('2030-01-01T00:00:00.000Z');
+      expect(useSubscriptionStore.getState().tier).toBe('TindahanPro');
+      expect(useSubscriptionStore.getState().isActive).toBe(true);
     });
 
     const tenantId = useAuthStore.getState().tenantId;
@@ -118,6 +121,48 @@ describe('OnboardingModal', () => {
     const localTenant = await db.tenants.get(tenantId);
     expect(localTenant).toBeDefined();
     expect(localTenant?.businessName).toBe('Maria Sari-Sari Store');
+  });
+
+  it('does not duplicate the starter catalog when the form is submitted twice immediately', async () => {
+    renderModal();
+    fireEvent.change(
+      screen.getByPlaceholderText(/Hal. Tindahan ni Aling Maria|e.g. Maria's Sari-Sari Store/i),
+      { target: { value: 'Double Submit Store' } }
+    );
+    const form = document.getElementById('onboarding-form');
+    expect(form).not.toBeNull();
+
+    fireEvent.submit(form!);
+    fireEvent.submit(form!);
+
+    await waitFor(() => expect(useAuthStore.getState().isOnboarded).toBe(true));
+    const tenantId = useAuthStore.getState().tenantId;
+    expect(await db.products.where('tenantId').equals(tenantId).count()).toBe(50);
+  });
+
+  it('keeps onboarding open and retryable when catalog seeding fails', async () => {
+    const originalTenantId = useAuthStore.getState().tenantId;
+    const bulkPutSpy = vi.spyOn(db.products, 'bulkPut').mockRejectedValueOnce(new Error('QuotaExceededError'));
+    renderModal();
+
+    fireEvent.change(
+      screen.getByPlaceholderText(/Hal. Tindahan ni Aling Maria|e.g. Maria's Sari-Sari Store/i),
+      { target: { value: 'Tindahan ni Maria' } }
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Simulan ang Aking Tindahan|Launch My Store/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Hindi na-save ang setup ng tindahan|Store setup could not be saved/i);
+    expect(useAuthStore.getState().isOnboarded).toBe(false);
+    expect(useAuthStore.getState().tenantId).toBe(originalTenantId);
+    expect(await db.products.count()).toBe(0);
+    expect(await db.tenants.count()).toBe(0);
+    expect(screen.getByRole('button', { name: /Simulan ang Aking Tindahan|Launch My Store/i })).toBeEnabled();
+
+    bulkPutSpy.mockRestore();
+    fireEvent.click(screen.getByRole('button', { name: /Simulan ang Aking Tindahan|Launch My Store/i }));
+
+    await waitFor(() => expect(useAuthStore.getState().isOnboarded).toBe(true));
+    expect(await db.products.count()).toBe(50);
   });
 
   it('renders in edit mode and allows updating store profile without re-seeding', async () => {

@@ -22,6 +22,9 @@ describe('SubscriptionModal', () => {
       tier: 'Libre',
       subscriptionEndDate: null
     });
+    vi.spyOn(apiClient, 'put').mockResolvedValue({
+      data: { tenantId: DEFAULT_TENANT_ID }
+    } as any);
     useSubscriptionStore.setState({
       tier: 'Libre',
       subscriptionEndDate: null,

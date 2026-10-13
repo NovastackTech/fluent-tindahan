@@ -18,6 +18,7 @@ export const DEFAULT_GCASH_FEE_TIERS = [5, 10, 30, 45, 60, 75, 15];
 interface GCashFeeState {
   feesByTenant: Record<string, number[]>;
   setFeeForTenant: (tenantId: string, tierIndex: number, fee: number) => void;
+  migrateTenantFees: (sourceTenantId: string, destinationTenantId: string) => void;
 }
 
 function readSavedFees(): Record<string, number[]> {
@@ -70,6 +71,17 @@ export function calculateGCashFee(amount: number, fees: number[]): number {
 
 export const useGCashFeeStore = create<GCashFeeState>((set) => ({
   feesByTenant: readSavedFees(),
+  migrateTenantFees: (sourceTenantId, destinationTenantId) => {
+    if (sourceTenantId === destinationTenantId) return;
+    set((state) => {
+      const sourceFees = state.feesByTenant[sourceTenantId];
+      if (!sourceFees) return state;
+      const feesByTenant = { ...state.feesByTenant, [destinationTenantId]: sourceFees };
+      delete feesByTenant[sourceTenantId];
+      localStorage.setItem(GCASH_FEE_STORAGE_KEY, JSON.stringify(feesByTenant));
+      return { feesByTenant };
+    });
+  },
   setFeeForTenant: (tenantId, tierIndex, fee) => {
     if (!Number.isInteger(tierIndex) || tierIndex < 0 || tierIndex >= GCASH_FEE_BRACKETS.length || !isValidFee(fee)) return;
     set((state) => {

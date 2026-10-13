@@ -116,14 +116,14 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
       setStock(10);
 
       // Load distinct categories for datalist
-      db.products.toArray().then((prods) => {
+      db.products.where('tenantId').equals(tenantId).toArray().then((prods) => {
         const unique = Array.from(
           new Set(prods.map((p) => p.category?.trim()).filter(Boolean) as string[])
         ).sort();
         setCategories(unique);
       });
     }
-  }, [isOpen, unrecognizedBarcode]);
+  }, [isOpen, unrecognizedBarcode, tenantId]);
 
   if (!isOpen || !unrecognizedBarcode) return null;
 
@@ -142,7 +142,7 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
       return;
     }
 
-    const currentCount = await db.products.count();
+    const currentCount = await db.products.where('tenantId').equals(tenantId).count();
     const { canAddProduct, openUpgradeModal } = useSubscriptionStore.getState();
     if (!canAddProduct(currentCount)) {
       alert('Limit reached for Libre tier (50 products max). Please upgrade to Tindahan Pro or Negosyo Plus.');

@@ -352,6 +352,7 @@ export async function clearDeadLetterQueue() {
 
 export async function pullCatalogFromServer(): Promise<number> {
   try {
+    await ensureTenantProvisioned();
     const response = await apiClient.get('/products');
     const products = response.data;
     if (Array.isArray(products) && products.length > 0) {

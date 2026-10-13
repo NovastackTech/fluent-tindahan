@@ -15,13 +15,14 @@ import { PwaUpdateToast } from './components/PwaUpdateToast';
 import { PrivacyConsentDialog } from './components/PrivacyConsentDialog';
 import { OnboardingModal } from './components/OnboardingModal';
 import { initSyncEngine } from './sync/syncEngine';
-import { seedDexieDatabaseIfNeeded } from './db/seedData';
 import { usePwaStore, initPwaListeners } from './state/pwaStore';
 import { initServiceWorker } from './pwa/registerServiceWorker';
 import { initPwaTabCoordinator } from './pwa/pwaTabCoordinator';
 import { useSubscriptionStore } from './state/subscriptionStore';
 import { useAuthStore } from './state/authStore';
 import { db } from './db/db';
+
+const STORAGE_KEY_ONBOARDING_STARTED = 'fluent_tindahan_onboarding_started_v1';
 
 // Route-level code splitting for performance on low-end Android devices (Section 1 & 11)
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then(m => ({ default: m.DashboardPage })));
@@ -88,36 +89,43 @@ export const App: React.FC = () => {
     };
     window.addEventListener('vite:preloadError', handlePreloadError);
 
-    // Resolve legacy stores before showing onboarding or seeding the default tenant.
+    // Resolve legacy stores before showing onboarding; fresh stores stay empty until setup completes.
     const initializeLocalStore = async () => {
       const auth = useAuthStore.getState();
-      let hasExistingStore = auth.isOnboarded;
+      const onboardingWasStarted = localStorage.getItem(STORAGE_KEY_ONBOARDING_STARTED) === 'true';
+      let hasExistingStore = auth.isOnboarded || (auth.consentAccepted && !onboardingWasStarted);
 
       if (!hasExistingStore) {
         try {
           const tenantId = auth.tenantId;
-          const [products, salesCount, customerCount, ledgerCount, gcashCount, tenant] = await Promise.all([
-            db.products.where('tenantId').equals(tenantId).toArray(),
+          const [productCount, salesCount, saleItemCount, customerCount, ledgerCount, gcashCount, resolutionCount, tenant] = await Promise.all([
+            db.products.where('tenantId').equals(tenantId).count(),
             db.sales.where('tenantId').equals(tenantId).count(),
+            db.saleItems.where('tenantId').equals(tenantId).count(),
             db.customers.where('tenantId').equals(tenantId).count(),
             db.utangLedger.where('tenantId').equals(tenantId).count(),
             db.gcashTxns.where('tenantId').equals(tenantId).count(),
+            db.gcashTxnResolutions.where('tenantId').equals(tenantId).count(),
             db.tenants.get(tenantId)
           ]);
 
-          hasExistingStore = salesCount > 0
-            || products.some((product) => !product.id.startsWith('a1000000-0000-0000-0000-'))
-            || customerCount > 3
-            || ledgerCount > 2
-            || gcashCount > 2
-            || Boolean(tenant && tenant.businessName !== "Aling Nena's Tindahan & GCash");
+          hasExistingStore = productCount > 0
+            || salesCount > 0
+            || saleItemCount > 0
+            || customerCount > 0
+            || ledgerCount > 0
+            || gcashCount > 0
+            || resolutionCount > 0
+            || Boolean(tenant);
         } catch (error) {
           console.error('[Onboarding] Could not inspect existing local store data:', error);
         }
       }
 
+      if (!hasExistingStore) {
+        localStorage.setItem(STORAGE_KEY_ONBOARDING_STARTED, 'true');
+      }
       useAuthStore.getState().resolveOnboardingStatus(hasExistingStore);
-      await seedDexieDatabaseIfNeeded();
     };
     initializeLocalStore().catch(console.error);
 
