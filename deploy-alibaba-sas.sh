@@ -11,8 +11,9 @@
 #   ./deploy-alibaba-sas.sh
 #
 # Flags:
-#   --skip-sync   Only restart/rebuild on the remote (no rsync)
-#   --bootstrap   Install Docker on a fresh Ubuntu/Debian SAS if missing
+#   --skip-sync    Only restart/rebuild on the remote (no rsync)
+#   --bootstrap    Install Docker on a fresh Ubuntu/Debian SAS if missing
+#   --force-vhost  Re-render edge nginx vhost from template and re-apply TLS
 
 set -euo pipefail
 
@@ -20,13 +21,15 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="$ROOT/deploy/alibaba-sas.env"
 SKIP_SYNC=0
 BOOTSTRAP=0
+FORCE_VHOST=0
 
 for arg in "$@"; do
   case "$arg" in
     --skip-sync) SKIP_SYNC=1 ;;
     --bootstrap) BOOTSTRAP=1 ;;
+    --force-vhost) FORCE_VHOST=1 ;;
     --help|-h)
-      sed -n '2,16p' "$0"
+      sed -n '2,17p' "$0"
       exit 0
       ;;
     *)
@@ -156,8 +159,11 @@ for i in $(seq 1 36); do
   sleep 5
 done
 
-echo "[INFO] Installing edge nginx vhost for ${PUBLIC_HOST} → 127.0.0.1:${HOST_HTTP_PORT}..."
-ssh_cmd "PUBLIC_HOST='${PUBLIC_HOST}' HOST_HTTP_PORT='${HOST_HTTP_PORT}' SAS_APP_DIR='${SAS_APP_DIR}' SAS_CERTBOT_EMAIL='${SAS_CERTBOT_EMAIL:-}' bash '${SAS_APP_DIR}/deploy/install-host-vhost.sh'"
+vhost_args=""
+if [[ "$FORCE_VHOST" -eq 1 ]]; then
+  vhost_args="--force-vhost"
+fi
+ssh_cmd "PUBLIC_HOST='${PUBLIC_HOST}' HOST_HTTP_PORT='${HOST_HTTP_PORT}' SAS_APP_DIR='${SAS_APP_DIR}' SAS_CERTBOT_EMAIL='${SAS_CERTBOT_EMAIL:-}' bash '${SAS_APP_DIR}/deploy/install-host-vhost.sh' ${vhost_args}"
 
 echo ""
 echo "=========================================================="

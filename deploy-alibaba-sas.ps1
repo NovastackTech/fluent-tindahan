@@ -20,7 +20,8 @@
 [CmdletBinding()]
 param(
     [switch]$SkipSync,
-    [switch]$Bootstrap
+    [switch]$Bootstrap,
+    [switch]$ForceVhost
 )
 
 $ErrorActionPreference = "Stop"
@@ -210,7 +211,8 @@ if (-not $healthy) {
 }
 
 Write-Host "[INFO] Installing edge nginx vhost for $publicHost → 127.0.0.1:$hostPort..." -ForegroundColor Yellow
-$vhostCmd = "PUBLIC_HOST='$publicHost' HOST_HTTP_PORT='$hostPort' SAS_APP_DIR='$sasAppDir' SAS_CERTBOT_EMAIL='$certbotEmail' bash '$sasAppDir/deploy/install-host-vhost.sh'"
+$vhostArgs = if ($ForceVhost) { "--force-vhost" } else { "" }
+$vhostCmd = "PUBLIC_HOST='$publicHost' HOST_HTTP_PORT='$hostPort' SAS_APP_DIR='$sasAppDir' SAS_CERTBOT_EMAIL='$certbotEmail' bash '$sasAppDir/deploy/install-host-vhost.sh' $vhostArgs"
 Invoke-Remote $vhostCmd
 
 Write-Host ""
