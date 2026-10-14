@@ -83,6 +83,20 @@ PowerShell: `./deploy-alibaba-sas.ps1` (`-Bootstrap` on first run).
 | `deploy/remote-bootstrap.sh` | Idempotent Docker install on Ubuntu/Debian SAS |
 
 Open TCP **80** and **443** in the SAS Firewall console. Health probe: `GET /api/health`.
+
+### Database Backups (pg_dump)
+Every `./deploy-alibaba-sas.sh` and `./deploy-alibaba-sas.ps1` automatically creates a compressed `pg_dump` snapshot into `${SAS_APP_DIR}/backups/db_YYYYMMDD_HHMMSS.sql.gz` before rebuilding or restarting containers.
+
+**Manual remote backup:**
+```bash
+ssh root@8.220.128.80 "cd /opt/fluent-tindahan && docker compose exec -T db pg_dump -U fluent fluent_tindahan | gzip > backups/manual_\$(date +%Y%m%d_%H%M%S).sql.gz"
+```
+
+**Restoring a snapshot:**
+```bash
+ssh root@8.220.128.80 "cd /opt/fluent-tindahan && gunzip -c backups/db_YYYYMMDD_HHMMSS.sql.gz | docker compose exec -T db psql -U fluent fluent_tindahan"
+```
+
 ### Local Docker parity
 ```bash
 ./run-local.sh --docker

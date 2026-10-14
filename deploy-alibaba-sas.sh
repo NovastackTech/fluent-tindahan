@@ -143,6 +143,9 @@ PAYMONGO_FRONTEND_ORIGIN=${PAYMONGO_FRONTEND_ORIGIN}
 HOST_HTTP_PORT=${HOST_HTTP_PORT}
 EOF
 
+echo "[INFO] Checking for running database to snapshot..."
+ssh_cmd "cd '${SAS_APP_DIR}' && if docker compose -f docker-compose.yml ps --status running -q db 2>/dev/null | grep -q .; then mkdir -p backups && ts=\$(date +%Y%m%d_%H%M%S) && echo \"[INFO] Snapshotting database to backups/db_\${ts}.sql.gz...\" && docker compose -f docker-compose.yml exec -T db pg_dump -U \"\${POSTGRES_USER:-fluent}\" \"\${POSTGRES_DB:-fluent_tindahan}\" | gzip > \"backups/db_\${ts}.sql.gz\" && echo \"[OK] Database snapshot complete.\" || echo \"[WARN] Database snapshot failed or skipped.\"; else echo \"[INFO] Database not running yet — skipping pre-deploy backup.\"; fi"
+
 echo "[INFO] Building and starting stack on SAS (compose file only — no local overrides)..."
 ssh_cmd "cd '${SAS_APP_DIR}' && docker compose -f docker-compose.yml --env-file .env up -d --build --remove-orphans"
 

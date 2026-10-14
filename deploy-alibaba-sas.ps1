@@ -192,6 +192,12 @@ Write-Host "[INFO] Writing remote .env (umask 077, 0600)..." -ForegroundColor Ye
 ($remoteEnv -replace "\r", "") | & ssh @sshArgs $remote "umask 077 && cat > '$sasAppDir/.env' && chmod 600 '$sasAppDir/.env'"
 if ($LASTEXITCODE -ne 0) { throw "Failed to write remote .env" }
 
+Write-Host "[INFO] Checking for running database to snapshot..." -ForegroundColor Yellow
+$pgUser = CfgOr 'POSTGRES_USER' 'fluent'
+$pgDb = CfgOr 'POSTGRES_DB' 'fluent_tindahan'
+$backupCmd = "cd '$sasAppDir' && if docker compose -f docker-compose.yml ps --status running -q db 2>/dev/null | grep -q .; then mkdir -p backups && ts=`$(date +%Y%m%d_%H%M%S) && echo `"[INFO] Snapshotting database to backups/db_`${ts}.sql.gz...`" && docker compose -f docker-compose.yml exec -T db pg_dump -U `"$pgUser`" `"$pgDb`" | gzip > `"backups/db_`${ts}.sql.gz`" && echo `"[OK] Database snapshot complete.`" || echo `"[WARN] Database snapshot failed or skipped.`"; else echo `"[INFO] Database not running yet — skipping pre-deploy backup.`"; fi"
+Invoke-Remote $backupCmd
+
 Write-Host "[INFO] Building and starting stack on SAS..." -ForegroundColor Yellow
 Invoke-Remote "cd '$sasAppDir' && docker compose -f docker-compose.yml --env-file .env up -d --build --remove-orphans"
 

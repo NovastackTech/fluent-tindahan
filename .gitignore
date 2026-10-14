@@ -41,3 +41,8 @@ lcov-report/
 deploy/alibaba-sas.env
 .run/
 
+# Database dumps and backups
+backups/
+*.sql.gz
+*.sql
+
