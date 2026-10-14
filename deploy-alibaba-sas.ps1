@@ -77,6 +77,9 @@ if (-not $cfg.ContainsKey("PAYMONGO_FRONTEND_ORIGIN") -or [string]::IsNullOrWhit
 if (-not (Get-Command ssh -ErrorAction SilentlyContinue)) {
     throw "ssh is required (install OpenSSH Client)."
 }
+
+$remote = "${sasUser}@${sasHost}"
+
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "  Fluent Tindahan - deploy-alibaba-sas" -ForegroundColor Cyan
 Write-Host "  Target: $remote (port $sasPort)" -ForegroundColor Cyan
