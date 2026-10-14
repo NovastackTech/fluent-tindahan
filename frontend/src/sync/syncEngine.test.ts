@@ -20,6 +20,7 @@ import {
   TenantProvisioningError
 } from '../services/apiClient';
 import { useAuthStore } from '../state/authStore';
+import { DEFAULT_TENANT_ID } from '../db/seedData';
 
 vi.mock('../services/apiClient', () => ({
   TenantAccountMismatchError: class TenantAccountMismatchError extends Error {},
@@ -57,7 +58,9 @@ describe('syncEngine', () => {
     });
     (apiClient.put as any).mockResolvedValue({ data: {} });
     (ensureTenantProvisioned as any).mockResolvedValue(undefined);
+    localStorage.removeItem('fluent_tindahan_tenant_id_v1');
     useAuthStore.setState({
+      tenantId: DEFAULT_TENANT_ID,
       firebaseToken: null,
       isOnboarded: true,
       isOnboardingStatusReady: true
@@ -109,6 +112,7 @@ describe('syncEngine', () => {
     reloadedSyncStore.getState().setLastSyncedAt(null);
     expect(localStorage.getItem(getSyncStorageKey(currentTenant))).toBeNull();
     expect(reloadedGetSavedLastSyncedAt(currentTenant)).toBeNull();
+    localStorage.removeItem('fluent_tindahan_tenant_id_v1');
   });
 
   it('resets in-memory lastSyncedAt when tenantId changes in useAuthStore', () => {
