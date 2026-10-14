@@ -35,3 +35,10 @@ lcov-report/
 # Test and documentation generated PDFs
 *.pdf
 
+# Environment and secrets
+*.env
+*.env.*
+!.env.example
+deploy/*.env
+
+
