@@ -135,6 +135,14 @@ if command -v certbot >/dev/null 2>&1 && systemctl is-active --quiet nginx 2>/de
   fi
 
   if [[ ! -d "/etc/letsencrypt/live/${PUBLIC_HOST}" ]]; then
+    if ! getent ahostsv4 "$PUBLIC_HOST" >/dev/null 2>&1 && ! host "$PUBLIC_HOST" >/dev/null 2>&1; then
+      echo "[WARN] DNS for ${PUBLIC_HOST} does not resolve to an IP yet (NXDOMAIN)."
+      echo "       Add an A record pointing '${PUBLIC_HOST}' to this server's public IP in your DNS provider (e.g. Cloudflare)."
+      echo "       HTTP vhost remains active on port 80. Certbot will automatically obtain the TLS certificate on your next deploy once DNS propagates."
+      echo "[OK] Edge vhost setup completed."
+      exit 0
+    fi
+
     echo "[INFO] Requesting Let's Encrypt certificate for ${PUBLIC_HOST}..."
     certbot --nginx -d "$PUBLIC_HOST" --non-interactive --agree-tos --redirect "${email_args[@]}" || {
       echo "[WARN] certbot failed - HTTP vhost remains on port 80. Retry later once DNS/firewall are ready."
