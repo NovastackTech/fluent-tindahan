@@ -7,6 +7,7 @@ import { useAuthStore } from './state/authStore';
 import { useSubscriptionStore } from './state/subscriptionStore';
 import { DEFAULT_TENANT_ID } from './db/seedData';
 import { db } from './db/db';
+import { useLanguageStore } from './state/languageStore';
 import { _resetUpdateSWFunctionForTest } from './pwa/registerServiceWorker';
 import { _resetPwaTabCoordinatorForTest } from './pwa/pwaTabCoordinator';
 
@@ -335,5 +336,62 @@ describe('App', () => {
       expect(reloadMock).not.toHaveBeenCalled();
       expect(usePwaStore.getState().needRefresh).toBe(true);
     });
+  });
+
+  it('switches UI to English via TL/EN toggle and displays product-cap badge as Full on Inventory', async () => {
+    await db.products.bulkAdd(
+      Array.from({ length: 50 }, (_, i) => ({
+        id: `p-${i}`,
+        tenantId: DEFAULT_TENANT_ID,
+        name: `Product ${i}`,
+        price: 10,
+        cost: 5,
+        stockQty: 10,
+        updatedAt: new Date().toISOString()
+      }))
+    );
+    useLanguageStore.setState({ language: 'tl' });
+    render(<App />);
+
+    // Step 1: Switch the UI to English (TL/EN toggle)
+    const langBtn = screen.getByRole('button', { name: /TL\/EN/i });
+    fireEvent.click(langBtn);
+    expect(useLanguageStore.getState().language).toBe('en');
+
+    // Step 2: Open Inventory and look at the product-cap badge
+    const inventoryNav = await screen.findByRole('button', { name: /Inventory/i });
+    fireEvent.click(inventoryNav);
+
+    // Expected: The badge reads "Full" in English mode
+    const badge = await screen.findByTestId('product-cap-badge');
+    expect(badge).toHaveTextContent('Full');
+  });
+
+  it('switches UI to English via toggle while Inventory is already open and updates badge to Full', async () => {
+    await db.products.bulkAdd(
+      Array.from({ length: 50 }, (_, i) => ({
+        id: `p-${i}`,
+        tenantId: DEFAULT_TENANT_ID,
+        name: `Product ${i}`,
+        price: 10,
+        cost: 5,
+        stockQty: 10,
+        updatedAt: new Date().toISOString()
+      }))
+    );
+    useLanguageStore.setState({ language: 'tl' });
+    render(<App />);
+
+    const inventoryNav = await screen.findByRole('button', { name: /Imbentaryo/i });
+    fireEvent.click(inventoryNav);
+
+    const badgeBefore = await screen.findByTestId('product-cap-badge');
+    expect(badgeBefore).toHaveTextContent('Puno na');
+
+    const langBtn = screen.getByTestId('language-toggle-btn');
+    fireEvent.click(langBtn);
+
+    const badgeAfter = await screen.findByTestId('product-cap-badge');
+    expect(badgeAfter).toHaveTextContent('Full');
   });
 });
