@@ -126,9 +126,9 @@ else
   echo "[INFO] Skipping rsync (--skip-sync)"
 fi
 
-echo "[INFO] Writing remote .env..."
+echo "[INFO] Writing remote .env (umask 077, 0600)..."
 # shellcheck disable=SC2087
-ssh_cmd "cat > '${SAS_APP_DIR}/.env'" <<EOF
+ssh_cmd "umask 077 && cat > '${SAS_APP_DIR}/.env' && chmod 600 '${SAS_APP_DIR}/.env'" <<EOF
 POSTGRES_DB=${POSTGRES_DB}
 POSTGRES_USER=${POSTGRES_USER}
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}

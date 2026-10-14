@@ -187,8 +187,8 @@ PAYMONGO_FRONTEND_ORIGIN=$($cfg['PAYMONGO_FRONTEND_ORIGIN'])
 HOST_HTTP_PORT=$hostPort
 "@
 
-Write-Host "[INFO] Writing remote .env..." -ForegroundColor Yellow
-$remoteEnv | & ssh @sshArgs $remote "cat > '$sasAppDir/.env'"
+Write-Host "[INFO] Writing remote .env (umask 077, 0600)..." -ForegroundColor Yellow
+$remoteEnv | & ssh @sshArgs $remote "umask 077 && cat > '$sasAppDir/.env' && chmod 600 '$sasAppDir/.env'"
 if ($LASTEXITCODE -ne 0) { throw "Failed to write remote .env" }
 
 Write-Host "[INFO] Building and starting stack on SAS..." -ForegroundColor Yellow
