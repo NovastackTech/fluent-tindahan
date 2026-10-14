@@ -710,7 +710,7 @@ export const SettingsPage: React.FC = () => {
           <Button
             appearance="secondary"
             icon={<ShieldCheckmarkRegular />}
-            onClick={() => useAuthStore.getState().setConsentAccepted(false)}
+            onClick={() => useAuthStore.getState().openPrivacyNotice()}
             data-testid="settings-open-privacy-btn"
           >
             {t.disclaimer.viewPrivacyBtn}

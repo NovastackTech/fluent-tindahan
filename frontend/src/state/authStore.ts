@@ -31,11 +31,16 @@ interface AuthState {
   subscriptionEndDate: string | null;
   firebaseToken: string | null;
   consentAccepted: boolean;
+  isPrivacyNoticeOpen: boolean;
   isOnboarded: boolean;
   isOnboardingStatusReady: boolean;
   isOnboardingOpen: boolean;
   onboardingMode: 'initial' | 'edit';
   setConsentAccepted: (accepted: boolean) => void;
+  setIsPrivacyNoticeOpen: (open: boolean) => void;
+  setPrivacyNoticeOpen: (open: boolean) => void;
+  openPrivacyNotice: () => void;
+  closePrivacyNotice: () => void;
   setTenantId: (tenantId: string) => void;
   setUserId: (userId: string) => void;
   confirmServerIdentity: (tenantId: string, userId: string) => void;
@@ -100,6 +105,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   subscriptionEndDate: initialSubsEnd,
   firebaseToken: null,
   consentAccepted: initialConsent,
+  isPrivacyNoticeOpen: false,
   isOnboarded: initialOnboarded,
   isOnboardingStatusReady: initialOnboarded,
   isOnboardingOpen: false,
@@ -108,6 +114,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   setConsentAccepted: (accepted: boolean) => {
     localStorage.setItem(STORAGE_KEY_CONSENT, accepted ? 'true' : 'false');
     set({ consentAccepted: accepted });
+  },
+
+  setIsPrivacyNoticeOpen: (open: boolean) => {
+    set({ isPrivacyNoticeOpen: open });
+  },
+
+  setPrivacyNoticeOpen: (open: boolean) => {
+    set({ isPrivacyNoticeOpen: open });
+  },
+
+  openPrivacyNotice: () => {
+    set({ isPrivacyNoticeOpen: true });
+  },
+
+  closePrivacyNotice: () => {
+    set({ isPrivacyNoticeOpen: false });
   },
 
   setTenantId: (tenantId: string) => {

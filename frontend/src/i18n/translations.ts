@@ -401,6 +401,7 @@ export interface Translations {
     description: string;
     acceptBtn: string;
     declineBtn: string;
+    closeBtn: string;
   };
   disclaimer: {
     buttonLabel: string;
@@ -413,8 +414,14 @@ export interface Translations {
     section3Desc: string;
     section4Title: string;
     section4Desc: string;
-    termsNotice: string;
     termsLink: string;
+    termsSummaryTitle: string;
+    termsSummary1Title: string;
+    termsSummary1Desc: string;
+    termsSummary2Title: string;
+    termsSummary2Desc: string;
+    termsSummary3Title: string;
+    termsSummary3Desc: string;
     closeBtn: string;
     legalCardTitle: string;
     legalCardDesc: string;
@@ -898,7 +905,8 @@ export const translations: Record<Language, Translations> = {
       title: 'Paunawa sa Pagkapribado ng Datos (RA 10173)',
       description: 'Sumusunod ang Fluent Tindahan sa Philippine Data Privacy Act of 2012. Ang iyong mga talaan ng benta, suki, at GCash ay ligtas na nakatago sa iyong lokal na device.',
       acceptBtn: 'Sumasang-ayon Ako',
-      declineBtn: 'Tanggihan'
+      declineBtn: 'Tanggihan',
+      closeBtn: 'Isara'
     },
     disclaimer: {
       buttonLabel: 'Disclaimer',
@@ -911,8 +919,14 @@ export const translations: Record<Language, Translations> = {
       section3Desc: 'Lahat ng presyo, bilang ng paninda, listahan ng pautang, at GCash log ay sariling inilagay ng tindero at nakatago sa iyong lokal na device. Ang Fluent Tindahan ay hindi bangko, e-wallet, o remittance center, at hindi nagpoproseso o humahawak ng pera. Ang talaan ng GCash ay sariling reference lamang upang hindi malimutan ang mga reference number at bayarin.',
       section4Title: 'Independiyenteng Negosyo at Hangganan ng Pananagutan.',
       section4Desc: 'Ang bawat tindahan ay nagsasariling negosyo. Nagbibigay lamang ang Fluent Tindahan ng software upang mapadali ang pamamahala, at walang pananagutan ang platform sa kalidad ng paninda, presyo, relasyon sa suki, o kasunduan sa pautang.',
-      termsNotice: 'Para sa buong kasunduan, basahin ang aming',
-      termsLink: 'Kasunduan sa Serbisyo (Terms of Use)',
+      termsLink: 'Tingnan ang buod ng kasunduan',
+      termsSummaryTitle: 'Buod ng Kasunduan sa Serbisyo:',
+      termsSummary1Title: 'Pansariling Pamamahala:',
+      termsSummary1Desc: 'Ang Fluent Tindahan ay software na gabay sa operasyon ng tindahan. Ang may-ari ang buong may pananagutan sa tamang presyo, bilang ng imbentaryo, at singilan sa pautang.',
+      termsSummary2Title: 'Walang Pananagutan sa Pondo:',
+      termsSummary2Desc: 'Hindi humahawak o nagpapadala ng digital na pera ang app; anumang transaksyon sa GCash o cash ay direktang responsibilidad ng tindahan at ng mamimili.',
+      termsSummary3Title: 'Pagsunod sa Regulasyon:',
+      termsSummary3Desc: 'Ang paggamit ng app na ito ay nagpapatunay ng iyong pagtalima sa mga batas pangkomersyo at panuntunan sa pagbubuwis sa Pilipinas.',
       closeBtn: 'Naiintindihan Ko',
       legalCardTitle: 'Legal, Pagsunod, at Pagtanggi (Disclaimer)',
       legalCardDesc: 'Tingnan ang mga impormasyon ukol sa legal na pagsunod sa BIR, Republic Act 10173 (Data Privacy Act), at mga panuntunan sa paggamit ng app.',
@@ -1394,7 +1408,8 @@ export const translations: Record<Language, Translations> = {
       title: 'Data Privacy Notice (RA 10173)',
       description: 'Fluent Tindahan complies with the Philippine Data Privacy Act of 2012. Your sales, customer, and GCash records are kept securely on your local device.',
       acceptBtn: 'I Agree',
-      declineBtn: 'Decline'
+      declineBtn: 'Decline',
+      closeBtn: 'Close'
     },
     disclaimer: {
       buttonLabel: 'Disclaimer',
@@ -1407,8 +1422,14 @@ export const translations: Record<Language, Translations> = {
       section3Desc: 'All product catalog data, retail prices, customer debt balances, and GCash logs are inputted directly by the merchant and retained on local storage. Fluent Tindahan does not hold custody of financial funds, provide banking services, or execute money remittances. Digital payment entries serve exclusively as personal record-keeping references.',
       section4Title: 'Independent Retail Operations & Liability Limit.',
       section4Desc: 'Store merchants operate independently. Fluent Tindahan provides assistive productivity software and assumes no responsibility for merchant products, retail transactions, customer credit agreements, or commercial disputes.',
-      termsNotice: 'For comprehensive terms, please review our',
-      termsLink: 'Terms of Use & Service Agreement',
+      termsLink: 'View terms summary',
+      termsSummaryTitle: 'Terms of Use & Service Summary:',
+      termsSummary1Title: 'Independent Merchant Utility:',
+      termsSummary1Desc: 'Fluent Tindahan is an assistive management utility. Merchants retain full ownership and responsibility for their pricing, inventory accuracy, and customer credit ledger.',
+      termsSummary2Title: 'No Fund Custody:',
+      termsSummary2Desc: 'The software does not transmit, hold, or escrow funds. All cash and GCash transactions occur directly between the merchant and their customer.',
+      termsSummary3Title: 'Regulatory Compliance:',
+      termsSummary3Desc: 'Continued use acknowledges your duty to uphold applicable Philippine municipal ordinances, commerce standards, and BIR tax mandates.',
       closeBtn: 'Understood & Close',
       legalCardTitle: 'Legal, Compliance & Disclaimers',
       legalCardDesc: 'Review regulatory compliance information regarding BIR tax obligations, Philippine Data Privacy Act (RA 10173), and software operation boundaries.',

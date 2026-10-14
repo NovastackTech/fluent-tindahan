@@ -36,18 +36,36 @@ export const PrivacyConsentDialog: React.FC = () => {
   const styles = useStyles();
   const consentAccepted = useAuthStore((s) => s.consentAccepted);
   const setConsentAccepted = useAuthStore((s) => s.setConsentAccepted);
+  const isPrivacyNoticeOpen = useAuthStore((s) => s.isPrivacyNoticeOpen);
+  const closePrivacyNotice = useAuthStore((s) => s.closePrivacyNotice);
   const { t, language } = useTranslation();
 
-  if (consentAccepted) {
+  const isConsentRequired = !consentAccepted;
+  const isOpen = isConsentRequired || isPrivacyNoticeOpen;
+  const isReadOnly = !isConsentRequired && isPrivacyNoticeOpen;
+
+  if (!isOpen) {
     return null;
   }
 
   const handleAccept = () => {
     setConsentAccepted(true);
+    closePrivacyNotice();
+  };
+
+  const handleClose = () => {
+    closePrivacyNotice();
   };
 
   return (
-    <Dialog open={!consentAccepted}>
+    <Dialog
+      open={isOpen}
+      onOpenChange={(_, data) => {
+        if (!data.open && isReadOnly) {
+          handleClose();
+        }
+      }}
+    >
       <DialogSurface>
         <DialogBody>
           <div className={styles.iconRow}>
@@ -80,9 +98,15 @@ export const PrivacyConsentDialog: React.FC = () => {
           </DialogContent>
 
           <DialogActions>
-            <Button appearance="primary" onClick={handleAccept}>
-              {t.privacy.acceptBtn}
-            </Button>
+            {isReadOnly ? (
+              <Button appearance="primary" onClick={handleClose} data-testid="privacy-close-btn">
+                {t.privacy.closeBtn || t.common.close}
+              </Button>
+            ) : (
+              <Button appearance="primary" onClick={handleAccept} data-testid="privacy-accept-btn">
+                {t.privacy.acceptBtn}
+              </Button>
+            )}
           </DialogActions>
         </DialogBody>
       </DialogSurface>

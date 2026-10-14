@@ -366,7 +366,8 @@ describe('SettingsPage', () => {
     expect(privacyBtn).toBeInTheDocument();
 
     fireEvent.click(privacyBtn);
-    expect(useAuthStore.getState().consentAccepted).toBe(false);
+    expect(useAuthStore.getState().consentAccepted).toBe(true);
+    expect(useAuthStore.getState().isPrivacyNoticeOpen).toBe(true);
   });
 });
 

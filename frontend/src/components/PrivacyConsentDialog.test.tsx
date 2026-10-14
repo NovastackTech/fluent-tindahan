@@ -41,4 +41,20 @@ describe('PrivacyConsentDialog', () => {
 
     expect(screen.queryByText(/Republic Act No. 10173/i)).not.toBeInTheDocument();
   });
+
+  it('renders read-only dialog with Close button when isPrivacyNoticeOpen is true and consent already accepted', () => {
+    useAuthStore.setState({ consentAccepted: true, isPrivacyNoticeOpen: true });
+    renderDialog();
+
+    expect(screen.getByText(/Republic Act No. 10173/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Sumasang-ayon|I Agree/i })).not.toBeInTheDocument();
+
+    const closeBtn = screen.getByRole('button', { name: /Isara|Close/i });
+    expect(closeBtn).toBeInTheDocument();
+
+    fireEvent.click(closeBtn);
+
+    expect(useAuthStore.getState().consentAccepted).toBe(true);
+    expect(useAuthStore.getState().isPrivacyNoticeOpen).toBe(false);
+  });
 });

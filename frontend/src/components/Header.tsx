@@ -239,9 +239,7 @@ export const Header: React.FC = () => {
               icon={<InfoRegular />}
               onClick={openDisclaimer}
               aria-label={t.disclaimer.buttonLabel}
-              title={t.disclaimer.buttonLabel}
               data-testid="header-disclaimer-btn"
-              id="header-disclaimer-btn"
             >
               <span className={styles.disclaimerLabel}>{t.disclaimer.buttonLabel}</span>
             </Button>

@@ -17,7 +17,8 @@ describe('authStore', () => {
       userPhone: DEMO_PHONE,
       role: 'Owner',
       firebaseToken: null,
-      consentAccepted: false
+      consentAccepted: false,
+      isPrivacyNoticeOpen: false
     });
   });
 
@@ -28,6 +29,7 @@ describe('authStore', () => {
     expect(state.businessName).toBe(DEMO_BUSINESS_NAME);
     expect(state.role).toBe('Owner');
     expect(state.consentAccepted).toBe(false);
+    expect(state.isPrivacyNoticeOpen).toBe(false);
   });
 
   it('does not treat the default tenant subscription as completed onboarding after reload', async () => {
@@ -50,6 +52,22 @@ describe('authStore', () => {
     useAuthStore.getState().setConsentAccepted(false);
     expect(useAuthStore.getState().consentAccepted).toBe(false);
     expect(localStorage.getItem('fluent_tindahan_consent_v1')).toBe('false');
+  });
+
+  it('toggles isPrivacyNoticeOpen without affecting consentAccepted', () => {
+    useAuthStore.getState().setConsentAccepted(true);
+    expect(useAuthStore.getState().isPrivacyNoticeOpen).toBe(false);
+
+    useAuthStore.getState().openPrivacyNotice();
+    expect(useAuthStore.getState().isPrivacyNoticeOpen).toBe(true);
+    expect(useAuthStore.getState().consentAccepted).toBe(true);
+
+    useAuthStore.getState().closePrivacyNotice();
+    expect(useAuthStore.getState().isPrivacyNoticeOpen).toBe(false);
+    expect(useAuthStore.getState().consentAccepted).toBe(true);
+
+    useAuthStore.getState().setIsPrivacyNoticeOpen(true);
+    expect(useAuthStore.getState().isPrivacyNoticeOpen).toBe(true);
   });
 
   it('sets custom tenantId', () => {

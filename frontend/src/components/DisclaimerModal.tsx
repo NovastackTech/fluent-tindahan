@@ -96,41 +96,18 @@ const useStyles = makeStyles({
   closeBtn: {
     width: '100%',
     minWidth: '100%',
-    flexGrow: 1,
     height: '48px',
-    backgroundColor: '#16a34a',
-    color: '#ffffff',
-    fontWeight: 700,
     fontSize: '16px',
-    ...shorthands.borderRadius('12px'),
-    ...shorthands.border('none'),
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    boxSizing: 'border-box',
-    transitionProperty: 'background-color, transform',
-    transitionDuration: '150ms',
-    '&:hover': {
-      backgroundColor: '#15803d',
-      color: '#ffffff'
-    },
-    '&:active': {
-      backgroundColor: '#166534',
-      transform: 'scale(0.99)'
-    }
+    fontWeight: 700,
+    ...shorthands.borderRadius(tokens.borderRadiusMedium)
   }
 });
 
 export const DisclaimerModal: React.FC = () => {
   const styles = useStyles();
   const { isDisclaimerOpen, closeDisclaimer } = useDisclaimerStore();
-  const { t, language } = useTranslation();
+  const { t } = useTranslation();
   const [showTermsDetail, setShowTermsDetail] = useState(false);
-
-  if (!isDisclaimerOpen) {
-    return null;
-  }
 
   const handleClose = () => {
     setShowTermsDetail(false);
@@ -148,7 +125,7 @@ export const DisclaimerModal: React.FC = () => {
               size="small"
               icon={<DismissRegular />}
               onClick={handleClose}
-              aria-label="Close"
+              aria-label={t.common.close}
               data-testid="disclaimer-modal-x-btn"
             />
           </div>
@@ -175,54 +152,40 @@ export const DisclaimerModal: React.FC = () => {
             </div>
 
             <div className={styles.termsText}>
-              {t.disclaimer.termsNotice}{' '}
               <button
                 type="button"
                 className={styles.termsLink}
                 onClick={() => setShowTermsDetail((prev) => !prev)}
                 data-testid="disclaimer-terms-link"
+                aria-expanded={showTermsDetail}
               >
                 {t.disclaimer.termsLink}
               </button>
-              .
             </div>
 
             {showTermsDetail && (
               <div className={styles.termsDetailCard} data-testid="terms-detail-card">
-                {language === 'tl' ? (
-                  <>
-                    <strong>Buod ng Kasunduan sa Serbisyo:</strong>
-                    <br />
-                    1. <strong>Pansariling Pamamahala:</strong> Ang Fluent Tindahan ay software na gabay sa operasyon ng tindahan. Ang may-ari ang buong may pananagutan sa tamang presyo, bilang ng imbentaryo, at singilan sa pautang.
-                    <br />
-                    2. <strong>Walang Pananagutan sa Pondo:</strong> Hindi humahawak o nagpapadala ng digital na pera ang app; anumang transaksyon sa GCash o cash ay direktang responsibilidad ng tindahan at ng mamimili.
-                    <br />
-                    3. <strong>Pagsunod sa Regulasyon:</strong> Ang paggamit ng app na ito ay nagpapatunay ng iyong pagtalima sa mga batas pangkomersyo at panuntunan sa pagbubuwis sa Pilipinas.
-                  </>
-                ) : (
-                  <>
-                    <strong>Terms of Use & Service Summary:</strong>
-                    <br />
-                    1. <strong>Independent Merchant Utility:</strong> Fluent Tindahan is an assistive management utility. Merchants retain full ownership and responsibility for their pricing, inventory accuracy, and customer credit ledger.
-                    <br />
-                    2. <strong>No Fund Custody:</strong> The software does not transmit, hold, or escrow funds. All cash and GCash transactions occur directly between the merchant and their customer.
-                    <br />
-                    3. <strong>Regulatory Compliance:</strong> Continued use acknowledges your duty to uphold applicable Philippine municipal ordinances, commerce standards, and BIR tax mandates.
-                  </>
-                )}
+                <strong>{t.disclaimer.termsSummaryTitle}</strong>
+                <br />
+                1. <strong>{t.disclaimer.termsSummary1Title}</strong> {t.disclaimer.termsSummary1Desc}
+                <br />
+                2. <strong>{t.disclaimer.termsSummary2Title}</strong> {t.disclaimer.termsSummary2Desc}
+                <br />
+                3. <strong>{t.disclaimer.termsSummary3Title}</strong> {t.disclaimer.termsSummary3Desc}
               </div>
             )}
           </DialogContent>
 
           <DialogActions fluid className={styles.actions}>
-            <button
-              type="button"
+            <Button
+              appearance="primary"
+              size="large"
               className={styles.closeBtn}
               onClick={handleClose}
               data-testid="disclaimer-modal-close-btn"
             >
               {t.disclaimer.closeBtn}
-            </button>
+            </Button>
           </DialogActions>
         </DialogBody>
       </DialogSurface>
