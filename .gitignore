@@ -15,7 +15,17 @@
 !.vscode/extensions.json
 .DS_Store
 
-# Obsidian Vault
+# Obsidian Vault & Graphify Caches
+graphify-out/*.cache
+graphify-out/cache/
+graphify-out/obsidian/
+graphify-out/graph.html
+graphify-out/.graphify_root
+graphify-out/.graphify_analysis.json
+.obsidian/cache
+.obsidian/workspace.json
+**/.obsidian/cache
+**/.obsidian/workspace.json
 **/.obsidian/
 .obsidian/
 
