@@ -51,7 +51,9 @@ if [[ -f "$SITE_AVAILABLE" ]] && grep -q "listen 443" "$SITE_AVAILABLE" && [[ "$
   # Ensure server_name includes our host (leave certbot structure intact)
   rm -f "$tmp"
 else
-  if [[ "$FORCE_VHOST" -eq 1 ]]; then
+  mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled /var/www/html
+
+if [[ "$FORCE_VHOST" -eq 1 ]]; then
     echo "[INFO] --force-vhost set: Overwriting edge vhost from template."
   fi
   install -m 0644 "$tmp" "$SITE_AVAILABLE"
@@ -59,9 +61,12 @@ else
 fi
 
 ln -sfn "$SITE_AVAILABLE" "$SITE_ENABLED"
-nginx -t
-systemctl reload nginx
-echo "[OK] Edge vhost enabled: http://${PUBLIC_HOST} → 127.0.0.1:${HOST_HTTP_PORT}"
+if ! nginx -t; then
+  echo "[ERROR] nginx -t validation failed for ${SITE_AVAILABLE}." >&2
+  exit 1
+fi
+systemctl reload nginx || systemctl restart nginx
+echo "[OK] Edge vhost enabled: http://${PUBLIC_HOST} -> 127.0.0.1:${HOST_HTTP_PORT}"
 
 # Issue / renew / re-apply Let's Encrypt cert when certbot is available
 if command -v certbot >/dev/null 2>&1; then

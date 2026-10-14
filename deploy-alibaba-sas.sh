@@ -109,30 +109,16 @@ echo "  Public: ${PUBLIC_ORIGIN}  (host port ${HOST_HTTP_PORT})"
 echo "  App dir: ${SAS_APP_DIR}"
 echo "=========================================================="
 
-echo "[INFO] Ensuring remote app directory exists..."
-ssh_cmd "mkdir -p '${SAS_APP_DIR}'"
+tar_path="$(mktemp -t fluent-deploy-XXXXXX.tgz)"
+temp_env="${ROOT}/.env.remote.tmp"
 
-if [[ "$BOOTSTRAP" -eq 1 ]]; then
-  echo "[INFO] Bootstrapping Docker on SAS (Ubuntu/Debian) if missing..."
-  ssh_cmd 'bash -s' <"$ROOT/deploy/remote-bootstrap.sh"
-fi
+cleanup() {
+  rm -f "$tar_path" "$temp_env"
+}
+trap cleanup EXIT
 
-if ! ssh_cmd "command -v docker >/dev/null 2>&1"; then
-  echo "[ERROR] Docker not found on ${SAS_HOST}." >&2
-  echo "        Re-run with --bootstrap, or install the Docker SAS application image." >&2
-  exit 1
-fi
-
-if [[ "$SKIP_SYNC" -eq 0 ]]; then
-  echo "[INFO] Syncing project files to SAS..."
-  rsync_ssh "$ROOT/" "${SAS_USER}@${SAS_HOST}:${SAS_APP_DIR}/"
-else
-  echo "[INFO] Skipping rsync (--skip-sync)"
-fi
-
-echo "[INFO] Writing remote .env (umask 077, 0600)..."
-# shellcheck disable=SC2087
-ssh_cmd "umask 077 && cat > '${SAS_APP_DIR}/.env' && chmod 600 '${SAS_APP_DIR}/.env'" <<EOF
+echo "[INFO] Staging remote configuration..."
+cat > "$temp_env" <<EOF
 POSTGRES_DB=${POSTGRES_DB}
 POSTGRES_USER=${POSTGRES_USER}
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -143,31 +129,37 @@ PAYMONGO_WEBHOOK_SECRET=${PAYMONGO_WEBHOOK_SECRET}
 PAYMONGO_FRONTEND_ORIGIN=${PAYMONGO_FRONTEND_ORIGIN}
 HOST_HTTP_PORT=${HOST_HTTP_PORT}
 EOF
+chmod 600 "$temp_env"
 
-echo "[INFO] Checking for running database to snapshot..."
-ssh_cmd "cd '${SAS_APP_DIR}' && if docker compose -f docker-compose.yml ps --status running -q db 2>/dev/null | grep -q .; then mkdir -p backups && ts=\$(date +%Y%m%d_%H%M%S) && echo \"[INFO] Snapshotting database to backups/db_\${ts}.sql.gz...\" && docker compose -f docker-compose.yml exec -T db pg_dump -U \"\${POSTGRES_USER:-fluent}\" \"\${POSTGRES_DB:-fluent_tindahan}\" | gzip > \"backups/db_\${ts}.sql.gz\" && echo \"[OK] Database snapshot complete.\" || echo \"[WARN] Database snapshot failed or skipped.\"; else echo \"[INFO] Database not running yet — skipping pre-deploy backup.\"; fi"
+echo "[INFO] Packaging project files (tar.gz)..."
+(
+  cd "$ROOT"
+  tar -czf "$tar_path" \
+    --exclude=.git \
+    --exclude=node_modules \
+    --exclude=frontend/node_modules \
+    --exclude=frontend/dist \
+    --exclude=frontend/dev-dist \
+    --exclude=frontend/coverage \
+    --exclude="*/bin" \
+    --exclude="*/obj" \
+    --exclude="*TestResults*" \
+    --exclude=.run \
+    --exclude=tindahan \
+    --exclude=.obsidian \
+    --exclude="*.obsidian*" \
+    --exclude=deploy/alibaba-sas.env \
+    --exclude=docker-compose.override.yml \
+    --exclude=.env \
+    --exclude=backups \
+    .
+)
 
-echo "[INFO] Building and starting stack on SAS (compose file only — no local overrides)..."
-ssh_cmd "cd '${SAS_APP_DIR}' && docker compose -f docker-compose.yml --env-file .env up -d --build --remove-orphans"
+remote_cmd="set -euo pipefail; mkdir -p '${SAS_APP_DIR}'; cat > /tmp/fluent-deploy.tgz; tar -xzf /tmp/fluent-deploy.tgz -C '${SAS_APP_DIR}'; rm -f /tmp/fluent-deploy.tgz; chmod +x '${SAS_APP_DIR}/deploy/'*.sh 2>/dev/null || true; cd '${SAS_APP_DIR}' && bash deploy/remote-deploy.sh '${SAS_APP_DIR}' '${HOST_HTTP_PORT}' '${PUBLIC_HOST}' '${PUBLIC_ORIGIN}' '${SAS_CERTBOT_EMAIL:-}' '${BOOTSTRAP}' '${FORCE_VHOST}'"
 
-echo "[INFO] Waiting for health on host port ${HOST_HTTP_PORT}..."
-for i in $(seq 1 36); do
-  if ssh_cmd "curl -fsS --max-time 3 http://127.0.0.1:${HOST_HTTP_PORT}/api/health >/dev/null 2>&1"; then
-    echo "[OK] Health check passed on :${HOST_HTTP_PORT}."
-    break
-  fi
-  if [[ "$i" -eq 36 ]]; then
-    echo "[ERROR] Health check timed out. Inspect: ssh ${SAS_USER}@${SAS_HOST} 'cd ${SAS_APP_DIR} && docker compose -f docker-compose.yml logs --tail=200'" >&2
-    exit 1
-  fi
-  sleep 5
-done
-
-vhost_args=""
-if [[ "$FORCE_VHOST" -eq 1 ]]; then
-  vhost_args="--force-vhost"
-fi
-ssh_cmd "PUBLIC_HOST='${PUBLIC_HOST}' HOST_HTTP_PORT='${HOST_HTTP_PORT}' SAS_APP_DIR='${SAS_APP_DIR}' SAS_CERTBOT_EMAIL='${SAS_CERTBOT_EMAIL:-}' bash '${SAS_APP_DIR}/deploy/install-host-vhost.sh' ${vhost_args}"
+echo "[INFO] Connecting via single SSH session (enter password once)..."
+echo "  Target: ${SAS_USER}@${SAS_HOST}"
+ssh "${SSH_OPTS[@]}" "${SAS_USER}@${SAS_HOST}" "$remote_cmd" < "$tar_path"
 
 echo ""
 echo "=========================================================="

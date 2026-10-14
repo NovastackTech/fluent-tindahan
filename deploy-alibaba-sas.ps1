@@ -77,105 +77,12 @@ if (-not $cfg.ContainsKey("PAYMONGO_FRONTEND_ORIGIN") -or [string]::IsNullOrWhit
 if (-not (Get-Command ssh -ErrorAction SilentlyContinue)) {
     throw "ssh is required (install OpenSSH Client)."
 }
-if (-not $SkipSync -and -not (Get-Command rsync -ErrorAction SilentlyContinue)) {
-    Write-Host "[WARN] rsync not found - falling back to scp of a tarball (slower)." -ForegroundColor Yellow
-}
-
-$sshArgs = @("-p", $sasPort, "-o", "StrictHostKeyChecking=accept-new")
-if ($sasKey) { $sshArgs += @("-i", $sasKey) }
-$remote = "${sasUser}@${sasHost}"
-
-function Invoke-Remote([string]$RemoteCommand) {
-    & ssh @sshArgs $remote $RemoteCommand
-    if ($LASTEXITCODE -ne 0) { throw "Remote command failed ($LASTEXITCODE): $RemoteCommand" }
-}
-
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "  Fluent Tindahan - deploy-alibaba-sas" -ForegroundColor Cyan
 Write-Host "  Target: $remote (port $sasPort)" -ForegroundColor Cyan
 Write-Host "  Public: $publicOrigin  (host port $hostPort)" -ForegroundColor Cyan
 Write-Host "  App dir: $sasAppDir" -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
-
-Write-Host "[INFO] Ensuring remote app directory exists..." -ForegroundColor Yellow
-Invoke-Remote "mkdir -p '$sasAppDir'"
-
-if ($Bootstrap) {
-    Write-Host "[INFO] Bootstrapping Docker on SAS if missing..." -ForegroundColor Yellow
-    $bootstrap = Join-Path $root "deploy\remote-bootstrap.sh"
-    Get-Content $bootstrap -Raw | & ssh @sshArgs $remote "bash -s"
-    if ($LASTEXITCODE -ne 0) { throw "Bootstrap failed" }
-}
-
-Write-Host "[INFO] Checking Docker on SAS..." -ForegroundColor Yellow
-& ssh @sshArgs $remote "command -v docker >/dev/null 2>&1"
-if ($LASTEXITCODE -ne 0) {
-    throw "Docker not found on $sasHost. Re-run with -Bootstrap, or use the Docker SAS application image."
-}
-
-if (-not $SkipSync) {
-    Write-Host "[INFO] Syncing project files to SAS..." -ForegroundColor Yellow
-    if (Get-Command rsync -ErrorAction SilentlyContinue) {
-        $rsh = "ssh -p $sasPort"
-        if ($sasKey) { $rsh = "ssh -p $sasPort -i `"$sasKey`"" }
-        $excludes = @(
-            "--exclude", ".git/",
-            "--exclude", "node_modules/",
-            "--exclude", "frontend/node_modules/",
-            "--exclude", "frontend/dist/",
-            "--exclude", "frontend/dev-dist/",
-            "--exclude", "frontend/coverage/",
-            "--exclude", "backend/**/bin/",
-            "--exclude", "backend/**/obj/",
-            "--exclude", "backend/**/TestResults/",
-            "--exclude", ".run/",
-            "--exclude", "tindahan/",
-            "--exclude", ".obsidian/",
-            "--exclude", "deploy/alibaba-sas.env",
-            "--exclude", "docker-compose.override.yml",
-            "--exclude", ".env",
-            "--exclude", "backups/"
-        )
-        & rsync -az --delete @excludes -e $rsh "$root/" "${remote}:${sasAppDir}/"
-        if ($LASTEXITCODE -ne 0) { throw "rsync failed" }
-    } else {
-        $tar = Join-Path $env:TEMP "fluent-tindahan-deploy.tgz"
-        if (Test-Path $tar) { Remove-Item $tar -Force }
-        Push-Location $root
-        try {
-            tar -czf $tar `
-                --exclude=.git `
-                --exclude=node_modules `
-                --exclude=frontend/node_modules `
-                --exclude=frontend/dist `
-                --exclude=frontend/dev-dist `
-                --exclude=frontend/coverage `
-                --exclude="*/bin" `
-                --exclude="*/obj" `
-                --exclude="*TestResults*" `
-                --exclude=.run `
-                --exclude=tindahan `
-                --exclude=.obsidian `
-                --exclude="*.obsidian*" `
-                --exclude=deploy/alibaba-sas.env `
-                --exclude=docker-compose.override.yml `
-                --exclude=.env `
-                --exclude=backups `
-                .
-        } finally {
-            Pop-Location
-        }
-        $scpArgs = @("-P", $sasPort)
-        if ($sasKey) { $scpArgs += @("-i", $sasKey) }
-        $scpArgs += @($tar, "${remote}:/tmp/fluent-tindahan-deploy.tgz")
-        & scp @scpArgs
-        if ($LASTEXITCODE -ne 0) { throw "scp failed" }
-        Invoke-Remote "mkdir -p '$sasAppDir' && tar -xzf /tmp/fluent-tindahan-deploy.tgz -C '$sasAppDir' && rm -f /tmp/fluent-tindahan-deploy.tgz"
-        Remove-Item $tar -Force -ErrorAction SilentlyContinue
-    }
-} else {
-    Write-Host "[INFO] Skipping sync (-SkipSync)" -ForegroundColor Yellow
-}
 
 # Build remote .env content
 function CfgOr([string]$Name, [string]$Default) {
@@ -195,43 +102,64 @@ PAYMONGO_FRONTEND_ORIGIN=$($cfg['PAYMONGO_FRONTEND_ORIGIN'])
 HOST_HTTP_PORT=$hostPort
 "@
 
-Write-Host "[INFO] Writing remote .env (umask 077, 0600)..." -ForegroundColor Yellow
-($remoteEnv -replace "\r", "") | & ssh @sshArgs $remote "umask 077 && cat > '$sasAppDir/.env' && chmod 600 '$sasAppDir/.env'"
-if ($LASTEXITCODE -ne 0) { throw "Failed to write remote .env" }
+if (-not (Get-Command tar -ErrorAction SilentlyContinue)) {
+    throw "tar is required (built into Windows 10+). Cannot create deploy archive."
+}
 
-Write-Host "[INFO] Checking for running database to snapshot..." -ForegroundColor Yellow
-$pgUser = CfgOr 'POSTGRES_USER' 'fluent'
-$pgDb = CfgOr 'POSTGRES_DB' 'fluent_tindahan'
-$backupCmd = "cd '$sasAppDir' && if docker compose -f docker-compose.yml ps --status running -q db 2>/dev/null | grep -q .; then mkdir -p backups && ts=`$(date +%Y%m%d_%H%M%S) && echo `"[INFO] Snapshotting database to backups/db_`${ts}.sql.gz...`" && docker compose -f docker-compose.yml exec -T db pg_dump -U `"$pgUser`" `"$pgDb`" | gzip > `"backups/db_`${ts}.sql.gz`" && echo `"[OK] Database snapshot complete.`" || echo `"[WARN] Database snapshot failed or skipped.`"; else echo `"[INFO] Database not running yet - skipping pre-deploy backup.`"; fi"
-Invoke-Remote $backupCmd
+$tar = Join-Path $env:TEMP "fluent-deploy-$([Guid]::NewGuid().ToString('N')).tgz"
+$tempRemoteEnv = Join-Path $root ".env.remote.tmp"
 
-Write-Host "[INFO] Building and starting stack on SAS..." -ForegroundColor Yellow
-Invoke-Remote "cd '$sasAppDir' && docker compose -f docker-compose.yml --env-file .env up -d --build --remove-orphans"
+try {
+    Write-Host "[INFO] Staging remote configuration..." -ForegroundColor Yellow
+    # Write remote .env with LF line endings
+    $cleanEnv = $remoteEnv -replace "`r`n", "`n" -replace "`r", "`n"
+    [System.IO.File]::WriteAllText($tempRemoteEnv, $cleanEnv, (New-Object System.Text.UTF8Encoding $false))
 
-Write-Host "[INFO] Waiting for health on host port $hostPort..." -ForegroundColor Yellow
-$healthy = $false
-for ($i = 1; $i -le 36; $i++) {
-    & ssh @sshArgs $remote "curl -fsS --max-time 3 http://127.0.0.1:$hostPort/api/health >/dev/null 2>&1"
-    if ($LASTEXITCODE -eq 0) {
-        $healthy = $true
-        Write-Host "[OK] Health check passed on :$hostPort." -ForegroundColor Green
-        break
+    Write-Host "[INFO] Packaging project files (tar.gz)..." -ForegroundColor Yellow
+    Push-Location $root
+    try {
+        tar -czf $tar `
+            --exclude=.git `
+            --exclude=node_modules `
+            --exclude=frontend/node_modules `
+            --exclude=frontend/dist `
+            --exclude=frontend/dev-dist `
+            --exclude=frontend/coverage `
+            --exclude="*/bin" `
+            --exclude="*/obj" `
+            --exclude="*TestResults*" `
+            --exclude=.run `
+            --exclude=tindahan `
+            --exclude=.obsidian `
+            --exclude="*.obsidian*" `
+            --exclude=deploy/alibaba-sas.env `
+            --exclude=docker-compose.override.yml `
+            --exclude=.env `
+            --exclude=backups `
+            .
+        if ($LASTEXITCODE -ne 0) { throw "tar packaging failed ($LASTEXITCODE)" }
+    } finally {
+        Pop-Location
     }
-    Start-Sleep -Seconds 5
-}
-if (-not $healthy) {
-    throw "Health check timed out. Inspect logs: ssh $remote `"cd $sasAppDir && docker compose -f docker-compose.yml logs --tail=200`""
-}
 
-Write-Host "[INFO] Installing edge nginx vhost for $publicHost -> 127.0.0.1:$hostPort..." -ForegroundColor Yellow
-$vhostArgs = if ($ForceVhost) { "--force-vhost" } else { "" }
-$vhostCmd = "PUBLIC_HOST='$publicHost' HOST_HTTP_PORT='$hostPort' SAS_APP_DIR='$sasAppDir' SAS_CERTBOT_EMAIL='$certbotEmail' bash '$sasAppDir/deploy/install-host-vhost.sh' $vhostArgs"
-Invoke-Remote $vhostCmd
+    $bootstrapArg = if ($Bootstrap) { "1" } else { "0" }
+    $forceVhostArg = if ($ForceVhost) { "1" } else { "0" }
 
-Write-Host ""
-Write-Host "==========================================================" -ForegroundColor Green
-Write-Host "  Deploy complete" -ForegroundColor Green
-Write-Host "  - Public:  $publicOrigin" -ForegroundColor White
-Write-Host "  - Health:  $publicOrigin/api/health" -ForegroundColor White
-Write-Host "  Reminder: SAS Firewall must allow TCP 80/443 (edge nginx)." -ForegroundColor Yellow
-Write-Host "==========================================================" -ForegroundColor Green
+    $remoteCmd = "set -euo pipefail; mkdir -p '$sasAppDir'; cat > /tmp/fluent-deploy.tgz; tar -xzf /tmp/fluent-deploy.tgz -C '$sasAppDir'; rm -f /tmp/fluent-deploy.tgz; chmod +x '$sasAppDir/deploy/'*.sh 2>/dev/null || true; cd '$sasAppDir' && bash deploy/remote-deploy.sh '$sasAppDir' '$hostPort' '$publicHost' '$publicOrigin' '$certbotEmail' '$bootstrapArg' '$forceVhostArg'"
+
+    Write-Host "[INFO] Connecting via single SSH session (enter root password once)..." -ForegroundColor Yellow
+    Write-Host "  Target: $remote" -ForegroundColor Yellow
+
+    $sshExe = (Get-Command ssh -ErrorAction Stop).Source
+    $sshArgs = @("-p", $sasPort, "-o", "StrictHostKeyChecking=accept-new")
+    if ($sasKey) { $sshArgs += @("-i", $sasKey) }
+    $sshArgs += @($remote, $remoteCmd)
+
+    $proc = Start-Process -FilePath $sshExe -ArgumentList $sshArgs -RedirectStandardInput $tar -Wait -PassThru -NoNewWindow
+    if ($proc.ExitCode -ne 0) {
+        throw "Remote deployment failed (exit code $($proc.ExitCode))."
+    }
+} finally {
+    Remove-Item $tar -Force -ErrorAction SilentlyContinue
+    Remove-Item $tempRemoteEnv -Force -ErrorAction SilentlyContinue
+}
