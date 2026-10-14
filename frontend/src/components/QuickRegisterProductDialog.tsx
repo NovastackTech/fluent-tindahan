@@ -100,9 +100,12 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
 
   // Form states
   const [name, setName] = useState('');
+  const [nameError, setNameError] = useState('');
   const [category, setCategory] = useState('');
   const [cost, setCost] = useState<number | ''>('');
+  const [costError, setCostError] = useState('');
   const [price, setPrice] = useState<number | ''>('');
+  const [priceError, setPriceError] = useState('');
   const [stock, setStock] = useState<number | ''>(10);
   const [categories, setCategories] = useState<string[]>([]);
 
@@ -110,20 +113,23 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
     if (isOpen) {
       setStage('prompt');
       setName('');
+      setNameError('');
       setCategory('');
       setCost('');
+      setCostError('');
       setPrice('');
+      setPriceError('');
       setStock(10);
 
       // Load distinct categories for datalist
-      db.products.toArray().then((prods) => {
+      db.products.where('tenantId').equals(tenantId).toArray().then((prods) => {
         const unique = Array.from(
           new Set(prods.map((p) => p.category?.trim()).filter(Boolean) as string[])
         ).sort();
         setCategories(unique);
       });
     }
-  }, [isOpen, unrecognizedBarcode]);
+  }, [isOpen, unrecognizedBarcode, tenantId]);
 
   if (!isOpen || !unrecognizedBarcode) return null;
 
@@ -133,16 +139,24 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
   const marginPct = priceNum > 0 ? ((priceNum - costNum) / priceNum) * 100 : 0;
 
   const handleSave = async () => {
+    setNameError('');
+    setCostError('');
+    setPriceError('');
+
     if (!name.trim()) {
-      alert(t.barcode.productNameLabel);
+      setNameError(t.barcode.productNameRequired);
+      return;
+    }
+    if (costNum < 0) {
+      setCostError(t.barcode.costCannotBeNegative);
       return;
     }
     if (priceNum <= 0) {
-      alert(t.barcode.priceLabel);
+      setPriceError(t.barcode.priceMustBePositive);
       return;
     }
 
-    const currentCount = await db.products.count();
+    const currentCount = await db.products.where('tenantId').equals(tenantId).count();
     const { canAddProduct, openUpgradeModal } = useSubscriptionStore.getState();
     if (!canAddProduct(currentCount)) {
       alert('Limit reached for Libre tier (50 products max). Please upgrade to Tindahan Pro or Negosyo Plus.');
@@ -232,9 +246,18 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
     );
   }
 
-  // 2. Stage Form: Quick Register Form with Pre-filled Barcode
   return (
-    <Dialog open={isOpen} onOpenChange={(_, data) => !data.open && onClose()}>
+    <Dialog
+      open={isOpen}
+      onOpenChange={(_, data) => {
+        if (!data.open) {
+          setNameError('');
+          setCostError('');
+          setPriceError('');
+          onClose();
+        }
+      }}
+    >
       <DialogSurface className={styles.surface}>
         <DialogBody>
           <DialogTitle
@@ -273,12 +296,27 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
                 </Text>
                 <Input
                   aria-label={t.barcode.productNameLabel}
+                  aria-invalid={Boolean(nameError)}
+                  aria-describedby={nameError ? 'quick-register-product-name-error' : undefined}
                   style={{ width: '100%' }}
                   placeholder="e.g. San Miguel Pale Pilsen 330ml"
                   value={name}
-                  onChange={(_, data) => setName(data.value)}
+                  onChange={(_, data) => {
+                    setName(data.value);
+                    if (nameError) setNameError('');
+                  }}
                   autoFocus
                 />
+                {nameError && (
+                  <Text
+                    id="quick-register-product-name-error"
+                    role="alert"
+                    size={200}
+                    style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}
+                  >
+                    {nameError}
+                  </Text>
+                )}
               </div>
 
               {/* Category */}
@@ -325,13 +363,23 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
                 <Input
                   type="number"
                   aria-label={t.barcode.costLabel}
+                  aria-invalid={Boolean(costError)}
+                  aria-describedby={costError ? 'quick-register-cost-error' : undefined}
                   step="0.25"
                   min="0"
                   style={{ width: '100%' }}
                   placeholder="0.00"
                   value={cost === '' ? '' : cost.toString()}
-                  onChange={(_, data) => setCost(data.value === '' ? '' : Number(data.value))}
+                  onChange={(_, data) => {
+                    setCost(data.value === '' ? '' : Number(data.value));
+                    if (costError) setCostError('');
+                  }}
                 />
+                {costError && (
+                  <Text id="quick-register-cost-error" role="alert" size={200} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
+                    {costError}
+                  </Text>
+                )}
               </div>
 
               {/* Selling Price (SRP) */}
@@ -342,13 +390,23 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
                 <Input
                   type="number"
                   aria-label={t.barcode.priceLabel}
+                  aria-invalid={Boolean(priceError)}
+                  aria-describedby={priceError ? 'quick-register-price-error' : undefined}
                   step="0.25"
                   min="0"
                   style={{ width: '100%' }}
                   placeholder="0.00"
                   value={price === '' ? '' : price.toString()}
-                  onChange={(_, data) => setPrice(data.value === '' ? '' : Number(data.value))}
+                  onChange={(_, data) => {
+                    setPrice(data.value === '' ? '' : Number(data.value));
+                    if (priceError) setPriceError('');
+                  }}
                 />
+                {priceError && (
+                  <Text id="quick-register-price-error" role="alert" size={200} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
+                    {priceError}
+                  </Text>
+                )}
               </div>
             </div>
 

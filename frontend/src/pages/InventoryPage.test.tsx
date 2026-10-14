@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { FluentProvider } from '@fluentui/react-components';
 import { InventoryPage } from './InventoryPage';
 import { sariSariLightTheme } from '../theme/theme';
@@ -7,10 +7,12 @@ import { db } from '../db/db';
 
 import { useLanguageStore } from '../state/languageStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
+import { useAuthStore } from '../state/authStore';
 
 describe('InventoryPage', () => {
   beforeEach(async () => {
     useLanguageStore.setState({ language: 'tl' });
+    useAuthStore.setState({ tenantId: 't-1' });
     useSubscriptionStore.setState({ tier: 'Libre', isUpgradeModalOpen: false });
     await db.products.clear();
     await db.syncQueue.clear();
@@ -60,6 +62,52 @@ describe('InventoryPage', () => {
     });
   });
 
+  it('translates capacity badges and low-stock hints in the selected language', async () => {
+    const makeProducts = (count: number, offset: number) => Array.from({ length: count }, (_, index) => ({
+      id: `capacity-${offset + index}`,
+      tenantId: 't-1',
+      name: `Capacity Product ${offset + index}`,
+      price: 10,
+      cost: 8,
+      stockQty: 6,
+      updatedAt: new Date().toISOString()
+    }));
+    await db.products.bulkAdd(makeProducts(43, 0));
+    renderInventory();
+
+    expect(await screen.findByText('Halos puno')).toBeInTheDocument();
+    expect(screen.getByText('≤ 5 piraso ang natitira')).toBeInTheDocument();
+
+    await db.products.bulkAdd(makeProducts(5, 43));
+    await waitFor(() => expect(screen.getByText('Puno na')).toBeInTheDocument());
+
+    act(() => {
+      useLanguageStore.getState().setLanguage('en');
+    });
+
+    expect(await screen.findByText('Full')).toBeInTheDocument();
+    expect(screen.getByText('≤ 5 units remaining')).toBeInTheDocument();
+  });
+
+  it('only lists products belonging to the active tenant', async () => {
+    await db.products.add({
+      id: 'other-tenant-product',
+      tenantId: 't-2',
+      name: 'Other Store Product',
+      price: 10,
+      cost: 8,
+      stockQty: 4,
+      updatedAt: new Date().toISOString()
+    });
+
+    renderInventory();
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/Lucky Me Pancit Canton Kalamansi/i).length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByText('Other Store Product')).not.toBeInTheDocument();
+  });
+
   it('filters by low stock items', async () => {
     renderInventory();
 
@@ -83,6 +131,84 @@ describe('InventoryPage', () => {
     fireEvent.click(addBtn);
 
     expect(screen.getByText(/Magdagdag ng Bagong Produkto|Add New Product/i)).toBeInTheDocument();
+  });
+
+  it('shows inline validation when saving a product with a blank name', () => {
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    renderInventory();
+    fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Produkto|Add Product/i }));
+    fireEvent.click(screen.getByRole('button', { name: /I-save|Save/i }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Ilagay ang pangalan ng produkto.');
+    expect(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }))
+      .toHaveAttribute('aria-invalid', 'true');
+    expect(alertSpy).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+  });
+
+  it('shows inline validation when retail price is not positive', async () => {
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    renderInventory();
+    fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Produkto|Add Product/i }));
+    fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }), {
+      target: { value: 'No Price Product' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: /I-save|Save/i }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/Dapat mas mataas sa ₱0|Retail price must be greater than ₱0/i);
+    expect(screen.getByRole('spinbutton', { name: /Presyo ng Tinda|Retail Price/i }))
+      .toHaveAttribute('aria-invalid', 'true');
+    expect(alertSpy).not.toHaveBeenCalled();
+    expect(await db.products.where('name').equals('No Price Product').count()).toBe(0);
+
+    // Blank the name and re-submit: name error should show and price error should be cleared
+    fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }), {
+      target: { value: '' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: /I-save|Save/i }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/Ilagay ang pangalan ng produkto|Product name is required/i);
+    expect(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }))
+      .toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('spinbutton', { name: /Presyo ng Tinda|Retail Price/i }))
+      .toHaveAttribute('aria-invalid', 'false');
+
+    alertSpy.mockRestore();
+  });
+
+  it('shows inline validation when cost is negative', async () => {
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    renderInventory();
+    fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Produkto|Add Product/i }));
+    fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }), {
+      target: { value: 'Negative Cost Product' }
+    });
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Puhunan|Cost Price/i }), {
+      target: { value: '-1' }
+    });
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Presyo ng Tinda|Retail Price/i }), {
+      target: { value: '10' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: /I-save|Save/i }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/Hindi maaaring negatibo ang puhunan|Cost price cannot be negative/i);
+    expect(screen.getByRole('spinbutton', { name: /Puhunan|Cost Price/i })).toHaveAttribute('aria-invalid', 'true');
+    expect(alertSpy).not.toHaveBeenCalled();
+    expect(await db.products.where('name').equals('Negative Cost Product').count()).toBe(0);
+
+    // Blank the name and re-submit: name error should show and cost error should be cleared
+    fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }), {
+      target: { value: '' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: /I-save|Save/i }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/Ilagay ang pangalan ng produkto|Product name is required/i);
+    expect(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }))
+      .toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('spinbutton', { name: /Puhunan|Cost Price/i }))
+      .toHaveAttribute('aria-invalid', 'false');
+
+    alertSpy.mockRestore();
   });
 
   it('creates and saves a new product to Dexie via modal', async () => {

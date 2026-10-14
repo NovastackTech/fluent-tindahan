@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using System.Threading.RateLimiting;
 using FluentTindahan.Application;
 using FluentTindahan.Infrastructure;
 using FluentTindahan.Infrastructure.Persistence;
@@ -60,11 +62,31 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 builder.Services.AddScoped<IAuthorizationHandler, TenantResolvedHandler>();
+builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy(AuthorizationPolicies.TenantResolved, policy =>
         policy.AddRequirements(new TenantResolvedRequirement()));
+});
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddPolicy("AnonymousDemoProvision", context =>
+    {
+        if (context.User.Identity?.IsAuthenticated == true)
+        {
+            return RateLimitPartition.GetNoLimiter("authenticated");
+        }
+
+        var clientIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(clientIp, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        });
+    });
 });
 
 // Swagger / OpenAPI documentation
@@ -144,7 +166,9 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors("AllowPwaClient");
 
+app.UseRouting();
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
 
 app.MapControllers();

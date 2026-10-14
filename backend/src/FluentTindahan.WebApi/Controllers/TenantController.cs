@@ -1,8 +1,14 @@
+using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using FluentTindahan.Application.Common.Interfaces;
+using FluentTindahan.Domain.Entities;
 using FluentTindahan.Domain.Enums;
 using FluentTindahan.Domain.Interfaces;
+using FluentTindahan.WebApi.Authorization;
 
 namespace FluentTindahan.WebApi.Controllers;
 
@@ -29,6 +35,22 @@ public class TenantController : ControllerBase
         DateTimeOffset? SubscriptionEndDate,
         bool IsActive
     );
+
+    /// <summary>Initial store identity sent before syncing offline changes.</summary>
+    public sealed record ProvisionTenantRequest
+    {
+        [Required]
+        public Guid UserId { get; init; }
+
+        [Required, StringLength(200, MinimumLength = 2)]
+        public string BusinessName { get; init; } = string.Empty;
+
+        [StringLength(30)]
+        public string? Phone { get; init; }
+    }
+
+    /// <summary>Confirms the current tenant and owner user are ready for sync.</summary>
+    public sealed record ProvisionTenantResponse(Guid TenantId, Guid UserId, PlanTier Tier);
 
     /// <summary>
     /// Retrieves the current tenant's profile, including active PlanTier and SubscriptionEndDate.
@@ -70,5 +92,152 @@ public class TenantController : ControllerBase
             tenant.SubscriptionEndDate,
             isActive
         ));
+    }
+
+    /// <summary>
+    /// Ensures the server-resolved tenant and its owner exist before uploading offline changes.
+    /// Existing subscription data is preserved, making this operation safe to retry.
+    /// </summary>
+    [HttpPut("provision")]
+    [Authorize(Policy = AuthorizationPolicies.TenantResolved)]
+    [EnableRateLimiting("AnonymousDemoProvision")]
+    [ProducesResponseType(typeof(ProvisionTenantResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<ProvisionTenantResponse>> Provision(
+        [FromBody] ProvisionTenantRequest request,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = _currentUserService.TenantId;
+        if (tenantId == Guid.Empty)
+        {
+            return Unauthorized(new { message = "A valid tenant is required to provision a store." });
+        }
+
+        var businessName = request.BusinessName.Trim();
+        if (request.UserId == Guid.Empty || businessName.Length < 2)
+        {
+            return BadRequest(new { message = "A valid owner ID and store name are required." });
+        }
+
+        Guid ownerId;
+        if (_currentUserService.IsAuthenticated)
+        {
+            var authenticatedUserId = _currentUserService.UserId;
+            if (!authenticatedUserId.HasValue || authenticatedUserId.Value == Guid.Empty)
+            {
+                return Unauthorized(new { message = "The authenticated user does not have a valid user ID." });
+            }
+            if (request.UserId != authenticatedUserId.Value)
+            {
+                return BadRequest(new { message = "The owner ID must match the authenticated user." });
+            }
+
+            ownerId = authenticatedUserId.Value;
+        }
+        else
+        {
+            ownerId = request.UserId;
+        }
+
+        var tenant = await _context.Tenants.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(candidate => candidate.Id == tenantId, cancellationToken);
+        var createsTenant = tenant == null;
+        if (tenant == null)
+        {
+            tenant = new Tenant
+            {
+                Id = tenantId,
+                BusinessName = businessName,
+                Tier = PlanTier.Libre,
+                CreatedAt = DateTimeOffset.UtcNow
+            };
+            _context.Tenants.Add(tenant);
+        }
+        else if (string.IsNullOrWhiteSpace(tenant.BusinessName))
+        {
+            tenant.BusinessName = businessName;
+        }
+
+        var user = await _context.Users.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(candidate => candidate.Id == ownerId, cancellationToken);
+        if (user != null && user.TenantId != tenantId)
+        {
+            return Conflict(new { message = "The owner ID is already associated with another tenant." });
+        }
+
+        var tenantHasUsers = await _context.Users.IgnoreQueryFilters()
+            .AnyAsync(candidate => candidate.TenantId == tenantId, cancellationToken);
+        if (user == null)
+        {
+            if (!createsTenant && tenantHasUsers)
+            {
+                return Forbid();
+            }
+
+            _context.Users.Add(new User
+            {
+                Id = ownerId,
+                TenantId = tenantId,
+                Phone = request.Phone?.Trim() ?? string.Empty,
+                Role = "Owner",
+                CreatedAt = DateTimeOffset.UtcNow
+            });
+        }
+        else if (string.IsNullOrWhiteSpace(user.Phone) && !string.IsNullOrWhiteSpace(request.Phone))
+        {
+            user.Phone = request.Phone.Trim();
+        }
+
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            _context.ChangeTracker.Clear();
+
+            var existingTenant = await _context.Tenants.IgnoreQueryFilters()
+                .AsNoTracking()
+                .FirstOrDefaultAsync(candidate => candidate.Id == tenantId, cancellationToken);
+            var existingOwner = await _context.Users.IgnoreQueryFilters()
+                .AsNoTracking()
+                .FirstOrDefaultAsync(candidate => candidate.Id == ownerId, cancellationToken);
+
+            if (existingTenant != null && existingOwner?.TenantId == tenantId)
+            {
+                return Ok(new ProvisionTenantResponse(tenantId, ownerId, existingTenant.Tier));
+            }
+
+            if (existingOwner != null && existingOwner.TenantId != tenantId)
+            {
+                return Conflict(new { message = "The owner ID is already associated with another tenant." });
+            }
+
+            if (existingTenant != null && await _context.Users.IgnoreQueryFilters()
+                    .AnyAsync(candidate => candidate.TenantId == tenantId, cancellationToken))
+            {
+                return Forbid();
+            }
+
+            throw;
+        }
+
+        return Ok(new ProvisionTenantResponse(tenantId, ownerId, tenant.Tier));
+    }
+
+    private static bool IsUniqueConstraintViolation(DbUpdateException exception)
+    {
+        for (Exception? current = exception; current != null; current = current.InnerException)
+        {
+            if (current is PostgresException postgresException
+                && postgresException.SqlState == PostgresErrorCodes.UniqueViolation)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

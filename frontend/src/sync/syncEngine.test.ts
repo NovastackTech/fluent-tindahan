@@ -7,16 +7,36 @@ import {
   retryDeadLetterItem,
   clearDeadLetterQueue,
   pullCatalogFromServer,
-  initSyncEngine
+  initSyncEngine,
+  STORAGE_KEY_LAST_SYNCED,
+  getSyncStorageKey,
+  getSavedLastSyncedAt
 } from './syncEngine';
 import { db } from '../db/db';
-import { apiClient } from '../services/apiClient';
+import {
+  apiClient,
+  ensureTenantProvisioned,
+  TenantAccountMismatchError,
+  TenantProvisioningError
+} from '../services/apiClient';
+import { useAuthStore } from '../state/authStore';
+import { DEFAULT_TENANT_ID } from '../db/seedData';
 
 vi.mock('../services/apiClient', () => ({
+  TenantAccountMismatchError: class TenantAccountMismatchError extends Error {},
+  TenantProvisioningError: class TenantProvisioningError extends Error {
+    status: number;
+    constructor(status: number) {
+      super('Provisioning blocked');
+      this.status = status;
+    }
+  },
   apiClient: {
     post: vi.fn(),
+    put: vi.fn(),
     get: vi.fn()
-  }
+  },
+  ensureTenantProvisioned: vi.fn()
 }));
 
 describe('syncEngine', () => {
@@ -31,7 +51,19 @@ describe('syncEngine', () => {
       lastSyncedAt: null,
       pendingCount: 0,
       deadLetterCount: 0,
-      lastErrorMessage: null
+      lastErrorMessage: null,
+      authBlockedSessionKey: null,
+      batchFailureCount: 0,
+      nextRetryAt: null
+    });
+    (apiClient.put as any).mockResolvedValue({ data: {} });
+    (ensureTenantProvisioned as any).mockResolvedValue(undefined);
+    localStorage.removeItem('fluent_tindahan_tenant_id_v1');
+    useAuthStore.setState({
+      tenantId: DEFAULT_TENANT_ID,
+      firebaseToken: null,
+      isOnboarded: true,
+      isOnboardingStatusReady: true
     });
     vi.resetAllMocks();
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
@@ -49,12 +81,68 @@ describe('syncEngine', () => {
     expect(useSyncStore.getState().pendingCount).toBe(5);
     expect(useSyncStore.getState().deadLetterCount).toBe(2);
 
+    const currentTenant = useAuthStore.getState().tenantId;
     const date = new Date('2026-10-09T10:00:00Z');
     store.setLastSyncedAt(date);
     expect(useSyncStore.getState().lastSyncedAt).toEqual(date);
+    expect(localStorage.getItem(getSyncStorageKey(currentTenant))).toBe(date.toISOString());
 
     store.setLastErrorMessage('Connection error');
     expect(useSyncStore.getState().lastErrorMessage).toBe('Connection error');
+  });
+
+  it('persists lastSyncedAt to localStorage per tenant and restores it across reloads', async () => {
+    expect(STORAGE_KEY_LAST_SYNCED).toBe('fluent_tindahan_last_synced_at');
+    const currentTenant = useAuthStore.getState().tenantId;
+    const testDate = new Date('2026-10-14T07:39:00.000Z');
+    useSyncStore.getState().setLastSyncedAt(testDate);
+
+    expect(localStorage.getItem(getSyncStorageKey(currentTenant))).toBe(testDate.toISOString());
+    expect(getSavedLastSyncedAt(currentTenant)).toEqual(testDate);
+
+    // Ensure tenantId persists in localStorage for module re-import
+    localStorage.setItem('fluent_tindahan_tenant_id_v1', currentTenant);
+
+    // Simulate page reload: reset modules, re-import, and verify store hydrates from localStorage on init
+    vi.resetModules();
+    const { useSyncStore: reloadedSyncStore, getSavedLastSyncedAt: reloadedGetSavedLastSyncedAt } = await import('./syncEngine');
+    expect(reloadedSyncStore.getState().lastSyncedAt).toEqual(testDate);
+
+    // Setting to null removes from localStorage
+    reloadedSyncStore.getState().setLastSyncedAt(null);
+    expect(localStorage.getItem(getSyncStorageKey(currentTenant))).toBeNull();
+    expect(reloadedGetSavedLastSyncedAt(currentTenant)).toBeNull();
+    localStorage.removeItem('fluent_tindahan_tenant_id_v1');
+  });
+
+  it('resets in-memory lastSyncedAt when tenantId changes in useAuthStore', () => {
+    const tenantA = 'tenant-a-uuid';
+    const tenantB = 'tenant-b-uuid';
+
+    useAuthStore.setState({ tenantId: tenantA });
+    const syncTimeA = new Date('2026-10-14T07:39:00.000Z');
+    useSyncStore.getState().setLastSyncedAt(syncTimeA);
+
+    expect(useSyncStore.getState().lastSyncedAt).toEqual(syncTimeA);
+    expect(localStorage.getItem(getSyncStorageKey(tenantA))).toBe(syncTimeA.toISOString());
+
+    // Switch to new tenant B that has never synced
+    useAuthStore.setState({ tenantId: tenantB });
+    expect(useSyncStore.getState().lastSyncedAt).toBeNull();
+    expect(localStorage.getItem(getSyncStorageKey(tenantB))).toBeNull();
+
+    // Switch back to tenant A
+    useAuthStore.setState({ tenantId: tenantA });
+    expect(useSyncStore.getState().lastSyncedAt).toEqual(syncTimeA);
+  });
+
+  it('does not fall back to or inherit unscoped legacy last_synced key', () => {
+    const tenant = 'test-isolated-tenant';
+    localStorage.setItem(STORAGE_KEY_LAST_SYNCED, new Date('2026-10-10T00:00:00.000Z').toISOString());
+    localStorage.removeItem(getSyncStorageKey(tenant));
+
+    expect(getSavedLastSyncedAt(tenant)).toBeNull();
+    expect(localStorage.getItem(getSyncStorageKey(tenant))).toBeNull();
   });
 
   it('enqueueSync adds an operation to Dexie syncQueue and updates pending count', async () => {
@@ -92,6 +180,72 @@ describe('syncEngine', () => {
     const remaining = await db.syncQueue.toArray();
     expect(remaining).toHaveLength(0);
     expect(useSyncStore.getState().lastSyncedAt).not.toBeNull();
+  });
+
+  it('does not sync queued operations before onboarding is resolved', async () => {
+    await enqueueSync('Customer', 'Insert', { id: 'c-pending', name: 'Pending Customer' });
+    useAuthStore.setState({
+      isOnboarded: false,
+      isOnboardingStatusReady: false
+    });
+
+    const result = await processSyncQueue();
+
+    expect(result).toEqual({ processed: 0, conflicts: 0, errors: 0 });
+    expect(apiClient.post).not.toHaveBeenCalled();
+    expect(await db.syncQueue.count()).toBe(1);
+  });
+
+  it('provisions tenant identity before uploading queued operations', async () => {
+    const syncId = await enqueueSync('Product', 'Insert', { id: 'p-provisioned', name: 'Sabon' });
+    useAuthStore.setState({
+      tenantId: '33333333-3333-4333-8333-333333333333',
+      userId: '44444444-4444-4444-8444-444444444444',
+      businessName: 'My Store',
+      userPhone: '09171234567'
+    });
+    (apiClient.post as any).mockResolvedValueOnce({
+      data: { results: [{ syncId, status: 'Success' }] }
+    });
+
+    const result = await processSyncQueue();
+
+    expect(result.processed).toBe(1);
+    expect(ensureTenantProvisioned).toHaveBeenCalledOnce();
+    expect((ensureTenantProvisioned as any).mock.invocationCallOrder[0])
+      .toBeLessThan((apiClient.post as any).mock.invocationCallOrder[0]);
+    expect(await db.syncQueue.get(syncId)).toBeUndefined();
+  });
+
+  it('blocks pending sync with the account-mismatch message without retrying or removing data', async () => {
+    const syncId = await enqueueSync('Customer', 'Insert', { id: 'c-account-mismatch' });
+    const mismatch = new TenantAccountMismatchError();
+    (ensureTenantProvisioned as any).mockRejectedValueOnce(mismatch);
+
+    const result = await processSyncQueue();
+
+    expect(result).toEqual({ processed: 0, conflicts: 0, errors: 1 });
+    expect(useSyncStore.getState().lastErrorMessage).toBe(mismatch.message);
+    expect(useSyncStore.getState().authBlockedSessionKey).not.toBeNull();
+    expect(useSyncStore.getState().batchFailureCount).toBe(0);
+    expect(useSyncStore.getState().nextRetryAt).toBeNull();
+    expect(apiClient.post).not.toHaveBeenCalled();
+    expect(await db.syncQueue.get(syncId)).toMatchObject({ status: 'Pending', retryCount: 0 });
+  });
+
+  it('auth-blocks pending sync on a tenant provisioning conflict without retrying', async () => {
+    const syncId = await enqueueSync('Customer', 'Insert', { id: 'c-provision-conflict' });
+    const error = new TenantProvisioningError(409);
+    (ensureTenantProvisioned as any).mockRejectedValueOnce(error);
+
+    const result = await processSyncQueue();
+
+    expect(result).toEqual({ processed: 0, conflicts: 0, errors: 1 });
+    expect(useSyncStore.getState().lastErrorMessage).toBe(error.message);
+    expect(useSyncStore.getState().authBlockedSessionKey).not.toBeNull();
+    expect(useSyncStore.getState().batchFailureCount).toBe(0);
+    expect(useSyncStore.getState().nextRetryAt).toBeNull();
+    expect(await db.syncQueue.get(syncId)).toMatchObject({ status: 'Pending', retryCount: 0 });
   });
 
   it.each([
@@ -214,7 +368,12 @@ describe('syncEngine', () => {
     expect(useSyncStore.getState().deadLetterCount).toBe(0);
   });
 
-  it('pullCatalogFromServer fetches products and writes to Dexie', async () => {
+  it('pullCatalogFromServer fetches products and writes to Dexie without clearing errors or setting lastSyncedAt', async () => {
+    useSyncStore.setState({
+      lastErrorMessage: 'Retrying with backoff; pending changes remain on this device',
+      lastSyncedAt: null
+    });
+
     (apiClient.get as any).mockResolvedValueOnce({
       data: [
         {
@@ -237,9 +396,12 @@ describe('syncEngine', () => {
     const prod = await db.products.get('server-p1');
     expect(prod).toBeDefined();
     expect(prod?.name).toBe('Nescafe Classic 2g');
+
+    expect(useSyncStore.getState().lastSyncedAt).toBeNull();
+    expect(useSyncStore.getState().lastErrorMessage).toBe('Retrying with backoff; pending changes remain on this device');
   });
 
-  it('handles server network failure during processSyncQueue gracefully', async () => {
+  it('backs off after server failures without dead-lettering pending operations', async () => {
     const syncId = await enqueueSync('Customer', 'Insert', { id: 'c-99' });
 
     (apiClient.post as any).mockRejectedValueOnce({
@@ -251,9 +413,42 @@ describe('syncEngine', () => {
 
     expect(result.processed).toBe(0);
     expect(result.errors).toBe(1);
-    expect(useSyncStore.getState().lastErrorMessage).toBe('Database temporarily unavailable');
-    expect(await db.syncQueue.get(syncId)).toBeDefined();
+    expect(useSyncStore.getState().lastErrorMessage).toContain('Database temporarily unavailable');
+    expect(useSyncStore.getState().lastErrorMessage).toContain('backoff');
+    expect(useSyncStore.getState().batchFailureCount).toBe(1);
+    expect(useSyncStore.getState().nextRetryAt).toBeGreaterThan(Date.now());
+    expect(await db.syncQueue.get(syncId)).toMatchObject({ status: 'Pending', retryCount: 0 });
     expect(await db.deadLetterQueue.get(syncId)).toBeUndefined();
+
+    await processSyncQueue();
+    expect(apiClient.post).toHaveBeenCalledTimes(1);
+  });
+
+  it('pauses sync after 403 until the tenant session changes', async () => {
+    const syncId = await enqueueSync('Customer', 'Insert', { id: 'c-403' });
+    (apiClient.post as any).mockRejectedValueOnce({
+      message: 'Request failed with status code 403',
+      response: { status: 403, data: {} }
+    });
+
+    await processSyncQueue();
+
+    expect(useSyncStore.getState().lastErrorMessage).toContain('Re-authenticate');
+    expect(useSyncStore.getState().authBlockedSessionKey).not.toBeNull();
+    expect(await db.syncQueue.get(syncId)).toMatchObject({ status: 'Pending', retryCount: 0 });
+    expect(await db.deadLetterQueue.get(syncId)).toBeUndefined();
+
+    await processSyncQueue();
+    expect(apiClient.post).toHaveBeenCalledTimes(1);
+
+    useAuthStore.getState().setFirebaseToken('refreshed-tenant-session');
+    (apiClient.post as any).mockResolvedValueOnce({
+      data: { results: [{ syncId, status: 'Success' }] }
+    });
+    await processSyncQueue();
+
+    expect(apiClient.post).toHaveBeenCalledTimes(2);
+    expect(await db.syncQueue.get(syncId)).toBeUndefined();
   });
 
   it('orders outbox operations so Customer and Product precede UtangLedger and Sale', async () => {

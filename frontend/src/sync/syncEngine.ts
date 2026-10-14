@@ -1,6 +1,45 @@
 import { db, type SyncQueueRecord } from '../db/db';
-import { apiClient } from '../services/apiClient';
+import {
+  apiClient,
+  ensureTenantProvisioned,
+  TenantAccountMismatchError,
+  TenantProvisioningError
+} from '../services/apiClient';
+import { useAuthStore } from '../state/authStore';
+import { createClientUuid } from '../utils/uuid';
 import { create } from 'zustand';
+
+import { STORAGE_KEY_LAST_SYNCED, getSyncStorageKey } from '../constants/sync';
+export { STORAGE_KEY_LAST_SYNCED, getSyncStorageKey };
+
+export function getSavedLastSyncedAt(tenantId?: string | null): Date | null {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    const activeTenantId = tenantId !== undefined ? tenantId : useAuthStore.getState().tenantId;
+    const key = getSyncStorageKey(activeTenantId);
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const date = new Date(raw);
+    return isNaN(date.getTime()) ? null : date;
+  } catch {
+    return null;
+  }
+}
+
+export function persistLastSyncedAt(date: Date | null, tenantId?: string | null): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    const activeTenantId = tenantId !== undefined ? tenantId : useAuthStore.getState().tenantId;
+    const key = getSyncStorageKey(activeTenantId);
+    if (date) {
+      localStorage.setItem(key, date.toISOString());
+    } else {
+      localStorage.removeItem(key);
+    }
+  } catch {
+    // Ignore storage quota or access errors
+  }
+}
 
 interface SyncStoreState {
   isOnline: boolean;
@@ -9,20 +48,26 @@ interface SyncStoreState {
   pendingCount: number;
   deadLetterCount: number;
   lastErrorMessage: string | null;
+  authBlockedSessionKey: string | null;
+  batchFailureCount: number;
+  nextRetryAt: number | null;
   setOnline: (online: boolean) => void;
   setSyncing: (syncing: boolean) => void;
   setCounts: (pending: number, deadLetter: number) => void;
-  setLastSyncedAt: (date: Date) => void;
+  setLastSyncedAt: (date: Date | null) => void;
   setLastErrorMessage: (msg: string | null) => void;
 }
 
 export const useSyncStore = create<SyncStoreState>((set) => ({
   isOnline: navigator.onLine,
   isSyncing: false,
-  lastSyncedAt: null,
+  lastSyncedAt: getSavedLastSyncedAt(),
   pendingCount: 0,
   deadLetterCount: 0,
   lastErrorMessage: null,
+  authBlockedSessionKey: null,
+  batchFailureCount: 0,
+  nextRetryAt: null,
   setOnline: (online) => set({ isOnline: online }),
   setSyncing: (syncing) => set({ isSyncing: syncing }),
   setCounts: (pending, deadLetter) => set({ pendingCount: pending, deadLetterCount: deadLetter }),
@@ -30,11 +75,26 @@ export const useSyncStore = create<SyncStoreState>((set) => ({
   setLastErrorMessage: (msg) => set({ lastErrorMessage: msg })
 }));
 
+useSyncStore.subscribe((state, prevState) => {
+  if (state.lastSyncedAt !== prevState.lastSyncedAt) {
+    persistLastSyncedAt(state.lastSyncedAt);
+  }
+});
+
+useAuthStore.subscribe((authState, prevAuthState) => {
+  const currentTenant = authState.tenantId?.trim();
+  const prevTenant = prevAuthState?.tenantId?.trim();
+  if (currentTenant && prevTenant && currentTenant.toLowerCase() !== prevTenant.toLowerCase()) {
+    const newTenantLastSync = getSavedLastSyncedAt(currentTenant);
+    useSyncStore.getState().setLastSyncedAt(newTenantLastSync);
+  }
+});
+
 function getDeviceId(): string {
   const KEY = 'fluent_tindahan_device_id';
   let deviceId = localStorage.getItem(KEY);
   if (!deviceId) {
-    deviceId = crypto.randomUUID();
+    deviceId = createClientUuid();
     localStorage.setItem(KEY, deviceId);
   }
   return deviceId;
@@ -51,7 +111,7 @@ export async function addSyncRecord(
   action: 'Insert' | 'Update' | 'Delete',
   payload: any
 ): Promise<string> {
-  const syncId = crypto.randomUUID();
+  const syncId = createClientUuid();
   const record: SyncQueueRecord = {
     id: syncId,
     entity,
@@ -92,9 +152,30 @@ export async function updateQueueCounts() {
   useSyncStore.getState().setCounts(pending, deadLetter);
 }
 
+function getAuthSessionKey(): string {
+  const { tenantId, firebaseToken } = useAuthStore.getState();
+  return `${tenantId}:${firebaseToken ?? ''}`;
+}
+
 export async function processSyncQueue(): Promise<{ processed: number; conflicts: number; errors: number }> {
+  const auth = useAuthStore.getState();
+  if (!auth.isOnboardingStatusReady || !auth.isOnboarded) {
+    return { processed: 0, conflicts: 0, errors: 0 };
+  }
+
   const store = useSyncStore.getState();
   if (store.isSyncing) return { processed: 0, conflicts: 0, errors: 0 };
+
+  const authSessionKey = getAuthSessionKey();
+  if (store.authBlockedSessionKey === authSessionKey) {
+    return { processed: 0, conflicts: 0, errors: 0 };
+  }
+  if (store.authBlockedSessionKey !== null) {
+    useSyncStore.setState({ authBlockedSessionKey: null, lastErrorMessage: null });
+  }
+  if (store.nextRetryAt !== null && Date.now() < store.nextRetryAt) {
+    return { processed: 0, conflicts: 0, errors: 0 };
+  }
 
   const pendingItems = await db.syncQueue
     .where('status')
@@ -167,6 +248,8 @@ export async function processSyncQueue(): Promise<{ processed: number; conflicts
   store.setSyncing(true);
 
   try {
+    await ensureTenantProvisioned();
+
     const payload = {
       deviceId: getDeviceId(),
       operations: pendingItems.map((item) => ({
@@ -179,6 +262,7 @@ export async function processSyncQueue(): Promise<{ processed: number; conflicts
     };
 
     const response = await apiClient.post('/sync/batch', payload);
+    useSyncStore.setState({ batchFailureCount: 0, nextRetryAt: null });
     const data = response.data;
     const results: Array<{ syncId: string; status: string; error?: string }> = data.results || [];
 
@@ -266,16 +350,42 @@ export async function processSyncQueue(): Promise<{ processed: number; conflicts
     return { processed: successCount, conflicts: conflictCount, errors: failCount };
   } catch (err: any) {
     console.error('Batch sync network/server failure:', err);
+    if (err instanceof TenantAccountMismatchError || err instanceof TenantProvisioningError) {
+      useSyncStore.setState({
+        authBlockedSessionKey: authSessionKey,
+        batchFailureCount: 0,
+        nextRetryAt: null
+      });
+      store.setLastErrorMessage(err.message);
+      return { processed: 0, conflicts: 0, errors: pendingItems.length };
+    }
+
     const status = err?.response?.status;
     const serverMessage = err?.response?.data?.message;
-    const errorMessage = serverMessage || (
-      status === 401
-        ? 'Sync was rejected because this device has no valid tenant session. Pending changes remain on this device.'
-        : status >= 500
-          ? `Sync server error (${status}). Pending changes remain on this device.`
-          : err.message || 'Hindi makakonekta sa server'
-    );
-    store.setLastErrorMessage(errorMessage);
+    if (status === 401 || status === 403) {
+      useSyncStore.setState({
+        authBlockedSessionKey: authSessionKey,
+        batchFailureCount: 0,
+        nextRetryAt: null
+      });
+      store.setLastErrorMessage(
+        status === 403
+          ? 'Sync was rejected because this account has no authorized tenant. Re-authenticate to resume syncing. Pending changes remain on this device.'
+          : 'Sync was rejected because this device has no valid tenant session. Re-authenticate to resume syncing. Pending changes remain on this device.'
+      );
+    } else if (status >= 500 || !status) {
+      const batchFailureCount = store.batchFailureCount + 1;
+      const retryDelayMs = Math.min(30_000 * 2 ** (batchFailureCount - 1), 5 * 60_000);
+      useSyncStore.setState({
+        batchFailureCount,
+        nextRetryAt: Date.now() + retryDelayMs
+      });
+      store.setLastErrorMessage(
+        `${serverMessage || err.message || `Sync server error (${status || 'network'})`}. Retrying with backoff; pending changes remain on this device.`
+      );
+    } else {
+      store.setLastErrorMessage(serverMessage || err.message || 'Hindi makakonekta sa server');
+    }
     return { processed: 0, conflicts: 0, errors: pendingItems.length };
   } finally {
     store.setSyncing(false);
@@ -310,6 +420,7 @@ export async function clearDeadLetterQueue() {
 
 export async function pullCatalogFromServer(): Promise<number> {
   try {
+    await ensureTenantProvisioned();
     const response = await apiClient.get('/products');
     const products = response.data;
     if (Array.isArray(products) && products.length > 0) {

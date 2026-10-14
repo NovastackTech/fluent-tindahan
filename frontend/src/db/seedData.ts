@@ -1,13 +1,52 @@
 import { db, normalizeRef, type ProductRecord, type CustomerRecord, type UtangLedgerRecord, type GCashTxnRecord } from './db';
+import { DEMO_BUSINESS_NAME } from '../constants/demoProfile';
+import { createClientUuid } from '../utils/uuid';
+
+export { createClientUuid } from '../utils/uuid';
 
 export const DEFAULT_TENANT_ID = '11111111-1111-1111-1111-111111111111';
 export const DEFAULT_USER_ID = '22222222-2222-2222-2222-222222222222';
 
-export async function seedDexieDatabaseIfNeeded(force = false) {
-  const productCount = await db.products.count();
-  if (!force && productCount >= 50) return;
-
+export async function seedDexieDatabaseIfNeeded(
+  force = false,
+  targetTenantId = DEFAULT_TENANT_ID,
+  emptyCatalog = false,
+  businessName = DEMO_BUSINESS_NAME
+) {
   const now = new Date().toISOString();
+
+  if (emptyCatalog) {
+    await db.transaction('rw', db.tenants, async () => {
+      const existingTenant = await db.tenants.get(targetTenantId);
+      if (!existingTenant) {
+        await db.tenants.add({
+          id: targetTenantId,
+          businessName,
+          updatedAt: now
+        });
+      }
+    });
+    return;
+  }
+
+  if (targetTenantId === DEFAULT_TENANT_ID) {
+    await db.transaction('rw', db.tenants, async () => {
+      const existingTenant = await db.tenants.get(targetTenantId);
+      if (!existingTenant) {
+        await db.tenants.add({
+          id: targetTenantId,
+          businessName,
+          tier: 'Libre',
+          updatedAt: now
+        });
+      }
+    });
+  }
+
+  if (targetTenantId === DEFAULT_TENANT_ID) {
+    const productCount = await db.products.where('tenantId').equals(targetTenantId).count();
+    if (!force && productCount >= 50) return;
+  }
 
   const products: ProductRecord[] = [
     {
@@ -640,6 +679,34 @@ export async function seedDexieDatabaseIfNeeded(force = false) {
       notes: 'Cash out payout'
     }
   ];
+
+  if (targetTenantId !== DEFAULT_TENANT_ID) {
+    const tenantProducts = products.map((product) => ({
+      ...product,
+      id: createClientUuid(),
+      tenantId: targetTenantId
+    }));
+
+    await db.transaction('rw', db.tenants, db.products, async () => {
+      const existingTenant = await db.tenants.get(targetTenantId);
+      if (!existingTenant) {
+        await db.tenants.add({
+          id: targetTenantId,
+          businessName,
+          tier: 'Libre',
+          updatedAt: now
+        });
+      }
+
+      const productCount = await db.products.where('tenantId').equals(targetTenantId).count();
+      if (!force && productCount >= 50) {
+        return;
+      }
+
+      await db.products.bulkPut(tenantProducts);
+    });
+    return;
+  }
 
   await db.transaction('rw', db.products, db.customers, db.utangLedger, db.gcashTxns, async () => {
     await db.products.bulkPut(products);

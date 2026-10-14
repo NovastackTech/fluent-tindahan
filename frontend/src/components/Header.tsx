@@ -194,8 +194,15 @@ export const Header: React.FC = () => {
               className={styles.langButton}
               icon={<GlobeRegular />}
               onClick={toggleLanguage}
+              aria-label={t.common.languageToggle}
+              title={t.common.languageToggle}
+              data-testid="language-toggle-btn"
+              id="tl-en-toggle"
             >
-              {language === 'tl' ? '🇵🇭 TL' : '🇺🇸 EN'}
+              <span>{language === 'tl' ? '🇵🇭 TL' : '🇺🇸 EN'}</span>
+              <span style={{ position: 'absolute', width: '1px', height: '1px', padding: 0, margin: '-1px', overflow: 'hidden', clip: 'rect(0, 0, 0, 0)', whiteSpace: 'nowrap', border: 0 }}>
+                TL/EN toggle
+              </span>
             </Button>
           </Tooltip>
 

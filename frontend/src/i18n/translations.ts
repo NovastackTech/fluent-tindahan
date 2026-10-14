@@ -10,6 +10,8 @@ export interface Translations {
     queued: string;
     allSynced: string;
     dlqWarning: string;
+    differentAccountSyncBlocked: string;
+    tenantProvisioningSyncBlocked: string;
     forceSync: string;
     themeToggleDark: string;
     themeToggleLight: string;
@@ -38,6 +40,10 @@ export interface Translations {
   pos: {
     title: string;
     searchPlaceholder: string;
+    noProductsFound: string;
+    emptyInventory: string;
+    emptyInventorySub: string;
+    goToInventoryBtn: string;
     allCategories: string;
     inStock: string;
     outOfStock: string;
@@ -167,6 +173,7 @@ export interface Translations {
     historyTitle: string;
     invalidAmountAlert: string;
     duplicateRefWarning: string;
+    phoneInvalid: string;
   };
   dashboard: {
     title: string;
@@ -226,7 +233,11 @@ export interface Translations {
     title: string;
     subtitle: string;
     totalProducts: string;
+    fullCapacityBadge: string;
+    nearCapacityBadge: string;
     lowStockAlerts: string;
+    filteringLowStockHint: string;
+    lowStockRemainingHint: string;
     inventoryCost: string;
     retailValue: string;
     potentialProfit: string;
@@ -259,10 +270,13 @@ export interface Translations {
     addModalTitle: string;
     editModalTitle: string;
     productNameLabel: string;
+    productNameRequired: string;
     categoryLabel: string;
     barcodeLabel: string;
     costLabel: string;
+    costCannotBeNegative: string;
     priceLabel: string;
+    priceMustBePositive: string;
     stockLabel: string;
     profitPreview: string;
     marginPreview: string;
@@ -289,9 +303,12 @@ export interface Translations {
     registeredSuccess: string;
     barcodeLabel: string;
     productNameLabel: string;
+    productNameRequired: string;
     categoryLabel: string;
     costLabel: string;
+    costCannotBeNegative: string;
     priceLabel: string;
+    priceMustBePositive: string;
     stockLabel: string;
     saveAndAddToCart: string;
     saveProduct: string;
@@ -328,6 +345,9 @@ export interface Translations {
     wipeConfirm: string;
     resetSuccess: string;
     storeNameLabel: string;
+    ownerNameLabel: string;
+    userPhoneLabel: string;
+    editProfileBtn: string;
     pendingSync: string;
     dlqTitle: string;
     dlqClearBtn: string;
@@ -431,6 +451,32 @@ export interface Translations {
     pricingToggleMonthly: string;
     popularBadge: string;
   };
+  onboarding: {
+    welcomeTitle: string;
+    welcomeSubtitle: string;
+    editTitle: string;
+    editSubtitle: string;
+    storeNameLabel: string;
+    storeNamePlaceholder: string;
+    storeNameRequired: string;
+    submitError: string;
+    ownerNameLabel: string;
+    ownerNamePlaceholder: string;
+    userPhoneLabel: string;
+    userPhonePlaceholder: string;
+    phoneInvalid: string;
+    catalogSectionTitle: string;
+    catalogSectionDesc: string;
+    catalogStandardTitle: string;
+    catalogStandardDesc: string;
+    catalogEmptyTitle: string;
+    catalogEmptyDesc: string;
+    gcashToggleTitle: string;
+    gcashToggleDesc: string;
+    launchBtn: string;
+    saveProfileBtn: string;
+    cancelBtn: string;
+  };
 }
 
 export const translations: Record<Language, Translations> = {
@@ -444,6 +490,8 @@ export const translations: Record<Language, Translations> = {
       queued: 'pila',
       allSynced: 'Lahat ay naka-sync sa cloud',
       dlqWarning: 'mga bagsak na item sa Dead Letter queue',
+      differentAccountSyncBlocked: 'Naka-link ang tindahan sa device na ito sa ibang account. Mag-sign in muli sa tamang account para mag-sync. Nananatili sa device na ito ang mga nakabinbing pagbabago.',
+      tenantProvisioningSyncBlocked: 'Hindi ma-verify ang tindahan sa server. Mag-sign in muli o kontakin ang suporta bago mag-sync. Nananatili sa device na ito ang mga nakabinbing pagbabago.',
       forceSync: 'Puwersahing mag-sync ngayon',
       themeToggleDark: 'Lumipat sa Dark theme',
       themeToggleLight: 'Lumipat sa Light theme',
@@ -451,7 +499,7 @@ export const translations: Record<Language, Translations> = {
       themeModeLight: 'Maliwanag (Light)',
       themeModeDark: 'Madilim (Dark)',
       themeModeSystem: 'Ayon sa Sistema (System)',
-      languageToggle: 'Palitan ang Wika (English)',
+      languageToggle: 'TL/EN toggle (English)',
       save: 'I-save',
       cancel: 'Kanselahin',
       delete: 'Burahin',
@@ -472,6 +520,10 @@ export const translations: Record<Language, Translations> = {
     pos: {
       title: 'Tindahan Point of Sale',
       searchPlaceholder: 'Mag-scan ng barcode o maghanap ng produkto...',
+      noProductsFound: 'Walang nahanap na paninda. Subukan ang ibang paghahanap o kategorya.',
+      emptyInventory: 'Wala pang paninda sa tindahan.',
+      emptyInventorySub: 'Magdagdag ng produkto sa Imbentaryo upang magsimulang magbenta.',
+      goToInventoryBtn: 'Pumunta sa Imbentaryo',
       allCategories: 'Lahat',
       inStock: 'stock',
       outOfStock: 'Ubos na',
@@ -600,7 +652,8 @@ export const translations: Record<Language, Translations> = {
       saveTransaction: 'I-save ang Transaksyon',
       historyTitle: 'Kasaysayan ng GCash Ngayong Buwan',
       invalidAmountAlert: 'Maglagay ng wastong halaga.',
-      duplicateRefWarning: 'Ginamit na ang reference number. Hindi maaaring magtala ng doble.'
+      duplicateRefWarning: 'Ginamit na ang reference number. Hindi maaaring magtala ng doble.',
+      phoneInvalid: 'Dapat ay wastong 11-digit Philippine mobile number (09XXXXXXXXX).'
     },
     dashboard: {
       title: 'Pangkalahatang Dashboard ng Tindahan',
@@ -660,7 +713,11 @@ export const translations: Record<Language, Translations> = {
       title: 'Talaan ng Imbentaryo at Stocks',
       subtitle: 'Subaybayan ang dami ng paninda, baguhin ang presyo, suriin ang kita at margin, at mag-restock.',
       totalProducts: 'Kabuuang Paninda',
+      fullCapacityBadge: 'Puno na',
+      nearCapacityBadge: 'Halos puno',
       lowStockAlerts: 'Paubos na Paninda (≤ 5)',
+      filteringLowStockHint: 'Ipinapakita ang paubos na paninda (pindutin para ipakita lahat)',
+      lowStockRemainingHint: '≤ 5 piraso ang natitira',
       inventoryCost: 'Kabuuang Puhunan',
       retailValue: 'Kabuuang Benta',
       potentialProfit: 'Inaasahang Kita',
@@ -693,10 +750,13 @@ export const translations: Record<Language, Translations> = {
       addModalTitle: 'Magdagdag ng Bagong Produkto',
       editModalTitle: 'Baguhin ang Detalye ng Produkto',
       productNameLabel: 'Pangalan ng Produkto:*',
+      productNameRequired: 'Ilagay ang pangalan ng produkto.',
       categoryLabel: 'Kategorya:*',
       barcodeLabel: 'Barcode (Opsyonal):',
       costLabel: 'Puhunan (Cost Price ₱):*',
+      costCannotBeNegative: 'Hindi maaaring negatibo ang puhunan.',
       priceLabel: 'Presyo ng Tinda (SRP ₱):*',
+      priceMustBePositive: 'Dapat mas mataas sa ₱0 ang presyo ng tinda.',
       stockLabel: 'Kasalukuyang Stock:*',
       profitPreview: 'Tinatayang Kita bawat piraso:',
       marginPreview: 'Profit Margin:',
@@ -723,9 +783,12 @@ export const translations: Record<Language, Translations> = {
       registeredSuccess: 'Matagumpay na narehistro ang bagong produkto!',
       barcodeLabel: 'Nai-scan na Barcode:',
       productNameLabel: 'Pangalan ng Produkto:*',
+      productNameRequired: 'Ilagay ang pangalan ng produkto.',
       categoryLabel: 'Kategorya:*',
       costLabel: 'Puhunan (Cost Price ₱):*',
+      costCannotBeNegative: 'Hindi maaaring negatibo ang puhunan.',
       priceLabel: 'Presyo ng Tinda (SRP ₱):*',
+      priceMustBePositive: 'Dapat mas mataas sa ₱0 ang presyo ng tinda.',
       stockLabel: 'Panimulang Stock:*',
       saveAndAddToCart: 'I-save at Idagdag sa Cart',
       saveProduct: 'I-save ang Produkto',
@@ -762,6 +825,9 @@ export const translations: Record<Language, Translations> = {
       wipeConfirm: 'BABALA: Ito ay mag-wawipe ng lahat ng lokal na data sa teleponong ito at magla-logout. Sigurado ka ba?',
       resetSuccess: 'Na-reset at na-seed muli ang local tindahan database!',
       storeNameLabel: 'Pangalan ng Tindahan:',
+      ownerNameLabel: 'May-ari / Tindera:',
+      userPhoneLabel: 'Telepono / GCash:',
+      editProfileBtn: 'I-edit ang Profile',
       pendingSync: 'Nakabinbing Sync Operations:',
       dlqTitle: 'Dead Letter Queue (Mga Bagsak na Sync):',
       dlqClearBtn: 'Linisin ang DLQ',
@@ -839,6 +905,32 @@ export const translations: Record<Language, Translations> = {
       browserInstallTip: 'Para i-install: Pindutin ang install icon sa address bar ng iyong browser (itaas-kanan), o buksan ang browser menu (tatlong tuldok ⋮) at piliin ang "Install Fluent Tindahan" o "Add to Home screen".',
       browserInstallNote: 'Tandaan: Hindi puwedeng mag-install kung nasa Incognito / Private window.'
     },
+    onboarding: {
+      welcomeTitle: 'Maligayang Pagdating sa Fluent Tindahan! 🛒🇵🇭',
+      welcomeSubtitle: 'I-setup ang impormasyon ng iyong tindahan para makapagsimula nang maayos.',
+      editTitle: 'I-edit ang Profile ng Tindahan',
+      editSubtitle: 'Baguhin ang pangalan ng tindahan, may-ari, o numero ng telepono.',
+      storeNameLabel: 'Pangalan ng Tindahan',
+      storeNamePlaceholder: 'Hal. Tindahan ni Aling Maria',
+      storeNameRequired: 'Kailangan ang pangalan ng tindahan (hindi bababa sa 2 letra).',
+      submitError: 'Hindi na-save ang setup ng tindahan. Tingnan ang storage ng device at subukan muli.',
+      ownerNameLabel: 'Pangalan ng May-ari / Tindera (Opsyonal)',
+      ownerNamePlaceholder: 'Hal. Maria Santos',
+      userPhoneLabel: 'Numero ng Telepono / GCash (Opsyonal)',
+      userPhonePlaceholder: 'Hal. 09171234567',
+      phoneInvalid: 'Dapat ay wastong 11-digit Philippine mobile number (09XXXXXXXXX).',
+      catalogSectionTitle: 'Panimulang Imbentaryo (Catalog)',
+      catalogSectionDesc: 'Piliin kung nais mong i-load agad ang mga karaniwang paninda sa sari-sari store.',
+      catalogStandardTitle: 'I-load ang 50 Karaniwang Paninda',
+      catalogStandardDesc: 'Hanggang 50 panimulang produkto: Lucky Me, Kopiko, de-lata, kape, shampoo sachet, atbp.',
+      catalogEmptyTitle: 'Magsimula sa Malinis na Tindahan',
+      catalogEmptyDesc: 'Walang paunang paninda; manu-manong i-encode o i-import via CSV ang iyong mga produkto.',
+      gcashToggleTitle: 'Nag-aalok ng GCash Cash-In / Cash-Out',
+      gcashToggleDesc: 'I-enable upang ma-preconfigure ang karaniwang bayarin sa serbisyo ng GCash.',
+      launchBtn: 'Simulan ang Aking Tindahan',
+      saveProfileBtn: 'I-save ang Profile',
+      cancelBtn: 'Kanselahin'
+    },
     subscription: {
       planSection: 'Plano at Subscription',
       planDesc: 'Pamahalaan ang iyong SaaS subscription, tingnan ang mga limitasyon ng plano, at mag-upgrade.',
@@ -876,6 +968,8 @@ export const translations: Record<Language, Translations> = {
       queued: 'queued',
       allSynced: 'All data synced with cloud',
       dlqWarning: 'failed items in Dead Letter queue',
+      differentAccountSyncBlocked: 'This device’s store is linked to a different account. Sign in to the matching account to sync. Pending changes remain on this device.',
+      tenantProvisioningSyncBlocked: 'The server could not verify this store. Sign in again or contact support before syncing. Pending changes remain on this device.',
       forceSync: 'Force sync now',
       themeToggleDark: 'Switch to Dark theme',
       themeToggleLight: 'Switch to Light theme',
@@ -883,7 +977,7 @@ export const translations: Record<Language, Translations> = {
       themeModeLight: 'Light Theme',
       themeModeDark: 'Dark Theme',
       themeModeSystem: 'System Default Theme',
-      languageToggle: 'Change Language (Taglish)',
+      languageToggle: 'TL/EN toggle (Taglish)',
       save: 'Save',
       cancel: 'Cancel',
       delete: 'Delete',
@@ -904,6 +998,10 @@ export const translations: Record<Language, Translations> = {
     pos: {
       title: 'Point of Sale',
       searchPlaceholder: 'Scan barcode or search product name...',
+      noProductsFound: 'No products found. Try another search or category.',
+      emptyInventory: 'No products in inventory yet.',
+      emptyInventorySub: 'Add products in Inventory to start making sales.',
+      goToInventoryBtn: 'Go to Inventory',
       allCategories: 'All',
       inStock: 'stock',
       outOfStock: 'Out of stock',
@@ -1032,7 +1130,8 @@ export const translations: Record<Language, Translations> = {
       saveTransaction: 'Save Transaction',
       historyTitle: "This Month's GCash History",
       invalidAmountAlert: 'Please enter a valid amount.',
-      duplicateRefWarning: 'This reference number has already been used. Duplicate entries are not allowed.'
+      duplicateRefWarning: 'This reference number has already been used. Duplicate entries are not allowed.',
+      phoneInvalid: 'Must be a valid 11-digit Philippine mobile number (09XXXXXXXXX).'
     },
     dashboard: {
       title: 'Store Performance Dashboard',
@@ -1092,7 +1191,11 @@ export const translations: Record<Language, Translations> = {
       title: 'Inventory & Stock Management',
       subtitle: 'Monitor stock levels, edit prices, inspect profit margins, and restock supplies.',
       totalProducts: 'Total Products',
+      fullCapacityBadge: 'Full',
+      nearCapacityBadge: 'Almost full',
       lowStockAlerts: 'Low Stock Alerts (≤ 5)',
+      filteringLowStockHint: 'Filtering low stock (click to show all)',
+      lowStockRemainingHint: '≤ 5 units remaining',
       inventoryCost: 'Total Cost Value',
       retailValue: 'Total Retail Value',
       potentialProfit: 'Projected Gross Profit',
@@ -1125,10 +1228,13 @@ export const translations: Record<Language, Translations> = {
       addModalTitle: 'Add New Product',
       editModalTitle: 'Edit Product Details',
       productNameLabel: 'Product Name:*',
+      productNameRequired: 'Enter a product name.',
       categoryLabel: 'Category:*',
       barcodeLabel: 'Barcode (Optional):',
       costLabel: 'Cost Price (₱):*',
+      costCannotBeNegative: 'Cost price cannot be negative.',
       priceLabel: 'Retail Price (SRP ₱):*',
+      priceMustBePositive: 'Retail price must be greater than ₱0.',
       stockLabel: 'Current Stock Qty:*',
       profitPreview: 'Estimated Profit per unit:',
       marginPreview: 'Profit Margin:',
@@ -1155,9 +1261,12 @@ export const translations: Record<Language, Translations> = {
       registeredSuccess: 'Product successfully registered!',
       barcodeLabel: 'Scanned Barcode:',
       productNameLabel: 'Product Name:*',
+      productNameRequired: 'Enter a product name.',
       categoryLabel: 'Category:*',
       costLabel: 'Cost Price (₱):*',
+      costCannotBeNegative: 'Cost price cannot be negative.',
       priceLabel: 'Retail Price (SRP ₱):*',
+      priceMustBePositive: 'Retail price must be greater than ₱0.',
       stockLabel: 'Initial Stock:*',
       saveAndAddToCart: 'Save & Add to Cart',
       saveProduct: 'Save Product',
@@ -1194,6 +1303,9 @@ export const translations: Record<Language, Translations> = {
       wipeConfirm: 'WARNING: This will wipe all local data on this device and sign you out. Are you sure?',
       resetSuccess: 'Local store database reset and re-seeded!',
       storeNameLabel: 'Store Name:',
+      ownerNameLabel: 'Owner / Cashier:',
+      userPhoneLabel: 'Phone / GCash:',
+      editProfileBtn: 'Edit Store Profile',
       pendingSync: 'Pending Sync Operations:',
       dlqTitle: 'Dead Letter Queue (Poison Pills):',
       dlqClearBtn: 'Clear DLQ',
@@ -1296,7 +1408,32 @@ export const translations: Record<Language, Translations> = {
       pricingToggleWeekly: 'Sachet (Weekly)',
       pricingToggleMonthly: 'Monthly',
       popularBadge: 'MOST POPULAR'
+    },
+    onboarding: {
+      welcomeTitle: 'Welcome to Fluent Tindahan! 🛒🇵🇭',
+      welcomeSubtitle: 'Set up your store details to get started with zero friction.',
+      editTitle: 'Edit Store Profile',
+      editSubtitle: 'Update your store name, owner name, or contact number.',
+      storeNameLabel: 'Store Name',
+      storeNamePlaceholder: 'e.g. Maria\'s Sari-Sari Store',
+      storeNameRequired: 'Store name is required (minimum 2 characters).',
+      submitError: 'Store setup could not be saved. Check device storage and try again.',
+      ownerNameLabel: 'Owner / Cashier Name (Optional)',
+      ownerNamePlaceholder: 'e.g. Maria Santos',
+      userPhoneLabel: 'Contact / GCash Mobile (Optional)',
+      userPhonePlaceholder: 'e.g. 09171234567',
+      phoneInvalid: 'Must be a valid 11-digit Philippine mobile number (09XXXXXXXXX).',
+      catalogSectionTitle: 'Initial Inventory Setup',
+      catalogSectionDesc: 'Choose whether to pre-load standard sari-sari store FMCG goods.',
+      catalogStandardTitle: 'Pre-load 50 Standard Products',
+      catalogStandardDesc: 'Up to 50 starter products, including instant noodles, coffee mixes, canned goods, sachets, etc.',
+      catalogEmptyTitle: 'Start with Blank Store',
+      catalogEmptyDesc: 'No pre-loaded items; enter your products manually or import via CSV.',
+      gcashToggleTitle: 'Offers GCash Cash-In / Cash-Out',
+      gcashToggleDesc: 'Pre-configures default transaction fee brackets for GCash remittance.',
+      launchBtn: 'Launch My Store',
+      saveProfileBtn: 'Save Profile',
+      cancelBtn: 'Cancel'
     }
   }
 };
-

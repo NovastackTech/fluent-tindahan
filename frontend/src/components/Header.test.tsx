@@ -37,7 +37,7 @@ describe('Header', () => {
   it('toggles language when language button is clicked', () => {
     renderHeader();
 
-    const langBtn = screen.getByText('🇵🇭 TL').closest('button')!;
+    const langBtn = screen.getByTestId('language-toggle-btn');
     fireEvent.click(langBtn);
 
     expect(useLanguageStore.getState().language).toBe('en');

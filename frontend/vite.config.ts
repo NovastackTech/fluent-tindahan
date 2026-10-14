@@ -164,6 +164,12 @@ export default defineConfig({
   ],
   server: {
     port: 5173,
+    allowedHosts: [
+      'shortwave-straining-colt.ngrok-free.dev',
+      '.ngrok-free.dev',
+      '.ngrok.app',
+      '.ngrok.io'
+    ],
     proxy: {
       '/api': {
         target: 'http://localhost:5000',
@@ -171,5 +177,13 @@ export default defineConfig({
         secure: false
       }
     }
+  },
+  preview: {
+    allowedHosts: [
+      'shortwave-straining-colt.ngrok-free.dev',
+      '.ngrok-free.dev',
+      '.ngrok.app',
+      '.ngrok.io'
+    ]
   }
 })

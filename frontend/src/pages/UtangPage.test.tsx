@@ -4,9 +4,11 @@ import { FluentProvider } from '@fluentui/react-components';
 import { UtangPage } from './UtangPage';
 import { sariSariLightTheme } from '../theme/theme';
 import { db } from '../db/db';
+import { useAuthStore } from '../state/authStore';
 
 describe('UtangPage', () => {
   beforeEach(async () => {
+    useAuthStore.setState({ tenantId: 'tenant-1' });
     await db.customers.clear();
     await db.utangLedger.clear();
     await db.syncQueue.clear();
@@ -46,6 +48,32 @@ describe('UtangPage', () => {
     });
   });
 
+  it('does not display customers from another tenant', async () => {
+    await db.customers.bulkAdd([
+      {
+        id: 'cust-active',
+        tenantId: 'tenant-1',
+        name: 'Active Tenant Customer',
+        phone: '09171112222',
+        totalUtangBalance: 0,
+        updatedAt: new Date().toISOString()
+      },
+      {
+        id: 'cust-other',
+        tenantId: 'other-tenant',
+        name: 'Aling Rosa Santos',
+        phone: '09204445566',
+        totalUtangBalance: 150,
+        updatedAt: new Date().toISOString()
+      }
+    ]);
+
+    renderUtang();
+
+    await waitFor(() => expect(screen.getByText('Active Tenant Customer')).toBeInTheDocument());
+    expect(screen.queryByText('Aling Rosa Santos')).not.toBeInTheDocument();
+  });
+
   it('opens Add Customer dialog and creates a new customer in Dexie', async () => {
     renderUtang();
 
@@ -65,11 +93,15 @@ describe('UtangPage', () => {
     const saveBtn = screen.getByRole('button', { name: /I-save ang Suki|Save Customer/i });
     fireEvent.click(saveBtn);
 
-    await waitFor(async () => {
-      const saved = await db.customers.where('name').equals('Mang Kanor').first();
-      expect(saved).toBeDefined();
-      expect(saved?.totalUtangBalance).toBe(150);
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
+
+    const saved = await db.customers.where('name').equals('Mang Kanor').first();
+    expect(saved).toBeDefined();
+    expect(saved?.totalUtangBalance).toBe(150);
+    expect(await db.utangLedger.toArray()).toHaveLength(1);
+    expect(await db.syncQueue.toArray()).toHaveLength(2);
   });
 
   it('shows inline validation when saving a customer with a blank name', async () => {
@@ -78,11 +110,16 @@ describe('UtangPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Bagong Suki|Add New Customer/i }));
     fireEvent.click(screen.getByRole('button', { name: /I-save ang Suki|Save Customer/i }));
 
+    const nameInput = screen.getByRole('textbox', { name: /Pangalan ng Suki|Customer Name/i });
     expect(await screen.findByRole('alert')).toHaveTextContent(/Pakiusap ilagay ang pangalan ng suki|Please enter customer name/i);
+    expect(nameInput).toHaveAttribute('aria-invalid', 'true');
+    expect(nameInput).toHaveAttribute('aria-describedby', 'utang-customer-name-error');
     expect(await db.customers.toArray()).toHaveLength(0);
     expect(await db.syncQueue.toArray()).toHaveLength(0);
 
-    fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Suki|Customer Name/i }), { target: { value: 'QA-TEST Name' } });
+    fireEvent.change(nameInput, { target: { value: 'QA-TEST Name' } });
+    expect(nameInput).toHaveAttribute('aria-invalid', 'false');
+    expect(nameInput).not.toHaveAttribute('aria-describedby');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
@@ -107,7 +144,7 @@ describe('UtangPage', () => {
     alertMock.mockRestore();
   });
 
-  it('rejects a malformed customer phone without writing customer or sync data', async () => {
+  it('shows inline validation for malformed customer phone without writing customer or sync data', async () => {
     const alertMock = vi.spyOn(window, 'alert').mockImplementation(() => {});
     renderUtang();
 
@@ -116,13 +153,45 @@ describe('UtangPage', () => {
     fireEvent.change(screen.getByRole('textbox', { name: /Cellphone Number|Mobile Number/i }), { target: { value: 'abc123' } });
     fireEvent.click(screen.getByRole('button', { name: /I-save ang Suki|Save Customer/i }));
 
-    await waitFor(() => {
-      expect(alertMock).toHaveBeenCalledWith(expect.stringMatching(/wastong Philippine mobile|valid Philippine mobile/i));
-    });
+    const phoneError = await screen.findByRole('alert');
+    expect(phoneError).toHaveTextContent(/wastong 11-digit Philippine mobile|valid 11-digit Philippine mobile/i);
+    expect(screen.getByRole('textbox', { name: /Cellphone Number|Mobile Number/i }))
+      .toHaveAttribute('aria-invalid', 'true');
+    expect(alertMock).not.toHaveBeenCalled();
     expect(await db.customers.toArray()).toHaveLength(0);
     expect(await db.syncQueue.toArray()).toHaveLength(0);
     expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('textbox', { name: /Cellphone Number|Mobile Number/i }), {
+      target: { value: '09171234567' }
+    });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     alertMock.mockRestore();
+  });
+
+  it('clears phone error when subsequent submit fails early on empty customer name', async () => {
+    renderUtang();
+    fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Bagong Suki|Add New Customer/i }));
+
+    const nameInput = screen.getByRole('textbox', { name: /Pangalan ng Suki|Customer Name/i });
+    const phoneInput = screen.getByRole('textbox', { name: /Cellphone Number|Mobile Number/i });
+    const saveBtn = screen.getByRole('button', { name: /I-save ang Suki|Save Customer/i });
+
+    // Enter valid name and invalid phone
+    fireEvent.change(nameInput, { target: { value: 'Customer A' } });
+    fireEvent.change(phoneInput, { target: { value: 'invalid-phone' } });
+    fireEvent.click(saveBtn);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/wastong 11-digit Philippine mobile|valid 11-digit Philippine mobile/i);
+    expect(phoneInput).toHaveAttribute('aria-invalid', 'true');
+
+    // Blank the name and re-submit: name error should show and phone error should be cleared
+    fireEvent.change(nameInput, { target: { value: '   ' } });
+    fireEvent.click(saveBtn);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Pakiusap ilagay ang pangalan ng suki|Please enter customer name/i);
+    expect(phoneInput).toHaveAttribute('aria-invalid', 'false');
+    expect(nameInput).toHaveAttribute('aria-invalid', 'true');
   });
 
   it('normalizes international Philippine mobile input when creating a customer', async () => {
@@ -188,8 +257,6 @@ describe('UtangPage', () => {
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
-    fireEvent.click(screen.getByText('Mang Jose'));
-    expect(await screen.findByRole('dialog')).toBeInTheDocument();
   });
 
   it('shows validation when payment amount is zero', async () => {

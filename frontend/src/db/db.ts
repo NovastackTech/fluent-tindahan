@@ -112,7 +112,7 @@ export type PlanTier = 'Libre' | 'TindahanPro' | 'NegosyoPlus';
 export interface TenantRecord {
   id: string; // UUID
   businessName: string;
-  tier: PlanTier;
+  tier?: PlanTier;
   subscriptionEndDate?: string;
   updatedAt: string;
 }

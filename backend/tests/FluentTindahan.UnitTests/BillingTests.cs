@@ -2066,6 +2066,42 @@ public class BillingTests
     }
 
     [Fact]
+    public async Task PayMongoPaymentGatewayService_DnsFailure_ThrowsSafeGatewayException()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["PayMongo:SecretKey"] = "sk_test_unit_test",
+                ["PayMongo:FrontendOrigin"] = "http://localhost:5173"
+            })
+            .Build();
+        var environment = new Mock<IHostEnvironment>();
+        environment.Setup(host => host.EnvironmentName).Returns("Development");
+        var service = new PayMongoPaymentGatewayService(
+            new HttpClient(new DnsFailureHandler()),
+            config,
+            environment.Object,
+            TimeProvider.System,
+            NullLogger<PayMongoPaymentGatewayService>.Instance);
+
+        var act = () => service.CreateCheckoutSessionAsync(
+            _testTenantId,
+            PlanTier.TindahanPro,
+            BillingCycle.Monthly);
+
+        await act.Should().ThrowAsync<PaymentGatewayException>()
+            .WithMessage("Payment gateway is temporarily unavailable. Please try again later.");
+    }
+
+    private sealed class DnsFailureHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) =>
+            Task.FromException<HttpResponseMessage>(new HttpRequestException("No such host is known."));
+    }
+
+    [Fact]
     public async Task ApplySubscriptionPaymentCommandHandler_MidTermTierChange_StartsFromNow()
     {
         using var context = CreateInMemoryDbContext();

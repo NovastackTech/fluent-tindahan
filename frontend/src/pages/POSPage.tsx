@@ -35,8 +35,10 @@ import {
   ChevronRightRegular,
   PersonAddRegular,
   DismissRegular,
-  CheckmarkRegular
+  CheckmarkRegular,
+  BoxRegular
 } from '@fluentui/react-icons';
+import { type NavTab } from '../components/Navigation';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type ProductRecord, type CustomerRecord } from '../db/db';
 import { useCartStore } from '../state/cartStore';
@@ -105,6 +107,28 @@ const useStyles = makeStyles({
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
     ...shorthands.gap(tokens.spacingHorizontalM)
+  },
+  emptyProducts: {
+    gridColumn: '1 / -1',
+    textAlign: 'center',
+    color: tokens.colorNeutralForeground3,
+    paddingTop: tokens.spacingVerticalXL,
+    paddingBottom: tokens.spacingVerticalXL
+  },
+  emptyInventoryContainer: {
+    gridColumn: '1 / -1',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    textAlign: 'center',
+    ...shorthands.padding(tokens.spacingVerticalXXL, tokens.spacingHorizontalM),
+    ...shorthands.gap(tokens.spacingVerticalM)
+  },
+  emptyInventoryIcon: {
+    fontSize: '48px',
+    color: tokens.colorNeutralForeground4,
+    marginBottom: tokens.spacingVerticalXS
   },
   productCard: {
     ...shorthands.padding(tokens.spacingVerticalS, tokens.spacingHorizontalS),
@@ -176,7 +200,11 @@ const useStyles = makeStyles({
 
 const QUICK_PESO_BILLS = [20, 50, 100, 200, 500, 1000];
 
-export const POSPage: React.FC = () => {
+export interface POSPageProps {
+  onNavigate?: (tab: NavTab) => void;
+}
+
+export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
   const styles = useStyles();
   const { t, language } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
@@ -184,6 +212,25 @@ export const POSPage: React.FC = () => {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
+  const [pendingReceiptData, setPendingReceiptData] = useState<ReceiptData | null>(null);
+  const checkoutDialogRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (isCheckoutOpen || !pendingReceiptData) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setReceiptData(pendingReceiptData);
+      setPendingReceiptData(null);
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [isCheckoutOpen, pendingReceiptData]);
+
+  React.useEffect(() => {
+    if (receiptData) {
+      checkoutDialogRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
+    }
+  }, [receiptData]);
 
   // Category horizontal scroll controls
   const categoryScrollRef = React.useRef<HTMLDivElement>(null);
@@ -254,10 +301,18 @@ export const POSPage: React.FC = () => {
   const [newDebtorName, setNewDebtorName] = useState('');
   const [newDebtorPhone, setNewDebtorPhone] = useState('');
   const [newDebtorError, setNewDebtorError] = useState<string | null>(null);
+  const [newDebtorPhoneError, setNewDebtorPhoneError] = useState<string | null>(null);
 
   // Live queries from Dexie
-  const products = useLiveQuery(() => db.products.toArray(), []) || [];
-  const customers = useLiveQuery(() => db.customers.toArray(), []) || [];
+  const productResults = useLiveQuery(
+    () => db.products.where('tenantId').equals(tenantId).toArray(),
+    [tenantId]
+  );
+  const products = productResults || [];
+  const customers = useLiveQuery(
+    () => db.customers.where('tenantId').equals(tenantId).toArray(),
+    [tenantId]
+  ) || [];
 
   // Extract unique categories
   const categories = useMemo(() => {
@@ -400,6 +455,9 @@ export const POSPage: React.FC = () => {
 
   // Quick add new debtor during checkout
   const handleSaveNewDebtor = async () => {
+    setNewDebtorError(null);
+    setNewDebtorPhoneError(null);
+
     if (!newDebtorName.trim()) {
       setNewDebtorError(t.pos.debtorNameRequired);
       return;
@@ -407,9 +465,7 @@ export const POSPage: React.FC = () => {
 
     const phone = normalizePhilippineMobile(newDebtorPhone);
     if (phone === null) {
-      setNewDebtorError(language === 'tl'
-        ? 'Maglagay ng wastong Philippine mobile number.'
-        : 'Enter a valid Philippine mobile number.');
+      setNewDebtorPhoneError(t.onboarding.phoneInvalid);
       return;
     }
 
@@ -431,6 +487,7 @@ export const POSPage: React.FC = () => {
     setNewDebtorName('');
     setNewDebtorPhone('');
     setNewDebtorError(null);
+    setNewDebtorPhoneError(null);
     setIsAddDebtorOpen(false);
   };
 
@@ -555,7 +612,7 @@ export const POSPage: React.FC = () => {
 
       // Prepare receipt data and mark receipt active
       usePwaStore.getState().setHasActiveReceipt(true);
-      setReceiptData({
+      setPendingReceiptData({
         saleId,
         date: now,
         items: cartItems.map((i) => ({
@@ -579,6 +636,7 @@ export const POSPage: React.FC = () => {
       setNewDebtorName('');
       setNewDebtorPhone('');
       setNewDebtorError(null);
+      setNewDebtorPhoneError(null);
     } finally {
       usePwaStore.getState().setIsSaleInProgress(false);
     }
@@ -660,7 +718,34 @@ export const POSPage: React.FC = () => {
 
       {/* Product Grid */}
       <div className={styles.productGrid}>
-        {filteredProducts.map((p) => (
+        {productResults && filteredProducts.length === 0 ? (
+          products.length === 0 ? (
+            <div className={styles.emptyInventoryContainer} role="status" aria-live="polite">
+              <BoxRegular className={styles.emptyInventoryIcon} />
+              <div>
+                <Text weight="semibold" size={400} style={{ display: 'block', color: tokens.colorNeutralForeground1 }}>
+                  {t.pos.emptyInventory}
+                </Text>
+                <Text size={200} style={{ color: tokens.colorNeutralForeground3, marginTop: '4px', display: 'block' }}>
+                  {t.pos.emptyInventorySub}
+                </Text>
+              </div>
+              {onNavigate && (
+                <Button
+                  appearance="primary"
+                  icon={<AddRegular />}
+                  onClick={() => onNavigate('inventory')}
+                >
+                  {t.pos.goToInventoryBtn}
+                </Button>
+              )}
+            </div>
+          ) : (
+            <Text className={styles.emptyProducts} role="status" aria-live="polite">
+              {t.pos.noProductsFound}
+            </Text>
+          )
+        ) : filteredProducts.map((p) => (
           <Card
             key={p.id}
             className={styles.productCard}
@@ -791,18 +876,36 @@ export const POSPage: React.FC = () => {
 
       {/* Checkout Dialog */}
       <Dialog
-        open={isCheckoutOpen}
+        open={isCheckoutOpen || Boolean(receiptData)}
         onOpenChange={(_, data) => {
+          if (!data.open && (receiptData || pendingReceiptData) && data.type === 'backdropClick') return;
           setIsCheckoutOpen(data.open);
           if (!data.open) {
             setIsAddDebtorOpen(false);
             setNewDebtorName('');
             setNewDebtorPhone('');
             setNewDebtorError(null);
+            setNewDebtorPhoneError(null);
+            if (receiptData || pendingReceiptData) {
+              setReceiptData(null);
+              setPendingReceiptData(null);
+              usePwaStore.getState().setHasActiveReceipt(false);
+            }
           }
         }}
       >
-        <DialogSurface>
+        <DialogSurface ref={checkoutDialogRef}>
+          {receiptData ? (
+            <ReceiptModal
+              embedded
+              open={true}
+              onClose={() => {
+                setReceiptData(null);
+                usePwaStore.getState().setHasActiveReceipt(false);
+              }}
+              data={receiptData}
+            />
+          ) : isCheckoutOpen ? (
           <DialogBody>
             <DialogTitle>{t.pos.checkoutConfirm}</DialogTitle>
             <DialogContent>
@@ -958,6 +1061,7 @@ export const POSPage: React.FC = () => {
                           onClick={() => {
                             setIsAddDebtorOpen(false);
                             setNewDebtorError(null);
+                            setNewDebtorPhoneError(null);
                           }}
                           aria-label={t.common.cancel}
                         />
@@ -966,6 +1070,9 @@ export const POSPage: React.FC = () => {
                       <div style={{ marginBottom: '8px' }}>
                         <Text size={200} weight="semibold">{t.utang.customerNameLabel}</Text>
                         <Input
+                          aria-label={t.utang.customerNameLabel}
+                          aria-invalid={Boolean(newDebtorError)}
+                          aria-describedby={newDebtorError ? 'pos-debtor-name-error' : undefined}
                           value={newDebtorName}
                           onChange={(_, d) => {
                             setNewDebtorName(d.value);
@@ -982,7 +1089,7 @@ export const POSPage: React.FC = () => {
                           autoFocus
                         />
                         {newDebtorError && (
-                          <Text size={200} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
+                          <Text id="pos-debtor-name-error" role="alert" size={200} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
                             {newDebtorError}
                           </Text>
                         )}
@@ -993,10 +1100,12 @@ export const POSPage: React.FC = () => {
                         <Input
                           type="tel"
                           inputMode="tel"
+                          aria-invalid={Boolean(newDebtorPhoneError)}
+                          aria-describedby={newDebtorPhoneError ? 'pos-debtor-phone-error' : undefined}
                           value={newDebtorPhone}
                           onChange={(_, d) => {
                             setNewDebtorPhone(d.value);
-                            if (newDebtorError) setNewDebtorError(null);
+                            if (newDebtorPhoneError) setNewDebtorPhoneError(null);
                           }}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
@@ -1007,6 +1116,11 @@ export const POSPage: React.FC = () => {
                           placeholder="09123456789"
                           style={{ width: '100%', marginTop: '4px' }}
                         />
+                        {newDebtorPhoneError && (
+                          <Text id="pos-debtor-phone-error" role="alert" size={200} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
+                            {newDebtorPhoneError}
+                          </Text>
+                        )}
                       </div>
 
                       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
@@ -1016,6 +1130,7 @@ export const POSPage: React.FC = () => {
                           onClick={() => {
                             setIsAddDebtorOpen(false);
                             setNewDebtorError(null);
+                            setNewDebtorPhoneError(null);
                           }}
                         >
                           {t.common.cancel}
@@ -1087,6 +1202,7 @@ export const POSPage: React.FC = () => {
                   setNewDebtorName('');
                   setNewDebtorPhone('');
                   setNewDebtorError(null);
+                  setNewDebtorPhoneError(null);
                 }}
               >
                 {t.common.cancel}
@@ -1096,18 +1212,9 @@ export const POSPage: React.FC = () => {
               </Button>
             </DialogActions>
           </DialogBody>
+          ) : null}
         </DialogSurface>
       </Dialog>
-
-      {/* Receipt Modal */}
-      <ReceiptModal
-        open={!!receiptData}
-        onClose={() => {
-          setReceiptData(null);
-          usePwaStore.getState().setHasActiveReceipt(false);
-        }}
-        data={receiptData}
-      />
 
       {/* Phone Camera Barcode Scanner Modal */}
       <BarcodeScannerModal

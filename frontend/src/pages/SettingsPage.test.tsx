@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { FluentProvider } from '@fluentui/react-components';
 import { SettingsPage } from './SettingsPage';
 import { sariSariLightTheme } from '../theme/theme';
@@ -16,8 +16,17 @@ describe('SettingsPage', () => {
   beforeEach(async () => {
     useGCashFeeStore.setState({ feesByTenant: {} });
     useAuthStore.setState({
+      tenantId: 'settings-test-tenant',
       businessName: "Aling Nena's Tindahan & GCash",
       role: 'Owner'
+    });
+    useSyncStore.setState({
+      isOnline: true,
+      isSyncing: false,
+      lastSyncedAt: null,
+      pendingCount: 0,
+      deadLetterCount: 0,
+      lastErrorMessage: null
     });
     useSubscriptionStore.setState({
       tier: 'Libre',
@@ -28,6 +37,14 @@ describe('SettingsPage', () => {
     useLanguageStore.setState({ language: 'tl' });
     useThemeStore.setState({ themeMode: 'light', isDarkMode: false });
     usePwaStore.setState({ isInstallable: false, isStandalone: false, isInstalled: false, isIos: false });
+    await db.products.clear();
+    await db.customers.clear();
+    await db.sales.clear();
+    await db.saleItems.clear();
+    await db.utangLedger.clear();
+    await db.gcashTxns.clear();
+    await db.gcashTxnResolutions.clear();
+    await db.tenants.clear();
     await db.syncQueue.clear();
     await db.deadLetterQueue.clear();
   });
@@ -98,6 +115,26 @@ describe('SettingsPage', () => {
   it('triggers reset seed data when confirmed by user', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     vi.spyOn(window, 'alert').mockImplementation(() => {});
+    await db.products.bulkAdd([
+      {
+        id: 'active-product',
+        tenantId: 'settings-test-tenant',
+        name: 'Active Product',
+        price: 10,
+        cost: 8,
+        stockQty: 1,
+        updatedAt: new Date().toISOString()
+      },
+      {
+        id: 'other-product',
+        tenantId: 'other-tenant',
+        name: 'Other Product',
+        price: 10,
+        cost: 8,
+        stockQty: 1,
+        updatedAt: new Date().toISOString()
+      }
+    ]);
 
     renderSettings();
 
@@ -106,6 +143,11 @@ describe('SettingsPage', () => {
     fireEvent.click(resetBtn);
 
     expect(window.confirm).toHaveBeenCalled();
+    await waitFor(async () => {
+      expect(await db.products.where('tenantId').equals('settings-test-tenant').count()).toBe(50);
+    });
+    expect(await db.products.get('other-product')).toBeDefined();
+    expect(await db.products.get('active-product')).toBeUndefined();
   });
 
   it('renders pending queue items and dead letter queue items', async () => {
@@ -157,6 +199,41 @@ describe('SettingsPage', () => {
       expect(screen.getByTestId('sync-pending-count')).toHaveTextContent('8');
       expect(screen.queryByText(/Lahat ay naka-sync sa cloud|All data synced/i)).not.toBeInTheDocument();
       expect(screen.getByText(/Last sync:/i)).not.toHaveTextContent('Never');
+    });
+  });
+
+  it('displays saved last sync time from persisted storage even when all data is synced', async () => {
+    const lastSyncedAt = new Date('2026-10-14T07:39:00.000Z');
+    useSyncStore.getState().setLastSyncedAt(lastSyncedAt);
+    useSyncStore.setState({ pendingCount: 0, deadLetterCount: 0 });
+
+    renderSettings();
+
+    await waitFor(() => {
+      expect(screen.getByText(/Lahat ay naka-sync sa cloud|All data synced/i)).toBeInTheDocument();
+      expect(screen.getByText(/Last sync:/i)).not.toHaveTextContent('Never');
+      expect(screen.getByText(/Last sync:/i)).toHaveTextContent(lastSyncedAt.toLocaleString());
+    });
+  });
+
+  it('resets in-memory sync time and shows Never when onboarding a new tenant', async () => {
+    const previousSyncTime = new Date('2026-10-14T07:39:00.000Z');
+    useSyncStore.getState().setLastSyncedAt(previousSyncTime);
+    expect(useSyncStore.getState().lastSyncedAt).toEqual(previousSyncTime);
+
+    act(() => {
+      useAuthStore.getState().completeOnboarding({
+        businessName: 'Bagong Tindahan',
+        tenantId: 'new-onboarded-tenant-uuid'
+      });
+    });
+
+    expect(useSyncStore.getState().lastSyncedAt).toBeNull();
+
+    renderSettings();
+
+    await waitFor(() => {
+      expect(screen.getByText(/Last sync:/i)).toHaveTextContent('Never');
     });
   });
 
@@ -249,6 +326,28 @@ describe('SettingsPage', () => {
 
     fireEvent.click(upgradeBtn);
     expect(useSubscriptionStore.getState().isUpgradeModalOpen).toBe(true);
+  });
+
+  it('triggers openOnboarding in edit mode when clicking edit profile button', () => {
+    useAuthStore.setState({
+      businessName: 'My Tindahan',
+      ownerName: 'Maria Santos',
+      userPhone: '09171112233'
+    });
+
+    renderSettings();
+
+    expect(screen.getByText('My Tindahan')).toBeInTheDocument();
+    expect(screen.getByText('Maria Santos')).toBeInTheDocument();
+    expect(screen.getByText('09171112233')).toBeInTheDocument();
+
+    const editBtn = screen.getByRole('button', { name: /I-edit ang Profile|Edit Store Profile/i });
+    expect(editBtn).toBeInTheDocument();
+
+    fireEvent.click(editBtn);
+
+    expect(useAuthStore.getState().isOnboardingOpen).toBe(true);
+    expect(useAuthStore.getState().onboardingMode).toBe('edit');
   });
 });
 
