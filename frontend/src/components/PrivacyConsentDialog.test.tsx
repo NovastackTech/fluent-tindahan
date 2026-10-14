@@ -73,13 +73,20 @@ describe('PrivacyConsentDialog', () => {
     expect(useAuthStore.getState().isPrivacyNoticeOpen).toBe(false);
   });
 
-  it('opens terms when clicking view terms link', () => {
+  it('opens terms when clicking view terms link and keeps checkbox unchecked', () => {
     renderDialog();
 
+    const checkbox = screen.getByRole('checkbox');
     const termsLink = screen.getByTestId('privacy-view-terms-link');
-    expect(termsLink).toBeInTheDocument();
+    const acceptBtn = screen.getByTestId('privacy-accept-btn');
+
+    expect(checkbox).not.toBeChecked();
+    expect(acceptBtn).toBeDisabled();
 
     fireEvent.click(termsLink);
+
     expect(useTermsStore.getState().isTermsOpen).toBe(true);
+    expect(checkbox).not.toBeChecked();
+    expect(acceptBtn).toBeDisabled();
   });
 });

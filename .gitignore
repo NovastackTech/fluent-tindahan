@@ -40,17 +40,11 @@ lcov-report/
 *.env.*
 deploy/*.env
 
-# Explicit exceptions: allow environment templates and non-secret Vite environment settings
+# Explicit exceptions: allow environment templates and non-secret Vite environment settings in frontend/
 !.env.example
 !*.env.example
-!**/*.env.example
-!.env.development
-!*.env.development
-!.env.production
-!*.env.production
-!.env.test
-!*.env.test
 !deploy/*.env.example
-
-
-
+!frontend/.env.development
+!frontend/.env.production
+!frontend/.env.test
+!frontend/.env.example

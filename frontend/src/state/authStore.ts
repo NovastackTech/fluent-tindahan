@@ -43,7 +43,6 @@ interface AuthState {
   setConsentAccepted: (accepted: boolean, termsVersion?: string | null) => void;
   setTermsAcceptedVersion: (version: string | null) => void;
   setIsPrivacyNoticeOpen: (open: boolean) => void;
-  setPrivacyNoticeOpen: (open: boolean) => void;
   openPrivacyNotice: () => void;
   closePrivacyNotice: () => void;
   setTenantId: (tenantId: string) => void;
@@ -140,10 +139,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   setIsPrivacyNoticeOpen: (open: boolean) => {
-    set({ isPrivacyNoticeOpen: open });
-  },
-
-  setPrivacyNoticeOpen: (open: boolean) => {
     set({ isPrivacyNoticeOpen: open });
   },
 

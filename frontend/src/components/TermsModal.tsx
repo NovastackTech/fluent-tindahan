@@ -21,6 +21,7 @@ import {
 } from '@fluentui/react-icons';
 import { useTermsStore } from '../state/termsStore';
 import { useTranslation, useLanguageStore } from '../state/languageStore';
+import { translations } from '../i18n/translations';
 import { termsEN, termsTL, type TermsDocument } from '../legal/termsData';
 
 const useStyles = makeStyles({
@@ -239,6 +240,7 @@ export const TermsModal: React.FC = () => {
   }, [isTermsOpen, globalLanguage]);
 
   const doc: TermsDocument = modalLanguage === 'tl' ? termsTL : termsEN;
+  const modalT = translations[modalLanguage];
 
   const toggleLanguage = () => {
     setModalLanguage((prev) => (prev === 'tl' ? 'en' : 'tl'));
@@ -254,7 +256,7 @@ export const TermsModal: React.FC = () => {
                 <DocumentCheckmarkRegular fontSize={22} color={tokens.colorBrandForeground1} />
                 <Text className={styles.title}>{doc.title}</Text>
                 <Badge appearance="tint" color="brand">
-                  {modalLanguage === 'tl' ? 'Pilipinas' : 'Philippines'}
+                  {modalT.terms.philippinesBadge}
                 </Badge>
               </div>
               <Text className={styles.metaText}>
@@ -269,7 +271,7 @@ export const TermsModal: React.FC = () => {
                 icon={<LocalLanguageRegular />}
                 onClick={toggleLanguage}
                 data-testid="terms-lang-toggle-btn"
-                title={modalLanguage === 'tl' ? 'Switch to English' : 'Lumipat sa Tagalog'}
+                title={modalT.terms.langToggleTitle}
               >
                 {modalLanguage === 'tl' ? 'English' : 'Tagalog'}
               </Button>

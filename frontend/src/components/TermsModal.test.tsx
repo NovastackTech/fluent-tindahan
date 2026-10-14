@@ -67,19 +67,25 @@ describe('TermsModal', () => {
 
     // Starts in Tagalog
     expect(screen.getByText(/Mahalagang Paalala para sa mga May-ari ng Tindahan/i)).toBeInTheDocument();
+    expect(screen.getByText('Pilipinas')).toBeInTheDocument();
 
     // Click language toggle button
     const toggleBtn = screen.getByTestId('terms-lang-toggle-btn');
     expect(toggleBtn).toHaveTextContent('English');
+    expect(toggleBtn).toHaveAttribute('title', 'Switch to English');
     fireEvent.click(toggleBtn);
 
     // Switches to English
     expect(screen.getByText(/Quick Summary for Store Owners/i)).toBeInTheDocument();
+    expect(screen.getByText('Philippines')).toBeInTheDocument();
     expect(toggleBtn).toHaveTextContent('Tagalog');
+    expect(toggleBtn).toHaveAttribute('title', 'Lumipat sa Tagalog');
 
     // Click back to Tagalog
     fireEvent.click(toggleBtn);
     expect(screen.getByText(/Mahalagang Paalala para sa mga May-ari ng Tindahan/i)).toBeInTheDocument();
+    expect(screen.getByText('Pilipinas')).toBeInTheDocument();
+    expect(toggleBtn).toHaveAttribute('title', 'Switch to English');
   });
 
   it('closes the modal when clicking the close button', () => {

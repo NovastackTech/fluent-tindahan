@@ -130,6 +130,7 @@ export const PrivacyConsentDialog: React.FC = () => {
                         <button
                           type="button"
                           onClick={(e) => {
+                            e.preventDefault();
                             e.stopPropagation();
                             useTermsStore.getState().openTerms();
                           }}
@@ -166,7 +167,7 @@ export const PrivacyConsentDialog: React.FC = () => {
           <DialogActions>
             {isReadOnly ? (
               <Button appearance="primary" onClick={handleClose} data-testid="privacy-close-btn">
-                {t.privacy.closeBtn || t.common.close}
+                {t.privacy.closeBtn}
               </Button>
             ) : (
               <Button
