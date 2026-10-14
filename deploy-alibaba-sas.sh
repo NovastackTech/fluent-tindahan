@@ -97,6 +97,7 @@ rsync_ssh() {
     --exclude 'deploy/alibaba-sas.env' \
     --exclude 'docker-compose.override.yml' \
     --exclude '.env' \
+    --exclude 'backups/' \
     -e "$rsh" \
     "$@"
 }

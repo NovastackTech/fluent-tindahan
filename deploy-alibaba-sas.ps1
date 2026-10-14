@@ -133,7 +133,8 @@ if (-not $SkipSync) {
             "--exclude", ".obsidian/",
             "--exclude", "deploy/alibaba-sas.env",
             "--exclude", "docker-compose.override.yml",
-            "--exclude", ".env"
+            "--exclude", ".env",
+            "--exclude", "backups/"
         )
         & rsync -az --delete @excludes -e $rsh "$root/" "${remote}:${sasAppDir}/"
         if ($LASTEXITCODE -ne 0) { throw "rsync failed" }
@@ -149,11 +150,17 @@ if (-not $SkipSync) {
                 --exclude=frontend/dist `
                 --exclude=frontend/dev-dist `
                 --exclude=frontend/coverage `
+                --exclude="*/bin" `
+                --exclude="*/obj" `
+                --exclude="*TestResults*" `
                 --exclude=.run `
                 --exclude=tindahan `
+                --exclude=.obsidian `
+                --exclude="*.obsidian*" `
                 --exclude=deploy/alibaba-sas.env `
                 --exclude=docker-compose.override.yml `
                 --exclude=.env `
+                --exclude=backups `
                 .
         } finally {
             Pop-Location
