@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { createClientUuid, DEFAULT_TENANT_ID, DEFAULT_USER_ID } from '../db/seedData';
 import type { PlanTier } from '../db/db';
 import { DEMO_BUSINESS_NAME, DEMO_OWNER, DEMO_PHONE } from '../constants/demoProfile';
+import { STORAGE_KEY_LAST_SYNCED, getSyncStorageKey } from '../constants/sync';
 
 export { DEMO_BUSINESS_NAME, DEMO_OWNER, DEMO_PHONE } from '../constants/demoProfile';
 
@@ -214,7 +215,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       localStorage.removeItem(STORAGE_KEY_CONFIRMED_USER_ID);
       localStorage.setItem(STORAGE_KEY_TIER, 'Libre');
       localStorage.removeItem(STORAGE_KEY_SUBS_END);
-      localStorage.removeItem('fluent_tindahan_last_synced_at');
+      localStorage.removeItem(getSyncStorageKey(tenantId));
+      localStorage.removeItem(STORAGE_KEY_LAST_SYNCED);
     }
 
     set({

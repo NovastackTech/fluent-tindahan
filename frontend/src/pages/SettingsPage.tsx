@@ -572,7 +572,7 @@ export const SettingsPage: React.FC = () => {
           <div>
             <Text weight="bold" size={400}>{t.settings.syncSection}</Text>
             <Text size={100} style={{ color: tokens.colorNeutralForeground3, display: 'block' }}>
-              Last sync: {lastSyncedAt ? lastSyncedAt.toLocaleTimeString() : 'Never'}
+              Last sync: {lastSyncedAt ? lastSyncedAt.toLocaleString() : 'Never'}
             </Text>
           </div>
           <Button

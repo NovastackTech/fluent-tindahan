@@ -9,12 +9,23 @@ import { useAuthStore } from '../state/authStore';
 import { createClientUuid } from '../utils/uuid';
 import { create } from 'zustand';
 
-export const STORAGE_KEY_LAST_SYNCED = 'fluent_tindahan_last_synced_at';
+import { STORAGE_KEY_LAST_SYNCED, getSyncStorageKey } from '../constants/sync';
+export { STORAGE_KEY_LAST_SYNCED, getSyncStorageKey };
 
-export function getSavedLastSyncedAt(): Date | null {
+export function getSavedLastSyncedAt(tenantId?: string | null): Date | null {
   try {
     if (typeof localStorage === 'undefined') return null;
-    const raw = localStorage.getItem(STORAGE_KEY_LAST_SYNCED);
+    const activeTenantId = tenantId !== undefined ? tenantId : useAuthStore.getState().tenantId;
+    const key = getSyncStorageKey(activeTenantId);
+    let raw = localStorage.getItem(key);
+    if (!raw && key !== STORAGE_KEY_LAST_SYNCED) {
+      const legacy = localStorage.getItem(STORAGE_KEY_LAST_SYNCED);
+      if (legacy) {
+        raw = legacy;
+        localStorage.setItem(key, legacy);
+        localStorage.removeItem(STORAGE_KEY_LAST_SYNCED);
+      }
+    }
     if (!raw) return null;
     const date = new Date(raw);
     return isNaN(date.getTime()) ? null : date;
@@ -23,12 +34,15 @@ export function getSavedLastSyncedAt(): Date | null {
   }
 }
 
-export function persistLastSyncedAt(date: Date | null): void {
+export function persistLastSyncedAt(date: Date | null, tenantId?: string | null): void {
   try {
     if (typeof localStorage === 'undefined') return;
+    const activeTenantId = tenantId !== undefined ? tenantId : useAuthStore.getState().tenantId;
+    const key = getSyncStorageKey(activeTenantId);
     if (date) {
-      localStorage.setItem(STORAGE_KEY_LAST_SYNCED, date.toISOString());
+      localStorage.setItem(key, date.toISOString());
     } else {
+      localStorage.removeItem(key);
       localStorage.removeItem(STORAGE_KEY_LAST_SYNCED);
     }
   } catch {
@@ -66,16 +80,22 @@ export const useSyncStore = create<SyncStoreState>((set) => ({
   setOnline: (online) => set({ isOnline: online }),
   setSyncing: (syncing) => set({ isSyncing: syncing }),
   setCounts: (pending, deadLetter) => set({ pendingCount: pending, deadLetterCount: deadLetter }),
-  setLastSyncedAt: (date) => {
-    persistLastSyncedAt(date);
-    set({ lastSyncedAt: date, lastErrorMessage: null });
-  },
+  setLastSyncedAt: (date) => set({ lastSyncedAt: date, lastErrorMessage: null }),
   setLastErrorMessage: (msg) => set({ lastErrorMessage: msg })
 }));
 
 useSyncStore.subscribe((state, prevState) => {
   if (state.lastSyncedAt !== prevState.lastSyncedAt) {
     persistLastSyncedAt(state.lastSyncedAt);
+  }
+});
+
+useAuthStore.subscribe((authState, prevAuthState) => {
+  const currentTenant = authState.tenantId?.trim();
+  const prevTenant = prevAuthState?.tenantId?.trim();
+  if (currentTenant && prevTenant && currentTenant.toLowerCase() !== prevTenant.toLowerCase()) {
+    const newTenantLastSync = getSavedLastSyncedAt(currentTenant);
+    useSyncStore.getState().setLastSyncedAt(newTenantLastSync);
   }
 });
 
@@ -426,7 +446,6 @@ export async function pullCatalogFromServer(): Promise<number> {
           updatedAt: p.updatedAt
         });
       }
-      useSyncStore.getState().setLastSyncedAt(new Date());
       return products.length;
     }
     return 0;

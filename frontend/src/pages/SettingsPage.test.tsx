@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { FluentProvider } from '@fluentui/react-components';
 import { SettingsPage } from './SettingsPage';
 import { sariSariLightTheme } from '../theme/theme';
@@ -19,6 +19,14 @@ describe('SettingsPage', () => {
       tenantId: 'settings-test-tenant',
       businessName: "Aling Nena's Tindahan & GCash",
       role: 'Owner'
+    });
+    useSyncStore.setState({
+      isOnline: true,
+      isSyncing: false,
+      lastSyncedAt: null,
+      pendingCount: 0,
+      deadLetterCount: 0,
+      lastErrorMessage: null
     });
     useSubscriptionStore.setState({
       tier: 'Libre',
@@ -204,7 +212,28 @@ describe('SettingsPage', () => {
     await waitFor(() => {
       expect(screen.getByText(/Lahat ay naka-sync sa cloud|All data synced/i)).toBeInTheDocument();
       expect(screen.getByText(/Last sync:/i)).not.toHaveTextContent('Never');
-      expect(screen.getByText(/Last sync:/i)).toHaveTextContent(lastSyncedAt.toLocaleTimeString());
+      expect(screen.getByText(/Last sync:/i)).toHaveTextContent(lastSyncedAt.toLocaleString());
+    });
+  });
+
+  it('resets in-memory sync time and shows Never when onboarding a new tenant', async () => {
+    const previousSyncTime = new Date('2026-10-14T07:39:00.000Z');
+    useSyncStore.getState().setLastSyncedAt(previousSyncTime);
+    expect(useSyncStore.getState().lastSyncedAt).toEqual(previousSyncTime);
+
+    act(() => {
+      useAuthStore.getState().completeOnboarding({
+        businessName: 'Bagong Tindahan',
+        tenantId: 'new-onboarded-tenant-uuid'
+      });
+    });
+
+    expect(useSyncStore.getState().lastSyncedAt).toBeNull();
+
+    renderSettings();
+
+    await waitFor(() => {
+      expect(screen.getByText(/Last sync:/i)).toHaveTextContent('Never');
     });
   });
 
