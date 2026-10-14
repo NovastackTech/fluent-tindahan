@@ -8,6 +8,7 @@ using System.Threading.RateLimiting;
 using FluentTindahan.Application;
 using FluentTindahan.Infrastructure;
 using FluentTindahan.Infrastructure.Persistence;
+using FluentTindahan.WebApi;
 using FluentTindahan.WebApi.Authorization;
 using FluentTindahan.WebApi.Middleware;
 
@@ -32,15 +33,12 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
     });
 
-// CORS: support PWA on Vite and local/mobile development
+// CORS: support PWA on Vite and local/mobile development (restricted outside Development)
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowPwaClient", policy =>
+    options.AddPolicy(CorsPolicies.AllowPwaClient, policy =>
     {
-        policy.SetIsOriginAllowed(_ => true) // Allow any localhost/LAN origin for PWA testing
-              .AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials();
+        CorsPolicies.ConfigurePwaCors(policy, builder.Configuration, builder.Environment);
     });
 });
 
