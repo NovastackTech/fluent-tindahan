@@ -132,6 +132,15 @@ describe('syncEngine', () => {
     expect(useSyncStore.getState().lastSyncedAt).toEqual(syncTimeA);
   });
 
+  it('does not fall back to or inherit unscoped legacy last_synced key', () => {
+    const tenant = 'test-isolated-tenant';
+    localStorage.setItem(STORAGE_KEY_LAST_SYNCED, new Date('2026-10-10T00:00:00.000Z').toISOString());
+    localStorage.removeItem(getSyncStorageKey(tenant));
+
+    expect(getSavedLastSyncedAt(tenant)).toBeNull();
+    expect(localStorage.getItem(getSyncStorageKey(tenant))).toBeNull();
+  });
+
   it('enqueueSync adds an operation to Dexie syncQueue and updates pending count', async () => {
     const syncId = await enqueueSync('Product', 'Insert', { id: 'p-1', name: 'Sabon' });
 

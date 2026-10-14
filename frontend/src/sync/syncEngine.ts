@@ -17,15 +17,7 @@ export function getSavedLastSyncedAt(tenantId?: string | null): Date | null {
     if (typeof localStorage === 'undefined') return null;
     const activeTenantId = tenantId !== undefined ? tenantId : useAuthStore.getState().tenantId;
     const key = getSyncStorageKey(activeTenantId);
-    let raw = localStorage.getItem(key);
-    if (!raw && key !== STORAGE_KEY_LAST_SYNCED) {
-      const legacy = localStorage.getItem(STORAGE_KEY_LAST_SYNCED);
-      if (legacy) {
-        raw = legacy;
-        localStorage.setItem(key, legacy);
-        localStorage.removeItem(STORAGE_KEY_LAST_SYNCED);
-      }
-    }
+    const raw = localStorage.getItem(key);
     if (!raw) return null;
     const date = new Date(raw);
     return isNaN(date.getTime()) ? null : date;
@@ -43,7 +35,6 @@ export function persistLastSyncedAt(date: Date | null, tenantId?: string | null)
       localStorage.setItem(key, date.toISOString());
     } else {
       localStorage.removeItem(key);
-      localStorage.removeItem(STORAGE_KEY_LAST_SYNCED);
     }
   } catch {
     // Ignore storage quota or access errors
