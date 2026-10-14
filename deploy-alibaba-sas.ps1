@@ -63,7 +63,7 @@ $sasAppDir = if ($cfg.ContainsKey("SAS_APP_DIR") -and $cfg["SAS_APP_DIR"]) { $cf
 $sasKey = if ($cfg.ContainsKey("SAS_SSH_KEY")) { $cfg["SAS_SSH_KEY"] } else { "" }
 $publicHost = if ($cfg.ContainsKey("PUBLIC_HOST") -and $cfg["PUBLIC_HOST"]) { $cfg["PUBLIC_HOST"] } else { "tindahan-dev.novastack-inc.online" }
 $publicOrigin = if ($cfg.ContainsKey("PUBLIC_ORIGIN") -and $cfg["PUBLIC_ORIGIN"]) { $cfg["PUBLIC_ORIGIN"] } else { "https://$publicHost" }
-# Unique port on shared Novastack SAS (8086–8088, 8090 occupied)
+# Unique port on shared Novastack SAS (8086-8088, 8090 occupied)
 $hostPort = if ($cfg.ContainsKey("HOST_HTTP_PORT") -and $cfg["HOST_HTTP_PORT"]) { $cfg["HOST_HTTP_PORT"] } else { "8089" }
 $certbotEmail = if ($cfg.ContainsKey("SAS_CERTBOT_EMAIL")) { $cfg["SAS_CERTBOT_EMAIL"] } else { "" }
 
@@ -78,7 +78,7 @@ if (-not (Get-Command ssh -ErrorAction SilentlyContinue)) {
     throw "ssh is required (install OpenSSH Client)."
 }
 if (-not $SkipSync -and -not (Get-Command rsync -ErrorAction SilentlyContinue)) {
-    Write-Host "[WARN] rsync not found — falling back to scp of a tarball (slower)." -ForegroundColor Yellow
+    Write-Host "[WARN] rsync not found - falling back to scp of a tarball (slower)." -ForegroundColor Yellow
 }
 
 $sshArgs = @("-p", $sasPort, "-o", "StrictHostKeyChecking=accept-new")
@@ -91,7 +91,7 @@ function Invoke-Remote([string]$RemoteCommand) {
 }
 
 Write-Host "==========================================================" -ForegroundColor Cyan
-Write-Host "  Fluent Tindahan — deploy-alibaba-sas" -ForegroundColor Cyan
+Write-Host "  Fluent Tindahan - deploy-alibaba-sas" -ForegroundColor Cyan
 Write-Host "  Target: $remote (port $sasPort)" -ForegroundColor Cyan
 Write-Host "  Public: $publicOrigin  (host port $hostPort)" -ForegroundColor Cyan
 Write-Host "  App dir: $sasAppDir" -ForegroundColor Cyan
@@ -202,7 +202,7 @@ if ($LASTEXITCODE -ne 0) { throw "Failed to write remote .env" }
 Write-Host "[INFO] Checking for running database to snapshot..." -ForegroundColor Yellow
 $pgUser = CfgOr 'POSTGRES_USER' 'fluent'
 $pgDb = CfgOr 'POSTGRES_DB' 'fluent_tindahan'
-$backupCmd = "cd '$sasAppDir' && if docker compose -f docker-compose.yml ps --status running -q db 2>/dev/null | grep -q .; then mkdir -p backups && ts=`$(date +%Y%m%d_%H%M%S) && echo `"[INFO] Snapshotting database to backups/db_`${ts}.sql.gz...`" && docker compose -f docker-compose.yml exec -T db pg_dump -U `"$pgUser`" `"$pgDb`" | gzip > `"backups/db_`${ts}.sql.gz`" && echo `"[OK] Database snapshot complete.`" || echo `"[WARN] Database snapshot failed or skipped.`"; else echo `"[INFO] Database not running yet — skipping pre-deploy backup.`"; fi"
+$backupCmd = "cd '$sasAppDir' && if docker compose -f docker-compose.yml ps --status running -q db 2>/dev/null | grep -q .; then mkdir -p backups && ts=`$(date +%Y%m%d_%H%M%S) && echo `"[INFO] Snapshotting database to backups/db_`${ts}.sql.gz...`" && docker compose -f docker-compose.yml exec -T db pg_dump -U `"$pgUser`" `"$pgDb`" | gzip > `"backups/db_`${ts}.sql.gz`" && echo `"[OK] Database snapshot complete.`" || echo `"[WARN] Database snapshot failed or skipped.`"; else echo `"[INFO] Database not running yet - skipping pre-deploy backup.`"; fi"
 Invoke-Remote $backupCmd
 
 Write-Host "[INFO] Building and starting stack on SAS..." -ForegroundColor Yellow
@@ -223,7 +223,7 @@ if (-not $healthy) {
     throw "Health check timed out. Inspect logs: ssh $remote `"cd $sasAppDir && docker compose -f docker-compose.yml logs --tail=200`""
 }
 
-Write-Host "[INFO] Installing edge nginx vhost for $publicHost → 127.0.0.1:$hostPort..." -ForegroundColor Yellow
+Write-Host "[INFO] Installing edge nginx vhost for $publicHost -> 127.0.0.1:$hostPort..." -ForegroundColor Yellow
 $vhostArgs = if ($ForceVhost) { "--force-vhost" } else { "" }
 $vhostCmd = "PUBLIC_HOST='$publicHost' HOST_HTTP_PORT='$hostPort' SAS_APP_DIR='$sasAppDir' SAS_CERTBOT_EMAIL='$certbotEmail' bash '$sasAppDir/deploy/install-host-vhost.sh' $vhostArgs"
 Invoke-Remote $vhostCmd
