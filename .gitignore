@@ -35,3 +35,16 @@ lcov-report/
 # Test and documentation generated PDFs
 *.pdf
 
+# Environment and secrets
+*.env
+*.env.*
+deploy/*.env
+
+# Explicit exceptions: allow environment templates and non-secret Vite environment settings in frontend/
+!.env.example
+!*.env.example
+!deploy/*.env.example
+!frontend/.env.development
+!frontend/.env.production
+!frontend/.env.test
+!frontend/.env.example

@@ -17,7 +17,8 @@ describe('authStore', () => {
       userPhone: DEMO_PHONE,
       role: 'Owner',
       firebaseToken: null,
-      consentAccepted: false
+      consentAccepted: false,
+      isPrivacyNoticeOpen: false
     });
   });
 
@@ -28,6 +29,7 @@ describe('authStore', () => {
     expect(state.businessName).toBe(DEMO_BUSINESS_NAME);
     expect(state.role).toBe('Owner');
     expect(state.consentAccepted).toBe(false);
+    expect(state.isPrivacyNoticeOpen).toBe(false);
   });
 
   it('does not treat the default tenant subscription as completed onboarding after reload', async () => {
@@ -45,11 +47,41 @@ describe('authStore', () => {
     useAuthStore.getState().setConsentAccepted(true);
 
     expect(useAuthStore.getState().consentAccepted).toBe(true);
+    expect(useAuthStore.getState().termsAcceptedVersion).toBe('2026-10-14');
     expect(localStorage.getItem('fluent_tindahan_consent_v1')).toBe('true');
+    expect(localStorage.getItem('fluent_tindahan_terms_version_v1')).toBe('2026-10-14');
 
     useAuthStore.getState().setConsentAccepted(false);
     expect(useAuthStore.getState().consentAccepted).toBe(false);
+    expect(useAuthStore.getState().termsAcceptedVersion).toBeNull();
     expect(localStorage.getItem('fluent_tindahan_consent_v1')).toBe('false');
+    expect(localStorage.getItem('fluent_tindahan_terms_version_v1')).toBeNull();
+  });
+
+  it('allows setting custom termsAcceptedVersion directly', () => {
+    useAuthStore.getState().setTermsAcceptedVersion('2027-01-01');
+    expect(useAuthStore.getState().termsAcceptedVersion).toBe('2027-01-01');
+    expect(localStorage.getItem('fluent_tindahan_terms_version_v1')).toBe('2027-01-01');
+
+    useAuthStore.getState().setTermsAcceptedVersion(null);
+    expect(useAuthStore.getState().termsAcceptedVersion).toBeNull();
+    expect(localStorage.getItem('fluent_tindahan_terms_version_v1')).toBeNull();
+  });
+
+  it('toggles isPrivacyNoticeOpen without affecting consentAccepted', () => {
+    useAuthStore.getState().setConsentAccepted(true);
+    expect(useAuthStore.getState().isPrivacyNoticeOpen).toBe(false);
+
+    useAuthStore.getState().openPrivacyNotice();
+    expect(useAuthStore.getState().isPrivacyNoticeOpen).toBe(true);
+    expect(useAuthStore.getState().consentAccepted).toBe(true);
+
+    useAuthStore.getState().closePrivacyNotice();
+    expect(useAuthStore.getState().isPrivacyNoticeOpen).toBe(false);
+    expect(useAuthStore.getState().consentAccepted).toBe(true);
+
+    useAuthStore.getState().setIsPrivacyNoticeOpen(true);
+    expect(useAuthStore.getState().isPrivacyNoticeOpen).toBe(true);
   });
 
   it('sets custom tenantId', () => {

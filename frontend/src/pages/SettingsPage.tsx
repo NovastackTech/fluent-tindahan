@@ -25,7 +25,10 @@ import {
   PhoneLaptopRegular,
   ArrowDownloadRegular,
   SparkleRegular,
-  EditRegular
+  EditRegular,
+  ShieldCheckmarkRegular,
+  InfoRegular,
+  DocumentCheckmarkRegular
 } from '@fluentui/react-icons';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
@@ -34,6 +37,8 @@ import { usePrinterStore } from '../state/printerStore';
 import { DEFAULT_GCASH_FEE_TIERS, GCASH_FEE_BRACKETS, useGCashFeeStore } from '../state/gcashFeeStore';
 import { usePwaStore } from '../state/pwaStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
+import { useDisclaimerStore } from '../state/disclaimerStore';
+import { useTermsStore } from '../state/termsStore';
 import { printThermalReceipt } from '../services/receiptPrinter';
 import {
   useSyncStore,
@@ -685,6 +690,43 @@ export const SettingsPage: React.FC = () => {
           </div>
         </Card>
       )}
+
+      {/* Legal & Compliance / Disclaimer */}
+      <Card className={styles.card}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+          <ShieldCheckmarkRegular fontSize={20} />
+          <Text weight="bold" size={400}>{t.disclaimer.legalCardTitle}</Text>
+        </div>
+        <Text size={200} style={{ color: tokens.colorNeutralForeground3, marginBottom: '12px', display: 'block' }}>
+          {t.disclaimer.legalCardDesc}
+        </Text>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+          <Button
+            appearance="primary"
+            icon={<InfoRegular />}
+            onClick={() => useDisclaimerStore.getState().openDisclaimer()}
+            data-testid="settings-open-disclaimer-btn"
+          >
+            {t.disclaimer.buttonLabel}
+          </Button>
+          <Button
+            appearance="secondary"
+            icon={<ShieldCheckmarkRegular />}
+            onClick={() => useAuthStore.getState().openPrivacyNotice()}
+            data-testid="settings-open-privacy-btn"
+          >
+            {t.disclaimer.viewPrivacyBtn}
+          </Button>
+          <Button
+            appearance="secondary"
+            icon={<DocumentCheckmarkRegular />}
+            onClick={() => useTermsStore.getState().openTerms()}
+            data-testid="settings-open-terms-btn"
+          >
+            {t.disclaimer.viewFullTermsBtn}
+          </Button>
+        </div>
+      </Card>
 
       {/* Cloud & Data Management */}
       <Card className={styles.card}>

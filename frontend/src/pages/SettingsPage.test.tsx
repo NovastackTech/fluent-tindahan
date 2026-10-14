@@ -9,6 +9,8 @@ import { useThemeStore } from '../state/themeStore';
 import { useSyncStore } from '../sync/syncEngine';
 import { usePwaStore } from '../state/pwaStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
+import { useDisclaimerStore } from '../state/disclaimerStore';
+import { useTermsStore } from '../state/termsStore';
 import { db } from '../db/db';
 import { DEFAULT_GCASH_FEE_TIERS, GCASH_FEE_STORAGE_KEY, useGCashFeeStore } from '../state/gcashFeeStore';
 
@@ -36,6 +38,7 @@ describe('SettingsPage', () => {
     });
     useLanguageStore.setState({ language: 'tl' });
     useThemeStore.setState({ themeMode: 'light', isDarkMode: false });
+    useDisclaimerStore.setState({ isDisclaimerOpen: false });
     usePwaStore.setState({ isInstallable: false, isStandalone: false, isInstalled: false, isIos: false });
     await db.products.clear();
     await db.customers.clear();
@@ -348,6 +351,30 @@ describe('SettingsPage', () => {
 
     expect(useAuthStore.getState().isOnboardingOpen).toBe(true);
     expect(useAuthStore.getState().onboardingMode).toBe('edit');
+  });
+
+  it('renders legal & compliance section with disclaimer, privacy notice, and terms triggers', () => {
+    useAuthStore.setState({ consentAccepted: true });
+    renderSettings();
+
+    const disclaimerBtn = screen.getByTestId('settings-open-disclaimer-btn');
+    expect(disclaimerBtn).toBeInTheDocument();
+
+    fireEvent.click(disclaimerBtn);
+    expect(useDisclaimerStore.getState().isDisclaimerOpen).toBe(true);
+
+    const privacyBtn = screen.getByTestId('settings-open-privacy-btn');
+    expect(privacyBtn).toBeInTheDocument();
+
+    fireEvent.click(privacyBtn);
+    expect(useAuthStore.getState().consentAccepted).toBe(true);
+    expect(useAuthStore.getState().isPrivacyNoticeOpen).toBe(true);
+
+    const termsBtn = screen.getByTestId('settings-open-terms-btn');
+    expect(termsBtn).toBeInTheDocument();
+
+    fireEvent.click(termsBtn);
+    expect(useTermsStore.getState().isTermsOpen).toBe(true);
   });
 });
 
