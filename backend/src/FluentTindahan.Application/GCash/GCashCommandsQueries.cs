@@ -88,6 +88,16 @@ public class RecordGCashTxnCommandHandler : IRequestHandler<RecordGCashTxnComman
             throw new UnauthorizedAccessException("Tenant is not authenticated or resolved.");
         }
 
+        string? customerPhone = null;
+        if (!string.IsNullOrWhiteSpace(request.CustomerPhone))
+        {
+            if (!PhilippineMobileNumber.TryNormalize(request.CustomerPhone, out var normalizedPhone))
+            {
+                throw new ArgumentException("Enter a valid Philippine mobile number.", nameof(request.CustomerPhone));
+            }
+            customerPhone = normalizedPhone;
+        }
+
         var refNorm = GCashTxn.NormalizeRef(request.RefNo);
         if (refNorm.Length > 0)
         {
@@ -97,16 +107,6 @@ public class RecordGCashTxnCommandHandler : IRequestHandler<RecordGCashTxnComman
             {
                 throw new DuplicateGCashRefException(request.RefNo);
             }
-        }
-
-        string? customerPhone = null;
-        if (!string.IsNullOrWhiteSpace(request.CustomerPhone))
-        {
-            if (!PhilippineMobileNumber.TryNormalize(request.CustomerPhone, out var normalizedPhone))
-            {
-                throw new ArgumentException("Enter a valid Philippine mobile number.", nameof(request.CustomerPhone));
-            }
-            customerPhone = normalizedPhone;
         }
 
         var txn = new GCashTxn
