@@ -5,6 +5,13 @@ import { sariSariLightTheme } from '../theme/theme';
 import { TermsModal } from './TermsModal';
 import { useTermsStore } from '../state/termsStore';
 import { useLanguageStore } from '../state/languageStore';
+import {
+  termsEN,
+  termsTL,
+  CURRENT_TERMS_VERSION,
+  TERMS_EFFECTIVE_DATE_EN,
+  TERMS_EFFECTIVE_DATE_TL
+} from '../legal/termsData';
 
 const renderModal = () =>
   render(
@@ -45,7 +52,7 @@ describe('TermsModal', () => {
     renderModal();
 
     expect(
-      screen.getByText(/Terms of Use & Acceptable Usage Policy/i)
+      screen.getAllByText(/Terms of Use & Acceptable Usage Policy/i)[0]
     ).toBeInTheDocument();
     expect(screen.getByText(/Quick Summary for Store Owners/i)).toBeInTheDocument();
     expect(
@@ -102,5 +109,13 @@ describe('TermsModal', () => {
     expect(
       screen.getByText(/Nabasa at sinasang-ayunan ko ang Mga Tuntunin sa Paggamit/i)
     ).toBeInTheDocument();
+  });
+
+  it('exposes the single-source-of-truth version and effective dates', () => {
+    expect(termsEN.version).toBe(CURRENT_TERMS_VERSION);
+    expect(termsTL.version).toBe(CURRENT_TERMS_VERSION);
+    expect(termsEN.effectiveDate).toBe(TERMS_EFFECTIVE_DATE_EN);
+    expect(termsTL.effectiveDate).toBe(TERMS_EFFECTIVE_DATE_TL);
+    expect(CURRENT_TERMS_VERSION).toBe('2026-10-14');
   });
 });

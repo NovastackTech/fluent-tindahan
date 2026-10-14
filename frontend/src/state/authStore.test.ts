@@ -47,11 +47,25 @@ describe('authStore', () => {
     useAuthStore.getState().setConsentAccepted(true);
 
     expect(useAuthStore.getState().consentAccepted).toBe(true);
+    expect(useAuthStore.getState().termsAcceptedVersion).toBe('2026-10-14');
     expect(localStorage.getItem('fluent_tindahan_consent_v1')).toBe('true');
+    expect(localStorage.getItem('fluent_tindahan_terms_version_v1')).toBe('2026-10-14');
 
     useAuthStore.getState().setConsentAccepted(false);
     expect(useAuthStore.getState().consentAccepted).toBe(false);
+    expect(useAuthStore.getState().termsAcceptedVersion).toBeNull();
     expect(localStorage.getItem('fluent_tindahan_consent_v1')).toBe('false');
+    expect(localStorage.getItem('fluent_tindahan_terms_version_v1')).toBeNull();
+  });
+
+  it('allows setting custom termsAcceptedVersion directly', () => {
+    useAuthStore.getState().setTermsAcceptedVersion('2027-01-01');
+    expect(useAuthStore.getState().termsAcceptedVersion).toBe('2027-01-01');
+    expect(localStorage.getItem('fluent_tindahan_terms_version_v1')).toBe('2027-01-01');
+
+    useAuthStore.getState().setTermsAcceptedVersion(null);
+    expect(useAuthStore.getState().termsAcceptedVersion).toBeNull();
+    expect(localStorage.getItem('fluent_tindahan_terms_version_v1')).toBeNull();
   });
 
   it('toggles isPrivacyNoticeOpen without affecting consentAccepted', () => {

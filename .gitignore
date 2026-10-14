@@ -38,7 +38,19 @@ lcov-report/
 # Environment and secrets
 *.env
 *.env.*
-!.env.example
 deploy/*.env
+
+# Explicit exceptions: allow environment templates and non-secret Vite environment settings
+!.env.example
+!*.env.example
+!**/*.env.example
+!.env.development
+!*.env.development
+!.env.production
+!*.env.production
+!.env.test
+!*.env.test
+!deploy/*.env.example
+
 
 

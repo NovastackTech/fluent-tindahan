@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Dialog,
   DialogSurface,
@@ -7,13 +7,14 @@ import {
   DialogActions,
   DialogContent,
   Button,
+  Checkbox,
   Text,
   makeStyles,
   tokens,
   shorthands
 } from '@fluentui/react-components';
 import { ShieldCheckmarkRegular } from '@fluentui/react-icons';
-import { useAuthStore } from '../state/authStore';
+import { useAuthStore, CURRENT_TERMS_VERSION } from '../state/authStore';
 import { useTermsStore } from '../state/termsStore';
 import { useTranslation } from '../state/languageStore';
 
@@ -30,16 +31,37 @@ const useStyles = makeStyles({
     flexDirection: 'column',
     ...shorthands.gap(tokens.spacingVerticalXS),
     marginTop: tokens.spacingVerticalS
+  },
+  termsBox: {
+    marginTop: tokens.spacingVerticalM,
+    ...shorthands.padding(tokens.spacingVerticalS, tokens.spacingHorizontalM),
+    backgroundColor: tokens.colorNeutralBackground2,
+    ...shorthands.borderRadius(tokens.borderRadiusMedium),
+    ...shorthands.border('1px', 'solid', tokens.colorNeutralStroke2)
+  },
+  termsLink: {
+    color: tokens.colorBrandForeground1,
+    background: 'none',
+    ...shorthands.border('none'),
+    ...shorthands.padding('0'),
+    fontSize: '12px',
+    fontWeight: 600,
+    textAlign: 'left',
+    textDecorationLine: 'underline',
+    cursor: 'pointer'
   }
 });
 
 export const PrivacyConsentDialog: React.FC = () => {
   const styles = useStyles();
   const consentAccepted = useAuthStore((s) => s.consentAccepted);
+  const termsAcceptedVersion = useAuthStore((s) => s.termsAcceptedVersion);
   const setConsentAccepted = useAuthStore((s) => s.setConsentAccepted);
   const isPrivacyNoticeOpen = useAuthStore((s) => s.isPrivacyNoticeOpen);
   const closePrivacyNotice = useAuthStore((s) => s.closePrivacyNotice);
   const { t, language } = useTranslation();
+
+  const [termsAgreed, setTermsAgreed] = useState(false);
 
   const isConsentRequired = !consentAccepted;
   const isOpen = isConsentRequired || isPrivacyNoticeOpen;
@@ -50,7 +72,7 @@ export const PrivacyConsentDialog: React.FC = () => {
   }
 
   const handleAccept = () => {
-    setConsentAccepted(true);
+    setConsentAccepted(true, CURRENT_TERMS_VERSION);
     closePrivacyNotice();
   };
 
@@ -95,27 +117,49 @@ export const PrivacyConsentDialog: React.FC = () => {
               <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
                 {t.privacy.description}
               </Text>
-              <div>
-                <button
-                  type="button"
-                  onClick={() => useTermsStore.getState().openTerms()}
-                  data-testid="privacy-view-terms-link"
-                  style={{
-                    color: tokens.colorBrandForeground1,
-                    background: 'none',
-                    border: 'none',
-                    padding: 0,
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    textAlign: 'left',
-                    textDecoration: 'underline',
-                    cursor: 'pointer',
-                    marginTop: '4px'
-                  }}
-                >
-                  {t.privacy.viewTermsLink}
-                </button>
-              </div>
+
+              {!isReadOnly ? (
+                <div className={styles.termsBox}>
+                  <Checkbox
+                    data-testid="privacy-terms-checkbox"
+                    checked={termsAgreed}
+                    onChange={(_, data) => setTermsAgreed(!!data.checked)}
+                    label={
+                      <Text size={200}>
+                        {t.privacy.termsCheckboxPrefix}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            useTermsStore.getState().openTerms();
+                          }}
+                          data-testid="privacy-view-terms-link"
+                          className={styles.termsLink}
+                        >
+                          {t.privacy.termsCheckboxLinkText}
+                        </button>
+                        {t.privacy.termsCheckboxSuffix}
+                      </Text>
+                    }
+                  />
+                </div>
+              ) : (
+                <div style={{ marginTop: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => useTermsStore.getState().openTerms()}
+                    data-testid="privacy-view-terms-link"
+                    className={styles.termsLink}
+                  >
+                    {t.privacy.viewTermsLink}
+                  </button>
+                  {termsAcceptedVersion && (
+                    <Text size={100} style={{ display: 'block', color: tokens.colorNeutralForeground3, marginTop: '4px' }}>
+                      {t.privacy.acceptedVersionNotice} {termsAcceptedVersion}
+                    </Text>
+                  )}
+                </div>
+              )}
             </div>
           </DialogContent>
 
@@ -125,7 +169,12 @@ export const PrivacyConsentDialog: React.FC = () => {
                 {t.privacy.closeBtn || t.common.close}
               </Button>
             ) : (
-              <Button appearance="primary" onClick={handleAccept} data-testid="privacy-accept-btn">
+              <Button
+                appearance="primary"
+                disabled={!termsAgreed}
+                onClick={handleAccept}
+                data-testid="privacy-accept-btn"
+              >
                 {t.privacy.acceptBtn}
               </Button>
             )}

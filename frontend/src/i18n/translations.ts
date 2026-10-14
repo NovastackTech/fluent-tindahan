@@ -403,6 +403,10 @@ export interface Translations {
     declineBtn: string;
     closeBtn: string;
     viewTermsLink: string;
+    termsCheckboxPrefix: string;
+    termsCheckboxLinkText: string;
+    termsCheckboxSuffix: string;
+    acceptedVersionNotice: string;
   };
   disclaimer: {
     buttonLabel: string;
@@ -911,7 +915,11 @@ export const translations: Record<Language, Translations> = {
       acceptBtn: 'Sumasang-ayon Ako',
       declineBtn: 'Tanggihan',
       closeBtn: 'Isara',
-      viewTermsLink: 'Tingnan ang Buong Tuntunin sa Paggamit (Terms of Use & AUP)'
+      viewTermsLink: 'Tingnan ang Buong Tuntunin sa Paggamit (Terms of Use & AUP)',
+      termsCheckboxPrefix: 'Nabasa at sinasang-ayunan ko ang ',
+      termsCheckboxLinkText: 'Mga Tuntunin sa Paggamit (Terms of Use & AUP)',
+      termsCheckboxSuffix: ' at Patakaran sa Data Privacy.',
+      acceptedVersionNotice: 'Tinanggap ang Bersyon ng Tuntunin:'
     },
     disclaimer: {
       buttonLabel: 'Disclaimer',
@@ -1418,7 +1426,11 @@ export const translations: Record<Language, Translations> = {
       acceptBtn: 'I Agree',
       declineBtn: 'Decline',
       closeBtn: 'Close',
-      viewTermsLink: 'View Full Terms of Use & Acceptable Usage Policy (AUP)'
+      viewTermsLink: 'View Full Terms of Use & Acceptable Usage Policy (AUP)',
+      termsCheckboxPrefix: 'I have read and agree to the ',
+      termsCheckboxLinkText: 'Terms of Use & Acceptable Usage Policy (AUP)',
+      termsCheckboxSuffix: ' and Data Privacy Policy.',
+      acceptedVersionNotice: 'Accepted Terms Version:'
     },
     disclaimer: {
       buttonLabel: 'Disclaimer',

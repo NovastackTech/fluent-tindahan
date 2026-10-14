@@ -246,6 +246,7 @@ describe('App', () => {
     const firstRender = render(<App />);
 
     await waitFor(() => expect(useAuthStore.getState().isOnboardingStatusReady).toBe(true));
+    fireEvent.click(screen.getByTestId('privacy-terms-checkbox'));
     fireEvent.click(screen.getByRole('button', { name: /Sumasang-ayon Ako|I Agree/i }));
 
     expect(await screen.findByText(/Welcome to Fluent Tindahan|Maligayang Pagdating sa Fluent Tindahan/i)).toBeInTheDocument();

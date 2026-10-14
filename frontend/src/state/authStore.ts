@@ -4,7 +4,10 @@ import type { PlanTier } from '../db/db';
 import { DEMO_BUSINESS_NAME, DEMO_OWNER, DEMO_PHONE } from '../constants/demoProfile';
 import { getSyncStorageKey } from '../constants/sync';
 
+import { CURRENT_TERMS_VERSION } from '../legal/termsData';
+
 export { DEMO_BUSINESS_NAME, DEMO_OWNER, DEMO_PHONE } from '../constants/demoProfile';
+export { CURRENT_TERMS_VERSION } from '../legal/termsData';
 
 export interface StoreProfilePayload {
   businessName: string;
@@ -31,12 +34,14 @@ interface AuthState {
   subscriptionEndDate: string | null;
   firebaseToken: string | null;
   consentAccepted: boolean;
+  termsAcceptedVersion: string | null;
   isPrivacyNoticeOpen: boolean;
   isOnboarded: boolean;
   isOnboardingStatusReady: boolean;
   isOnboardingOpen: boolean;
   onboardingMode: 'initial' | 'edit';
-  setConsentAccepted: (accepted: boolean) => void;
+  setConsentAccepted: (accepted: boolean, termsVersion?: string | null) => void;
+  setTermsAcceptedVersion: (version: string | null) => void;
   setIsPrivacyNoticeOpen: (open: boolean) => void;
   setPrivacyNoticeOpen: (open: boolean) => void;
   openPrivacyNotice: () => void;
@@ -59,6 +64,7 @@ interface AuthState {
 }
 
 const STORAGE_KEY_CONSENT = 'fluent_tindahan_consent_v1';
+const STORAGE_KEY_TERMS_VERSION = 'fluent_tindahan_terms_version_v1';
 const STORAGE_KEY_TIER = 'fluent_tindahan_tier_v1';
 const STORAGE_KEY_SUBS_END = 'fluent_tindahan_subs_end_v1';
 const STORAGE_KEY_TENANT_ID = 'fluent_tindahan_tenant_id_v1';
@@ -72,6 +78,7 @@ const STORAGE_KEY_USER_PHONE = 'fluent_tindahan_user_phone_v1';
 const STORAGE_KEY_ONBOARDED = 'fluent_tindahan_onboarded_v1';
 
 const initialConsent = localStorage.getItem(STORAGE_KEY_CONSENT) === 'true';
+const initialTermsVersion = localStorage.getItem(STORAGE_KEY_TERMS_VERSION);
 const initialTier = (localStorage.getItem(STORAGE_KEY_TIER) as PlanTier) || 'Libre';
 const initialSubsEnd = localStorage.getItem(STORAGE_KEY_SUBS_END);
 const initialTenantId = localStorage.getItem(STORAGE_KEY_TENANT_ID) || DEFAULT_TENANT_ID;
@@ -105,15 +112,31 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   subscriptionEndDate: initialSubsEnd,
   firebaseToken: null,
   consentAccepted: initialConsent,
+  termsAcceptedVersion: initialTermsVersion,
   isPrivacyNoticeOpen: false,
   isOnboarded: initialOnboarded,
   isOnboardingStatusReady: initialOnboarded,
   isOnboardingOpen: false,
   onboardingMode: 'initial',
 
-  setConsentAccepted: (accepted: boolean) => {
+  setConsentAccepted: (accepted: boolean, termsVersion?: string | null) => {
     localStorage.setItem(STORAGE_KEY_CONSENT, accepted ? 'true' : 'false');
-    set({ consentAccepted: accepted });
+    const version = accepted ? (termsVersion ?? CURRENT_TERMS_VERSION) : null;
+    if (version) {
+      localStorage.setItem(STORAGE_KEY_TERMS_VERSION, version);
+    } else {
+      localStorage.removeItem(STORAGE_KEY_TERMS_VERSION);
+    }
+    set({ consentAccepted: accepted, termsAcceptedVersion: version });
+  },
+
+  setTermsAcceptedVersion: (version: string | null) => {
+    if (version) {
+      localStorage.setItem(STORAGE_KEY_TERMS_VERSION, version);
+    } else {
+      localStorage.removeItem(STORAGE_KEY_TERMS_VERSION);
+    }
+    set({ termsAcceptedVersion: version });
   },
 
   setIsPrivacyNoticeOpen: (open: boolean) => {

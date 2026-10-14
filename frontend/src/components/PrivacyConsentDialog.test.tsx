@@ -19,20 +19,29 @@ describe('PrivacyConsentDialog', () => {
     );
   };
 
-  it('renders consent dialog when consentAccepted is false', () => {
+  it('renders consent dialog when consentAccepted is false and requires terms agreement', () => {
     renderDialog();
 
     expect(screen.getByText(/Republic Act No. 10173/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Sumasang-ayon|I Agree/i })).toBeInTheDocument();
+    const checkbox = screen.getByTestId('privacy-terms-checkbox');
+    expect(checkbox).toBeInTheDocument();
+
+    const acceptBtn = screen.getByTestId('privacy-accept-btn');
+    expect(acceptBtn).toBeDisabled();
   });
 
-  it('accepting consent updates authStore and hides dialog', () => {
+  it('accepting consent updates authStore with terms version and hides dialog', () => {
     const { rerender } = renderDialog();
 
-    const acceptBtn = screen.getByRole('button', { name: /Sumasang-ayon|I Agree/i });
+    const checkbox = screen.getByRole('checkbox');
+    fireEvent.click(checkbox);
+
+    const acceptBtn = screen.getByTestId('privacy-accept-btn');
+    expect(acceptBtn).not.toBeDisabled();
     fireEvent.click(acceptBtn);
 
     expect(useAuthStore.getState().consentAccepted).toBe(true);
+    expect(useAuthStore.getState().termsAcceptedVersion).toBe('2026-10-14');
 
     rerender(
       <FluentProvider theme={sariSariLightTheme}>
@@ -44,11 +53,16 @@ describe('PrivacyConsentDialog', () => {
   });
 
   it('renders read-only dialog with Close button when isPrivacyNoticeOpen is true and consent already accepted', () => {
-    useAuthStore.setState({ consentAccepted: true, isPrivacyNoticeOpen: true });
+    useAuthStore.setState({
+      consentAccepted: true,
+      termsAcceptedVersion: '2026-10-14',
+      isPrivacyNoticeOpen: true
+    });
     renderDialog();
 
     expect(screen.getByText(/Republic Act No. 10173/i)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Sumasang-ayon|I Agree/i })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('privacy-accept-btn')).not.toBeInTheDocument();
+    expect(screen.getByText(/2026-10-14/)).toBeInTheDocument();
 
     const closeBtn = screen.getByRole('button', { name: /Isara|Close/i });
     expect(closeBtn).toBeInTheDocument();

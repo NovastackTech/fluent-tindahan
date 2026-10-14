@@ -32,6 +32,7 @@ export interface TermsSection {
 }
 
 export interface TermsDocument {
+  version: string;
   title: string;
   subtitle: string;
   application: string;
@@ -45,11 +46,20 @@ export interface TermsDocument {
   sections: TermsSection[];
 }
 
+/**
+ * Canonical Terms of Use & Acceptable Usage Policy (AUP) version and effective dates.
+ * Single source of truth across the Fluent Tindahan platform.
+ */
+export const CURRENT_TERMS_VERSION = '2026-10-14';
+export const TERMS_EFFECTIVE_DATE_EN = 'October 14, 2026';
+export const TERMS_EFFECTIVE_DATE_TL = 'Oktubre 14, 2026';
+
 export const termsEN: TermsDocument = {
+  version: CURRENT_TERMS_VERSION,
   title: 'Terms of Use & Acceptable Usage Policy',
   subtitle: 'Official User Agreement & Operational Standards',
   application: 'Fluent Tindahan (Offline-First Sari-Sari Store & GCash Management PWA)',
-  effectiveDate: 'October 14, 2026',
+  effectiveDate: TERMS_EFFECTIVE_DATE_EN,
   jurisdiction: 'Republic of the Philippines',
   quickSummary: {
     title: 'Quick Summary for Store Owners',
@@ -323,21 +333,22 @@ export const termsEN: TermsDocument = {
     },
     {
       id: 'sec-11',
-      title: '11. In-App User Acknowledgment',
+      title: '11. In-App User Acknowledgment & Consent Record',
       paragraphs: [
-        'For embedding in the PWA onboarding and Data Privacy consent dialog:'
+        'Mandatory acknowledgment presented and recorded upon initial application launch in the Data Privacy & Terms consent dialog (stored locally with version stamp termsAcceptedVersion):'
       ],
       acknowledgmentBox:
-        '"I have read and agree to the Terms of Use and Data Privacy Policy. I understand that Fluent Tindahan is an internal digital notebook and is NOT a BIR-accredited POS, is not affiliated with GCash, and that I am solely responsible for issuing official BIR Sales Invoices and protecting my customers\' data privacy in accordance with Republic Act No. 10173."'
+        '"I have read and agree to the Terms of Use & Acceptable Usage Policy (AUP) and Data Privacy Policy. I understand that Fluent Tindahan is an internal digital notebook and is NOT a BIR-accredited POS, is not affiliated with GCash, and that I am solely responsible for issuing official BIR Sales Invoices and protecting my customers\' data privacy in accordance with Republic Act No. 10173."'
     }
   ]
 };
 
 export const termsTL: TermsDocument = {
+  version: CURRENT_TERMS_VERSION,
   title: 'Mga Tuntunin sa Paggamit at Patakaran sa Katanggap-tanggap na Paggamit',
   subtitle: 'Opisyal na Kasunduan sa Paggamit at Pamantayan sa Operasyon',
   application: 'Fluent Tindahan (Offline-First Sari-Sari Store & GCash Management PWA)',
-  effectiveDate: 'Oktubre 14, 2026',
+  effectiveDate: TERMS_EFFECTIVE_DATE_TL,
   jurisdiction: 'Republika ng Pilipinas',
   quickSummary: {
     title: 'Mahalagang Paalala para sa mga May-ari ng Tindahan',
@@ -611,12 +622,12 @@ export const termsTL: TermsDocument = {
     },
     {
       id: 'sec-11',
-      title: '11. Pagsang-ayon ng User (In-App Consent Text sa Tagalog)',
+      title: '11. Pagsang-ayon ng User at Talaan ng Kasunduan (Consent Record)',
       paragraphs: [
-        'Maaaring ilagay sa checkbox ng onboarding at Data Privacy consent dialog ng PWA:'
+        'Kinakailangang pagsang-ayon na ipinapakita at itinatala sa unang pagbukas ng app sa Data Privacy & Terms consent dialog (nakatago sa lokal na storage kalakip ang bersyong termsAcceptedVersion):'
       ],
       acknowledgmentBox:
-        '"Nabasa at sinasang-ayunan ko ang Mga Tuntunin sa Paggamit (Terms of Use) at Patakaran sa Data Privacy. Naiintindihan ko na ang Fluent Tindahan ay isang digital kwaderno lamang at HINDI BIR-accredited POS, hindi konektado sa GCash, at tanging tungkulin ko ang mag-isyu ng opisyal na BIR Sales Invoice at pangalagaan ang data privacy ng aking mga suki alinsunod sa Republic Act No. 10173."'
+        '"Nabasa at sinasang-ayunan ko ang Mga Tuntunin sa Paggamit (Terms of Use & AUP) at Patakaran sa Data Privacy. Naiintindihan ko na ang Fluent Tindahan ay isang digital kwaderno lamang at HINDI BIR-accredited POS, hindi konektado sa GCash, at tanging tungkulin ko ang mag-isyu ng opisyal na BIR Sales Invoice at pangalagaan ang data privacy ng aking mga suki alinsunod sa Republic Act No. 10173."'
     }
   ]
 };
