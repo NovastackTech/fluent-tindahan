@@ -95,4 +95,4 @@ PowerShell equivalent: `./deploy-alibaba-sas.ps1` (use `-Bootstrap` on first run
 | Unique host port | **8089** (other Novastack apps use 8086–8088, 8090) |
 | SAS host | `8.220.128.80` |
 
-Stack: Postgres 16 + .NET 8 API + app nginx, fronted by the host nginx vhost. Open TCP **8089**, **80**, and **443** in the SAS Firewall console.
+Stack: Postgres 16 + .NET 8 API + app nginx, fronted by the host nginx vhost. Open TCP **80** and **443** in the SAS Firewall console.

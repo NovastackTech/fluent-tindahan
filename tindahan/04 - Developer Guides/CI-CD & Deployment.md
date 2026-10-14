@@ -82,7 +82,7 @@ PowerShell: `./deploy-alibaba-sas.ps1` (`-Bootstrap` on first run).
 | `deploy/alibaba-sas.env` | SSH target + production secrets (gitignored) |
 | `deploy/remote-bootstrap.sh` | Idempotent Docker install on Ubuntu/Debian SAS |
 
-Open TCP **8089**, **80**, and **443** in the SAS Firewall console. Health probe: `GET /api/health`.
+Open TCP **80** and **443** in the SAS Firewall console. Health probe: `GET /api/health`.
 ### Local Docker parity
 ```bash
 ./run-local.sh --docker

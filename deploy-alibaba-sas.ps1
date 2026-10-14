@@ -217,7 +217,6 @@ Write-Host ""
 Write-Host "==========================================================" -ForegroundColor Green
 Write-Host "  Deploy complete" -ForegroundColor Green
 Write-Host "  - Public:  $publicOrigin" -ForegroundColor White
-Write-Host "  - Direct:  http://${sasHost}:${hostPort}" -ForegroundColor White
 Write-Host "  - Health:  $publicOrigin/api/health" -ForegroundColor White
-Write-Host "  Reminder: SAS Firewall must allow TCP $hostPort (app) and 80/443 (edge nginx)." -ForegroundColor Yellow
+Write-Host "  Reminder: SAS Firewall must allow TCP 80/443 (edge nginx)." -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Green
