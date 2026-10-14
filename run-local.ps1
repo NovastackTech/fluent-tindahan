@@ -3,7 +3,7 @@
     Run Fluent Tindahan locally (Novastack standard entrypoint).
 
 .DESCRIPTION
-    Default mode starts Backend (.NET) + Frontend (Vite) natively — same workflow as start-local.ps1.
+    Default mode starts Backend (.NET) + Frontend (Vite) natively - same workflow as start-local.ps1.
     Pass -Docker to bring up the full stack with Docker Compose (db + api + web).
 
 .PARAMETER Docker
@@ -27,7 +27,7 @@ $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 
 Write-Host "==========================================================" -ForegroundColor Cyan
-Write-Host "  Fluent Tindahan — run-local" -ForegroundColor Cyan
+Write-Host "  Fluent Tindahan - run-local" -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 function Test-Url([string]$Url) {
@@ -50,7 +50,7 @@ if ($Docker) {
         $example = Join-Path $root ".env.example"
         if (Test-Path $example) {
             Copy-Item $example (Join-Path $root ".env")
-            Write-Host "[INFO] Created .env from .env.example — review secrets before production use." -ForegroundColor Yellow
+            Write-Host "[INFO] Created .env from .env.example - review secrets before production use." -ForegroundColor Yellow
         }
     }
 

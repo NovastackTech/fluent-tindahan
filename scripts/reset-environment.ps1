@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
     Resets Fluent Tindahan local development environment to baseline Libre tier.
-    Clears test payment history and sets tenant plan back to Libre (₱0.00).
+    Clears test payment history and sets tenant plan back to Libre (PHP 0.00).
 #>
 
 Write-Host "==========================================================" -ForegroundColor Cyan
