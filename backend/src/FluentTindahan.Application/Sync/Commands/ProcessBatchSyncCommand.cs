@@ -721,6 +721,24 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
             }
         }
 
+        string? customerPhone = null;
+        var rawPhone = string.Equals(raw.CustomerPhone?.Trim(), "N/A", StringComparison.OrdinalIgnoreCase)
+            ? string.Empty
+            : raw.CustomerPhone;
+
+        if (!string.IsNullOrWhiteSpace(rawPhone))
+        {
+            if (PhilippineMobileNumber.TryNormalize(rawPhone, out var normalizedPhone))
+            {
+                customerPhone = normalizedPhone;
+            }
+            else
+            {
+                customerPhone = null;
+                _logger.LogWarning("Ignoring an invalid phone number while syncing GCash transaction {TxnId}", raw.Id);
+            }
+        }
+
         var txn = new GCashTxn
         {
             Id = raw.Id,
@@ -730,7 +748,7 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
             Fee = raw.Fee,
             RefNo = raw.RefNo ?? string.Empty,
             RefNoNorm = refNorm,
-            CustomerPhone = raw.CustomerPhone,
+            CustomerPhone = customerPhone,
             Date = txnDate,
             Notes = raw.Notes
         };

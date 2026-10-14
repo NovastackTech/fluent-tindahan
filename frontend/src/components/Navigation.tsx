@@ -195,6 +195,8 @@ export const Navigation: React.FC<NavigationProps> = ({ activeTab, onTabChange }
             className={`${styles.navItem} ${isActive ? styles.activeNavItem : styles.inactiveNavItem}`}
             onClick={() => onTabChange(tab.id)}
             onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onTabChange(tab.id)}
+            aria-label={tab.label}
+            data-testid={`nav-tab-${tab.id}`}
           >
             <div className={styles.iconWrapper}>
               {isActive ? tab.activeIcon : tab.icon}

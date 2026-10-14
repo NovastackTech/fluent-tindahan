@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using FluentTindahan.Application.Common.Interfaces;
+using FluentTindahan.Domain.Common;
 using FluentTindahan.Domain.Entities;
 using FluentTindahan.Domain.Interfaces;
 
@@ -87,6 +88,16 @@ public class RecordGCashTxnCommandHandler : IRequestHandler<RecordGCashTxnComman
             throw new UnauthorizedAccessException("Tenant is not authenticated or resolved.");
         }
 
+        string? customerPhone = null;
+        if (!string.IsNullOrWhiteSpace(request.CustomerPhone))
+        {
+            if (!PhilippineMobileNumber.TryNormalize(request.CustomerPhone, out var normalizedPhone))
+            {
+                throw new ArgumentException("Enter a valid Philippine mobile number.", nameof(request.CustomerPhone));
+            }
+            customerPhone = normalizedPhone;
+        }
+
         var refNorm = GCashTxn.NormalizeRef(request.RefNo);
         if (refNorm.Length > 0)
         {
@@ -107,7 +118,7 @@ public class RecordGCashTxnCommandHandler : IRequestHandler<RecordGCashTxnComman
             Fee = request.Fee,
             RefNo = request.RefNo,
             RefNoNorm = refNorm,
-            CustomerPhone = request.CustomerPhone,
+            CustomerPhone = customerPhone,
             Date = DateTimeOffset.UtcNow,
             Notes = request.Notes
         };

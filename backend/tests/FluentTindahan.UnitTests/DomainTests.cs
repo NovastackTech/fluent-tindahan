@@ -1,4 +1,5 @@
 using FluentAssertions;
+using FluentTindahan.Domain.Common;
 using FluentTindahan.Domain.Entities;
 using FluentTindahan.Domain.Enums;
 using FluentTindahan.Domain.Exceptions;
@@ -252,5 +253,29 @@ public class DomainTests
         validationEx.Message.Should().Be("One or more validation failures have occurred.");
         validationEx.Errors.Should().ContainKey("Price");
         validationEx.Errors["Price"].Should().Contain("Price must be greater than zero.");
+    }
+
+    [Theory]
+    [InlineData("09171234567", true, "09171234567")]
+    [InlineData("+639171234567", true, "09171234567")]
+    [InlineData("639171234567", true, "09171234567")]
+    [InlineData("9171234567", true, "09171234567")]
+    [InlineData("+63 (917) 123-4567", true, "09171234567")]
+    [InlineData(null, true, "")]
+    [InlineData("", true, "")]
+    [InlineData("   ", true, "")]
+    [InlineData("abc123", false, "")]
+    [InlineData("0917123456", false, "")]
+    [InlineData("091712345678", false, "")]
+    [InlineData("0917١٢٣٤٥٦٧", false, "")] // Arabic-Indic digits matched by .NET \d but not ASCII [0-9]
+    [InlineData("０９１７１２３４５６７", false, "")] // Fullwidth digits matched by .NET \d but not ASCII [0-9]
+    public void PhilippineMobileNumber_TryNormalize_ShouldAcceptAsciiAndRejectNonAsciiDigits(
+        string? input,
+        bool expectedSuccess,
+        string expectedNormalized)
+    {
+        var success = PhilippineMobileNumber.TryNormalize(input, out var normalized);
+        success.Should().Be(expectedSuccess);
+        normalized.Should().Be(expectedNormalized);
     }
 }

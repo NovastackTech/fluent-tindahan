@@ -7,7 +7,10 @@ import {
   retryDeadLetterItem,
   clearDeadLetterQueue,
   pullCatalogFromServer,
-  initSyncEngine
+  initSyncEngine,
+  STORAGE_KEY_LAST_SYNCED,
+  getSyncStorageKey,
+  getSavedLastSyncedAt
 } from './syncEngine';
 import { db } from '../db/db';
 import {
@@ -17,6 +20,7 @@ import {
   TenantProvisioningError
 } from '../services/apiClient';
 import { useAuthStore } from '../state/authStore';
+import { DEFAULT_TENANT_ID } from '../db/seedData';
 
 vi.mock('../services/apiClient', () => ({
   TenantAccountMismatchError: class TenantAccountMismatchError extends Error {},
@@ -54,7 +58,9 @@ describe('syncEngine', () => {
     });
     (apiClient.put as any).mockResolvedValue({ data: {} });
     (ensureTenantProvisioned as any).mockResolvedValue(undefined);
+    localStorage.removeItem('fluent_tindahan_tenant_id_v1');
     useAuthStore.setState({
+      tenantId: DEFAULT_TENANT_ID,
       firebaseToken: null,
       isOnboarded: true,
       isOnboardingStatusReady: true
@@ -75,12 +81,68 @@ describe('syncEngine', () => {
     expect(useSyncStore.getState().pendingCount).toBe(5);
     expect(useSyncStore.getState().deadLetterCount).toBe(2);
 
+    const currentTenant = useAuthStore.getState().tenantId;
     const date = new Date('2026-10-09T10:00:00Z');
     store.setLastSyncedAt(date);
     expect(useSyncStore.getState().lastSyncedAt).toEqual(date);
+    expect(localStorage.getItem(getSyncStorageKey(currentTenant))).toBe(date.toISOString());
 
     store.setLastErrorMessage('Connection error');
     expect(useSyncStore.getState().lastErrorMessage).toBe('Connection error');
+  });
+
+  it('persists lastSyncedAt to localStorage per tenant and restores it across reloads', async () => {
+    expect(STORAGE_KEY_LAST_SYNCED).toBe('fluent_tindahan_last_synced_at');
+    const currentTenant = useAuthStore.getState().tenantId;
+    const testDate = new Date('2026-10-14T07:39:00.000Z');
+    useSyncStore.getState().setLastSyncedAt(testDate);
+
+    expect(localStorage.getItem(getSyncStorageKey(currentTenant))).toBe(testDate.toISOString());
+    expect(getSavedLastSyncedAt(currentTenant)).toEqual(testDate);
+
+    // Ensure tenantId persists in localStorage for module re-import
+    localStorage.setItem('fluent_tindahan_tenant_id_v1', currentTenant);
+
+    // Simulate page reload: reset modules, re-import, and verify store hydrates from localStorage on init
+    vi.resetModules();
+    const { useSyncStore: reloadedSyncStore, getSavedLastSyncedAt: reloadedGetSavedLastSyncedAt } = await import('./syncEngine');
+    expect(reloadedSyncStore.getState().lastSyncedAt).toEqual(testDate);
+
+    // Setting to null removes from localStorage
+    reloadedSyncStore.getState().setLastSyncedAt(null);
+    expect(localStorage.getItem(getSyncStorageKey(currentTenant))).toBeNull();
+    expect(reloadedGetSavedLastSyncedAt(currentTenant)).toBeNull();
+    localStorage.removeItem('fluent_tindahan_tenant_id_v1');
+  });
+
+  it('resets in-memory lastSyncedAt when tenantId changes in useAuthStore', () => {
+    const tenantA = 'tenant-a-uuid';
+    const tenantB = 'tenant-b-uuid';
+
+    useAuthStore.setState({ tenantId: tenantA });
+    const syncTimeA = new Date('2026-10-14T07:39:00.000Z');
+    useSyncStore.getState().setLastSyncedAt(syncTimeA);
+
+    expect(useSyncStore.getState().lastSyncedAt).toEqual(syncTimeA);
+    expect(localStorage.getItem(getSyncStorageKey(tenantA))).toBe(syncTimeA.toISOString());
+
+    // Switch to new tenant B that has never synced
+    useAuthStore.setState({ tenantId: tenantB });
+    expect(useSyncStore.getState().lastSyncedAt).toBeNull();
+    expect(localStorage.getItem(getSyncStorageKey(tenantB))).toBeNull();
+
+    // Switch back to tenant A
+    useAuthStore.setState({ tenantId: tenantA });
+    expect(useSyncStore.getState().lastSyncedAt).toEqual(syncTimeA);
+  });
+
+  it('does not fall back to or inherit unscoped legacy last_synced key', () => {
+    const tenant = 'test-isolated-tenant';
+    localStorage.setItem(STORAGE_KEY_LAST_SYNCED, new Date('2026-10-10T00:00:00.000Z').toISOString());
+    localStorage.removeItem(getSyncStorageKey(tenant));
+
+    expect(getSavedLastSyncedAt(tenant)).toBeNull();
+    expect(localStorage.getItem(getSyncStorageKey(tenant))).toBeNull();
   });
 
   it('enqueueSync adds an operation to Dexie syncQueue and updates pending count', async () => {
@@ -306,7 +368,12 @@ describe('syncEngine', () => {
     expect(useSyncStore.getState().deadLetterCount).toBe(0);
   });
 
-  it('pullCatalogFromServer fetches products and writes to Dexie', async () => {
+  it('pullCatalogFromServer fetches products and writes to Dexie without clearing errors or setting lastSyncedAt', async () => {
+    useSyncStore.setState({
+      lastErrorMessage: 'Retrying with backoff; pending changes remain on this device',
+      lastSyncedAt: null
+    });
+
     (apiClient.get as any).mockResolvedValueOnce({
       data: [
         {
@@ -329,6 +396,9 @@ describe('syncEngine', () => {
     const prod = await db.products.get('server-p1');
     expect(prod).toBeDefined();
     expect(prod?.name).toBe('Nescafe Classic 2g');
+
+    expect(useSyncStore.getState().lastSyncedAt).toBeNull();
+    expect(useSyncStore.getState().lastErrorMessage).toBe('Retrying with backoff; pending changes remain on this device');
   });
 
   it('backs off after server failures without dead-lettering pending operations', async () => {

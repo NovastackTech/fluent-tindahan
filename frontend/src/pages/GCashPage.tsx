@@ -27,6 +27,7 @@ import { useSubscriptionStore } from '../state/subscriptionStore';
 import { calculateGCashFee, DEFAULT_GCASH_FEE_TIERS, useGCashFeeStore } from '../state/gcashFeeStore';
 import { formatPeso } from '../utils/currency';
 import { toLocalDateKey } from '../utils/date';
+import { normalizePhilippineMobile } from '../utils/philippineMobile';
 
 
 const useStyles = makeStyles({
@@ -75,6 +76,7 @@ export const GCashPage: React.FC = () => {
   const [customFee, setCustomFee] = useState<string | null>(null);
   const [refNo, setRefNo] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [customerPhoneError, setCustomerPhoneError] = useState('');
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [resolutionRefDrafts, setResolutionRefDrafts] = useState<Record<string, string>>({});
@@ -145,8 +147,16 @@ export const GCashPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setCustomerPhoneError('');
+
     if (numAmount <= 0) {
       alert(t.gcash.invalidAmountAlert);
+      return;
+    }
+
+    const normalizedPhone = normalizePhilippineMobile(customerPhone);
+    if (normalizedPhone === null) {
+      setCustomerPhoneError(t.gcash.phoneInvalid);
       return;
     }
 
@@ -178,7 +188,7 @@ export const GCashPage: React.FC = () => {
         fee: activeFee,
         refNo: finalRef,
         refNoNorm: refNorm,
-        customerPhone: customerPhone.trim() || undefined,
+        customerPhone: normalizedPhone || undefined,
         date: new Date().toISOString(),
         notes: notes.trim() || undefined
       };
@@ -211,6 +221,7 @@ export const GCashPage: React.FC = () => {
       setCustomFee(null);
       setRefNo('');
       setCustomerPhone('');
+      setCustomerPhoneError('');
       setNotes('');
     } finally {
       savingRef.current = false;
@@ -429,12 +440,29 @@ export const GCashPage: React.FC = () => {
             <div>
               <Text size={200} weight="semibold">{t.gcash.phoneLabel}</Text>
               <Input
+                type="tel"
+                inputMode="tel"
                 aria-label={t.gcash.phoneLabel}
+                aria-invalid={Boolean(customerPhoneError)}
+                aria-describedby={customerPhoneError ? 'gcash-customer-phone-error' : undefined}
                 style={{ width: '100%', marginTop: '4px' }}
                 value={customerPhone}
-                onChange={(_, data) => setCustomerPhone(data.value)}
+                onChange={(_, data) => {
+                  setCustomerPhone(data.value);
+                  if (customerPhoneError) setCustomerPhoneError('');
+                }}
                 placeholder="09XXXXXXXXX"
               />
+              {customerPhoneError && (
+                <Text
+                  id="gcash-customer-phone-error"
+                  role="alert"
+                  size={200}
+                  style={{ color: tokens.colorPaletteRedForeground1, display: 'block', marginTop: '4px' }}
+                >
+                  {customerPhoneError}
+                </Text>
+              )}
             </div>
           </div>
 

@@ -9,6 +9,38 @@ import { useAuthStore } from '../state/authStore';
 import { createClientUuid } from '../utils/uuid';
 import { create } from 'zustand';
 
+import { STORAGE_KEY_LAST_SYNCED, getSyncStorageKey } from '../constants/sync';
+export { STORAGE_KEY_LAST_SYNCED, getSyncStorageKey };
+
+export function getSavedLastSyncedAt(tenantId?: string | null): Date | null {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    const activeTenantId = tenantId !== undefined ? tenantId : useAuthStore.getState().tenantId;
+    const key = getSyncStorageKey(activeTenantId);
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const date = new Date(raw);
+    return isNaN(date.getTime()) ? null : date;
+  } catch {
+    return null;
+  }
+}
+
+export function persistLastSyncedAt(date: Date | null, tenantId?: string | null): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    const activeTenantId = tenantId !== undefined ? tenantId : useAuthStore.getState().tenantId;
+    const key = getSyncStorageKey(activeTenantId);
+    if (date) {
+      localStorage.setItem(key, date.toISOString());
+    } else {
+      localStorage.removeItem(key);
+    }
+  } catch {
+    // Ignore storage quota or access errors
+  }
+}
+
 interface SyncStoreState {
   isOnline: boolean;
   isSyncing: boolean;
@@ -22,14 +54,14 @@ interface SyncStoreState {
   setOnline: (online: boolean) => void;
   setSyncing: (syncing: boolean) => void;
   setCounts: (pending: number, deadLetter: number) => void;
-  setLastSyncedAt: (date: Date) => void;
+  setLastSyncedAt: (date: Date | null) => void;
   setLastErrorMessage: (msg: string | null) => void;
 }
 
 export const useSyncStore = create<SyncStoreState>((set) => ({
   isOnline: navigator.onLine,
   isSyncing: false,
-  lastSyncedAt: null,
+  lastSyncedAt: getSavedLastSyncedAt(),
   pendingCount: 0,
   deadLetterCount: 0,
   lastErrorMessage: null,
@@ -42,6 +74,21 @@ export const useSyncStore = create<SyncStoreState>((set) => ({
   setLastSyncedAt: (date) => set({ lastSyncedAt: date, lastErrorMessage: null }),
   setLastErrorMessage: (msg) => set({ lastErrorMessage: msg })
 }));
+
+useSyncStore.subscribe((state, prevState) => {
+  if (state.lastSyncedAt !== prevState.lastSyncedAt) {
+    persistLastSyncedAt(state.lastSyncedAt);
+  }
+});
+
+useAuthStore.subscribe((authState, prevAuthState) => {
+  const currentTenant = authState.tenantId?.trim();
+  const prevTenant = prevAuthState?.tenantId?.trim();
+  if (currentTenant && prevTenant && currentTenant.toLowerCase() !== prevTenant.toLowerCase()) {
+    const newTenantLastSync = getSavedLastSyncedAt(currentTenant);
+    useSyncStore.getState().setLastSyncedAt(newTenantLastSync);
+  }
+});
 
 function getDeviceId(): string {
   const KEY = 'fluent_tindahan_device_id';

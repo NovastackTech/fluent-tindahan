@@ -714,7 +714,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                 )}
               </div>
               {tier === 'Libre' && metrics.totalProducts >= 45 && (
-                <Badge appearance="tint" color="warning" size="small">
+                <Badge appearance="tint" color="warning" size="small" data-testid="product-cap-badge">
                   {metrics.totalProducts >= 50 ? t.inventory.fullCapacityBadge : t.inventory.nearCapacityBadge}
                 </Badge>
               )}

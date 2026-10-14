@@ -173,6 +173,7 @@ export interface Translations {
     historyTitle: string;
     invalidAmountAlert: string;
     duplicateRefWarning: string;
+    phoneInvalid: string;
   };
   dashboard: {
     title: string;
@@ -498,7 +499,7 @@ export const translations: Record<Language, Translations> = {
       themeModeLight: 'Maliwanag (Light)',
       themeModeDark: 'Madilim (Dark)',
       themeModeSystem: 'Ayon sa Sistema (System)',
-      languageToggle: 'Palitan ang Wika (English)',
+      languageToggle: 'TL/EN toggle (English)',
       save: 'I-save',
       cancel: 'Kanselahin',
       delete: 'Burahin',
@@ -651,7 +652,8 @@ export const translations: Record<Language, Translations> = {
       saveTransaction: 'I-save ang Transaksyon',
       historyTitle: 'Kasaysayan ng GCash Ngayong Buwan',
       invalidAmountAlert: 'Maglagay ng wastong halaga.',
-      duplicateRefWarning: 'Ginamit na ang reference number. Hindi maaaring magtala ng doble.'
+      duplicateRefWarning: 'Ginamit na ang reference number. Hindi maaaring magtala ng doble.',
+      phoneInvalid: 'Dapat ay wastong 11-digit Philippine mobile number (09XXXXXXXXX).'
     },
     dashboard: {
       title: 'Pangkalahatang Dashboard ng Tindahan',
@@ -975,7 +977,7 @@ export const translations: Record<Language, Translations> = {
       themeModeLight: 'Light Theme',
       themeModeDark: 'Dark Theme',
       themeModeSystem: 'System Default Theme',
-      languageToggle: 'Change Language (Taglish)',
+      languageToggle: 'TL/EN toggle (Taglish)',
       save: 'Save',
       cancel: 'Cancel',
       delete: 'Delete',
@@ -1128,7 +1130,8 @@ export const translations: Record<Language, Translations> = {
       saveTransaction: 'Save Transaction',
       historyTitle: "This Month's GCash History",
       invalidAmountAlert: 'Please enter a valid amount.',
-      duplicateRefWarning: 'This reference number has already been used. Duplicate entries are not allowed.'
+      duplicateRefWarning: 'This reference number has already been used. Duplicate entries are not allowed.',
+      phoneInvalid: 'Must be a valid 11-digit Philippine mobile number (09XXXXXXXXX).'
     },
     dashboard: {
       title: 'Store Performance Dashboard',

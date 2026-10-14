@@ -127,4 +127,48 @@ public class GCashHandlerTests
         await act.Should().ThrowAsync<DuplicateGCashRefException>()
             .WithMessage("*Duplicate GCash reference number*");
     }
+
+    [Fact]
+    public async Task RecordGCashTxn_ValidInternationalPhone_NormalizesAndPersists()
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var handler = new RecordGCashTxnCommandHandler(context, userMock.Object);
+
+        var command = new RecordGCashTxnCommand(
+            Type: "CashIn",
+            Amount: 500m,
+            Fee: 10m,
+            RefNo: "REF-INTL-PHONE-01",
+            CustomerPhone: "+639171234567",
+            Notes: "International mobile prefix test"
+        );
+
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        result.Should().NotBeNull();
+        result.CustomerPhone.Should().Be("09171234567");
+
+        var saved = await context.GCashTransactions.FindAsync(result.Id);
+        saved.Should().NotBeNull();
+        saved!.CustomerPhone.Should().Be("09171234567");
+    }
+
+    [Fact]
+    public async Task RecordGCashTxn_InvalidPhone_ThrowsArgumentException()
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var handler = new RecordGCashTxnCommandHandler(context, userMock.Object);
+
+        var command = new RecordGCashTxnCommand(
+            Type: "CashIn",
+            Amount: 500m,
+            Fee: 10m,
+            RefNo: "REF-INVALID-PHONE-01",
+            CustomerPhone: "abc123invalid"
+        );
+
+        var act = () => handler.Handle(command, CancellationToken.None);
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*Enter a valid Philippine mobile number.*");
+    }
 }

@@ -87,6 +87,37 @@ describe('GCashPage', () => {
       expect(records[0].amount).toBe(1000);
       expect(records[0].fee).toBe(10);
       expect(records[0].refNo).toBe('REF-12345678');
+      expect(records[0].customerPhone).toBe('09171234567');
+    });
+  });
+
+  it('rejects invalid customer mobile number with inline error and does not save transaction', async () => {
+    renderGCash();
+
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Halaga.*Amount|Amount/i }), { target: { value: '100' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /Reference Number/i }), { target: { value: '900000000077' } });
+    const phoneInput = screen.getByRole('textbox', { name: /Cellphone ng Customer|Customer Mobile Number/i });
+    fireEvent.change(phoneInput, { target: { value: 'abc123' } });
+
+    const submitBtn = screen.getByRole('button', { name: /Itala ang GCash|Record GCash|Cash-In/i });
+    fireEvent.click(submitBtn);
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/Dapat ay wastong 11-digit Philippine mobile number|Must be a valid 11-digit Philippine mobile number/i);
+    expect(phoneInput).toHaveAttribute('aria-invalid', 'true');
+
+    const records = await db.gcashTxns.toArray();
+    expect(records).toHaveLength(0);
+
+    // Typing a valid number clears the error and saves successfully
+    fireEvent.change(phoneInput, { target: { value: '09171234567' } });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(phoneInput).toHaveAttribute('aria-invalid', 'false');
+
+    fireEvent.click(submitBtn);
+    await waitFor(async () => {
+      const saved = await db.gcashTxns.toArray();
+      expect(saved).toHaveLength(1);
+      expect(saved[0].customerPhone).toBe('09171234567');
     });
   });
 

@@ -7,18 +7,29 @@ interface LanguageState {
   toggleLanguage: () => void;
 }
 
-const savedLang = (localStorage.getItem('fluent_tindahan_language') as Language) || 'tl';
+const getSavedLanguage = (): Language => {
+  try {
+    const saved = localStorage.getItem('fluent_tindahan_language');
+    return saved === 'en' ? 'en' : 'tl';
+  } catch {
+    return 'tl';
+  }
+};
 
 export const useLanguageStore = create<LanguageState>((set) => ({
-  language: savedLang === 'en' ? 'en' : 'tl',
+  language: getSavedLanguage(),
   setLanguage: (lang: Language) => {
-    localStorage.setItem('fluent_tindahan_language', lang);
+    try {
+      localStorage.setItem('fluent_tindahan_language', lang);
+    } catch {}
     set({ language: lang });
   },
   toggleLanguage: () =>
     set((state) => {
       const next: Language = state.language === 'tl' ? 'en' : 'tl';
-      localStorage.setItem('fluent_tindahan_language', next);
+      try {
+        localStorage.setItem('fluent_tindahan_language', next);
+      } catch {}
       return { language: next };
     })
 }));

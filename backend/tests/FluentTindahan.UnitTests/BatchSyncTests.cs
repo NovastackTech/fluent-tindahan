@@ -215,4 +215,81 @@ public class BatchSyncTests
 
         result.ProcessedCount.Should().Be(1);
     }
+
+    [Fact]
+    public async Task ProcessBatchSync_GCashTxn_NormalizesValidPhoneAndStoresNullForInvalidPhone()
+    {
+        // Arrange
+        var (context, userMock) = CreateInMemoryContext();
+        var handler = new ProcessBatchSyncCommandHandler(
+            context,
+            userMock.Object,
+            NullLogger<ProcessBatchSyncCommandHandler>.Instance
+        );
+
+        var validTxnId = Guid.NewGuid();
+        var invalidTxnId = Guid.NewGuid();
+
+        var validPayload = new
+        {
+            id = validTxnId,
+            type = "CashIn",
+            amount = 100m,
+            fee = 10m,
+            refNo = "REF-VALID-PHONE-1",
+            customerPhone = "+639171234567",
+            date = DateTimeOffset.UtcNow
+        };
+
+        var invalidPayload = new
+        {
+            id = invalidTxnId,
+            type = "CashIn",
+            amount = 50m,
+            fee = 5m,
+            refNo = "REF-INVALID-PHONE-2",
+            customerPhone = "abc123invalid",
+            date = DateTimeOffset.UtcNow
+        };
+
+        var request = new BatchSyncRequestDto
+        {
+            DeviceId = Guid.NewGuid(),
+            Operations = new List<SyncOperationDto>
+            {
+                new()
+                {
+                    SyncId = "sync-gcash-valid-phone",
+                    Entity = "GCashTxn",
+                    Action = "Insert",
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Payload = JsonSerializer.SerializeToElement(validPayload)
+                },
+                new()
+                {
+                    SyncId = "sync-gcash-invalid-phone",
+                    Entity = "GCashTxn",
+                    Action = "Insert",
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Payload = JsonSerializer.SerializeToElement(invalidPayload)
+                }
+            }
+        };
+
+        // Act
+        var result = await handler.Handle(new ProcessBatchSyncCommand(request), CancellationToken.None);
+
+        // Assert
+        result.Results.Should().HaveCount(2);
+        result.Results.Should().OnlyContain(r => r.Status == "Success");
+        result.ProcessedCount.Should().Be(2);
+
+        var validTxn = await context.GCashTransactions.FindAsync(validTxnId);
+        validTxn.Should().NotBeNull();
+        validTxn!.CustomerPhone.Should().Be("09171234567");
+
+        var invalidTxn = await context.GCashTransactions.FindAsync(invalidTxnId);
+        invalidTxn.Should().NotBeNull();
+        invalidTxn!.CustomerPhone.Should().BeNull();
+    }
 }
