@@ -402,6 +402,7 @@ export interface Translations {
     acceptBtn: string;
     declineBtn: string;
     closeBtn: string;
+    viewTermsLink: string;
   };
   disclaimer: {
     buttonLabel: string;
@@ -426,6 +427,9 @@ export interface Translations {
     legalCardTitle: string;
     legalCardDesc: string;
     viewPrivacyBtn: string;
+    viewFullTermsBtn: string;
+    openFullTerms: string;
+    termsModalTitle: string;
   };
   pwa: {
     installTitle: string;
@@ -906,7 +910,8 @@ export const translations: Record<Language, Translations> = {
       description: 'Sumusunod ang Fluent Tindahan sa Philippine Data Privacy Act of 2012. Ang iyong mga talaan ng benta, suki, at GCash ay ligtas na nakatago sa iyong lokal na device.',
       acceptBtn: 'Sumasang-ayon Ako',
       declineBtn: 'Tanggihan',
-      closeBtn: 'Isara'
+      closeBtn: 'Isara',
+      viewTermsLink: 'Tingnan ang Buong Tuntunin sa Paggamit (Terms of Use & AUP)'
     },
     disclaimer: {
       buttonLabel: 'Disclaimer',
@@ -930,7 +935,10 @@ export const translations: Record<Language, Translations> = {
       closeBtn: 'Naiintindihan Ko',
       legalCardTitle: 'Legal, Pagsunod, at Pagtanggi (Disclaimer)',
       legalCardDesc: 'Tingnan ang mga impormasyon ukol sa legal na pagsunod sa BIR, Republic Act 10173 (Data Privacy Act), at mga panuntunan sa paggamit ng app.',
-      viewPrivacyBtn: 'Tingnan ang Privacy Notice (RA 10173)'
+      viewPrivacyBtn: 'Tingnan ang Privacy Notice (RA 10173)',
+      viewFullTermsBtn: 'Tuntunin sa Paggamit at AUP',
+      openFullTerms: 'Basahin ang Buong Tuntunin at Patakaran (Terms of Use & AUP)',
+      termsModalTitle: 'Mga Tuntunin sa Paggamit at Patakaran sa Katanggap-tanggap na Paggamit'
     },
     pwa: {
       installTitle: 'I-install ang Fluent Tindahan App',
@@ -1409,7 +1417,8 @@ export const translations: Record<Language, Translations> = {
       description: 'Fluent Tindahan complies with the Philippine Data Privacy Act of 2012. Your sales, customer, and GCash records are kept securely on your local device.',
       acceptBtn: 'I Agree',
       declineBtn: 'Decline',
-      closeBtn: 'Close'
+      closeBtn: 'Close',
+      viewTermsLink: 'View Full Terms of Use & Acceptable Usage Policy (AUP)'
     },
     disclaimer: {
       buttonLabel: 'Disclaimer',
@@ -1433,7 +1442,10 @@ export const translations: Record<Language, Translations> = {
       closeBtn: 'Understood & Close',
       legalCardTitle: 'Legal, Compliance & Disclaimers',
       legalCardDesc: 'Review regulatory compliance information regarding BIR tax obligations, Philippine Data Privacy Act (RA 10173), and software operation boundaries.',
-      viewPrivacyBtn: 'View Privacy Notice (RA 10173)'
+      viewPrivacyBtn: 'View Privacy Notice (RA 10173)',
+      viewFullTermsBtn: 'Terms of Use & AUP',
+      openFullTerms: 'Read Full Terms of Use & Acceptable Usage Policy (AUP)',
+      termsModalTitle: 'Terms of Use & Acceptable Usage Policy'
     },
     pwa: {
       installTitle: 'Install Fluent Tindahan App',

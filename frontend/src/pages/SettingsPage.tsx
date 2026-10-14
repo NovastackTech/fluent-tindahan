@@ -27,7 +27,8 @@ import {
   SparkleRegular,
   EditRegular,
   ShieldCheckmarkRegular,
-  InfoRegular
+  InfoRegular,
+  DocumentCheckmarkRegular
 } from '@fluentui/react-icons';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
@@ -37,6 +38,7 @@ import { DEFAULT_GCASH_FEE_TIERS, GCASH_FEE_BRACKETS, useGCashFeeStore } from '.
 import { usePwaStore } from '../state/pwaStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
 import { useDisclaimerStore } from '../state/disclaimerStore';
+import { useTermsStore } from '../state/termsStore';
 import { printThermalReceipt } from '../services/receiptPrinter';
 import {
   useSyncStore,
@@ -714,6 +716,14 @@ export const SettingsPage: React.FC = () => {
             data-testid="settings-open-privacy-btn"
           >
             {t.disclaimer.viewPrivacyBtn}
+          </Button>
+          <Button
+            appearance="secondary"
+            icon={<DocumentCheckmarkRegular />}
+            onClick={() => useTermsStore.getState().openTerms()}
+            data-testid="settings-open-terms-btn"
+          >
+            {t.disclaimer.viewFullTermsBtn}
           </Button>
         </div>
       </Card>

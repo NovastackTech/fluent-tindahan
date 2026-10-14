@@ -4,6 +4,7 @@ import { FluentProvider } from '@fluentui/react-components';
 import { DisclaimerModal } from './DisclaimerModal';
 import { sariSariLightTheme } from '../theme/theme';
 import { useDisclaimerStore } from '../state/disclaimerStore';
+import { useTermsStore } from '../state/termsStore';
 import { useLanguageStore } from '../state/languageStore';
 
 describe('DisclaimerModal', () => {
@@ -35,8 +36,10 @@ describe('DisclaimerModal', () => {
     expect(screen.getByText(/Merchant Legal & Tax Obligations\./i)).toBeInTheDocument();
     expect(screen.getByText(/Self-Reported Records & Non-Payment Processor\./i)).toBeInTheDocument();
     expect(screen.getByText(/Independent Retail Operations & Liability Limit\./i)).toBeInTheDocument();
-    expect(screen.getByTestId('disclaimer-terms-link')).toBeInTheDocument();
-    expect(screen.getByTestId('disclaimer-terms-link')).toHaveTextContent('View terms summary');
+    expect(screen.getByTestId('disclaimer-open-full-terms-btn')).toBeInTheDocument();
+    expect(screen.getByTestId('disclaimer-open-full-terms-btn')).toHaveTextContent('Read Full Terms of Use & Acceptable Usage Policy (AUP)');
+    expect(screen.queryByTestId('disclaimer-terms-link')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('terms-detail-card')).not.toBeInTheDocument();
     expect(screen.getByTestId('disclaimer-modal-x-btn')).toHaveAttribute('aria-label', 'Close');
     expect(screen.getByTestId('disclaimer-modal-close-btn')).toHaveTextContent('Understood & Close');
   });
@@ -51,7 +54,9 @@ describe('DisclaimerModal', () => {
     expect(screen.getByText(/Pananagutan sa Batas, Permit, at Buwis\./i)).toBeInTheDocument();
     expect(screen.getByText(/Sariling Talaan at Hindi Tagaproseso ng Pondo\./i)).toBeInTheDocument();
     expect(screen.getByText(/Independiyenteng Negosyo at Hangganan ng Pananagutan\./i)).toBeInTheDocument();
-    expect(screen.getByTestId('disclaimer-terms-link')).toHaveTextContent('Tingnan ang buod ng kasunduan');
+    expect(screen.getByTestId('disclaimer-open-full-terms-btn')).toHaveTextContent('Basahin ang Buong Tuntunin at Patakaran (Terms of Use & AUP)');
+    expect(screen.queryByTestId('disclaimer-terms-link')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('terms-detail-card')).not.toBeInTheDocument();
     expect(screen.getByTestId('disclaimer-modal-x-btn')).toHaveAttribute('aria-label', 'Isara');
     expect(screen.getByTestId('disclaimer-modal-close-btn')).toHaveTextContent('Naiintindihan Ko');
   });
@@ -76,37 +81,14 @@ describe('DisclaimerModal', () => {
     expect(useDisclaimerStore.getState().isDisclaimerOpen).toBe(false);
   });
 
-  it('toggles terms summary when clicking Terms of Service link', () => {
+  it('opens full TermsModal when clicking Read Full Terms link', () => {
     useDisclaimerStore.setState({ isDisclaimerOpen: true });
     renderModal();
 
-    expect(screen.queryByTestId('terms-detail-card')).not.toBeInTheDocument();
+    const fullTermsBtn = screen.getByTestId('disclaimer-open-full-terms-btn');
+    expect(fullTermsBtn).toBeInTheDocument();
+    fireEvent.click(fullTermsBtn);
 
-    const termsLink = screen.getByTestId('disclaimer-terms-link');
-    expect(termsLink).toHaveAttribute('aria-expanded', 'false');
-    fireEvent.click(termsLink);
-
-    expect(termsLink).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByTestId('terms-detail-card')).toBeInTheDocument();
-    expect(screen.getByText(/Terms of Use & Service Summary:/i)).toBeInTheDocument();
-
-    fireEvent.click(termsLink);
-    expect(termsLink).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByTestId('terms-detail-card')).not.toBeInTheDocument();
-  });
-
-  it('renders localized terms summary in Tagalog/Filipino when toggled', () => {
-    useDisclaimerStore.setState({ isDisclaimerOpen: true });
-    useLanguageStore.setState({ language: 'tl' });
-    renderModal();
-
-    const termsLink = screen.getByTestId('disclaimer-terms-link');
-    fireEvent.click(termsLink);
-
-    expect(screen.getByTestId('terms-detail-card')).toBeInTheDocument();
-    expect(screen.getByText(/Buod ng Kasunduan sa Serbisyo:/i)).toBeInTheDocument();
-    expect(screen.getByText(/Pansariling Pamamahala:/i)).toBeInTheDocument();
-    expect(screen.getByText(/Walang Pananagutan sa Pondo:/i)).toBeInTheDocument();
-    expect(screen.getByText(/Pagsunod sa Regulasyon:/i)).toBeInTheDocument();
+    expect(useTermsStore.getState().isTermsOpen).toBe(true);
   });
 });

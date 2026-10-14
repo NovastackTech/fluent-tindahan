@@ -10,6 +10,7 @@ import { useSyncStore } from '../sync/syncEngine';
 import { usePwaStore } from '../state/pwaStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
 import { useDisclaimerStore } from '../state/disclaimerStore';
+import { useTermsStore } from '../state/termsStore';
 import { db } from '../db/db';
 import { DEFAULT_GCASH_FEE_TIERS, GCASH_FEE_STORAGE_KEY, useGCashFeeStore } from '../state/gcashFeeStore';
 
@@ -352,7 +353,7 @@ describe('SettingsPage', () => {
     expect(useAuthStore.getState().onboardingMode).toBe('edit');
   });
 
-  it('renders legal & compliance section with disclaimer and privacy notice triggers', () => {
+  it('renders legal & compliance section with disclaimer, privacy notice, and terms triggers', () => {
     useAuthStore.setState({ consentAccepted: true });
     renderSettings();
 
@@ -368,6 +369,12 @@ describe('SettingsPage', () => {
     fireEvent.click(privacyBtn);
     expect(useAuthStore.getState().consentAccepted).toBe(true);
     expect(useAuthStore.getState().isPrivacyNoticeOpen).toBe(true);
+
+    const termsBtn = screen.getByTestId('settings-open-terms-btn');
+    expect(termsBtn).toBeInTheDocument();
+
+    fireEvent.click(termsBtn);
+    expect(useTermsStore.getState().isTermsOpen).toBe(true);
   });
 });
 

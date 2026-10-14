@@ -14,6 +14,7 @@ import {
 } from '@fluentui/react-components';
 import { ShieldCheckmarkRegular } from '@fluentui/react-icons';
 import { useAuthStore } from '../state/authStore';
+import { useTermsStore } from '../state/termsStore';
 import { useTranslation } from '../state/languageStore';
 
 const useStyles = makeStyles({
@@ -94,6 +95,27 @@ export const PrivacyConsentDialog: React.FC = () => {
               <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
                 {t.privacy.description}
               </Text>
+              <div>
+                <button
+                  type="button"
+                  onClick={() => useTermsStore.getState().openTerms()}
+                  data-testid="privacy-view-terms-link"
+                  style={{
+                    color: tokens.colorBrandForeground1,
+                    background: 'none',
+                    border: 'none',
+                    padding: 0,
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    textAlign: 'left',
+                    textDecoration: 'underline',
+                    cursor: 'pointer',
+                    marginTop: '4px'
+                  }}
+                >
+                  {t.privacy.viewTermsLink}
+                </button>
+              </div>
             </div>
           </DialogContent>
 

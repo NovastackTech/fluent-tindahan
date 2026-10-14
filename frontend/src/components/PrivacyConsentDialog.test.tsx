@@ -4,6 +4,7 @@ import { FluentProvider } from '@fluentui/react-components';
 import { PrivacyConsentDialog } from './PrivacyConsentDialog';
 import { sariSariLightTheme } from '../theme/theme';
 import { useAuthStore } from '../state/authStore';
+import { useTermsStore } from '../state/termsStore';
 
 describe('PrivacyConsentDialog', () => {
   beforeEach(() => {
@@ -56,5 +57,15 @@ describe('PrivacyConsentDialog', () => {
 
     expect(useAuthStore.getState().consentAccepted).toBe(true);
     expect(useAuthStore.getState().isPrivacyNoticeOpen).toBe(false);
+  });
+
+  it('opens terms when clicking view terms link', () => {
+    renderDialog();
+
+    const termsLink = screen.getByTestId('privacy-view-terms-link');
+    expect(termsLink).toBeInTheDocument();
+
+    fireEvent.click(termsLink);
+    expect(useTermsStore.getState().isTermsOpen).toBe(true);
   });
 });

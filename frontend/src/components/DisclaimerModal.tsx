@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   Dialog,
   DialogSurface,
@@ -13,6 +13,7 @@ import {
 } from '@fluentui/react-components';
 import { DismissRegular } from '@fluentui/react-icons';
 import { useDisclaimerStore } from '../state/disclaimerStore';
+import { useTermsStore } from '../state/termsStore';
 import { useTranslation } from '../state/languageStore';
 
 const useStyles = makeStyles({
@@ -71,16 +72,6 @@ const useStyles = makeStyles({
     fontFamily: 'inherit',
     fontSize: 'inherit'
   },
-  termsDetailCard: {
-    ...shorthands.padding(tokens.spacingVerticalS, tokens.spacingHorizontalM),
-    ...shorthands.borderRadius(tokens.borderRadiusMedium),
-    backgroundColor: tokens.colorNeutralBackground2,
-    ...shorthands.border('1px', 'solid', tokens.colorNeutralStroke2),
-    fontSize: '12px',
-    lineHeight: '18px',
-    color: tokens.colorNeutralForeground2,
-    marginTop: tokens.spacingVerticalXS
-  },
   actions: {
     width: '100%',
     gridColumn: '1 / -1',
@@ -107,10 +98,8 @@ export const DisclaimerModal: React.FC = () => {
   const styles = useStyles();
   const { isDisclaimerOpen, closeDisclaimer } = useDisclaimerStore();
   const { t } = useTranslation();
-  const [showTermsDetail, setShowTermsDetail] = useState(false);
 
   const handleClose = () => {
-    setShowTermsDetail(false);
     closeDisclaimer();
   };
 
@@ -155,25 +144,13 @@ export const DisclaimerModal: React.FC = () => {
               <button
                 type="button"
                 className={styles.termsLink}
-                onClick={() => setShowTermsDetail((prev) => !prev)}
-                data-testid="disclaimer-terms-link"
-                aria-expanded={showTermsDetail}
+                onClick={() => useTermsStore.getState().openTerms()}
+                data-testid="disclaimer-open-full-terms-btn"
+                style={{ textAlign: 'left', fontWeight: 600 }}
               >
-                {t.disclaimer.termsLink}
+                {t.disclaimer.openFullTerms}
               </button>
             </div>
-
-            {showTermsDetail && (
-              <div className={styles.termsDetailCard} data-testid="terms-detail-card">
-                <strong>{t.disclaimer.termsSummaryTitle}</strong>
-                <br />
-                1. <strong>{t.disclaimer.termsSummary1Title}</strong> {t.disclaimer.termsSummary1Desc}
-                <br />
-                2. <strong>{t.disclaimer.termsSummary2Title}</strong> {t.disclaimer.termsSummary2Desc}
-                <br />
-                3. <strong>{t.disclaimer.termsSummary3Title}</strong> {t.disclaimer.termsSummary3Desc}
-              </div>
-            )}
           </DialogContent>
 
           <DialogActions fluid className={styles.actions}>
