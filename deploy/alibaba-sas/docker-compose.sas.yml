@@ -1,0 +1,35 @@
+# Alibaba Simple Application Server overlay - isolated multi-app deployment.
+# Used by deploy/alibaba-sas/deploy.sh together with docker-compose.yml.
+#
+# Defaults (override in /opt/fluent-tindahan/.env):
+#   COMPOSE_PROJECT_NAME=fluent-tindahan
+#   HOST_HTTP_PORT=8089   (base compose binds it to 127.0.0.1 only)
+#   APP_URL=https://tindahan-dev.novastack-inc.online
+name: ${COMPOSE_PROJECT_NAME:-fluent-tindahan}
+
+services:
+  db:
+    container_name: ${COMPOSE_PROJECT_NAME:-fluent-tindahan}-db
+    command: >
+      postgres
+      -c shared_buffers=128MB
+      -c max_connections=50
+      -c work_mem=4MB
+
+  api:
+    container_name: ${COMPOSE_PROJECT_NAME:-fluent-tindahan}-api
+    environment:
+      DOTNET_GCHeapHardLimit: "000000001E000000"
+
+  web:
+    container_name: ${COMPOSE_PROJECT_NAME:-fluent-tindahan}-web
+    networks:
+      - tindahan
+      - edge
+
+networks:
+  # Shared with the server's Caddy (ports 80/443), which proxies the domain to
+  # ${COMPOSE_PROJECT_NAME}-web:80. Created by deploy.sh.
+  edge:
+    name: novastack-edge
+    external: true

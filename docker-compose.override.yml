@@ -1,5 +1,5 @@
 # Local-only overrides (auto-merged by `docker compose` on the developer machine).
-# Not used on Alibaba SAS (deploy copies only docker-compose.yml + .env).
+# Not used on Alibaba SAS (Deploy-NovastackSas.ps1 excludes it from the upload).
 
 services:
   db:

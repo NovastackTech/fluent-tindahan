@@ -39,6 +39,7 @@ lcov-report/
 .env
 !.env.example
 deploy/alibaba-sas.env
+deploy/alibaba-sas/secrets.env
 .run/
 
 # Database dumps and backups

@@ -1,9 +1,9 @@
 # Fluent Tindahan — local + Alibaba SAS stack
 # Usage:
-#   ./run-local.sh --docker
-#   ./deploy-alibaba-sas.sh
+#   .\run-local.cmd -Docker      (or ./run-local.sh --docker)
+#   .\deploy-alibaba-sas.cmd     (adds deploy/alibaba-sas/docker-compose.sas.yml on the server)
 #
-# Required secrets (Production / SAS): see deploy/alibaba-sas.env.example
+# Production / SAS secrets: see deploy/alibaba-sas/README.md
 
 name: fluent-tindahan
 

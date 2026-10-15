@@ -1,8 +1,6 @@
-# Edge nginx vhost on the shared Novastack Alibaba SAS host.
-# Installed by deploy-alibaba-sas → /etc/nginx/sites-available/{{PUBLIC_HOST}}
-# Proxies {{PUBLIC_HOST}} → http://127.0.0.1:{{HOST_HTTP_PORT}} (app compose/nginx).
-#
-# First deploy may be HTTP-only; certbot --nginx adds the 443 server block + certs.
+# Host nginx fallback - only used when the server has no Caddy on ports 80/443.
+# install.sh copies this to /etc/nginx/conf.d/tindahan-dev.novastack-inc.online.conf
+# and runs certbot --nginx once DNS resolves (certbot adds the 443 block).
 
 map $http_upgrade $connection_upgrade {
     default upgrade;
@@ -11,17 +9,12 @@ map $http_upgrade $connection_upgrade {
 
 server {
     listen 80;
-    listen [::]:80;
-    server_name {{PUBLIC_HOST}};
+    server_name tindahan-dev.novastack-inc.online;
 
     client_max_body_size 20m;
 
-    location /.well-known/acme-challenge/ {
-        root /var/www/html;
-    }
-
     location / {
-        proxy_pass http://127.0.0.1:{{HOST_HTTP_PORT}};
+        proxy_pass http://127.0.0.1:8089;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;

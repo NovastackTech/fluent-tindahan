@@ -9,17 +9,17 @@ An offline-first Progressive Web App (PWA) built with **Fluent UI v9**, **Dexie.
 
 ### Option 1: One-Click Startup (Novastack standard)
 ```powershell
-./run-local.ps1
-# or
+.\run-local.cmd
+# Linux / macOS
 ./run-local.sh
 ```
 Full Docker Compose stack (Postgres + API + nginx PWA):
 ```powershell
-./run-local.ps1 -Docker
-# or
+.\run-local.cmd -Docker
+# Linux / macOS
 ./run-local.sh --docker
 ```
-`start-local.ps1` / `start-local.bat` remain as thin wrappers around `run-local`.
+`start-local.ps1` / `start-local.bat` remain as thin wrappers around `scripts/run-local.ps1`.
 
 ### Option 2: Manual Startup
 
@@ -77,22 +77,19 @@ PWA_DEV=true npm run dev
 
 ## ☁️ Deploy to Alibaba Cloud SAS
 
-Novastack standard remote deploy (SSH + Docker Compose on Simple Application Server):
+Novastack standard one-step deploy (single SSH session, root password once):
 
-```bash
-cp deploy/alibaba-sas.env.example deploy/alibaba-sas.env
-# fill POSTGRES_PASSWORD + PayMongo secrets (host/domain/port already set)
+```powershell
+# first deploy only: PayMongo keys for the server .env
+copy deploy\alibaba-sas\secrets.env.example deploy\alibaba-sas\secrets.env
 
-./deploy-alibaba-sas.sh --bootstrap   # first time on a fresh Ubuntu SAS
-./deploy-alibaba-sas.sh               # subsequent deploys
+.\deploy-alibaba-sas.cmd                      # first time on this server: add -ModifyDockerCaddy
 ```
-
-PowerShell equivalent: `./deploy-alibaba-sas.ps1` (use `-Bootstrap` on first run).
 
 | | |
 | --- | --- |
 | Public URL | `https://tindahan-dev.novastack-inc.online` |
-| Unique host port | **8089** (other Novastack apps use 8086–8088, 8090) |
-| SAS host | `8.220.128.80` |
+| Host port | `127.0.0.1:8089` (loopback only) |
+| SAS host | `8.220.128.80`, install dir `/opt/fluent-tindahan` |
 
-Stack: Postgres 16 + .NET 8 API + app nginx, fronted by the host nginx vhost. Open TCP **80** and **443** in the SAS Firewall console.
+Stack: Postgres 16 + .NET 8 API + app nginx, fronted by the shared Novastack Caddy (automatic HTTPS). Details, DNS and backups: [`deploy/alibaba-sas/README.md`](deploy/alibaba-sas/README.md).

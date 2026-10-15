@@ -51,7 +51,8 @@ Primary production path for Novastack apps: one SAS instance running Docker Comp
 
 ```mermaid
 graph TB
-    Client["Store devices / browsers"] --> Nginx["nginx :80\nPWA static + /api proxy"]
+    Client["Store devices / browsers"] --> Caddy["Shared Novastack Caddy :443\n(lyingin-pis-caddy-1, auto TLS)"]
+    Caddy -->|"novastack-edge network"| Nginx["fluent-tindahan-web :80\nPWA static + /api proxy"]
     Nginx --> API[".NET 8 Web API :8080"]
     API --> PG[("PostgreSQL 16\nDocker volume")]
 ```
@@ -60,46 +61,33 @@ graph TB
 | | |
 | --- | --- |
 | Public URL | `https://tindahan-dev.novastack-inc.online` |
-| Unique host port | **8089** (shared SAS also uses 8086, 8087, 8088, 8090) |
-| SAS host | `8.220.128.80` |
+| SAS host | `8.220.128.80`, install dir `/opt/fluent-tindahan` |
+| Host port | `127.0.0.1:8089` (other apps: 8085–8088, 8090, 8095, 8096, 43123) |
 
-```bash
-cp deploy/alibaba-sas.env.example deploy/alibaba-sas.env
-# set POSTGRES_PASSWORD + PayMongo secrets
+```powershell
+# first deploy only: PayMongo keys pushed into the server .env
+copy deploy\alibaba-sas\secrets.env.example deploy\alibaba-sas\secrets.env
 
-./deploy-alibaba-sas.sh --bootstrap   # first time
-./deploy-alibaba-sas.sh               # ship updates
+.\deploy-alibaba-sas.cmd                      # first time on this server: add -ModifyDockerCaddy
 ```
-
-PowerShell: `./deploy-alibaba-sas.ps1` (`-Bootstrap` on first run).
 
 | Piece | Role |
 | --- | --- |
-| `docker-compose.yml` | `db` + `api` + `web` stack used on SAS (`HOST_HTTP_PORT=8089`) |
+| `deploy-alibaba-sas.cmd` | One-step launcher (root password once) |
+| `deploy/alibaba-sas/Deploy-NovastackSas.ps1` | Packages the repo and streams it over a single SSH session |
+| `deploy/alibaba-sas/install.sh` | Generates/updates the server `.env`, runs `deploy.sh`, adds the domain to Caddy |
+| `deploy/alibaba-sas/deploy.sh` | Secret checks, `pg_dump` snapshot, build, `up -d`, health wait |
+| `deploy/alibaba-sas/docker-compose.sas.yml` | SAS overlay: container names, memory limits, `novastack-edge` network |
 | `deploy/nginx/default.conf` | App-container SPA fallback + `/api` reverse proxy |
-| `deploy/nginx/host-vhost.conf.template` | Edge nginx: hostname → `127.0.0.1:8089` |
-| `deploy/install-host-vhost.sh` | Installs vhost + optional certbot TLS |
-| `deploy/alibaba-sas.env` | SSH target + production secrets (gitignored) |
-| `deploy/remote-bootstrap.sh` | Idempotent Docker install on Ubuntu/Debian SAS |
 
-Open TCP **80** and **443** in the SAS Firewall console. Health probe: `GET /api/health`.
+Open TCP **80** and **443** in the SAS Firewall console. Health probe: `GET /api/health`. Full runbook (DNS, options, restore): `deploy/alibaba-sas/README.md`.
 
 ### Database Backups (pg_dump)
-Every `./deploy-alibaba-sas.sh` and `./deploy-alibaba-sas.ps1` automatically creates a compressed `pg_dump` snapshot into `${SAS_APP_DIR}/backups/db_YYYYMMDD_HHMMSS.sql.gz` before rebuilding or restarting containers.
-
-**Manual remote backup:**
-```bash
-ssh root@8.220.128.80 "cd /opt/fluent-tindahan && docker compose exec -T db pg_dump -U fluent fluent_tindahan | gzip > backups/manual_\$(date +%Y%m%d_%H%M%S).sql.gz"
-```
-
-**Restoring a snapshot:**
-```bash
-ssh root@8.220.128.80 "cd /opt/fluent-tindahan && gunzip -c backups/db_YYYYMMDD_HHMMSS.sql.gz | docker compose exec -T db psql -U fluent fluent_tindahan"
-```
+Every deploy writes `/opt/fluent-tindahan/backups/db_YYYYMMDD_HHMMSS.sql.gz` before rebuilding and aborts if the snapshot fails (`-NoBackup` skips it). Restore steps are in `deploy/alibaba-sas/README.md`.
 
 ### Local Docker parity
-```bash
-./run-local.sh --docker
+```powershell
+.\run-local.cmd -Docker      # or ./run-local.sh --docker
 # PWA http://localhost:8080  ·  API http://localhost:5000  ·  Postgres :5432
 ```
 

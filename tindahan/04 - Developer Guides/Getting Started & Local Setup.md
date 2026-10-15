@@ -24,12 +24,12 @@ Ensure the following runtimes and tools are installed:
 
 From the root directory, run:
 ```powershell
-./run-local.ps1
+.\run-local.cmd
 ```
 ```bash
 ./run-local.sh
 ```
-or double-click `start-local.bat` (wrapper around `run-local`).
+or double-click `run-local.cmd` / `start-local.bat` (both call `scripts/run-local.ps1`).
 
 The script:
 1. Verifies if the backend is already alive on port 5000 (if not, launches it).
@@ -38,7 +38,7 @@ The script:
 
 Docker Compose parity with production SAS:
 ```powershell
-./run-local.ps1 -Docker
+.\run-local.cmd -Docker
 ```
 ```bash
 ./run-local.sh --docker
