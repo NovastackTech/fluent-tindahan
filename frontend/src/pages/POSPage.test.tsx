@@ -9,11 +9,13 @@ import { usePwaStore } from '../state/pwaStore';
 import { _resetUpdateSWFunctionForTest } from '../pwa/registerServiceWorker';
 import { useAuthStore } from '../state/authStore';
 import { useLanguageStore } from '../state/languageStore';
+import { usePosSettingsStore } from '../state/posSettingsStore';
 
 describe('POSPage', () => {
   beforeEach(async () => {
     useLanguageStore.setState({ language: 'tl' });
     useAuthStore.setState({ tenantId: 't-1' });
+    usePosSettingsStore.setState({ stockValidationPolicy: 'block' });
     _resetUpdateSWFunctionForTest();
     useCartStore.getState().clearCart();
     await db.products.clear();
@@ -699,6 +701,139 @@ describe('POSPage', () => {
     // Checkout button in drawer should be disabled
     const checkoutDrawerBtn = screen.getByRole('button', { name: /Mag-Checkout|Checkout/i });
     expect(checkoutDrawerBtn).toBeDisabled();
+  });
+
+  it('allows adding out-of-stock items and completes sale when stockValidationPolicy is warn', async () => {
+    usePosSettingsStore.setState({ stockValidationPolicy: 'warn' });
+    await db.products.clear();
+    await db.products.add({
+      id: 'qa-zero-warn',
+      tenantId: 't-1',
+      name: 'Pansit Zero Stock',
+      price: 20,
+      cost: 15,
+      stockQty: 0,
+      updatedAt: new Date().toISOString()
+    });
+
+    renderPOS();
+
+    await waitFor(() => {
+      expect(screen.getByText('Pansit Zero Stock')).toBeInTheDocument();
+    });
+
+    const card = screen.getByText('Pansit Zero Stock');
+    fireEvent.click(card);
+
+    // Item should be added to cart even with 0 stock
+    expect(useCartStore.getState().items).toHaveLength(1);
+    expect(useCartStore.getState().items[0].qty).toBe(1);
+
+    // Notice toast shown
+    await waitFor(() => {
+      expect(screen.getByText(/Walang nakatalang stock ang Pansit Zero Stock/i)).toBeInTheDocument();
+    });
+
+    // Pay opens checkout dialog directly when stock is allowed (warn policy)
+    const payBtn = screen.getByRole('button', { name: /Bayad|Pay/i });
+    fireEvent.click(payBtn);
+
+    // Tender cash 50
+    const cashInput = screen.getByRole('spinbutton', { name: /Tinanggap na pera|Cash received/i });
+    fireEvent.change(cashInput, { target: { value: '50' } });
+
+    const completeBtn = screen.getByRole('button', { name: /Kumpletuhin ang Benta|Complete Sale/i });
+    expect(completeBtn).not.toBeDisabled();
+    fireEvent.click(completeBtn);
+
+    await waitFor(async () => {
+      const sales = await db.sales.toArray();
+      expect(sales).toHaveLength(1);
+      expect(sales[0].totalAmount).toBe(20);
+
+      const prod = await db.products.get('qa-zero-warn');
+      expect(prod?.stockQty).toBe(0); // clamped to 0 without negative stock crash
+    });
+  });
+
+  it('allows owner to override blocked sale and complete transaction in block mode', async () => {
+    usePosSettingsStore.setState({ stockValidationPolicy: 'block' });
+    await db.products.clear();
+    await db.products.add({
+      id: 'qa-biscuit-override',
+      tenantId: 't-1',
+      name: 'QA Biscuit Override',
+      price: 10,
+      cost: 7,
+      stockQty: 1,
+      updatedAt: new Date().toISOString()
+    });
+
+    // Manually place 3 into cart
+    useCartStore.setState({
+      items: [
+        {
+          productId: 'qa-biscuit-override',
+          name: 'QA Biscuit Override',
+          price: 10,
+          qty: 3,
+          subtotal: 30,
+          priceCentavos: 1000,
+          subtotalCentavos: 3000,
+          maxStock: 1
+        }
+      ]
+    });
+
+    renderPOS();
+
+    await waitFor(() => {
+      expect(screen.getByText('QA Biscuit Override')).toBeInTheDocument();
+    });
+
+    // Open Cart Drawer
+    const payBtn = screen.getByRole('button', { name: /Bayad|Pay/i });
+    fireEvent.click(payBtn);
+
+    // Checkout button is initially disabled
+    const checkoutDrawerBtn = screen.getByRole('button', { name: /Mag-Checkout|Checkout/i });
+    expect(checkoutDrawerBtn).toBeDisabled();
+
+    // Click Override button
+    const overrideBtn = screen.getByRole('button', { name: /I-override ang Stock|Override Stock/i });
+    fireEvent.click(overrideBtn);
+
+    // Confirmation dialog is displayed
+    await waitFor(() => {
+      expect(screen.getByText(/Kumpirmahin ang Pag-override sa Stock|Confirm Stock Override/i)).toBeInTheDocument();
+      expect(screen.getAllByText('QA Biscuit Override').length).toBeGreaterThanOrEqual(1);
+    });
+
+    // Confirm override
+    const confirmBtn = screen.getByRole('button', { name: /I-override at Ituloy ang Benta|Override & Proceed to Checkout/i });
+    fireEvent.click(confirmBtn);
+
+    // Now checkout button in cart drawer is enabled!
+    const enabledCheckoutBtn = await screen.findByRole('button', { name: /Mag-Checkout|Checkout/i });
+    expect(enabledCheckoutBtn).not.toBeDisabled();
+    fireEvent.click(enabledCheckoutBtn);
+
+    // In checkout dialog, tender cash 50
+    const cashInput = screen.getByRole('spinbutton', { name: /Tinanggap na pera|Cash received/i });
+    fireEvent.change(cashInput, { target: { value: '50' } });
+
+    const completeBtn = screen.getByRole('button', { name: /Kumpletuhin ang Benta|Complete Sale/i });
+    expect(completeBtn).not.toBeDisabled();
+    fireEvent.click(completeBtn);
+
+    await waitFor(async () => {
+      const sales = await db.sales.toArray();
+      expect(sales).toHaveLength(1);
+      expect(sales[0].totalAmount).toBe(30);
+
+      const prod = await db.products.get('qa-biscuit-override');
+      expect(prod?.stockQty).toBe(0); // clamped cleanly to 0
+    });
   });
 });
 

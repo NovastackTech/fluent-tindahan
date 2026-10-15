@@ -27,12 +27,9 @@ public class CurrentUserService : ICurrentUserService
 
     private bool IsDevelopmentOrDemoMode()
     {
-        if (_environment != null)
+        if (_environment != null && (_environment.IsDevelopment() || _environment.IsEnvironment("Demo")))
         {
-            if (_environment.IsDevelopment() || _environment.IsEnvironment("Demo"))
-            {
-                return true;
-            }
+            return true;
         }
 
         if (_configuration != null)
@@ -40,6 +37,17 @@ public class CurrentUserService : ICurrentUserService
             var demoEnabled = _configuration["DemoMode"] ?? _configuration["Demo:Enabled"] ?? _configuration["DEMO_MODE"];
             if (string.Equals(demoEnabled, "true", StringComparison.OrdinalIgnoreCase))
             {
+                // Security invariant: In Production, DemoMode is strictly ignored unless explicitly opted in for an intentional, documented demo deployment.
+                var envName = _environment?.EnvironmentName ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? Environments.Production;
+                if (string.Equals(envName, Environments.Production, StringComparison.OrdinalIgnoreCase))
+                {
+                    var allowInProd = _configuration["AllowDemoModeInProduction"]
+                        ?? _configuration["Demo:AllowInProduction"]
+                        ?? _configuration["ALLOW_DEMO_MODE_IN_PRODUCTION"];
+
+                    return string.Equals(allowInProd, "true", StringComparison.OrdinalIgnoreCase);
+                }
+
                 return true;
             }
         }

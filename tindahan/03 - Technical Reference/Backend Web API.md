@@ -61,7 +61,7 @@ Swagger Documentation: `http://localhost:5000/swagger`
 
 ### Tenant ID Reconciliation
 
-The verified JWT `tenant_id` claim is authoritative in production; `X-Tenant-Id` is only a Development/Demo fallback. Before sync, subscription refresh, billing, or catalog pull, the client calls `PUT /api/tenant/provision`. If the returned tenant ID differs from the locally generated offline ID, the client atomically rekeys that tenant's Dexie records and queued payloads, migrates tenant-keyed GCash fee settings, and persists the returned ID. Subsequent reads and writes then use the server tenant. Do not replace an authenticated tenant ID with a client-generated ID.
+The verified JWT `tenant_id` claim is authoritative in production; `X-Tenant-Id` is only a Development/Demo fallback. In `Production`, `DemoMode` is strictly ignored to prevent unauthenticated header spoofing unless an explicit, documented opt-in (`AllowDemoModeInProduction=true` / `ALLOW_DEMO_MODE_IN_PRODUCTION=true`) is configured on a dedicated demo server. Before sync, subscription refresh, billing, or catalog pull, the client calls `PUT /api/tenant/provision`. If the returned tenant ID differs from the locally generated offline ID, the client atomically rekeys that tenant's Dexie records and queued payloads, migrates tenant-keyed GCash fee settings, and persists the returned ID. Subsequent reads and writes then use the server tenant. Do not replace an authenticated tenant ID with a client-generated ID.
 
 ---
 

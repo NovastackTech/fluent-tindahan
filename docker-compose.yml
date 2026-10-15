@@ -37,7 +37,8 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
       ASPNETCORE_URLS: http://+:8080
-      DemoMode: ${DEMO_MODE:-true}
+      DemoMode: ${DEMO_MODE:-false}
+      AllowDemoModeInProduction: ${ALLOW_DEMO_MODE_IN_PRODUCTION:-false}
       ConnectionStrings__DefaultConnection: >-
         Host=db;Port=5432;Database=${POSTGRES_DB:-fluent_tindahan};Username=${POSTGRES_USER:-fluent};Password='${POSTGRES_PASSWORD:-fluent_dev_change_me}'
       Firebase__ProjectId: ${FIREBASE_PROJECT_ID:-fluent-tindahan-dev}

@@ -7,6 +7,8 @@ import {
   retryDeadLetterItem,
   deleteDeadLetterItem,
   clearDeadLetterQueue,
+  getArchivedDeadLetterItems,
+  clearDeadLetterArchive,
   pullCatalogFromServer,
   initSyncEngine,
   STORAGE_KEY_LAST_SYNCED,
@@ -44,6 +46,7 @@ describe('syncEngine', () => {
   beforeEach(async () => {
     await db.syncQueue.clear();
     await db.deadLetterQueue.clear();
+    clearDeadLetterArchive();
     await db.products.clear();
     await db.gcashTxns.clear();
     useSyncStore.setState({
@@ -351,6 +354,109 @@ describe('syncEngine', () => {
     expect(dlqItems).toHaveLength(0);
   });
 
+  it('retryDeadLetterItem does NOT auto-clamp out-of-range product price or cost silently, returning requiresEdit: true', async () => {
+    await db.products.put({
+      id: 'prod-out-of-bounds',
+      tenantId: 'tenant-1',
+      name: 'Unclamped High Price Item',
+      price: 99999999999,
+      cost: 50,
+      stockQty: 10,
+      updatedAt: new Date().toISOString()
+    });
+
+    await db.deadLetterQueue.add({
+      id: 'dlq-prod-1',
+      entity: 'Product',
+      action: 'Insert',
+      timestamp: new Date().toISOString(),
+      payload: {
+        id: 'prod-out-of-bounds',
+        name: 'Unclamped High Price Item',
+        price: 99999999999,
+        cost: 50,
+        stockQty: 10
+      },
+      retryCount: 3,
+      errorMessage: 'Price exceeds maximum allowed bounds',
+      failedAt: new Date().toISOString()
+    });
+
+    const result = await retryDeadLetterItem('dlq-prod-1');
+
+    expect(result.success).toBe(false);
+    expect(result.requiresEdit).toBe(true);
+    expect(result.error).toMatch(/Hindi wastong presyo/i);
+
+    // Verify local record was NOT silently rewritten or clamped!
+    const localProd = await db.products.get('prod-out-of-bounds');
+    expect(localProd?.price).toBe(99999999999);
+
+    // Verify item remains in DLQ and was NOT added to syncQueue
+    const dlqItems = await db.deadLetterQueue.toArray();
+    expect(dlqItems).toHaveLength(1);
+    expect(dlqItems[0].id).toBe('dlq-prod-1');
+
+    const syncQueueItems = await db.syncQueue.toArray();
+    expect(syncQueueItems.find(q => q.id === 'dlq-prod-1')).toBeUndefined();
+  });
+
+  it('retryDeadLetterItem updates local record and requeues when user confirms corrected values', async () => {
+    await db.products.put({
+      id: 'prod-to-correct',
+      tenantId: 'tenant-1',
+      name: 'Need Correction Item',
+      price: 0,
+      cost: -10,
+      stockQty: 5,
+      updatedAt: new Date().toISOString()
+    });
+
+    await db.deadLetterQueue.add({
+      id: 'dlq-prod-2',
+      entity: 'Product',
+      action: 'Insert',
+      timestamp: new Date().toISOString(),
+      payload: {
+        id: 'prod-to-correct',
+        name: 'Need Correction Item',
+        price: 0,
+        cost: -10,
+        stockQty: 5
+      },
+      retryCount: 3,
+      errorMessage: 'Price must be positive',
+      failedAt: new Date().toISOString()
+    });
+
+    // User explicitly saves corrected values via edit form
+    const result = await retryDeadLetterItem('dlq-prod-2', {
+      name: 'Corrected Item Name',
+      price: 85.50,
+      cost: 50.00,
+      stockQty: 15
+    });
+
+    expect(result.success).toBe(true);
+
+    // Local product now has the user-confirmed values
+    const localProd = await db.products.get('prod-to-correct');
+    expect(localProd?.price).toBe(85.50);
+    expect(localProd?.cost).toBe(50.00);
+    expect(localProd?.stockQty).toBe(15);
+    expect(localProd?.name).toBe('Corrected Item Name');
+
+    // Item removed from DLQ and enqueued to syncQueue
+    const dlqItems = await db.deadLetterQueue.toArray();
+    expect(dlqItems).toHaveLength(0);
+
+    const syncQueueItems = await db.syncQueue.toArray();
+    const queued = syncQueueItems.find(q => q.id === 'dlq-prod-2');
+    expect(queued).toBeDefined();
+    expect(queued?.payload.price).toBe(85.50);
+    expect(queued?.payload.cost).toBe(50.00);
+  });
+
   it('clearDeadLetterQueue purges all dead letter entries and resets lastErrorMessage', async () => {
     useSyncStore.setState({ lastErrorMessage: 'Nalipat sa Dead Letter Queue ang 1 transaksyon: Failed' });
     await db.deadLetterQueue.add({
@@ -401,6 +507,44 @@ describe('syncEngine', () => {
     expect(remaining).toHaveLength(1);
     expect(remaining[0].id).toBe('dlq-item-2');
     expect(useSyncStore.getState().deadLetterCount).toBe(1);
+
+    const archived = getArchivedDeadLetterItems();
+    expect(archived).toHaveLength(1);
+    expect(archived[0].id).toBe('dlq-item-1');
+    expect(archived[0].archivedAt).toBeDefined();
+  });
+
+  it('clearDeadLetterQueue archives all entries before clearing table', async () => {
+    await db.deadLetterQueue.bulkAdd([
+      {
+        id: 'dlq-item-1',
+        entity: 'Sale',
+        action: 'Insert',
+        timestamp: new Date().toISOString(),
+        payload: { id: 's-1', totalAmount: 120 },
+        retryCount: 3,
+        failedAt: new Date().toISOString()
+      },
+      {
+        id: 'dlq-item-2',
+        entity: 'GCashTxn',
+        action: 'Insert',
+        timestamp: new Date().toISOString(),
+        payload: { id: 'g-1', amount: 500, fee: 10 },
+        retryCount: 3,
+        failedAt: new Date().toISOString()
+      }
+    ]);
+
+    await clearDeadLetterQueue();
+
+    const remaining = await db.deadLetterQueue.toArray();
+    expect(remaining).toHaveLength(0);
+    expect(useSyncStore.getState().deadLetterCount).toBe(0);
+
+    const archived = getArchivedDeadLetterItems();
+    expect(archived).toHaveLength(2);
+    expect(archived.map((x) => x.id)).toEqual(expect.arrayContaining(['dlq-item-1', 'dlq-item-2']));
   });
 
   it('pullCatalogFromServer fetches products and writes to Dexie without clearing errors or setting lastSyncedAt', async () => {

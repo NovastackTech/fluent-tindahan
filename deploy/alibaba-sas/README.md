@@ -37,6 +37,9 @@ copy deploy\alibaba-sas\secrets.env.example deploy\alibaba-sas\secrets.env
 
 `install.sh` generates `/opt/fluent-tindahan/.env` (random `POSTGRES_PASSWORD`), merges `secrets.env` into it and deletes the uploaded copy. Later deploys keep the server `.env`; ship `secrets.env` again only to rotate keys. Reference: `tindahan.env.example`.
 
+> [!NOTE]
+> `DEMO_MODE` defaults to `false`. In `Production`, demo mode is strictly ignored to enforce JWT tenant isolation unless `ALLOW_DEMO_MODE_IN_PRODUCTION=true` is explicitly set in `secrets.env` for an intentional demo deployment.
+
 ## 3. Deploy (Windows, from the repo root)
 
 ```powershell

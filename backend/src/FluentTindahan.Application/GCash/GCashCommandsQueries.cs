@@ -88,6 +88,16 @@ public class RecordGCashTxnCommandHandler : IRequestHandler<RecordGCashTxnComman
             throw new UnauthorizedAccessException("Tenant is not authenticated or resolved.");
         }
 
+        const decimal MaxAllowedGCashAmount = 100_000.00m;
+        if (request.Amount <= 0 || request.Amount > MaxAllowedGCashAmount)
+        {
+            throw new ArgumentException($"Transaction amount must be between ₱0.01 and ₱{MaxAllowedGCashAmount:N2}.", nameof(request.Amount));
+        }
+        if (request.Fee < 0 || request.Fee > MaxAllowedGCashAmount)
+        {
+            throw new ArgumentException($"Service fee must be between ₱0.00 and ₱{MaxAllowedGCashAmount:N2}.", nameof(request.Fee));
+        }
+
         string? customerPhone = null;
         if (!string.IsNullOrWhiteSpace(request.CustomerPhone))
         {

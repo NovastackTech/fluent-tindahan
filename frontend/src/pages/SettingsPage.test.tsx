@@ -220,6 +220,12 @@ describe('SettingsPage', () => {
     expect(dismissButtons.length).toBe(2);
     fireEvent.click(dismissButtons[0]);
 
+    // Dialog opens; confirm dismissal
+    await waitFor(() => {
+      expect(screen.getByTestId('confirm-dismiss-dlq-btn')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId('confirm-dismiss-dlq-btn'));
+
     await waitFor(async () => {
       const remaining = await db.deadLetterQueue.toArray();
       expect(remaining).toHaveLength(1);
@@ -229,10 +235,60 @@ describe('SettingsPage', () => {
     const clearBtn = screen.getByRole('button', { name: /Linisin ang DLQ|Clear DLQ/i });
     fireEvent.click(clearBtn);
 
+    // Dialog opens; confirm clear
+    await waitFor(() => {
+      expect(screen.getByTestId('confirm-clear-dlq-btn')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId('confirm-clear-dlq-btn'));
+
     await waitFor(async () => {
       const remaining = await db.deadLetterQueue.toArray();
       expect(remaining).toHaveLength(0);
       expect(useSyncStore.getState().deadLetterCount).toBe(0);
+    });
+  });
+
+  it('renders Edit button for product DLQ items and opens fix dialog', async () => {
+    await db.products.put({
+      id: 'prod-dlq-edit',
+      tenantId: 'settings-test-tenant',
+      name: 'Corrupted Price Item',
+      price: 99999999999,
+      cost: 20,
+      stockQty: 5,
+      updatedAt: new Date().toISOString()
+    });
+
+    await db.deadLetterQueue.add({
+      id: 'dlq-edit-1',
+      entity: 'Product',
+      action: 'Insert',
+      timestamp: new Date().toISOString(),
+      payload: {
+        id: 'prod-dlq-edit',
+        name: 'Corrupted Price Item',
+        price: 99999999999,
+        cost: 20,
+        stockQty: 5
+      },
+      retryCount: 3,
+      errorMessage: 'Price out of range',
+      failedAt: new Date().toISOString()
+    });
+
+    renderSettings();
+
+    await waitFor(() => {
+      expect(screen.getByText(/Price out of range/i)).toBeInTheDocument();
+    });
+
+    const editBtn = screen.getByRole('button', { name: /Ayusin|Edit \/ Fix/i });
+    expect(editBtn).toBeInTheDocument();
+    fireEvent.click(editBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Ayusin ang Paninda \(Dead Letter Queue\)|Fix Product \(Dead Letter Queue\)/i)).toBeInTheDocument();
+      expect(screen.getByDisplayValue('Corrupted Price Item')).toBeInTheDocument();
     });
   });
 
@@ -429,6 +485,104 @@ describe('SettingsPage', () => {
     fireEvent.click(termsBtn);
     expect(useTermsStore.getState().isTermsOpen).toBe(true);
   });
+
+  it('opens confirmation dialog naming the entity when clicking dismiss on a DLQ item', async () => {
+    await db.deadLetterQueue.add({
+      id: 'dlq-test-sale',
+      entity: 'Sale',
+      action: 'Insert',
+      timestamp: new Date().toISOString(),
+      payload: {
+        id: 'sale-999',
+        totalAmount: 250,
+        paymentMethod: 'Cash'
+      },
+      retryCount: 3,
+      errorMessage: 'Validation failed on server',
+      failedAt: new Date().toISOString()
+    });
+    useSyncStore.setState({ deadLetterCount: 1 });
+
+    renderSettings();
+
+    // The item should appear in DLQ
+    await waitFor(() => {
+      expect(screen.getByText(/Sale \(Insert\)/)).toBeInTheDocument();
+    });
+
+    // Click Dismiss button
+    const dismissBtn = screen.getByTitle(/I-dismiss|Dismiss/i);
+    fireEvent.click(dismissBtn);
+
+    // Dialog should open naming the entity
+    await waitFor(() => {
+      expect(screen.getByText('Benta (Sale)')).toBeInTheDocument();
+      expect(screen.getByText(/Kumpirmahin ang Pag-dismiss ng Datos/i)).toBeInTheDocument();
+      expect(screen.getByText(/250.00/)).toBeInTheDocument();
+    });
+
+    // Item must still exist in Dexie because user has not confirmed
+    let dlqCount = await db.deadLetterQueue.count();
+    expect(dlqCount).toBe(1);
+
+    // Clicking cancel keeps the item
+    const cancelBtn = screen.getByTestId('cancel-dismiss-dlq-btn');
+    fireEvent.click(cancelBtn);
+
+    dlqCount = await db.deadLetterQueue.count();
+    expect(dlqCount).toBe(1);
+
+    // Click dismiss again and confirm
+    fireEvent.click(screen.getByTitle(/I-dismiss|Dismiss/i));
+    await waitFor(() => {
+      expect(screen.getByTestId('confirm-dismiss-dlq-btn')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId('confirm-dismiss-dlq-btn'));
+
+    await waitFor(async () => {
+      const remaining = await db.deadLetterQueue.count();
+      expect(remaining).toBe(0);
+    });
+  });
+
+  it('opens confirmation dialog when clicking Clear DLQ', async () => {
+    await db.deadLetterQueue.add({
+      id: 'dlq-test-gcash',
+      entity: 'GCashTxn',
+      action: 'Insert',
+      timestamp: new Date().toISOString(),
+      payload: { id: 'g-1', amount: 500, fee: 10 },
+      retryCount: 3,
+      failedAt: new Date().toISOString()
+    });
+    useSyncStore.setState({ deadLetterCount: 1 });
+
+    renderSettings();
+
+    await waitFor(() => {
+      expect(screen.getByText(/GCashTxn \(Insert\)/)).toBeInTheDocument();
+    });
+
+    const clearBtn = screen.getByRole('button', { name: /Linisin ang DLQ|Clear DLQ/i });
+    fireEvent.click(clearBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Linisin ang Lahat sa Dead Letter Queue\?|Clear All Items in Dead Letter Queue\?/i)).toBeInTheDocument();
+    });
+
+    // Verify item not cleared yet
+    expect(await db.deadLetterQueue.count()).toBe(1);
+
+    // Click confirm clear
+    const confirmClearBtn = screen.getByTestId('confirm-clear-dlq-btn');
+    fireEvent.click(confirmClearBtn);
+
+    await waitFor(async () => {
+      expect(await db.deadLetterQueue.count()).toBe(0);
+    });
+  });
 });
+
 
 

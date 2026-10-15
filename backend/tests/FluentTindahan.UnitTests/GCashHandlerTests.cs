@@ -171,4 +171,47 @@ public class GCashHandlerTests
         await act.Should().ThrowAsync<ArgumentException>()
             .WithMessage("*Enter a valid Philippine mobile number.*");
     }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-10)]
+    [InlineData(100_000.01)]
+    public async Task RecordGCashTxn_InvalidAmount_ThrowsArgumentException(decimal invalidAmount)
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var handler = new RecordGCashTxnCommandHandler(context, userMock.Object);
+
+        var command = new RecordGCashTxnCommand(
+            Type: "CashIn",
+            Amount: invalidAmount,
+            Fee: 10m,
+            RefNo: "REF-INVALID-AMT-01",
+            CustomerPhone: "09171234567"
+        );
+
+        var act = () => handler.Handle(command, CancellationToken.None);
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*Transaction amount must be between ₱0.01 and ₱100,000.00.*");
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(100_000.01)]
+    public async Task RecordGCashTxn_InvalidFee_ThrowsArgumentException(decimal invalidFee)
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var handler = new RecordGCashTxnCommandHandler(context, userMock.Object);
+
+        var command = new RecordGCashTxnCommand(
+            Type: "CashIn",
+            Amount: 500m,
+            Fee: invalidFee,
+            RefNo: "REF-INVALID-FEE-01",
+            CustomerPhone: "09171234567"
+        );
+
+        var act = () => handler.Handle(command, CancellationToken.None);
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*Service fee must be between ₱0.00 and ₱100,000.00.*");
+    }
 }

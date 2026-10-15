@@ -354,6 +354,11 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
         {
             throw new ArgumentException($"Cost price must be between ₱0.00 and ₱{MaxAllowedPrice:N2}.");
         }
+        const int MaxAllowedStock = 999_999;
+        if (raw.StockQty < 0 || raw.StockQty > MaxAllowedStock)
+        {
+            throw new ArgumentException($"Stock quantity must be between 0 and {MaxAllowedStock:N0}.");
+        }
 
         if (existing == null)
         {
@@ -755,6 +760,16 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
         if (existing != null)
         {
             return "Success"; // idempotent
+        }
+
+        const decimal MaxAllowedGCashAmount = 100_000.00m;
+        if (raw.Amount <= 0 || raw.Amount > MaxAllowedGCashAmount)
+        {
+            throw new ArgumentException($"Transaction amount must be between ₱0.01 and ₱{MaxAllowedGCashAmount:N2}.");
+        }
+        if (raw.Fee < 0 || raw.Fee > MaxAllowedGCashAmount)
+        {
+            throw new ArgumentException($"Service fee must be between ₱0.00 and ₱{MaxAllowedGCashAmount:N2}.");
         }
 
         var refNorm = GCashTxn.NormalizeRef(raw.RefNo);

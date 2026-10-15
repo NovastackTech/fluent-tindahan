@@ -178,8 +178,12 @@ export const useCartStore = create<CartState>((set, get) => ({
 
     set((state) => {
       const existing = state.items.find((item) => item.productId === product.id);
-      const rawLimit = maxStockArg !== undefined ? maxStockArg : (product.maxStock ?? existing?.maxStock);
-      const stockLimit = rawLimit !== undefined && rawLimit !== null && !isNaN(Number(rawLimit)) ? Number(rawLimit) : undefined;
+      const rawLimit = maxStockArg !== undefined
+        ? (maxStockArg === null ? undefined : maxStockArg)
+        : (product.maxStock === null ? undefined : (product.maxStock ?? existing?.maxStock));
+      const stockLimit = (rawLimit !== undefined && rawLimit !== null && typeof rawLimit === 'number' && !isNaN(rawLimit))
+        ? rawLimit
+        : undefined;
 
       if (stockLimit !== undefined && stockLimit <= 0) {
         capped = true;
@@ -260,8 +264,12 @@ export const useCartStore = create<CartState>((set, get) => ({
     set((state) => ({
       items: state.items.map((item) => {
         if (item.productId === productId) {
-          const rawLimit = maxStockArg !== undefined ? maxStockArg : item.maxStock;
-          const stockLimit = rawLimit !== undefined && rawLimit !== null && !isNaN(Number(rawLimit)) ? Number(rawLimit) : undefined;
+          const rawLimit = maxStockArg !== undefined
+            ? (maxStockArg === null ? undefined : maxStockArg)
+            : item.maxStock;
+          const stockLimit = (rawLimit !== undefined && rawLimit !== null && typeof rawLimit === 'number' && !isNaN(rawLimit))
+            ? rawLimit
+            : undefined;
           let targetQty = qty;
           if (stockLimit !== undefined && targetQty > stockLimit) {
             targetQty = Math.max(0, stockLimit);

@@ -199,4 +199,15 @@ describe('cartStore', () => {
     expect(useCartStore.getState().items[0].qty).toBe(3);
     expect(useCartStore.getState().items[0].subtotal).toBe(45);
   });
+
+  it('allows uncapped quantity when maxStockArg is null (warn/oversell policy)', () => {
+    const store = useCartStore.getState();
+    store.addItem({ id: 'p-oversell', name: 'Oversold Chips', price: 20 }, null);
+    expect(useCartStore.getState().items[0].qty).toBe(1);
+
+    const updateRes = store.updateQty('p-oversell', 15, null);
+    expect(updateRes).toEqual({ updated: true, capped: false });
+    expect(useCartStore.getState().items[0].qty).toBe(15);
+    expect(useCartStore.getState().items[0].subtotal).toBe(300);
+  });
 });

@@ -44,12 +44,23 @@ export const OfflineSyncBanner: React.FC = () => {
     setIsRetrying(true);
     try {
       const items = await db.deadLetterQueue.toArray();
+      let hasItemNeedingEdit = false;
       for (const item of items) {
         try {
-          await retryDeadLetterItem(item.id);
+          const res = await retryDeadLetterItem(item.id);
+          if (res && !res.success && res.requiresEdit) {
+            hasItemNeedingEdit = true;
+          }
         } catch (itemErr) {
           console.error(`Failed to retry dead letter item ${item.id}:`, itemErr);
         }
+      }
+      if (hasItemNeedingEdit) {
+        useSyncStore.getState().setLastErrorMessage(
+          language === 'tl'
+            ? 'May mga produkto sa Dead Letter Queue na kailangang ayusin sa Settings bago ma-sync.'
+            : 'Some products in the Dead Letter Queue require editing in Settings before syncing.'
+        );
       }
     } catch (err) {
       console.error('Failed to load dead letter items for retry:', err);

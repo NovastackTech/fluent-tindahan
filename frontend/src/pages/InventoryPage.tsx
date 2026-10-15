@@ -49,9 +49,23 @@ interface InventoryPageProps {
 
 type StockFilterType = 'all' | 'low' | 'out' | 'in';
 
-export const MAX_PRODUCT_PRICE = 999999.99;
-export const MAX_PRODUCT_COST = 999999.99;
-export const MAX_PRODUCT_STOCK = 999999;
+import {
+  MIN_PRODUCT_PRICE,
+  MAX_PRODUCT_PRICE,
+  MIN_PRODUCT_COST,
+  MAX_PRODUCT_COST,
+  MIN_PRODUCT_STOCK,
+  MAX_PRODUCT_STOCK
+} from '../constants/inventory';
+
+export {
+  MIN_PRODUCT_PRICE,
+  MAX_PRODUCT_PRICE,
+  MIN_PRODUCT_COST,
+  MAX_PRODUCT_COST,
+  MIN_PRODUCT_STOCK,
+  MAX_PRODUCT_STOCK
+};
 
 const useStyles = makeStyles({
   container: {

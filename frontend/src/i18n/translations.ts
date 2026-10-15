@@ -95,6 +95,12 @@ export interface Translations {
     insufficientStock: string;
     stockLimitReached: string;
     saleBlockedStock: string;
+    stockOverrideBtn: string;
+    stockOverrideDialogTitle: string;
+    stockOverrideDialogDesc: string;
+    stockOverrideConfirmBtn: string;
+    stockWarnNotice: string;
+    stockBlockedNotice: string;
   };
   utang: {
     title: string;
@@ -367,6 +373,25 @@ export interface Translations {
     dlqDesc: string;
     retryBtn: string;
     dlqDismissBtn: string;
+    dlqEditBtn: string;
+    dlqEditDialogTitle: string;
+    dlqEditDialogDesc: string;
+    dlqSaveAndRetryBtn: string;
+    dlqRequiresCorrectionAlert: string;
+    dlqRetrySuccess: string;
+    dlqDismissConfirmTitle: string;
+    dlqDismissConfirmDesc: string;
+    dlqDismissConfirmWarning: string;
+    dlqDismissConfirmBtn: string;
+    dlqClearConfirmTitle: string;
+    dlqClearConfirmDesc: string;
+    dlqClearConfirmBtn: string;
+    stockPolicySection: string;
+    stockPolicyDesc: string;
+    stockPolicyWarn: string;
+    stockPolicyWarnDesc: string;
+    stockPolicyBlock: string;
+    stockPolicyBlockDesc: string;
     dataManagement: string;
     pullSuccessAlert: string;
     printerSection: string;
@@ -616,7 +641,13 @@ export const translations: Record<Language, Translations> = {
       debtorNameRequired: 'Pakiusap ilagay ang pangalan ng suki.',
       insufficientStock: 'Kulang ang Stock',
       stockLimitReached: 'Naabot na ang limitasyon ng stock',
-      saleBlockedStock: 'Hindi maaaring ituloy ang benta dahil kulang ang stock.'
+      saleBlockedStock: 'Hindi maaaring ituloy ang benta dahil kulang ang stock.',
+      stockOverrideBtn: 'I-override ang Stock',
+      stockOverrideDialogTitle: 'Kumpirmahin ang Pag-override sa Stock',
+      stockOverrideDialogDesc: 'Kulang ang nakatalang stock sa system para sa ilang paninda. Sa offline tindahan, posibleng may pisikal na paninda na hindi pa nai-encode ang delivery o hindi pa naka-sync. Nais mo bang ituloy pa rin ang benta?',
+      stockOverrideConfirmBtn: 'I-override at Ituloy ang Benta',
+      stockWarnNotice: 'Pansin: May mga panindang kulang ang nakatalang stock sa system (Pinapayagan dahil naka-set sa Babala Lamang).',
+      stockBlockedNotice: 'Kulang ang stock sa system. Pindutin ang "I-override ang Stock" upang payagan ang benta.'
     },
     utang: {
       title: 'Talaan ng Utang ng mga Suki',
@@ -889,6 +920,25 @@ export const translations: Record<Language, Translations> = {
       dlqDesc: 'Ang mga transaksyong paulit-ulit na bumagsak ay inihihiwalay rito upang hindi maipit ang sync.',
       retryBtn: 'Subukan Muli',
       dlqDismissBtn: 'I-dismiss',
+      dlqEditBtn: 'Ayusin',
+      dlqEditDialogTitle: 'Ayusin ang Paninda (Dead Letter Queue)',
+      dlqEditDialogDesc: 'Bumagsak ang pag-sync ng panindang ito dahil sa maling halaga o datos. Pakitama ang mga detalye at kumpirmahin bago muling i-sync.',
+      dlqSaveAndRetryBtn: 'I-save at Subukan Muli',
+      dlqRequiresCorrectionAlert: 'May mga maling halaga sa paninda. Pakiusap itama ang presyo o puhunan bago muling i-sync.',
+      dlqRetrySuccess: 'Matagumpay na naitama ang paninda at naibalik sa sync queue!',
+      dlqDismissConfirmTitle: 'Kumpirmahin ang Pag-dismiss ng Datos',
+      dlqDismissConfirmDesc: 'Permanente itong aalisin sa queue at hindi na mai-sync sa cloud database:',
+      dlqDismissConfirmWarning: 'BABALA: Ang hindi naka-sync na transaksyong ito ay mabubura sa aktibong queue at hindi na maipapadala sa server.',
+      dlqDismissConfirmBtn: 'I-dismiss Nang Tuluyan',
+      dlqClearConfirmTitle: 'Linisin ang Lahat sa Dead Letter Queue?',
+      dlqClearConfirmDesc: 'Lahat ng bagsak na sync items sa queue ay permanente nang aalisin at hindi na maipapadala sa cloud database. Sigurado ka ba?',
+      dlqClearConfirmBtn: 'Linisin ang Lahat',
+      stockPolicySection: 'Patakaran sa Stock ng POS (Stock Policy)',
+      stockPolicyDesc: 'Piliin kung haharangin ang benta kapag 0 o kulang ang nakatalang stock sa system.',
+      stockPolicyWarn: 'Babala Lamang (Warn Only - Rekomendado sa Offline)',
+      stockPolicyWarnDesc: 'Magbibigay ng babala pero papayagan ang benta kapag may pisikal na paninda kahit 0 o kulang sa system.',
+      stockPolicyBlock: 'Mahigpit na I-block (Strict Block)',
+      stockPolicyBlockDesc: 'Bawal mag-checkout kapag 0 o kulang ang stock sa system maliban kung i-override ng may-ari.',
       dataManagement: 'Pamamahala ng Datos (Data Management)',
       pullSuccessAlert: 'Nai-download ang mga produkto mula sa cloud database.',
       printerSection: 'Resibo at Printer Device',
@@ -1136,7 +1186,13 @@ export const translations: Record<Language, Translations> = {
       debtorNameRequired: 'Please enter customer name.',
       insufficientStock: 'Insufficient Stock',
       stockLimitReached: 'Stock limit reached',
-      saleBlockedStock: 'Sale blocked due to insufficient stock.'
+      saleBlockedStock: 'Sale blocked due to insufficient stock.',
+      stockOverrideBtn: 'Override Stock',
+      stockOverrideDialogTitle: 'Confirm Stock Override',
+      stockOverrideDialogDesc: 'Recorded system stock is insufficient for some items in the cart. In offline neighborhood stores, restocks may not be entered yet or another device has not synced. Do you want to proceed with this sale?',
+      stockOverrideConfirmBtn: 'Override & Proceed to Checkout',
+      stockWarnNotice: 'Notice: Some items have insufficient system stock (Allowed under Warn Only policy).',
+      stockBlockedNotice: 'Insufficient system stock. Click "Override Stock" to allow this sale.'
     },
     utang: {
       title: 'Customer Credit & Utang Ledger',
@@ -1409,6 +1465,25 @@ export const translations: Record<Language, Translations> = {
       dlqDesc: 'Items that failed sync multiple times are isolated here to prevent blocking the queue.',
       retryBtn: 'Retry',
       dlqDismissBtn: 'Dismiss',
+      dlqEditBtn: 'Edit / Fix',
+      dlqEditDialogTitle: 'Fix Product (Dead Letter Queue)',
+      dlqEditDialogDesc: 'This product failed to sync due to invalid values or data. Please review, correct the details, and confirm before retrying sync.',
+      dlqSaveAndRetryBtn: 'Save & Retry',
+      dlqRequiresCorrectionAlert: 'Product values are out of bounds. Please correct the price or cost before retrying.',
+      dlqRetrySuccess: 'Product corrected and re-queued for sync!',
+      dlqDismissConfirmTitle: 'Confirm Dismiss Unsynced Data',
+      dlqDismissConfirmDesc: 'This will permanently remove this item from the active queue and it will not be synced to the cloud database:',
+      dlqDismissConfirmWarning: 'WARNING: This unsynced record will be permanently dismissed from the active queue and will not be pushed to the server.',
+      dlqDismissConfirmBtn: 'Permanently Dismiss',
+      dlqClearConfirmTitle: 'Clear All Items in Dead Letter Queue?',
+      dlqClearConfirmDesc: 'All failed sync items in the queue will be permanently removed and will not be pushed to the cloud database. Are you sure?',
+      dlqClearConfirmBtn: 'Clear All Items',
+      stockPolicySection: 'POS Stock Validation Policy',
+      stockPolicyDesc: 'Choose whether sales are blocked when system stock is 0 or insufficient.',
+      stockPolicyWarn: 'Warn Only (Recommended for Offline)',
+      stockPolicyWarnDesc: 'Warn when stock is low or zero but allow sales if physical items exist.',
+      stockPolicyBlock: 'Strict Block',
+      stockPolicyBlockDesc: 'Block checkout when stock is 0 or insufficient unless overridden by store owner.',
       dataManagement: 'Data Management',
       pullSuccessAlert: 'Products successfully downloaded from cloud database.',
       printerSection: 'Receipt & Printer Device',

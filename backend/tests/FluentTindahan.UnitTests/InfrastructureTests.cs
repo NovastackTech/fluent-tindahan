@@ -142,7 +142,61 @@ public class InfrastructureTests
     }
 
     [Fact]
-    public void CurrentUserService_DemoModeViaConfig_ResolvesCustomTenantAndUserWhenUnauthenticated()
+    public void CurrentUserService_DemoModeInProduction_WithoutExplicitOptIn_IgnoresDemoModeAndReturnsEmptyAndNull()
+    {
+        var spoofedTenant = Guid.NewGuid();
+        var spoofedUser = Guid.NewGuid();
+
+        var context = new DefaultHttpContext();
+        context.Request.Headers["X-Tenant-Id"] = spoofedTenant.ToString();
+        context.Request.Headers["X-User-Id"] = spoofedUser.ToString();
+
+        var httpAccessorMock = new Mock<IHttpContextAccessor>();
+        httpAccessorMock.Setup(h => h.HttpContext).Returns(context);
+
+        var envMock = new Mock<IHostEnvironment>();
+        envMock.Setup(e => e.EnvironmentName).Returns(Environments.Production);
+
+        var configMock = new Mock<IConfiguration>();
+        configMock.Setup(c => c["DemoMode"]).Returns("true");
+
+        var service = new CurrentUserService(httpAccessorMock.Object, envMock.Object, configMock.Object);
+
+        // Security invariant: In Production, DemoMode without explicit opt-in is ignored; headers are not trusted
+        service.TenantId.Should().Be(Guid.Empty);
+        service.UserId.Should().BeNull();
+        service.TenantId.Should().NotBe(spoofedTenant);
+        service.UserId.Should().NotBe(spoofedUser);
+    }
+
+    [Fact]
+    public void CurrentUserService_DemoModeInProduction_ViaEnvVarWithoutExplicitOptIn_IgnoresDemoModeAndReturnsEmptyAndNull()
+    {
+        var spoofedTenant = Guid.NewGuid();
+        var spoofedUser = Guid.NewGuid();
+
+        var context = new DefaultHttpContext();
+        context.Request.Headers["X-Tenant-Id"] = spoofedTenant.ToString();
+        context.Request.Headers["X-User-Id"] = spoofedUser.ToString();
+
+        var httpAccessorMock = new Mock<IHttpContextAccessor>();
+        httpAccessorMock.Setup(h => h.HttpContext).Returns(context);
+
+        var envMock = new Mock<IHostEnvironment>();
+        envMock.Setup(e => e.EnvironmentName).Returns(Environments.Production);
+
+        var configMock = new Mock<IConfiguration>();
+        configMock.Setup(c => c["DEMO_MODE"]).Returns("true");
+
+        var service = new CurrentUserService(httpAccessorMock.Object, envMock.Object, configMock.Object);
+
+        // Security invariant: In Production, DEMO_MODE without explicit opt-in is ignored; headers are not trusted
+        service.TenantId.Should().Be(Guid.Empty);
+        service.UserId.Should().BeNull();
+    }
+
+    [Fact]
+    public void CurrentUserService_DemoModeInProduction_WithExplicitOptIn_ResolvesCustomTenantAndUserWhenUnauthenticated()
     {
         var expectedTenant = Guid.NewGuid();
         var expectedUser = Guid.NewGuid();
@@ -159,15 +213,17 @@ public class InfrastructureTests
 
         var configMock = new Mock<IConfiguration>();
         configMock.Setup(c => c["DemoMode"]).Returns("true");
+        configMock.Setup(c => c["AllowDemoModeInProduction"]).Returns("true");
 
         var service = new CurrentUserService(httpAccessorMock.Object, envMock.Object, configMock.Object);
 
+        // Intentional, documented demo deployment in Production: opt-in allows custom headers
         service.TenantId.Should().Be(expectedTenant);
         service.UserId.Should().Be(expectedUser);
     }
 
     [Fact]
-    public void CurrentUserService_DemoModeViaEnvVar_ResolvesCustomTenantAndUserWhenUnauthenticated()
+    public void CurrentUserService_DemoModeInDemoEnvironment_ResolvesCustomTenantAndUserWhenUnauthenticated()
     {
         var expectedTenant = Guid.NewGuid();
         var expectedUser = Guid.NewGuid();
@@ -180,10 +236,10 @@ public class InfrastructureTests
         httpAccessorMock.Setup(h => h.HttpContext).Returns(context);
 
         var envMock = new Mock<IHostEnvironment>();
-        envMock.Setup(e => e.EnvironmentName).Returns(Environments.Production);
+        envMock.Setup(e => e.EnvironmentName).Returns("Demo");
 
         var configMock = new Mock<IConfiguration>();
-        configMock.Setup(c => c["DEMO_MODE"]).Returns("true");
+        configMock.Setup(c => c["DemoMode"]).Returns("true");
 
         var service = new CurrentUserService(httpAccessorMock.Object, envMock.Object, configMock.Object);
 
