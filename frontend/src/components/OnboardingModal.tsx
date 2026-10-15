@@ -148,7 +148,7 @@ export const OnboardingModal: React.FC = () => {
     loginWithAuthPayload
   } = useAuthStore();
 
-  const isOpen = isOnboardingOpen || (isOnboardingStatusReady && consentAccepted && !isOnboarded);
+  const isOpen = isOnboardingOpen && consentAccepted;
   const isEditMode = onboardingMode === 'edit' && isOnboarded;
 
   const [activeTab, setActiveTab] = useState<'register' | 'login'>('register');

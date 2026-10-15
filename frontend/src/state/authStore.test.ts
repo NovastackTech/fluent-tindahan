@@ -131,6 +131,10 @@ describe('authStore', () => {
 
     await useAuthStore.getState().logout(true);
     expect(useAuthStore.getState().firebaseToken).toBeNull();
+    expect(useAuthStore.getState().businessName).toBe('');
+    expect(useAuthStore.getState().ownerName).toBe('');
+    expect(useAuthStore.getState().userPhone).toBe('');
+    expect(useAuthStore.getState().isOnboarded).toBe(false);
   });
 
   it('resets subscription state when onboarding creates a new tenant', () => {

@@ -36,12 +36,14 @@ const UtangPage = lazy(() => import('./pages/UtangPage').then(m => ({ default: m
 const GCashPage = lazy(() => import('./pages/GCashPage').then(m => ({ default: m.GCashPage })));
 const ImportPage = lazy(() => import('./pages/ImportPage').then(m => ({ default: m.ImportPage })));
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
+const LandingPage = lazy(() => import('./pages/LandingPage').then(m => ({ default: m.LandingPage })));
+const LoginPage = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })));
 
 export function getInitialNavTab(): NavTab {
   if (typeof window === 'undefined') return 'dashboard';
   const params = new URLSearchParams(window.location.search);
   const tabParam = params.get('tab') as NavTab | null;
-  const validTabs: NavTab[] = ['dashboard', 'pos', 'inventory', 'utang', 'gcash', 'import', 'settings'];
+  const validTabs: NavTab[] = ['dashboard', 'pos', 'inventory', 'utang', 'gcash', 'import', 'settings', 'landing', 'login'];
   if (tabParam && validTabs.includes(tabParam)) {
     return tabParam;
   }
@@ -75,6 +77,7 @@ export const App: React.FC = () => {
   const isDarkMode = useThemeStore((s) => s.isDarkMode);
   const isOnboarded = useAuthStore((s) => s.isOnboarded);
   const isOnboardingStatusReady = useAuthStore((s) => s.isOnboardingStatusReady);
+  const isOnboardingOpen = useAuthStore((s) => s.isOnboardingOpen);
   const [activeTab, setActiveTab] = useState<NavTab>(getInitialNavTab);
   const storeServicesStarted = useRef(false);
 
@@ -86,6 +89,13 @@ export const App: React.FC = () => {
       window.history.replaceState(null, '', url.pathname + url.search);
     }
   };
+
+  useEffect(() => {
+    if (!isOnboardingStatusReady) return;
+    if (!isOnboarded && activeTab !== 'landing' && activeTab !== 'login') {
+      handleTabChange('login');
+    }
+  }, [isOnboarded, isOnboardingStatusReady, activeTab]);
 
   useEffect(() => {
     // Graceful recovery if Vite dynamic import chunk fails due to cache update
@@ -200,7 +210,7 @@ export const App: React.FC = () => {
   return (
     <FluentProvider theme={isDarkMode ? sariSariDarkTheme : sariSariLightTheme}>
       <div className={styles.appContainer}>
-        <Header />
+        <Header onNavigate={handleTabChange} activeTab={activeTab} />
         <PwaUpdateToast />
         <PwaInstallBanner />
         <OfflineSyncBanner />
@@ -217,13 +227,15 @@ export const App: React.FC = () => {
             {activeTab === 'utang' && <UtangPage />}
             {activeTab === 'gcash' && <GCashPage />}
             {activeTab === 'import' && <ImportPage />}
-            {activeTab === 'settings' && <SettingsPage />}
+            {activeTab === 'settings' && <SettingsPage onNavigate={handleTabChange} />}
+            {activeTab === 'landing' && <LandingPage onNavigate={handleTabChange} />}
+            {activeTab === 'login' && <LoginPage onNavigate={handleTabChange} />}
           </Suspense>
         </main>
 
-        <Navigation activeTab={activeTab} onTabChange={handleTabChange} />
+        {activeTab !== 'landing' && activeTab !== 'login' && <Navigation activeTab={activeTab} onTabChange={handleTabChange} />}
         <PrivacyConsentDialog />
-        <OnboardingModal />
+        {isOnboardingOpen && <OnboardingModal />}
         <SessionLockModal />
         <DisclaimerModal />
         <TermsModal />

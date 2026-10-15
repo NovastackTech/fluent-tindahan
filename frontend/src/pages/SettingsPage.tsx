@@ -41,8 +41,10 @@ import {
   KeyRegular,
   LockClosedRegular,
   EyeRegular,
-  EyeOffRegular
+  EyeOffRegular,
+  OpenRegular
 } from '@fluentui/react-icons';
+import type { NavTab } from '../components/Navigation';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type DeadLetterRecord } from '../db/db';
 import { FixDlqProductDialog } from '../components/FixDlqProductDialog';
@@ -97,7 +99,11 @@ const useStyles = makeStyles({
   }
 });
 
-export const SettingsPage: React.FC = () => {
+export interface SettingsPageProps {
+  onNavigate?: (tab: NavTab) => void;
+}
+
+export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
   const styles = useStyles();
   const { isOnline, isSyncing, lastSyncedAt, pendingCount, deadLetterCount } = useSyncStore();
   const {
@@ -285,7 +291,10 @@ export const SettingsPage: React.FC = () => {
       setLogoutUnsyncedCount(pending);
       setIsLogoutConfirmOpen(true);
     } else {
-      openOnboarding('initial');
+      if (onNavigate) {
+        onNavigate('login');
+      }
+      await logout(true);
     }
   };
 
@@ -928,6 +937,16 @@ export const SettingsPage: React.FC = () => {
           >
             {t.disclaimer.viewFullTermsBtn}
           </Button>
+          {onNavigate && (
+            <Button
+              appearance="secondary"
+              icon={<OpenRegular />}
+              onClick={() => onNavigate('landing')}
+              data-testid="settings-open-landing-btn"
+            >
+              {language === 'tl' ? 'Tingnan ang Landing Page' : 'View Landing Page'}
+            </Button>
+          )}
         </div>
       </Card>
 
@@ -1143,8 +1162,10 @@ export const SettingsPage: React.FC = () => {
                 }}
                 onClick={async () => {
                   setIsLogoutConfirmOpen(false);
+                  if (onNavigate) {
+                    onNavigate('login');
+                  }
                   await logout(true);
-                  openOnboarding('initial');
                 }}
               >
                 {logoutUnsyncedCount > 0 ? t.settings.forceLogoutBtn : t.settings.logoutBtn}

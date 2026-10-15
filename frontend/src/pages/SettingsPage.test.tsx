@@ -68,10 +68,10 @@ describe('SettingsPage', () => {
     await db.deadLetterQueue.clear();
   });
 
-  const renderSettings = () => {
+  const renderSettings = (onNavigate?: (tab: any) => void) => {
     return render(
       <FluentProvider theme={sariSariLightTheme}>
-        <SettingsPage />
+        <SettingsPage onNavigate={onNavigate} />
       </FluentProvider>
     );
   };
@@ -701,7 +701,8 @@ describe('SettingsPage', () => {
 
     await waitFor(() => {
       expect(useAuthStore.getState().userEmail).toBe('');
-      expect(useAuthStore.getState().isOnboardingOpen).toBe(true);
+      expect(useAuthStore.getState().isOnboarded).toBe(false);
+      expect(useAuthStore.getState().isOnboardingOpen).toBe(false);
     });
   });
 
@@ -726,7 +727,8 @@ describe('SettingsPage', () => {
 
     await waitFor(() => {
       expect(useAuthStore.getState().userEmail).toBe('');
-      expect(useAuthStore.getState().isOnboardingOpen).toBe(true);
+      expect(useAuthStore.getState().isOnboarded).toBe(false);
+      expect(useAuthStore.getState().isOnboardingOpen).toBe(false);
     });
   });
 });

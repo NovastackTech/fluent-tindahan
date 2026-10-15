@@ -523,16 +523,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       locallyCreatedTenantId: null,
       serverConfirmedTenantId: null,
       serverConfirmedUserId: null,
-      businessName: DEMO_BUSINESS_NAME,
-      ownerName: DEMO_OWNER,
-      userPhone: DEMO_PHONE,
+      businessName: '',
+      ownerName: '',
+      userPhone: '',
       role: 'Owner',
       tier: 'Libre',
       subscriptionEndDate: null,
       firebaseToken: null,
       isOnboarded: false,
       isOnboardingStatusReady: true,
-      isOnboardingOpen: true,
+      isOnboardingOpen: false,
       onboardingMode: 'initial'
     });
 

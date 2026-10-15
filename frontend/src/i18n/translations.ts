@@ -595,6 +595,116 @@ export interface Translations {
     switchAccountPrompt: string;
     registerPrompt: string;
   };
+  landing: {
+    heroBadge: string;
+    heroTitle: string;
+    heroSubtitle: string;
+    tryDemoBtn: string;
+    viewPricingBtn: string;
+    loginCardTitle: string;
+    loginCardDesc: string;
+    tabLogin: string;
+    tabRegister: string;
+    emailLabel: string;
+    emailPlaceholder: string;
+    passwordLabel: string;
+    passwordPlaceholder: string;
+    pinLabel: string;
+    pinPlaceholder: string;
+    usePinToggle: string;
+    usePasswordToggle: string;
+    loginSubmitBtn: string;
+    registerSubmitBtn: string;
+    storeNameLabel: string;
+    storeNamePlaceholder: string;
+    ownerNameLabel: string;
+    ownerNamePlaceholder: string;
+    phoneLabel: string;
+    phonePlaceholder: string;
+    offerGcashLabel: string;
+    demoStorePrompt: string;
+    exploreDemoBtn: string;
+    loggedInStatus: string;
+    openPosBtn: string;
+    openDashboardBtn: string;
+    switchStoreBtn: string;
+    featuresTitle: string;
+    featuresSubtitle: string;
+    feat1Title: string;
+    feat1Desc: string;
+    feat2Title: string;
+    feat2Desc: string;
+    feat3Title: string;
+    feat3Desc: string;
+    feat4Title: string;
+    feat4Desc: string;
+    feat5Title: string;
+    feat5Desc: string;
+    feat6Title: string;
+    feat6Desc: string;
+    calcTitle: string;
+    calcSubtitle: string;
+    calcDailySales: string;
+    calcGcashTxns: string;
+    calcMargin: string;
+    calcMonthlyProfit: string;
+    calcGcashProfit: string;
+    calcUtangRecovered: string;
+    calcHoursSaved: string;
+    compareTitle: string;
+    compareSubtitle: string;
+    compareOldTitle: string;
+    compareOldItem1: string;
+    compareOldItem2: string;
+    compareOldItem3: string;
+    compareOldItem4: string;
+    compareNewTitle: string;
+    compareNewItem1: string;
+    compareNewItem2: string;
+    compareNewItem3: string;
+    compareNewItem4: string;
+    pricingTitle: string;
+    pricingSubtitle: string;
+    planFreeTitle: string;
+    planFreePrice: string;
+    planFreeDesc: string;
+    planProTitle: string;
+    planProPrice: string;
+    planProDesc: string;
+    planPlusTitle: string;
+    planPlusPrice: string;
+    planPlusDesc: string;
+    startNowBtn: string;
+    testimonialsTitle: string;
+    testimonialsSubtitle: string;
+    faqTitle: string;
+    faqSubtitle: string;
+    faq1Q: string;
+    faq1A: string;
+    faq2Q: string;
+    faq2A: string;
+    faq3Q: string;
+    faq3A: string;
+    faq4Q: string;
+    faq4A: string;
+    ctaTitle: string;
+    ctaDesc: string;
+    ctaBtn: string;
+    exploreNavBtn: string;
+    exploreTooltip: string;
+    exploreTitle: string;
+  };
+  login: {
+    pageTitle: string;
+    pageSubtitle: string;
+    badgeText: string;
+    backToLanding: string;
+    demoNote: string;
+    noAccountText: string;
+    hasAccountText: string;
+    switchModePassword: string;
+    switchModePin: string;
+  };
 }
 
 export const translations: Record<Language, Translations> = {
@@ -1192,6 +1302,116 @@ export const translations: Record<Language, Translations> = {
       pricingToggleWeekly: 'Sachet (Kada Linggo)',
       pricingToggleMonthly: 'Buwanan (Kada Buwan)',
       popularBadge: 'PINAKASIKAT'
+    },
+    landing: {
+      heroBadge: '🇵🇭 Binuo Para sa Tindahang Pilipino • 100% Offline-Ready',
+      heroTitle: 'Ang Makabagong Kaha at POS ng Sari-Sari Store — Gumagana Kahit Walang Internet!',
+      heroSubtitle: 'I-record ang benta sa 1 segundo, wakasan ang nawawalang listahan ng pautang sa kuwaderno, at i-compute ang GCash fees nang awtomatiko. Zero network block, garantisadong mabilis.',
+      tryDemoBtn: 'Subukan ang Live Demo',
+      viewPricingBtn: 'Tingnan ang Plano at Presyo',
+      loginCardTitle: 'Pumasok sa Iyong Tindahan',
+      loginCardDesc: 'Mag-sign in o magrehistro upang simulan ang iyong digital na kaha.',
+      tabLogin: 'Mag-login',
+      tabRegister: 'Bagong Tindahan',
+      emailLabel: 'Email Address',
+      emailPlaceholder: 'Hal. nena.store@gmail.com',
+      passwordLabel: 'Password',
+      passwordPlaceholder: 'Minimum 6 characters',
+      pinLabel: 'Quick POS PIN',
+      pinPlaceholder: '4 hanggang 6 na numero',
+      usePinToggle: 'Gamit ang Quick PIN',
+      usePasswordToggle: 'Gamit ang Password',
+      loginSubmitBtn: 'Buksan ang Tindahan',
+      registerSubmitBtn: 'Simulan ang Aking Tindahan',
+      storeNameLabel: 'Pangalan ng Tindahan',
+      storeNamePlaceholder: 'Hal. Tindahan ni Aling Maria',
+      ownerNameLabel: 'Pangalan ng May-ari',
+      ownerNamePlaceholder: 'Hal. Maria Santos',
+      phoneLabel: 'Mobile Number (GCash)',
+      phonePlaceholder: '09171234567',
+      offerGcashLabel: 'Nag-aalok ng GCash Cash-In / Cash-Out services',
+      demoStorePrompt: 'Nais mo bang subukan muna nang walang account?',
+      exploreDemoBtn: 'Subukan gamit ang Demo Data',
+      loggedInStatus: 'Kasalukuyang naka-log in bilang',
+      openPosBtn: 'Pumunta sa Kaha (POS)',
+      openDashboardBtn: 'Buksan ang Dashboard',
+      switchStoreBtn: 'Magpalit ng Account',
+      featuresTitle: 'Kumpletong Negosyo Suite sa Iyong Bulsa',
+      featuresSubtitle: 'Lahat ng kailangan ng modernong sari-sari store upang kumita at maging organisado.',
+      feat1Title: '100% Offline POS & Kaha',
+      feat1Desc: 'Mabilisang pag-scan ng barcode at pagkalkula ng sukli gamit ang integer centavo math nang walang rounding error.',
+      feat2Title: 'Talaan ng Utang (Digital Credit)',
+      feat2Desc: 'Wakas sa napupunit na kuwaderno. Subaybayan ang pautang at bayad ng mga suki nang may malinaw na resibo.',
+      feat3Title: 'GCash Cash-In & Cash-Out Hub',
+      feat3Desc: 'Awtomatikong pagkwenta ng convenience fees bawat bracket at pag-audit ng digital laban sa pisikal na kaha.',
+      feat4Title: 'Imbentaryo at Tubo Analytics',
+      feat4Desc: 'Subaybayan ang cost price vs. SRP, makatanggap ng babala sa paubos na paninda, at alamin ang tunay na gross margin.',
+      feat5Title: 'Bluetooth Thermal Resibo',
+      feat5Desc: 'Direktang mag-print ng resibo sa 58mm at 80mm Bluetooth ESC/POS printers para sa propesyonal na serbisyo sa suki.',
+      feat6Title: 'PWA at Cloud Synchronization',
+      feat6Desc: 'I-install sa Android o computer. Naka-save nang ligtas sa IndexedDB at kusa nagba-backup sa cloud pag may internet.',
+      calcTitle: 'Kalkulahin ang Tubo at Matitipid',
+      calcSubtitle: 'Alamin kung magkano ang maiuuwing kita at oras na matitipid ng iyong tindahan bawat buwan.',
+      calcDailySales: 'Tinatayang Araw-araw na Benta',
+      calcGcashTxns: 'Buwanang GCash Transaksyon',
+      calcMargin: 'Average Tubo (Retail Margin %)',
+      calcMonthlyProfit: 'Tinatayang Buwanang Tubo sa Paninda',
+      calcGcashProfit: 'Karagdagang Kita sa GCash Fees',
+      calcUtangRecovered: 'Nailigtas na Pautang (Loss Prevention)',
+      calcHoursSaved: 'Oras na Natipid sa Paglilista',
+      compareTitle: 'Lumang Kuwaderno vs. Fluent Tindahan',
+      compareSubtitle: 'Bakit lumilipat ang mga modernong tindera sa digital na sistema.',
+      compareOldTitle: 'Lumang Kuwaderno / Mano-mano',
+      compareOldItem1: 'Nababasa, napupunit, at nawawala ang listahan ng pautang',
+      compareOldItem2: 'Mano-manong kalkulasyon na may centavo rounding errors',
+      compareOldItem3: 'Nalilito sa computation ng GCash fee at short sa kaha',
+      compareOldItem4: 'Walang backup kapag nawala ang notebook o nasira ang talaan',
+      compareNewTitle: 'Fluent Tindahan PWA',
+      compareNewItem1: 'Ligtas na digital utang ledger na may buong kasaysayan ng bayad',
+      compareNewItem2: 'Mabilis na barcode scanning at tamang-tamang sukli agad',
+      compareNewItem3: 'Awtomatikong GCash fee matrix at hiwalay na cash tracking',
+      compareNewItem4: '100% offline-first sa telepono na may cloud backup pag online',
+      pricingTitle: 'Abot-Kayang Plano Para sa Bawat Negosyo',
+      pricingSubtitle: 'Magsimula nang libre habang buhay. Mag-upgrade lang kapag lumalaki na ang iyong tindahan.',
+      planFreeTitle: 'Libre',
+      planFreePrice: '₱0 / habang buhay',
+      planFreeDesc: 'Perpekto para sa bagong bukas o maliit na sari-sari store. Hanggang 50 produkto at 30 suki debtors.',
+      planProTitle: 'Tindahan Pro',
+      planProPrice: '₱149 / buwan (o ₱49 / linggo)',
+      planProDesc: 'Para sa lumalaking tindahan. Walang limitasyong produkto at utang, CSV import, at detalyadong profit analytics.',
+      planPlusTitle: 'Negosyo Plus',
+      planPlusPrice: '₱349 / buwan',
+      planPlusDesc: 'Para sa malalaking tindahan at mini-marts. Multi-device sync, 5 staff cashier PINs, at audit logs.',
+      startNowBtn: 'Simulan Ngayon',
+      testimonialsTitle: 'Pinagkakatiwalaan ng mga Tindera sa Buong Bansa',
+      testimonialsSubtitle: 'Basahin ang kwento ng tagumpay mula sa kapwa mo sari-sari store owners.',
+      faqTitle: 'Mga Madalas Itanong (FAQ)',
+      faqSubtitle: 'Lahat ng nais mong malaman tungkol sa Fluent Tindahan.',
+      faq1Q: 'Kailangan ba ng internet para magamit ang app?',
+      faq1A: 'Hindi! Ang Fluent Tindahan ay 100% offline-first. Lahat ng benta, imbentaryo, at utang ay naka-save sa iyong phone at gagana kahit walang Wi-Fi o cellular load.',
+      faq2Q: 'Paano kung mawalan ako ng baterya o masira ang aking phone?',
+      faq2A: 'Kapag may internet ang phone mo, awtomatikong naka-sync ang iyong records sa cloud. Mag-login lang gamit ang iyong email sa bagong device para maibalik ang lahat ng datos.',
+      faq3Q: 'Gagana ba ito sa ordinaryong Android smartphone?',
+      faq3A: 'Oo! Binuo ang app gamit ang ultra-lightweight Progressive Web App (PWA) technology na gumagana nang mabilis kahit sa mga budget Android phone.',
+      faq4Q: 'Puwede ba akong mag-print ng resibo para sa aking suki?',
+      faq4A: 'Oo, suportado ang mga karaniwang 58mm at 80mm Bluetooth wireless thermal receipt printers na mabibili online (Shopee/Lazada).',
+      ctaTitle: 'Gawing Moderno at Mas Kumikita ang Iyong Tindahan Ngayon!',
+      ctaDesc: 'Sumali sa libu-libong Pinoy store owners na nag-level up sa kanilang negosyo. Libre magsimula at walang credit card na kailangan.',
+      ctaBtn: 'Subukan ang Fluent Tindahan Ngayon',
+      exploreNavBtn: 'Tuklasin',
+      exploreTooltip: 'Tuklasin (Landing Page)',
+      exploreTitle: 'Tuklasin ang Fluent Tindahan'
+    },
+    login: {
+      pageTitle: 'Pumasok sa Iyong Tindahan',
+      pageSubtitle: 'Ilagay ang iyong email at password o Quick PIN upang buksan ang kaha.',
+      badgeText: '🇵🇭 Kaha ng Sari-Sari Store • 100% Offline-First',
+      backToLanding: 'Tingnan ang Lahat ng Features at Presyo (Landing Page)',
+      demoNote: 'Subukan ang kaha nang walang account gamit ang Pinoy sari-sari items',
+      noAccountText: 'Wala ka pang rehistradong tindahan?',
+      hasAccountText: 'May account ka na ba?',
+      switchModePassword: 'Mag-login gamit ang Password',
+      switchModePin: 'Mag-login gamit ang 4-digit PIN'
     }
   },
   en: {
@@ -1788,6 +2008,116 @@ export const translations: Record<Language, Translations> = {
       hydratingCatalog: 'Hydrating store data from cloud...',
       switchAccountPrompt: 'Already have a registered store? Log in here.',
       registerPrompt: 'Don\'t have a store yet? Register here.'
+    },
+    landing: {
+      heroBadge: '🇵🇭 Built for Philippine Retail • 100% Offline-Ready',
+      heroTitle: 'The Modern Sari-Sari Store POS & Retail Hub — Works Even Without Internet!',
+      heroSubtitle: 'Scan and ring up sales in 1 second, eliminate lost utang credit in notebooks, and auto-calculate GCash fees. Zero network blocks, ultra-fast and reliable.',
+      tryDemoBtn: 'Try Live Demo',
+      viewPricingBtn: 'View Pricing & Plans',
+      loginCardTitle: 'Access Your Store',
+      loginCardDesc: 'Sign in or register to launch your digital store till.',
+      tabLogin: 'Log In',
+      tabRegister: 'New Store',
+      emailLabel: 'Email Address',
+      emailPlaceholder: 'e.g. nena.store@gmail.com',
+      passwordLabel: 'Password',
+      passwordPlaceholder: 'Minimum 6 characters',
+      pinLabel: 'Quick POS PIN',
+      pinPlaceholder: '4 to 6 digits',
+      usePinToggle: 'Use Quick PIN',
+      usePasswordToggle: 'Use Password',
+      loginSubmitBtn: 'Open My Store',
+      registerSubmitBtn: 'Launch My Store',
+      storeNameLabel: 'Store Name',
+      storeNamePlaceholder: 'e.g. Maria\'s Sari-Sari Store',
+      ownerNameLabel: 'Owner Name',
+      ownerNamePlaceholder: 'e.g. Maria Santos',
+      phoneLabel: 'Mobile Number (GCash)',
+      phonePlaceholder: '09171234567',
+      offerGcashLabel: 'Offers GCash Cash-In / Cash-Out services',
+      demoStorePrompt: 'Want to test drive first without an account?',
+      exploreDemoBtn: 'Explore with Sample Demo Data',
+      loggedInStatus: 'Currently logged in as',
+      openPosBtn: 'Open POS Till',
+      openDashboardBtn: 'Open Dashboard',
+      switchStoreBtn: 'Switch Account',
+      featuresTitle: 'Complete Retail Suite in Your Pocket',
+      featuresSubtitle: 'Everything a modern neighborhood retailer needs to stay organized and maximize profit.',
+      feat1Title: '100% Offline POS & Till',
+      feat1Desc: 'Rapid camera barcode scanning and exact change computation using integer centavo math with zero rounding drift.',
+      feat2Title: 'Digital Utang Credit Ledger',
+      feat2Desc: 'Never lose track of customer credit from torn notebook pages. Track credit, payments, and print customer receipts.',
+      feat3Title: 'GCash Cash-In & Cash-Out Hub',
+      feat3Desc: 'Automatic fee bracket calculation, reference number logging, and digital vs. physical cash drawer auditing.',
+      feat4Title: 'Inventory & Margin Analytics',
+      feat4Desc: 'Track cost vs SRP prices, receive low-stock restocking alerts, and measure your store\'s true gross profit margins.',
+      feat5Title: 'Bluetooth Thermal Receipts',
+      feat5Desc: 'Print clean customer receipts directly to 58mm and 80mm Bluetooth ESC/POS printers for professional service.',
+      feat6Title: 'PWA & Cloud Synchronization',
+      feat6Desc: 'Install directly to Android or desktop. Stores data safely in IndexedDB and automatically backs up when online.',
+      calcTitle: 'Calculate Your Store Profits & Savings',
+      calcSubtitle: 'See how much monthly take-home profit and hours your tindahan can gain with digital tracking.',
+      calcDailySales: 'Estimated Daily Sales',
+      calcGcashTxns: 'Monthly GCash Transactions',
+      calcMargin: 'Average Retail Margin %',
+      calcMonthlyProfit: 'Estimated Monthly Retail Profit',
+      calcGcashProfit: 'Additional GCash Convenience Fees',
+      calcUtangRecovered: 'Uncollected Debt Recovered',
+      calcHoursSaved: 'Hours Saved per Month',
+      compareTitle: 'Paper Notebook vs. Fluent Tindahan',
+      compareSubtitle: 'Why modern neighborhood stores are upgrading to digital till management.',
+      compareOldTitle: 'Paper Notebook / Manual',
+      compareOldItem1: 'Water-damaged, torn, or misplaced utang credit pages',
+      compareOldItem2: 'Manual calculator errors causing centavo rounding discrepancies',
+      compareOldItem3: 'Confusion over GCash fee deductions resulting in drawer shortages',
+      compareOldItem4: 'Zero recovery backup if the physical notebook is lost',
+      compareNewTitle: 'Fluent Tindahan PWA',
+      compareNewItem1: 'Secure digital ledger with permanent payment audit trails',
+      compareNewItem2: 'Fast camera barcode scanning with guaranteed change accuracy',
+      compareNewItem3: 'Automated GCash fee tiers with separate cash drawer tracking',
+      compareNewItem4: '100% offline-first on phone with automatic cloud backup',
+      pricingTitle: 'Affordable Plans for Every Store Size',
+      pricingSubtitle: 'Start free forever. Upgrade only when your store outgrows entry limits.',
+      planFreeTitle: 'Libre (Free)',
+      planFreePrice: '₱0 / forever',
+      planFreeDesc: 'Perfect for new or small neighborhood sari-sari stores. Up to 50 products and 30 debtor profiles.',
+      planProTitle: 'Tindahan Pro',
+      planProPrice: '₱149 / month (or ₱49 / week)',
+      planProDesc: 'For growing retailers. Unlimited products & utang, bulk CSV import, and in-depth profit analytics.',
+      planPlusTitle: 'Negosyo Plus',
+      planPlusPrice: '₱349 / month',
+      planPlusDesc: 'For large high-volume stores and mini-marts. Multi-device sync, 5 staff cashier PINs, and audit logs.',
+      startNowBtn: 'Get Started',
+      testimonialsTitle: 'Trusted by Store Owners Across the Philippines',
+      testimonialsSubtitle: 'Read real stories from fellow sari-sari store entrepreneurs.',
+      faqTitle: 'Frequently Asked Questions (FAQ)',
+      faqSubtitle: 'Everything you need to know about Fluent Tindahan.',
+      faq1Q: 'Do I need an active internet connection to use the app?',
+      faq1A: 'No! Fluent Tindahan is 100% offline-first. All sales, inventory, and utang records save locally in your device and work without Wi-Fi or mobile data.',
+      faq2Q: 'What happens if my phone battery dies or the device is damaged?',
+      faq2A: 'Whenever your device connects to the internet, your records automatically back up to our cloud backend. Simply log in with your email on another device to restore everything.',
+      faq3Q: 'Does it run on ordinary Android smartphones?',
+      faq3A: 'Yes! The app is built with lightweight Progressive Web App (PWA) technology optimized to run smoothly even on entry-level Android phones.',
+      faq4Q: 'Can I print receipts for my customers?',
+      faq4A: 'Yes, standard 58mm and 80mm wireless Bluetooth thermal printers commonly available on Shopee and Lazada are fully supported.',
+      ctaTitle: 'Transform Your Sari-Sari Store into a Modern Negosyo Today!',
+      ctaDesc: 'Join thousands of Filipino store owners who have streamlined their counter. Free to start with no credit card required.',
+      ctaBtn: 'Try Fluent Tindahan Now',
+      exploreNavBtn: 'Explore',
+      exploreTooltip: 'Explore (Landing Page)',
+      exploreTitle: 'Explore Fluent Tindahan'
+    },
+    login: {
+      pageTitle: 'Sign In to Your Store',
+      pageSubtitle: 'Enter your email and password or Quick PIN to unlock your POS counter.',
+      badgeText: '🇵🇭 Sari-Sari Store POS • 100% Offline-First',
+      backToLanding: 'Explore All Features and Pricing (Landing Page)',
+      demoNote: 'Test-drive the register without an account using Pinoy sari-sari items',
+      noAccountText: "Don't have a registered store yet?",
+      hasAccountText: 'Already have an account?',
+      switchModePassword: 'Log in with Password',
+      switchModePin: 'Log in with 4-digit PIN'
     }
   }
 };

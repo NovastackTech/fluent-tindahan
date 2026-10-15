@@ -12,7 +12,7 @@ import { useDisclaimerStore } from '../state/disclaimerStore';
 
 describe('Header', () => {
   beforeEach(() => {
-    useAuthStore.setState({ businessName: "Aling Nena's Store" });
+    useAuthStore.setState({ businessName: "Aling Nena's Store", isOnboarded: true });
     useSubscriptionStore.setState({ tier: 'Libre', isUpgradeModalOpen: false });
     useDisclaimerStore.setState({ isDisclaimerOpen: false });
     useThemeStore.setState({ themeMode: 'light', isDarkMode: false });
@@ -20,10 +20,10 @@ describe('Header', () => {
     usePwaStore.setState({ isInstallable: false, isStandalone: false, isInstalled: false });
   });
 
-  const renderHeader = () => {
+  const renderHeader = (props?: Partial<React.ComponentProps<typeof Header>>) => {
     return render(
       <FluentProvider theme={sariSariLightTheme}>
-        <Header />
+        <Header {...props} />
       </FluentProvider>
     );
   };
@@ -117,5 +117,43 @@ describe('Header', () => {
     fireEvent.click(disclaimerBtn);
     expect(useDisclaimerStore.getState().isDisclaimerOpen).toBe(true);
   });
+
+  it('hides store subtitle, plan tier badge, and sync indicators when activeTab is login', () => {
+    useAuthStore.setState({ businessName: "Aling Nena's Store", isOnboarded: true });
+    renderHeader({ activeTab: 'login' });
+
+    expect(screen.getByText('FT')).toBeInTheDocument();
+    expect(screen.getByText(/Fluent Tindahan/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Aling Nena's Store/i)).not.toBeInTheDocument();
+    expect(screen.queryByTitle('View Subscription Plans')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Naka-online|Online/i)).not.toBeInTheDocument();
+  });
+
+  it('hides store subtitle and sync indicators when user is not onboarded (logged out)', () => {
+    useAuthStore.setState({ businessName: '', isOnboarded: false });
+    renderHeader();
+
+    expect(screen.getByText('FT')).toBeInTheDocument();
+    expect(screen.getByText(/Fluent Tindahan/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Aling Nena's/i)).not.toBeInTheDocument();
+    expect(screen.queryByTitle('View Subscription Plans')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Naka-online|Online/i)).not.toBeInTheDocument();
+  });
+
+  it('translates landing shortcut button to Tuklasin in TL and Explore in EN', () => {
+    const mockNavigate = vi.fn();
+    const { unmount } = renderHeader({ onNavigate: mockNavigate, activeTab: 'dashboard' });
+
+    // Default language is 'tl'
+    expect(screen.getByText('Tuklasin')).toBeInTheDocument();
+    unmount();
+
+    useLanguageStore.setState({ language: 'en' });
+    renderHeader({ onNavigate: mockNavigate, activeTab: 'dashboard' });
+    expect(screen.getByText('Explore')).toBeInTheDocument();
+
+    useLanguageStore.setState({ language: 'tl' });
+  });
 });
+
 

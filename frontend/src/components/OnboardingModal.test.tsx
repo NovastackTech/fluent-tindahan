@@ -71,7 +71,7 @@ describe('OnboardingModal', () => {
       consentAccepted: true,
       isOnboarded: false,
       isOnboardingStatusReady: true,
-      isOnboardingOpen: false,
+      isOnboardingOpen: true,
       onboardingMode: 'initial',
       businessName: DEMO_BUSINESS_NAME,
       ownerName: DEMO_OWNER,
@@ -107,13 +107,20 @@ describe('OnboardingModal', () => {
   };
 
   it('does not render if consent has not been accepted', () => {
-    useAuthStore.setState({ consentAccepted: false, isOnboarded: false });
+    useAuthStore.setState({ consentAccepted: false, isOnboarded: false, isOnboardingOpen: true });
     renderModal();
 
     expect(screen.queryByText(/Maligayang Pagdating sa Fluent Tindahan/i)).not.toBeInTheDocument();
   });
 
-  it('renders initial onboarding modal with tabs when consent is accepted', () => {
+  it('does not render if isOnboardingOpen is false, even when not onboarded (logout session)', () => {
+    useAuthStore.setState({ consentAccepted: true, isOnboarded: false, isOnboardingOpen: false });
+    renderModal();
+
+    expect(screen.queryByText(/Maligayang Pagdating sa Fluent Tindahan/i)).not.toBeInTheDocument();
+  });
+
+  it('renders initial onboarding modal with tabs when consent is accepted and isOnboardingOpen is true', () => {
     renderModal();
 
     expect(screen.getByText(/Maligayang Pagdating sa Fluent Tindahan/i)).toBeInTheDocument();
