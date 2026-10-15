@@ -20,18 +20,32 @@ Ensure the following runtimes and tools are installed:
 
 ---
 
-## 2. One-Click Startup (Windows)
+## 2. One-Click Startup (Novastack `run-local`)
 
 From the root directory, run:
 ```powershell
-./start-local.ps1
+.\run-local.cmd
 ```
-or double-click `start-local.bat`.
+```bash
+./run-local.sh
+```
+or double-click `run-local.cmd` / `start-local.bat` (both call `scripts/run-local.ps1`).
 
 The script:
-1. Verifies if the backend is already alive on port 5000 (if not, launches it in a background PowerShell window).
-2. Verifies if the frontend is already running on port 5173 (if not, launches Vite dev server).
-3. Opens the default browser to `http://localhost:5173`.
+1. Verifies if the backend is already alive on port 5000 (if not, launches it).
+2. Verifies if the frontend is already running on port 5173 (if not, launches Vite).
+3. Opens the browser to `http://localhost:5173` (Windows).
+
+Docker Compose parity with production SAS:
+```powershell
+.\run-local.cmd -Docker
+```
+```bash
+./run-local.sh --docker
+```
+- PWA: `http://localhost:8080`
+- API: `http://localhost:5000`
+- Postgres: `localhost:5432`
 
 ---
 

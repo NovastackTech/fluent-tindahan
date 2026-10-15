@@ -644,4 +644,14 @@ public class InfrastructureTests
         rawSales[0].Items.First().Product.Should().NotBeNull();
         rawSales[0].Items.First().Product!.Name.Should().Be("Deleted Shampoo Sachet");
     }
+
+    [Theory]
+    [InlineData("simple_password", "Host=db;Port=5432;Database=db;Username=user;Password='simple_password'", "simple_password")]
+    [InlineData("pass;word=123", "Host=db;Port=5432;Database=db;Username=user;Password='pass;word=123'", "pass;word=123")]
+    [InlineData("pass\"word", "Host=db;Port=5432;Database=db;Username=user;Password='pass\"word'", "pass\"word")]
+    public void NpgsqlConnectionString_QuotedPassword_ParsesCorrectly(string expected, string connStr, string _)
+    {
+        var builder = new Npgsql.NpgsqlConnectionStringBuilder(connStr);
+        builder.Password.Should().Be(expected);
+    }
 }

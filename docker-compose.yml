@@ -1,0 +1,74 @@
+# Fluent Tindahan — local + Alibaba SAS stack
+# Usage:
+#   .\run-local.cmd -Docker      (or ./run-local.sh --docker)
+#   .\deploy-alibaba-sas.cmd     (adds deploy/alibaba-sas/docker-compose.sas.yml on the server)
+#
+# Production / SAS secrets: see deploy/alibaba-sas/README.md
+
+name: fluent-tindahan
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fluent_tindahan}
+      POSTGRES_USER: ${POSTGRES_USER:-fluent}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fluent_dev_change_me}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fluent} -d ${POSTGRES_DB:-fluent_tindahan}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - tindahan
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__DefaultConnection: >-
+        Host=db;Port=5432;Database=${POSTGRES_DB:-fluent_tindahan};Username=${POSTGRES_USER:-fluent};Password='${POSTGRES_PASSWORD:-fluent_dev_change_me}'
+      Firebase__ProjectId: ${FIREBASE_PROJECT_ID:-fluent-tindahan-dev}
+      PayMongo__SecretKey: ${PAYMONGO_SECRET_KEY:-}
+      PayMongo__WebhookSecret: ${PAYMONGO_WEBHOOK_SECRET:-}
+      PayMongo__FrontendOrigin: ${PAYMONGO_FRONTEND_ORIGIN:-http://localhost}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+    networks:
+      - tindahan
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      # Unique host port on shared Novastack SAS (tindahan-dev → 8089)
+      - "127.0.0.1:${HOST_HTTP_PORT:-8089}:80"
+    networks:
+      - tindahan
+
+volumes:
+  pgdata:
+
+networks:
+  tindahan:
+    driver: bridge

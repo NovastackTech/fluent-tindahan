@@ -7,12 +7,19 @@ An offline-first Progressive Web App (PWA) built with **Fluent UI v9**, **Dexie.
 
 ## 🚀 Quick Start (Local Setup)
 
-### Option 1: One-Click Startup
-Run either of the following scripts from the repository root:
+### Option 1: One-Click Startup (Novastack standard)
 ```powershell
-./start-local.ps1
+.\run-local.cmd
+# Linux / macOS
+./run-local.sh
 ```
-or double-click `start-local.bat`.
+Full Docker Compose stack (Postgres + API + nginx PWA):
+```powershell
+.\run-local.cmd -Docker
+# Linux / macOS
+./run-local.sh --docker
+```
+`start-local.ps1` / `start-local.bat` remain as thin wrappers around `scripts/run-local.ps1`.
 
 ### Option 2: Manual Startup
 
@@ -65,3 +72,24 @@ PWA_DEV=true npm run dev
 - **GCash Cash-In / Cash-Out**: Log fee tracking, transaction reference numbers, daily totals.
 - **Background Sync Engine**: Queues offline mutations in IndexedDB `syncQueue` and batches them to the .NET 8 Web API via `POST /api/sync/batch` with Last-Write-Wins and Dead-Letter Queue handling.
 - **Data Privacy Consent Dialog**: Compliant with RA 10173 (Philippine Data Privacy Act).
+
+---
+
+## ☁️ Deploy to Alibaba Cloud SAS
+
+Novastack standard one-step deploy (single SSH session, root password once):
+
+```powershell
+# first deploy only: PayMongo keys for the server .env
+copy deploy\alibaba-sas\secrets.env.example deploy\alibaba-sas\secrets.env
+
+.\deploy-alibaba-sas.cmd                      # first time on this server: add -ModifyDockerCaddy
+```
+
+| | |
+| --- | --- |
+| Public URL | `https://tindahan-dev.novastack-inc.online` |
+| Host port | `127.0.0.1:8089` (loopback only) |
+| SAS host | `8.220.128.80`, install dir `/opt/fluent-tindahan` |
+
+Stack: Postgres 16 + .NET 8 API + app nginx, fronted by the shared Novastack Caddy (automatic HTTPS). Details, DNS and backups: [`deploy/alibaba-sas/README.md`](deploy/alibaba-sas/README.md).

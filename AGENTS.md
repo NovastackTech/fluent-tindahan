@@ -85,7 +85,8 @@ Service worker updates must **never** tear down an open transaction or reload a 
 ```text
 fluent-tindahan/
 ├── AGENTS.md                                    # This guide for AI coding assistants
-├── start-local.ps1                              # One-click dev environment startup
+├── run-local.cmd                                # One-click dev environment (scripts/run-local.ps1)
+├── deploy-alibaba-sas.cmd                       # One-step SAS deploy (deploy/alibaba-sas/)
 ├── tindahan/                                    # Obsidian Project Wiki (see Home.md)
 │   ├── Home.md                                  # Knowledge base Map of Content
 │   ├── 01 - Architecture/                       # System & sync specifications
@@ -121,8 +122,14 @@ fluent-tindahan/
 
 ### Run Development Servers
 ```powershell
-# Automated launcher (PowerShell)
-./start-local.ps1
+# Novastack standard launcher (native Backend + Vite)
+.\run-local.cmd
+# Linux / macOS
+./run-local.sh
+
+# Full Docker Compose stack (Postgres + API + nginx)
+.\run-local.cmd -Docker
+./run-local.sh --docker
 
 # Manual Backend (Port 5000)
 cd backend/src/FluentTindahan.WebApi
@@ -133,6 +140,14 @@ dotnet run --urls "http://localhost:5000"
 cd frontend
 npm run dev -- --host 127.0.0.1 --port 5173
 ```
+
+### Deploy (Alibaba Cloud SAS)
+Public: `https://tindahan-dev.novastack-inc.online` (server `8.220.128.80`, `/opt/fluent-tindahan`, `127.0.0.1:8089`).
+```powershell
+# PayMongo keys for the first deploy: deploy\alibaba-sas\secrets.env (gitignored)
+.\deploy-alibaba-sas.cmd                # first time on this server: add -ModifyDockerCaddy
+```
+See `deploy/alibaba-sas/README.md`.
 
 ### Run Tests & Validation (Always Run Before Declaring Success)
 ```powershell

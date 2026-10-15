@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -7,10 +8,19 @@ using System.Threading.RateLimiting;
 using FluentTindahan.Application;
 using FluentTindahan.Infrastructure;
 using FluentTindahan.Infrastructure.Persistence;
+using FluentTindahan.WebApi;
 using FluentTindahan.WebApi.Authorization;
 using FluentTindahan.WebApi.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Configure Forwarded Headers for reverse proxies (edge nginx + compose web nginx)
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 
 // Add Clean Architecture layers
 builder.Services.AddApplication();
@@ -23,15 +33,12 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
     });
 
-// CORS: support PWA on Vite and local/mobile development
+// CORS: support PWA on Vite and local/mobile development (restricted outside Development)
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowPwaClient", policy =>
+    options.AddPolicy(CorsPolicies.AllowPwaClient, policy =>
     {
-        policy.SetIsOriginAllowed(_ => true) // Allow any localhost/LAN origin for PWA testing
-              .AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials();
+        CorsPolicies.ConfigurePwaCors(policy, builder.Configuration, builder.Environment);
     });
 });
 
@@ -131,6 +138,7 @@ FluentTindahan.Infrastructure.Services.PayMongoPaymentGatewayService.ValidateCon
 
 var app = builder.Build();
 app.UseExceptionHandler();
+app.UseForwardedHeaders();
 
 // Migrate and seed database
 using (var scope = app.Services.CreateScope())

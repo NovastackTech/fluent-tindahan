@@ -45,6 +45,18 @@ lcov-report/
 # Test and documentation generated PDFs
 *.pdf
 
+# Local / deploy secrets (Novastack Alibaba SAS)
+.env
+!.env.example
+deploy/alibaba-sas.env
+deploy/alibaba-sas/secrets.env
+.run/
+
+# Database dumps and backups
+backups/
+*.sql.gz
+*.sql
+
 # Environment and secrets
 *.env
 *.env.*
