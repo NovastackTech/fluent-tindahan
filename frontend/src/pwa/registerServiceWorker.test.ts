@@ -296,6 +296,37 @@ describe('registerServiceWorker', () => {
     expect(mockUpdate).toHaveBeenCalledWith(true);
   });
 
+  it('falls back to window.location.reload when the service worker update rejects', async () => {
+    const originalLocation = window.location;
+    const reloadMock = vi.fn();
+    const mockUpdate = vi.fn().mockRejectedValue(new Error('SW update failed'));
+    vi.mocked(registerSW).mockReturnValue(mockUpdate);
+
+    Object.defineProperty(window, 'location', {
+      value: { ...originalLocation, reload: reloadMock },
+      configurable: true,
+      writable: true
+    });
+
+    Object.defineProperty(navigator, 'serviceWorker', {
+      value: { register: vi.fn() },
+      configurable: true,
+      writable: true
+    });
+
+    await initServiceWorker();
+    await reloadAppForUpdate();
+
+    expect(mockUpdate).toHaveBeenCalledWith(true);
+    expect(reloadMock).toHaveBeenCalledTimes(1);
+
+    Object.defineProperty(window, 'location', {
+      value: originalLocation,
+      configurable: true,
+      writable: true
+    });
+  });
+
   it('falls back to window.location.reload when updateSW is not initialized', async () => {
     const originalLocation = window.location;
     const reloadMock = vi.fn();
