@@ -248,9 +248,7 @@ describe('App', () => {
     await waitFor(() => expect(useAuthStore.getState().isOnboardingStatusReady).toBe(true));
     fireEvent.click(screen.getByTestId('privacy-terms-checkbox'));
     fireEvent.click(screen.getByRole('button', { name: /Sumasang-ayon Ako|I Agree/i }));
-    console.log('ACTIVE TAB IN TEST:', useAuthStore.getState());
-    console.log('HTML CONTENT:', document.body.innerHTML.slice(0, 800));
-    expect(await screen.findByText(/Pumasok sa Iyong Tindahan|Sign In to Your Store|Bagong Tindahan/i, {}, { timeout: 6000 })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /Pumasok sa Iyong Tindahan|Sign In to Your Store/i })).toBeInTheDocument();
     expect(useAuthStore.getState().isOnboarded).toBe(false);
 
     firstRender.unmount();
@@ -277,8 +275,8 @@ describe('App', () => {
     await waitFor(() => expect(useAuthStore.getState().isOnboardingStatusReady).toBe(true));
 
     expect(useAuthStore.getState().isOnboarded).toBe(false);
-    expect(await screen.findByText(/Pumasok sa Iyong Tindahan|Sign In to Your Store|Bagong Tindahan/i, {}, { timeout: 6000 })).toBeInTheDocument();
-  }, 15000);
+    expect(await screen.findByRole('heading', { name: /Pumasok sa Iyong Tindahan|Sign In to Your Store/i })).toBeInTheDocument();
+  });
 
   it('starts store services and refreshes subscription only after onboarding completes', async () => {
     localStorage.setItem('fluent_tindahan_onboarding_started_v1', 'true');
