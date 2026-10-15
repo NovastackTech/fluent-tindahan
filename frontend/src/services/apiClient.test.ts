@@ -342,4 +342,47 @@ describe('apiClient', () => {
     expect(useAuthStore.getState().userId).toBe(sentUserId);
     putSpy.mockRestore();
   });
+
+  it('response interceptor refreshes token on 401 when refreshToken is present', async () => {
+    const axios = (await import('axios')).default;
+    useAuthStore.setState({
+      firebaseToken: 'old-access-token',
+      refreshToken: 'valid-refresh-token'
+    });
+
+    const axiosPostSpy = vi.spyOn(axios, 'post').mockResolvedValueOnce({
+      data: {
+        token: 'new-access-token',
+        refreshToken: 'new-refresh-token'
+      }
+    });
+
+    const interceptor = (apiClient.interceptors.response as any).handlers[0];
+    const originalRequest: any = {
+      headers: { Authorization: 'Bearer old-access-token' },
+      url: '/products'
+    };
+
+    const apiClientSpy = vi.spyOn(apiClient, 'request').mockResolvedValueOnce({
+      status: 200,
+      data: { success: true }
+    } as any);
+
+    // Call interceptor rejected handler
+    await interceptor.rejected({
+      response: { status: 401 },
+      config: originalRequest
+    });
+
+    expect(axiosPostSpy).toHaveBeenCalledWith(
+      '/api/auth/refresh',
+      { refreshToken: 'valid-refresh-token' },
+      expect.any(Object)
+    );
+    expect(useAuthStore.getState().firebaseToken).toBe('new-access-token');
+    expect(useAuthStore.getState().refreshToken).toBe('new-refresh-token');
+
+    axiosPostSpy.mockRestore();
+    apiClientSpy.mockRestore();
+  });
 });

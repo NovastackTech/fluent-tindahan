@@ -1,0 +1,193 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
+using Microsoft.IdentityModel.Tokens;
+using FluentTindahan.Application.Common.Interfaces;
+
+namespace FluentTindahan.Infrastructure.Services;
+
+public class JwtTokenService : IJwtTokenService
+{
+    public const string DefaultDevSecretKey = "FluentTindahan_SuperSecretSigningKey_Minimum32Chars_DevKey!";
+    public const string DefaultIssuer = "FluentTindahan";
+    public const string DefaultAudience = "FluentTindahanClient";
+    public const int DefaultExpiryMinutes = 60;
+    public const int DefaultRefreshExpiryDays = 30;
+
+    private readonly SymmetricSecurityKey _signingKey;
+    private readonly string _issuer;
+    private readonly string _audience;
+    private readonly int _expiryMinutes;
+    private readonly int _refreshExpiryDays;
+    private readonly TimeProvider _timeProvider;
+
+    public JwtTokenService(
+        IConfiguration configuration,
+        IHostEnvironment environment,
+        TimeProvider? timeProvider = null)
+    {
+        var secret = configuration["Jwt:SecretKey"]
+            ?? configuration["JWT_SECRET_KEY"]
+            ?? (environment.IsDevelopment() ? DefaultDevSecretKey : null);
+
+        if (string.IsNullOrWhiteSpace(secret) || secret.Length < 32)
+        {
+            if (!environment.IsDevelopment())
+            {
+                throw new InvalidOperationException(
+                    "Jwt:SecretKey or JWT_SECRET_KEY must be configured with at least 32 characters (256 bits) in production.");
+            }
+            secret = DefaultDevSecretKey;
+        }
+
+        _signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
+        _issuer = configuration["Jwt:Issuer"] ?? DefaultIssuer;
+        _audience = configuration["Jwt:Audience"] ?? DefaultAudience;
+
+        _expiryMinutes = int.TryParse(configuration["Jwt:ExpiryMinutes"], out var exp) && exp != 0
+            ? exp
+            : DefaultExpiryMinutes;
+
+        _refreshExpiryDays = int.TryParse(configuration["Jwt:RefreshExpiryDays"], out var rExp) && rExp != 0
+            ? rExp
+            : DefaultRefreshExpiryDays;
+
+        _timeProvider = timeProvider ?? TimeProvider.System;
+    }
+
+    public (string Token, DateTimeOffset ExpiresAt) GenerateAccessToken(
+        Guid userId,
+        Guid tenantId,
+        string? email = null,
+        string? role = null)
+    {
+        var now = _timeProvider.GetUtcNow();
+        var expiresAt = now.AddMinutes(_expiryMinutes);
+
+        // Keep token payload minimal: only essential principal identifiers (sub, user_id, tenant_id, aud, token_type).
+        // Omits Email and Role to keep bearer tokens lightweight and prevent personal data leakage in headers.
+        var claims = new List<Claim>
+        {
+            new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),
+            new Claim("user_id", userId.ToString()),
+            new Claim("tenant_id", tenantId.ToString()),
+            new Claim("TenantId", tenantId.ToString()),
+            new Claim("aud", _audience),
+            new Claim("token_type", "access")
+        };
+
+        var notBefore = expiresAt < now ? expiresAt.AddMinutes(-5).UtcDateTime : now.UtcDateTime;
+        var tokenDescriptor = new SecurityTokenDescriptor
+        {
+            Subject = new ClaimsIdentity(claims),
+            Issuer = _issuer,
+            Audience = _audience,
+            IssuedAt = notBefore,
+            NotBefore = notBefore,
+            Expires = expiresAt.UtcDateTime,
+            SigningCredentials = new SigningCredentials(_signingKey, SecurityAlgorithms.HmacSha256)
+        };
+
+        var tokenHandler = new JwtSecurityTokenHandler();
+        var token = tokenHandler.CreateToken(tokenDescriptor);
+        return (tokenHandler.WriteToken(token), expiresAt);
+    }
+
+    public (string RefreshToken, DateTimeOffset ExpiresAt) GenerateRefreshToken(
+        Guid userId,
+        Guid tenantId)
+    {
+        var now = _timeProvider.GetUtcNow();
+        var expiresAt = now.AddDays(_refreshExpiryDays);
+
+        var claims = new List<Claim>
+        {
+            new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),
+            new Claim("user_id", userId.ToString()),
+            new Claim("tenant_id", tenantId.ToString()),
+            new Claim("aud", _audience),
+            new Claim("token_type", "refresh")
+        };
+
+        var notBefore = expiresAt < now ? expiresAt.AddMinutes(-5).UtcDateTime : now.UtcDateTime;
+        var tokenDescriptor = new SecurityTokenDescriptor
+        {
+            Subject = new ClaimsIdentity(claims),
+            Issuer = _issuer,
+            Audience = _audience,
+            IssuedAt = notBefore,
+            NotBefore = notBefore,
+            Expires = expiresAt.UtcDateTime,
+            SigningCredentials = new SigningCredentials(_signingKey, SecurityAlgorithms.HmacSha256)
+        };
+
+        var tokenHandler = new JwtSecurityTokenHandler();
+        var token = tokenHandler.CreateToken(tokenDescriptor);
+        return (tokenHandler.WriteToken(token), expiresAt);
+    }
+
+    public bool ValidateRefreshToken(string refreshToken, out Guid userId, out Guid tenantId)
+    {
+        userId = Guid.Empty;
+        tenantId = Guid.Empty;
+
+        if (string.IsNullOrWhiteSpace(refreshToken))
+        {
+            return false;
+        }
+
+        var tokenHandler = new JwtSecurityTokenHandler
+        {
+            MapInboundClaims = false
+        };
+
+        var validationParameters = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = _signingKey,
+            ValidateIssuer = true,
+            ValidIssuer = _issuer,
+            ValidateAudience = true,
+            ValidAudience = _audience,
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromMinutes(1)
+        };
+
+        try
+        {
+            var principal = tokenHandler.ValidateToken(refreshToken, validationParameters, out var validatedToken);
+            if (validatedToken is not JwtSecurityToken jwtToken ||
+                !jwtToken.Header.Alg.Equals(SecurityAlgorithms.HmacSha256, StringComparison.InvariantCultureIgnoreCase))
+            {
+                return false;
+            }
+
+            var tokenType = principal.FindFirst("token_type")?.Value;
+            if (!string.Equals(tokenType, "refresh", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            var sub = principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+                ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                ?? principal.FindFirst("user_id")?.Value;
+
+            var tenantStr = principal.FindFirst("tenant_id")?.Value;
+
+            if (Guid.TryParse(sub, out var parsedUser) && Guid.TryParse(tenantStr, out var parsedTenant))
+            {
+                userId = parsedUser;
+                tenantId = parsedTenant;
+                return true;
+            }
+
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+}

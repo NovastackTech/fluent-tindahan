@@ -435,6 +435,115 @@ public class InfrastructureTests
     }
 
     [Fact]
+    public async Task DatabaseSeeder_SeedAsync_InProduction_DoesNotSeedDemoUserWithoutConfig()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+
+        var userMock = new Mock<ICurrentUserService>();
+        userMock.Setup(u => u.TenantId).Returns(CurrentUserService.DefaultTenantId);
+        var dbContext = new AppDbContext(options, userMock.Object);
+
+        var envMock = new Mock<IHostEnvironment>();
+        envMock.Setup(e => e.EnvironmentName).Returns(Environments.Production);
+
+        var config = new ConfigurationBuilder().Build();
+
+        await DatabaseSeeder.SeedAsync(dbContext, envMock.Object, config);
+
+        var user = await dbContext.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == CurrentUserService.DefaultUserId);
+        user.Should().BeNull("Demo user should not be seeded in Production without explicit configuration");
+    }
+
+    [Fact]
+    public async Task DatabaseSeeder_SeedAsync_InProduction_WithConfiguredPassword_SeedsUserWithConfiguredPassword()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+
+        var userMock = new Mock<ICurrentUserService>();
+        userMock.Setup(u => u.TenantId).Returns(CurrentUserService.DefaultTenantId);
+        var dbContext = new AppDbContext(options, userMock.Object);
+
+        var envMock = new Mock<IHostEnvironment>();
+        envMock.Setup(e => e.EnvironmentName).Returns(Environments.Production);
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Seed:DemoPassword"] = "ConfiguredStrongPass999!",
+                ["Seed:DemoPin"] = "7890"
+            })
+            .Build();
+
+        await DatabaseSeeder.SeedAsync(dbContext, envMock.Object, config);
+
+        var user = await dbContext.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == CurrentUserService.DefaultUserId);
+        user.Should().NotBeNull();
+        user!.Email.Should().Be("nena@fluent-tindahan.ph");
+
+        var passwordHasher = new Microsoft.AspNetCore.Identity.PasswordHasher<User>();
+        passwordHasher.VerifyHashedPassword(user, user.PasswordHash, "ConfiguredStrongPass999!")
+            .Should().Be(Microsoft.AspNetCore.Identity.PasswordVerificationResult.Success);
+        passwordHasher.VerifyHashedPassword(user, user.PasswordHash, "Password123!")
+            .Should().Be(Microsoft.AspNetCore.Identity.PasswordVerificationResult.Failed);
+
+        passwordHasher.VerifyHashedPassword(user, user.PinHash!, "7890")
+            .Should().Be(Microsoft.AspNetCore.Identity.PasswordVerificationResult.Success);
+        passwordHasher.VerifyHashedPassword(user, user.PinHash!, "1234")
+            .Should().Be(Microsoft.AspNetCore.Identity.PasswordVerificationResult.Failed);
+    }
+
+    [Fact]
+    public async Task DatabaseSeeder_SeedAsync_ExistingUser_NeverBackfillsOrOverwritesCredentials()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+
+        var userMock = new Mock<ICurrentUserService>();
+        userMock.Setup(u => u.TenantId).Returns(CurrentUserService.DefaultTenantId);
+        var dbContext = new AppDbContext(options, userMock.Object);
+
+        var passwordHasher = new Microsoft.AspNetCore.Identity.PasswordHasher<User>();
+        var existingUser = new User
+        {
+            Id = CurrentUserService.DefaultUserId,
+            TenantId = CurrentUserService.DefaultTenantId,
+            Email = "custom.owner@example.ph",
+            NormalizedEmail = "custom.owner@example.ph",
+            Role = "Owner",
+            Phone = "09189998877"
+        };
+        existingUser.PasswordHash = passwordHasher.HashPassword(existingUser, "ExistingCustomSecret!456");
+        existingUser.PinHash = passwordHasher.HashPassword(existingUser, "8888");
+
+        dbContext.Users.Add(existingUser);
+        await dbContext.SaveChangesAsync();
+
+        var initialPasswordHash = existingUser.PasswordHash;
+        var initialPinHash = existingUser.PinHash;
+
+        // Run seeder in development
+        var envMock = new Mock<IHostEnvironment>();
+        envMock.Setup(e => e.EnvironmentName).Returns(Environments.Development);
+
+        await DatabaseSeeder.SeedAsync(dbContext, envMock.Object);
+
+        var userAfter = await dbContext.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == CurrentUserService.DefaultUserId);
+        userAfter.Should().NotBeNull();
+        userAfter!.PasswordHash.Should().Be(initialPasswordHash, "Seeder must never overwrite existing credentials");
+        userAfter.PinHash.Should().Be(initialPinHash, "Seeder must never overwrite existing PIN credentials");
+
+        passwordHasher.VerifyHashedPassword(userAfter, userAfter.PasswordHash, "ExistingCustomSecret!456")
+            .Should().Be(Microsoft.AspNetCore.Identity.PasswordVerificationResult.Success);
+        passwordHasher.VerifyHashedPassword(userAfter, userAfter.PasswordHash, "Password123!")
+            .Should().Be(Microsoft.AspNetCore.Identity.PasswordVerificationResult.Failed);
+    }
+
+    [Fact]
     public void DependencyInjection_AddInfrastructure_RegistersServices()
     {
         var services = new ServiceCollection();

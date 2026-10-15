@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using FluentTindahan.Domain.Entities;
 using FluentTindahan.Domain.Enums;
 using FluentTindahan.Infrastructure.Services;
@@ -7,7 +9,10 @@ namespace FluentTindahan.Infrastructure.Persistence;
 
 public static class DatabaseSeeder
 {
-    public static async Task SeedAsync(AppDbContext context)
+    public static async Task SeedAsync(
+        AppDbContext context,
+        IHostEnvironment? environment = null,
+        IConfiguration? configuration = null)
     {
         var tenantId = CurrentUserService.DefaultTenantId;
         var userId = CurrentUserService.DefaultUserId;
@@ -33,41 +38,54 @@ public static class DatabaseSeeder
             await context.SaveChangesAsync();
         }
 
-        // Ensure User exists
+        // Ensure User exists: Guard with environment check or config-defined password.
+        // Never back-fill credentials onto existing user rows.
         var user = await context.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == userId);
         if (user == null)
         {
-            var passwordHasher = new Microsoft.AspNetCore.Identity.PasswordHasher<User>();
-            user = new User
+            var isDev = IsDevelopmentOrDemo(environment, configuration);
+            var configuredPassword = configuration?["Demo:Password"]
+                ?? configuration?["Seed:DemoPassword"]
+                ?? configuration?["DEMO_PASSWORD"]
+                ?? configuration?["DEMO_USER_PASSWORD"];
+
+            // Only seed demo user with credentials in Development/Demo mode,
+            // or if an explicit non-empty password is provided via configuration.
+            if (isDev || !string.IsNullOrWhiteSpace(configuredPassword))
             {
-                Id = userId,
-                TenantId = tenantId,
-                Email = "nena@fluent-tindahan.ph",
-                NormalizedEmail = "nena@fluent-tindahan.ph",
-                Phone = "09171234567",
-                Role = "Owner",
-                FirebaseUid = "demo-firebase-uid",
-                CreatedAt = DateTimeOffset.UtcNow
-            };
-            user.PasswordHash = passwordHasher.HashPassword(user, "Password123!");
-            user.PinHash = passwordHasher.HashPassword(user, "1234");
-            context.Users.Add(user);
-            await context.SaveChangesAsync();
-        }
-        else if (string.IsNullOrEmpty(user.Email) || string.IsNullOrEmpty(user.PasswordHash))
-        {
-            var passwordHasher = new Microsoft.AspNetCore.Identity.PasswordHasher<User>();
-            if (string.IsNullOrEmpty(user.Email))
-            {
-                user.Email = "nena@fluent-tindahan.ph";
-                user.NormalizedEmail = "nena@fluent-tindahan.ph";
+                var passwordToUse = !string.IsNullOrWhiteSpace(configuredPassword)
+                    ? configuredPassword
+                    : "Password123!";
+
+                var configuredPin = configuration?["Demo:Pin"]
+                    ?? configuration?["Seed:DemoPin"]
+                    ?? configuration?["DEMO_PIN"]
+                    ?? configuration?["DEMO_USER_PIN"];
+
+                var pinToUse = !string.IsNullOrWhiteSpace(configuredPin)
+                    ? configuredPin
+                    : (isDev ? "1234" : null);
+
+                var passwordHasher = new Microsoft.AspNetCore.Identity.PasswordHasher<User>();
+                user = new User
+                {
+                    Id = userId,
+                    TenantId = tenantId,
+                    Email = "nena@fluent-tindahan.ph",
+                    NormalizedEmail = "nena@fluent-tindahan.ph",
+                    Phone = "09171234567",
+                    Role = "Owner",
+                    FirebaseUid = "demo-firebase-uid",
+                    CreatedAt = DateTimeOffset.UtcNow
+                };
+                user.PasswordHash = passwordHasher.HashPassword(user, passwordToUse);
+                if (!string.IsNullOrEmpty(pinToUse))
+                {
+                    user.PinHash = passwordHasher.HashPassword(user, pinToUse);
+                }
+                context.Users.Add(user);
+                await context.SaveChangesAsync();
             }
-            if (string.IsNullOrEmpty(user.PasswordHash))
-            {
-                user.PasswordHash = passwordHasher.HashPassword(user, "Password123!");
-                user.PinHash ??= passwordHasher.HashPassword(user, "1234");
-            }
-            await context.SaveChangesAsync();
         }
 
         // Ensure full catalog is seeded
@@ -252,5 +270,48 @@ public static class DatabaseSeeder
 
             await context.SaveChangesAsync();
         }
+    }
+
+    public static bool IsDevelopmentOrDemo(IHostEnvironment? environment, IConfiguration? configuration)
+    {
+        if (environment != null)
+        {
+            if (environment.IsDevelopment() || environment.IsEnvironment("Demo"))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        if (configuration != null)
+        {
+            var demoEnabled = configuration["DemoMode"]
+                ?? configuration["Demo:Enabled"]
+                ?? configuration["DEMO_MODE"]
+                ?? configuration["Seed:DemoAccount"];
+            if (string.Equals(demoEnabled, "true", StringComparison.OrdinalIgnoreCase))
+            {
+                var envName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? Environments.Production;
+                if (string.Equals(envName, Environments.Production, StringComparison.OrdinalIgnoreCase))
+                {
+                    var allowInProd = configuration["AllowDemoModeInProduction"]
+                        ?? configuration["Demo:AllowInProduction"]
+                        ?? configuration["ALLOW_DEMO_MODE_IN_PRODUCTION"];
+                    return string.Equals(allowInProd, "true", StringComparison.OrdinalIgnoreCase);
+                }
+
+                return true;
+            }
+        }
+
+        var envVar = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+        if (string.Equals(envVar, Environments.Development, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(envVar, "Demo", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return string.IsNullOrEmpty(envVar);
     }
 }

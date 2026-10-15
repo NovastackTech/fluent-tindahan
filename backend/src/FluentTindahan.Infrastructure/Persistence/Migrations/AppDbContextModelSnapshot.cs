@@ -378,6 +378,11 @@ namespace FluentTindahan.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(256)")
                         .HasDefaultValue("");
 
+                    b.Property<int>("FailedPasswordAttempts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.Property<int>("FailedPinAttempts")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
@@ -404,6 +409,9 @@ namespace FluentTindahan.Infrastructure.Persistence.Migrations
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)")
                         .HasDefaultValue("");
+
+                    b.Property<DateTimeOffset?>("PasswordLockoutEnd")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Phone")
                         .IsRequired()

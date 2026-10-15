@@ -139,6 +139,10 @@ public class CurrentUserService : ICurrentUserService
         }
     }
 
+    /// <summary>
+    /// Legacy external authentication subject identifier (formerly Firebase Auth UID).
+    /// Note: Authentication in Fluent Tindahan is self-hosted via ASP.NET Core native JWTs, not Firebase Auth.
+    /// </summary>
     public string? FirebaseUid =>
         _httpContextAccessor.HttpContext?.User.FindFirst("user_id")?.Value
         ?? _httpContextAccessor.HttpContext?.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;

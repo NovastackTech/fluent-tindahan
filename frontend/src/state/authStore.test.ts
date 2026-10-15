@@ -266,7 +266,8 @@ describe('authStore', () => {
       subscriptionEndDate: '2028-12-31T23:59:59Z',
       hasPin: true,
       token: 'jwt-auth-token-123',
-      expiresAt: '2027-10-15T00:00:00Z'
+      expiresAt: '2027-10-15T00:00:00Z',
+      refreshToken: 'jwt-refresh-token-456'
     };
 
     await useAuthStore.getState().loginWithAuthPayload(authPayload, '1234');
@@ -278,9 +279,21 @@ describe('authStore', () => {
     expect(state.businessName).toBe('Cloud Tindahan');
     expect(state.hasPin).toBe(true);
     expect(state.firebaseToken).toBe('jwt-auth-token-123');
+    expect(state.refreshToken).toBe('jwt-refresh-token-456');
     expect(state.localPinVerifier).not.toBeNull();
     expect(state.tier).toBe('TindahanPro');
     expect(localStorage.getItem('fluent_tindahan_tenant_id_v1')).toBe(authPayload.tenantId);
+    expect(localStorage.getItem('fluent_tindahan_refresh_token_v1')).toBe('jwt-refresh-token-456');
+  });
+
+  it('setRefreshToken updates state and localStorage', () => {
+    useAuthStore.getState().setRefreshToken('new-refresh-token');
+    expect(useAuthStore.getState().refreshToken).toBe('new-refresh-token');
+    expect(localStorage.getItem('fluent_tindahan_refresh_token_v1')).toBe('new-refresh-token');
+
+    useAuthStore.getState().setRefreshToken(null);
+    expect(useAuthStore.getState().refreshToken).toBeNull();
+    expect(localStorage.getItem('fluent_tindahan_refresh_token_v1')).toBeNull();
   });
 
   it('guards against logout when unsynced items exist in syncQueue unless forceWipe is true', async () => {
@@ -304,6 +317,35 @@ describe('authStore', () => {
     expect(forceResult.success).toBe(true);
     expect(forceResult.unsyncedCount).toBe(0);
     expect(useAuthStore.getState().isOnboarded).toBe(false);
+    expect(useAuthStore.getState().refreshToken).toBeNull();
+    expect(localStorage.getItem('fluent_tindahan_refresh_token_v1')).toBeNull();
+    expect(localStorage.getItem('fluent_tindahan_auth_token_v1')).toBeNull();
+    expect(localStorage.getItem('fluent_tindahan_firebase_token_v1')).toBeNull();
     expect(await db.syncQueue.count()).toBe(0);
   });
+
+  it('migrates legacy firebase token storage key to native backend auth token key', async () => {
+    // Simulate existing user session storing token under legacy key
+    localStorage.clear();
+    localStorage.setItem('fluent_tindahan_firebase_token_v1', 'legacy-firebase-compat-jwt');
+    vi.resetModules();
+
+    const { useAuthStore: reloadedStore, STORAGE_KEY_TOKEN, LEGACY_STORAGE_KEY_FIREBASE_TOKEN } = await import('./authStore');
+
+    // 1. Initial state picks up legacy token as fallback
+    expect(reloadedStore.getState().firebaseToken).toBe('legacy-firebase-compat-jwt');
+
+    // 2. Setting a new token saves to the new key and removes the legacy key
+    reloadedStore.getState().setFirebaseToken('new-backend-signed-jwt');
+    expect(reloadedStore.getState().firebaseToken).toBe('new-backend-signed-jwt');
+    expect(localStorage.getItem(STORAGE_KEY_TOKEN)).toBe('new-backend-signed-jwt');
+    expect(localStorage.getItem(LEGACY_STORAGE_KEY_FIREBASE_TOKEN)).toBeNull();
+
+    // 3. Setting token to null removes both keys
+    reloadedStore.getState().setFirebaseToken(null);
+    expect(reloadedStore.getState().firebaseToken).toBeNull();
+    expect(localStorage.getItem(STORAGE_KEY_TOKEN)).toBeNull();
+    expect(localStorage.getItem(LEGACY_STORAGE_KEY_FIREBASE_TOKEN)).toBeNull();
+  });
 });
+

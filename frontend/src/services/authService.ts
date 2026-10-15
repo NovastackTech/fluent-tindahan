@@ -15,6 +15,7 @@ export interface AuthResponseDto {
   hasPin: boolean;
   token: string;
   expiresAt: string;
+  refreshToken?: string;
 }
 
 export interface RegisterRequestPayload {
@@ -70,5 +71,10 @@ export async function loginPin(payload: LoginPinRequestPayload): Promise<AuthRes
 
 export async function updatePin(payload: UpdatePinRequestPayload): Promise<{ message: string; hasPin: boolean }> {
   const response = await apiClient.put<{ message: string; hasPin: boolean }>('/auth/pin', payload);
+  return response.data;
+}
+
+export async function refreshAuthToken(refreshToken: string): Promise<AuthResponseDto> {
+  const response = await apiClient.post<AuthResponseDto>('/auth/refresh', { refreshToken });
   return response.data;
 }

@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -8,6 +9,7 @@ using System.Threading.RateLimiting;
 using FluentTindahan.Application;
 using FluentTindahan.Infrastructure;
 using FluentTindahan.Infrastructure.Persistence;
+using FluentTindahan.Infrastructure.Services;
 using FluentTindahan.WebApi;
 using FluentTindahan.WebApi.Authorization;
 using FluentTindahan.WebApi.Middleware;
@@ -42,29 +44,39 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Configure Authentication (Firebase JWT Bearer with graceful fallback)
-var firebaseProjectId = builder.Configuration["Firebase:ProjectId"] ?? "fluent-tindahan-dev";
+// Configure Authentication (HMAC-SHA256 Signed JWT Bearer with cryptographic validation)
+var jwtSecret = builder.Configuration["Jwt:SecretKey"]
+    ?? builder.Configuration["JWT_SECRET_KEY"]
+    ?? (builder.Environment.IsDevelopment() ? JwtTokenService.DefaultDevSecretKey : null);
+
+if (string.IsNullOrWhiteSpace(jwtSecret) || jwtSecret.Length < 32)
+{
+    if (!builder.Environment.IsDevelopment())
+    {
+        throw new InvalidOperationException("Jwt:SecretKey or JWT_SECRET_KEY must be configured with at least 32 characters (256 bits) in production.");
+    }
+    jwtSecret = JwtTokenService.DefaultDevSecretKey;
+}
+
+var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? JwtTokenService.DefaultIssuer;
+var jwtAudience = builder.Configuration["Jwt:Audience"] ?? JwtTokenService.DefaultAudience;
+var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret));
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        options.Authority = $"https://securetoken.google.com/{firebaseProjectId}";
+        options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
+        options.SaveToken = true;
         options.TokenValidationParameters = new TokenValidationParameters
         {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = signingKey,
             ValidateIssuer = true,
-            ValidIssuer = $"https://securetoken.google.com/{firebaseProjectId}",
+            ValidIssuer = jwtIssuer,
             ValidateAudience = true,
-            ValidAudience = firebaseProjectId,
-            ValidateLifetime = true
-        };
-        // For development/offline demo where firebase tokens might be mock
-        options.Events = new JwtBearerEvents
-        {
-            OnAuthenticationFailed = context =>
-            {
-                // Skip exception so dev mode can still proceed if using dev tokens
-                context.NoResult();
-                return Task.CompletedTask;
-            }
+            ValidAudience = jwtAudience,
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromMinutes(1)
         };
     });
 
@@ -78,6 +90,8 @@ builder.Services.AddAuthorization(options =>
 });
 builder.Services.AddRateLimiter(options =>
 {
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
     options.AddPolicy("AnonymousDemoProvision", context =>
     {
         if (context.User.Identity?.IsAuthenticated == true)
@@ -89,6 +103,38 @@ builder.Services.AddRateLimiter(options =>
         return RateLimitPartition.GetFixedWindowLimiter(clientIp, _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        });
+    });
+
+    options.AddPolicy("AuthSensitive", context =>
+    {
+        var clientIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var userIdentifier = context.User.Identity?.IsAuthenticated == true
+            ? (context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+               ?? context.User.FindFirst("sub")?.Value
+               ?? context.User.FindFirst("user_id")?.Value
+               ?? "auth")
+            : "anon";
+
+        var partitionKey = $"{clientIp}:{userIdentifier}";
+        return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        });
+    });
+
+    options.AddPolicy("PinLogin", context =>
+    {
+        var clientIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(clientIp, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 5,
             Window = TimeSpan.FromMinutes(1),
             QueueLimit = 0,
             AutoReplenishment = true
@@ -149,7 +195,7 @@ using (var scope = app.Services.CreateScope())
     {
         var db = services.GetRequiredService<AppDbContext>();
         await DatabaseMigrator.MigrateAsync(db, logger);
-        await DatabaseSeeder.SeedAsync(db);
+        await DatabaseSeeder.SeedAsync(db, app.Environment, builder.Configuration);
         logger.LogInformation("Database migrated and seeded successfully.");
     }
     catch (Exception ex)

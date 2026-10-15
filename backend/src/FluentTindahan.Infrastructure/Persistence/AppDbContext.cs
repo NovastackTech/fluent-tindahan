@@ -75,6 +75,8 @@ public class AppDbContext : DbContext, IApplicationDbContext
             builder.Property(u => u.PinHash).HasMaxLength(512);
             builder.Property(u => u.FailedPinAttempts).HasDefaultValue(0);
             builder.Property(u => u.PinLockoutEnd);
+            builder.Property(u => u.FailedPasswordAttempts).HasDefaultValue(0);
+            builder.Property(u => u.PasswordLockoutEnd);
             builder.Property(u => u.LastLoginAt);
             builder.Property(u => u.Phone).IsRequired().HasMaxLength(30);
             builder.Property(u => u.Role).IsRequired().HasMaxLength(50);
@@ -83,6 +85,7 @@ public class AppDbContext : DbContext, IApplicationDbContext
             builder.HasIndex(u => u.TenantId);
             builder.HasIndex(u => u.FirebaseUid);
             builder.HasIndex(u => u.NormalizedEmail)
+                .HasDatabaseName(User.NormalizedEmailUniqueIndexName)
                 .IsUnique()
                 .HasFilter("\"NormalizedEmail\" <> ''");
 
