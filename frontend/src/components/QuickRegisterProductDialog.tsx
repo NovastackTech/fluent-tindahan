@@ -133,8 +133,8 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
 
   if (!isOpen || !unrecognizedBarcode) return null;
 
-  const costNum = Number(cost) || 0;
-  const priceNum = Number(price) || 0;
+  const costNum = Number(String(cost).replace(/,/g, '')) || 0;
+  const priceNum = Number(String(price).replace(/,/g, '')) || 0;
   const unitProfit = Math.max(0, priceNum - costNum);
   const marginPct = priceNum > 0 ? ((priceNum - costNum) / priceNum) * 100 : 0;
 
@@ -151,8 +151,16 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
       setCostError(t.barcode.costCannotBeNegative);
       return;
     }
+    if (costNum > 999999.99) {
+      setCostError(t.barcode.costExceedsMax);
+      return;
+    }
     if (priceNum <= 0) {
       setPriceError(t.barcode.priceMustBePositive);
+      return;
+    }
+    if (priceNum > 999999.99) {
+      setPriceError(t.barcode.priceExceedsMax);
       return;
     }
 
@@ -367,6 +375,7 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
                   aria-describedby={costError ? 'quick-register-cost-error' : undefined}
                   step="0.25"
                   min="0"
+                  max="999999.99"
                   style={{ width: '100%' }}
                   placeholder="0.00"
                   value={cost === '' ? '' : cost.toString()}
@@ -394,6 +403,7 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
                   aria-describedby={priceError ? 'quick-register-price-error' : undefined}
                   step="0.25"
                   min="0"
+                  max="999999.99"
                   style={{ width: '100%' }}
                   placeholder="0.00"
                   value={price === '' ? '' : price.toString()}

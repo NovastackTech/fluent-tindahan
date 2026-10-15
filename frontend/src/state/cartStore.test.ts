@@ -152,4 +152,62 @@ describe('cartStore', () => {
     expect(state.getTotalAmount()).toBe(0);
     expect(sessionStorage.getItem(CART_STORAGE_KEY)).toBeNull();
   });
+
+  it('caps item quantity at maxStock when addItem is called multiple times', () => {
+    const store = useCartStore.getState();
+    const product = { id: 'qa-soda', name: 'QA-TEST Soda', price: 15, maxStock: 3 };
+
+    const res1 = store.addItem(product);
+    expect(res1).toEqual({ added: true, capped: false });
+    expect(useCartStore.getState().items[0].qty).toBe(1);
+
+    const res2 = store.addItem(product);
+    expect(res2).toEqual({ added: true, capped: false });
+    expect(useCartStore.getState().items[0].qty).toBe(2);
+
+    const res3 = store.addItem(product);
+    expect(res3).toEqual({ added: true, capped: false });
+    expect(useCartStore.getState().items[0].qty).toBe(3);
+
+    // 4th and 5th attempts should be capped at maxStock 3
+    const res4 = store.addItem(product);
+    expect(res4).toEqual({ added: false, capped: true });
+    expect(useCartStore.getState().items[0].qty).toBe(3);
+
+    const res5 = store.addItem(product);
+    expect(res5).toEqual({ added: false, capped: true });
+    expect(useCartStore.getState().items[0].qty).toBe(3);
+    expect(useCartStore.getState().getTotalCount()).toBe(3);
+    expect(useCartStore.getState().getTotalAmount()).toBe(45);
+  });
+
+  it('does not add product when maxStock is 0', () => {
+    const store = useCartStore.getState();
+    const outOfStockProd = { id: 'qa-empty', name: 'Out of Stock Soda', price: 20, maxStock: 0 };
+
+    const res = store.addItem(outOfStockProd);
+    expect(res).toEqual({ added: false, capped: true });
+    expect(useCartStore.getState().items).toHaveLength(0);
+  });
+
+  it('caps quantity at maxStock when updateQty is called beyond available stock', () => {
+    const store = useCartStore.getState();
+    store.addItem({ id: 'qa-soda', name: 'QA-TEST Soda', price: 15, maxStock: 3 });
+
+    const res = store.updateQty('qa-soda', 10, 3);
+    expect(res).toEqual({ updated: true, capped: true });
+    expect(useCartStore.getState().items[0].qty).toBe(3);
+    expect(useCartStore.getState().items[0].subtotal).toBe(45);
+  });
+
+  it('allows uncapped quantity when maxStockArg is null (warn/oversell policy)', () => {
+    const store = useCartStore.getState();
+    store.addItem({ id: 'p-oversell', name: 'Oversold Chips', price: 20 }, null);
+    expect(useCartStore.getState().items[0].qty).toBe(1);
+
+    const updateRes = store.updateQty('p-oversell', 15, null);
+    expect(updateRes).toEqual({ updated: true, capped: false });
+    expect(useCartStore.getState().items[0].qty).toBe(15);
+    expect(useCartStore.getState().items[0].subtotal).toBe(300);
+  });
 });

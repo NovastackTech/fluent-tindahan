@@ -9,7 +9,7 @@ import {
   MessageBarActions,
   Button
 } from '@fluentui/react-components';
-import { ArrowSyncRegular, ArrowClockwiseRegular } from '@fluentui/react-icons';
+import { ArrowSyncRegular, ArrowClockwiseRegular, DismissRegular } from '@fluentui/react-icons';
 import { useSyncStore, processSyncQueue, retryDeadLetterItem } from '../sync/syncEngine';
 import { db } from '../db/db';
 import { useTranslation } from '../state/languageStore';
@@ -20,6 +20,7 @@ const useStyles = makeStyles({
     width: '100%',
     marginLeft: 'auto',
     marginRight: 'auto',
+    boxSizing: 'border-box',
     ...shorthands.padding(tokens.spacingVerticalXS, tokens.spacingHorizontalM),
     display: 'flex',
     flexDirection: 'column',
@@ -30,7 +31,7 @@ const useStyles = makeStyles({
 export const OfflineSyncBanner: React.FC = () => {
   const styles = useStyles();
   const { isOnline, isSyncing, pendingCount, deadLetterCount, lastErrorMessage } = useSyncStore();
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
 
   const [isRetrying, setIsRetrying] = React.useState(false);
 
@@ -43,12 +44,23 @@ export const OfflineSyncBanner: React.FC = () => {
     setIsRetrying(true);
     try {
       const items = await db.deadLetterQueue.toArray();
+      let hasItemNeedingEdit = false;
       for (const item of items) {
         try {
-          await retryDeadLetterItem(item.id);
+          const res = await retryDeadLetterItem(item.id);
+          if (res && !res.success && res.requiresEdit) {
+            hasItemNeedingEdit = true;
+          }
         } catch (itemErr) {
           console.error(`Failed to retry dead letter item ${item.id}:`, itemErr);
         }
+      }
+      if (hasItemNeedingEdit) {
+        useSyncStore.getState().setLastErrorMessage(
+          language === 'tl'
+            ? 'May mga produkto sa Dead Letter Queue na kailangang ayusin sa Settings bago ma-sync.'
+            : 'Some products in the Dead Letter Queue require editing in Settings before syncing.'
+        );
       }
     } catch (err) {
       console.error('Failed to load dead letter items for retry:', err);
@@ -60,18 +72,18 @@ export const OfflineSyncBanner: React.FC = () => {
   return (
     <div className={styles.container}>
       {!isOnline && (
-        <MessageBar intent="warning">
-          <MessageBarTitle>{t.banner.offlineTitle}</MessageBarTitle>
+        <MessageBar intent="warning" layout="multiline">
           <MessageBarBody>
+            <MessageBarTitle>{t.banner.offlineTitle}</MessageBarTitle>
             {t.banner.offlineDesc}
           </MessageBarBody>
         </MessageBar>
       )}
 
       {isOnline && pendingCount > 0 && (
-        <MessageBar intent="info">
-          <MessageBarTitle>{pendingCount} {t.common.queued}</MessageBarTitle>
+        <MessageBar intent="info" layout="multiline">
           <MessageBarBody>
+            <MessageBarTitle>{pendingCount} {t.common.queued}</MessageBarTitle>
             {t.common.syncing}
           </MessageBarBody>
           <MessageBarActions
@@ -91,9 +103,9 @@ export const OfflineSyncBanner: React.FC = () => {
       )}
 
       {deadLetterCount > 0 && (
-        <MessageBar intent="error">
-          <MessageBarTitle>Dead Letter Queue ({deadLetterCount})</MessageBarTitle>
+        <MessageBar intent="error" layout="multiline">
           <MessageBarBody>
+            <MessageBarTitle>Dead Letter Queue ({deadLetterCount})</MessageBarTitle>
             {lastErrorMessage || t.common.dlqWarning}
           </MessageBarBody>
           <MessageBarActions
@@ -113,11 +125,22 @@ export const OfflineSyncBanner: React.FC = () => {
       )}
 
       {deadLetterCount === 0 && lastErrorMessage && (
-        <MessageBar intent="error">
-          <MessageBarTitle>Sync Error</MessageBarTitle>
+        <MessageBar intent="error" layout="multiline">
           <MessageBarBody>
+            <MessageBarTitle>{language === 'tl' ? 'Problema sa Pag-sync' : 'Sync Error'}</MessageBarTitle>
             {lastErrorMessage}
           </MessageBarBody>
+          <MessageBarActions
+            containerAction={
+              <Button
+                size="small"
+                appearance="subtle"
+                aria-label={t.common.close || 'Isara'}
+                icon={<DismissRegular />}
+                onClick={() => useSyncStore.getState().setLastErrorMessage(null)}
+              />
+            }
+          />
         </MessageBar>
       )}
     </div>

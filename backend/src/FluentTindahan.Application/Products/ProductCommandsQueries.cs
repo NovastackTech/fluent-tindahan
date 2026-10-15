@@ -76,6 +76,21 @@ public class CreateProductCommandHandler : IRequestHandler<CreateProductCommand,
             throw new UnauthorizedAccessException("Tenant is not authenticated or resolved.");
         }
 
+        const decimal MaxAllowedPrice = 999_999.99m;
+        if (request.Price <= 0 || request.Price > MaxAllowedPrice)
+        {
+            throw new ArgumentException($"Retail price must be between ₱0.01 and ₱{MaxAllowedPrice:N2}.", nameof(request.Price));
+        }
+        if (request.Cost < 0 || request.Cost > MaxAllowedPrice)
+        {
+            throw new ArgumentException($"Cost price must be between ₱0.00 and ₱{MaxAllowedPrice:N2}.", nameof(request.Cost));
+        }
+        const int MaxAllowedStock = 999_999;
+        if (request.StockQty < 0 || request.StockQty > MaxAllowedStock)
+        {
+            throw new ArgumentException($"Stock quantity must be between 0 and {MaxAllowedStock:N0}.", nameof(request.StockQty));
+        }
+
         var product = new Product
         {
             Id = Guid.NewGuid(),

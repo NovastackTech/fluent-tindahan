@@ -49,6 +49,24 @@ interface InventoryPageProps {
 
 type StockFilterType = 'all' | 'low' | 'out' | 'in';
 
+import {
+  MIN_PRODUCT_PRICE,
+  MAX_PRODUCT_PRICE,
+  MIN_PRODUCT_COST,
+  MAX_PRODUCT_COST,
+  MIN_PRODUCT_STOCK,
+  MAX_PRODUCT_STOCK
+} from '../constants/inventory';
+
+export {
+  MIN_PRODUCT_PRICE,
+  MAX_PRODUCT_PRICE,
+  MIN_PRODUCT_COST,
+  MAX_PRODUCT_COST,
+  MIN_PRODUCT_STOCK,
+  MAX_PRODUCT_STOCK
+};
+
 const useStyles = makeStyles({
   container: {
     ...shorthands.padding(tokens.spacingVerticalM, tokens.spacingHorizontalM),
@@ -352,6 +370,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
   const [formPrice, setFormPrice] = useState<number | ''>('');
   const [formPriceError, setFormPriceError] = useState('');
   const [formStock, setFormStock] = useState<number | ''>('');
+  const [formStockError, setFormStockError] = useState('');
 
   // Delete dialog state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -532,6 +551,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
     setFormPrice('');
     setFormPriceError('');
     setFormStock(10);
+    setFormStockError('');
     setIsModalOpen(true);
   };
 
@@ -548,6 +568,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
     setFormPrice(product.price);
     setFormPriceError('');
     setFormStock(product.stockQty);
+    setFormStockError('');
     setIsModalOpen(true);
   };
 
@@ -556,22 +577,43 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
     setFormNameError('');
     setFormCostError('');
     setFormPriceError('');
+    setFormStockError('');
 
     if (!formName.trim()) {
       setFormNameError(t.inventory.productNameRequired);
       return;
     }
-    const costNum = Number(formCost) || 0;
-    const priceNum = Number(formPrice) || 0;
-    const stockNum = Number(formStock) || 0;
+    const costClean = typeof formCost === 'string' ? formCost.replace(/,/g, '').trim() : formCost;
+    const priceClean = typeof formPrice === 'string' ? formPrice.replace(/,/g, '').trim() : formPrice;
+    const stockClean = typeof formStock === 'string' ? formStock.replace(/,/g, '').trim() : formStock;
+    const costNum = Number(costClean) || 0;
+    const priceNum = Number(priceClean) || 0;
+    const stockNum = Number(stockClean) || 0;
 
     if (costNum < 0) {
       setFormCostError(t.inventory.costCannotBeNegative);
       return;
     }
+    if (costNum > MAX_PRODUCT_COST) {
+      setFormCostError(t.inventory.costExceedsMax);
+      return;
+    }
 
     if (priceNum <= 0) {
       setFormPriceError(t.inventory.priceMustBePositive);
+      return;
+    }
+    if (priceNum > MAX_PRODUCT_PRICE) {
+      setFormPriceError(t.inventory.priceExceedsMax);
+      return;
+    }
+
+    if (stockNum < 0) {
+      setFormStockError(language === 'tl' ? 'Hindi maaaring negatibo ang stock.' : 'Stock quantity cannot be negative.');
+      return;
+    }
+    if (stockNum > MAX_PRODUCT_STOCK) {
+      setFormStockError(t.inventory.stockExceedsMax);
       return;
     }
 
@@ -1296,10 +1338,12 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                     aria-describedby={formCostError ? 'inventory-product-cost-error' : undefined}
                     step="0.25"
                     min="0"
+                    max={MAX_PRODUCT_COST.toString()}
                     style={{ width: '100%' }}
                     value={formCost === '' ? '' : formCost.toString()}
                     onChange={(_, data) => {
-                      setFormCost(data.value === '' ? '' : Number(data.value));
+                      const clean = data.value.replace(/,/g, '').trim();
+                      setFormCost(clean === '' ? '' : Number(clean));
                       if (formCostError) setFormCostError('');
                     }}
                   />
@@ -1322,10 +1366,12 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                     aria-describedby={formPriceError ? 'inventory-product-price-error' : undefined}
                     step="0.25"
                     min="0"
+                    max={MAX_PRODUCT_PRICE.toString()}
                     style={{ width: '100%' }}
                     value={formPrice === '' ? '' : formPrice.toString()}
                     onChange={(_, data) => {
-                      setFormPrice(data.value === '' ? '' : Number(data.value));
+                      const clean = data.value.replace(/,/g, '').trim();
+                      setFormPrice(clean === '' ? '' : Number(clean));
                       if (formPriceError) setFormPriceError('');
                     }}
                   />
@@ -1344,12 +1390,23 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                   <Input
                     type="number"
                     aria-label={t.inventory.stockLabel}
+                    aria-invalid={Boolean(formStockError)}
+                    aria-describedby={formStockError ? 'inventory-product-stock-error' : undefined}
                     min="0"
+                    max={MAX_PRODUCT_STOCK.toString()}
                     step="1"
                     style={{ width: '100%' }}
                     value={formStock === '' ? '' : formStock.toString()}
-                    onChange={(_, data) => setFormStock(data.value === '' ? '' : Number(data.value))}
+                    onChange={(_, data) => {
+                      setFormStock(data.value === '' ? '' : Number(data.value));
+                      if (formStockError) setFormStockError('');
+                    }}
                   />
+                  {formStockError && (
+                    <Text id="inventory-product-stock-error" role="alert" size={200} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
+                      {formStockError}
+                    </Text>
+                  )}
                 </div>
               </div>
 

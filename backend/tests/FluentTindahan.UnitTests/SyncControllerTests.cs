@@ -134,6 +134,274 @@ public class SyncControllerTests
     }
 
     [Fact]
+    public async Task ProcessBatchSync_ProductPriceExceedsMaximum_ReturnsFriendlyError()
+    {
+        var tenantId = Guid.NewGuid();
+        var contextOptions = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.Setup(service => service.TenantId).Returns(tenantId);
+        currentUser.Setup(service => service.UserId).Returns(Guid.NewGuid());
+        currentUser.Setup(service => service.IsAuthenticated).Returns(true);
+        await using var context = new AppDbContext(contextOptions, currentUser.Object);
+
+        var productId = Guid.NewGuid();
+        var syncHandler = new ProcessBatchSyncCommandHandler(
+            context,
+            currentUser.Object,
+            NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+
+        var batch = new BatchSyncRequestDto
+        {
+            DeviceId = Guid.NewGuid(),
+            Operations = new List<SyncOperationDto>
+            {
+                new()
+                {
+                    SyncId = "excessive-price-product",
+                    Entity = "Product",
+                    Action = "Insert",
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Payload = JsonSerializer.SerializeToElement(new
+                    {
+                        id = productId,
+                        name = "QA-TEST Luxury Soda",
+                        price = 99_999_999_999m,
+                        cost = 10m,
+                        stockQty = 5
+                    })
+                }
+            }
+        };
+
+        var syncResult = await syncHandler.Handle(new ProcessBatchSyncCommand(batch), CancellationToken.None);
+
+        syncResult.ProcessedCount.Should().Be(0);
+        var itemResult = syncResult.Results.Should().ContainSingle().Subject;
+        itemResult.Status.Should().Be("Failed");
+        itemResult.Error.Should().Contain("Retail price must be between ₱0.01 and ₱999,999.99.");
+    }
+
+    [Fact]
+    public async Task ProcessBatchSync_ProductStockExceedsMaximum_ReturnsFriendlyError()
+    {
+        var tenantId = Guid.NewGuid();
+        var contextOptions = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.Setup(service => service.TenantId).Returns(tenantId);
+        currentUser.Setup(service => service.UserId).Returns(Guid.NewGuid());
+        currentUser.Setup(service => service.IsAuthenticated).Returns(true);
+        await using var context = new AppDbContext(contextOptions, currentUser.Object);
+
+        var syncHandler = new ProcessBatchSyncCommandHandler(
+            context,
+            currentUser.Object,
+            NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+
+        var batch = new BatchSyncRequestDto
+        {
+            DeviceId = Guid.NewGuid(),
+            Operations = new List<SyncOperationDto>
+            {
+                new()
+                {
+                    SyncId = "excessive-stock-product",
+                    Entity = "Product",
+                    Action = "Insert",
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Payload = JsonSerializer.SerializeToElement(new
+                    {
+                        id = Guid.NewGuid(),
+                        name = "Overstocked Soda",
+                        price = 25m,
+                        cost = 15m,
+                        stockQty = 1_000_000
+                    })
+                }
+            }
+        };
+
+        var syncResult = await syncHandler.Handle(new ProcessBatchSyncCommand(batch), CancellationToken.None);
+
+        syncResult.ProcessedCount.Should().Be(0);
+        var itemResult = syncResult.Results.Should().ContainSingle().Subject;
+        itemResult.Status.Should().Be("Failed");
+        itemResult.Error.Should().Contain("Stock quantity must be between 0 and 999,999.");
+    }
+
+    [Fact]
+    public async Task ProcessBatchSync_GCashAmountExceedsMaximum_ReturnsFriendlyError()
+    {
+        var tenantId = Guid.NewGuid();
+        var contextOptions = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.Setup(service => service.TenantId).Returns(tenantId);
+        currentUser.Setup(service => service.UserId).Returns(Guid.NewGuid());
+        currentUser.Setup(service => service.IsAuthenticated).Returns(true);
+        await using var context = new AppDbContext(contextOptions, currentUser.Object);
+
+        var syncHandler = new ProcessBatchSyncCommandHandler(
+            context,
+            currentUser.Object,
+            NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+
+        var batch = new BatchSyncRequestDto
+        {
+            DeviceId = Guid.NewGuid(),
+            Operations = new List<SyncOperationDto>
+            {
+                new()
+                {
+                    SyncId = "excessive-gcash-amount",
+                    Entity = "GCashTxn",
+                    Action = "Insert",
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Payload = JsonSerializer.SerializeToElement(new
+                    {
+                        id = Guid.NewGuid(),
+                        type = "CashIn",
+                        amount = 100_000.01m,
+                        fee = 50m,
+                        refNo = "REF-EXCESS-1"
+                    })
+                }
+            }
+        };
+
+        var syncResult = await syncHandler.Handle(new ProcessBatchSyncCommand(batch), CancellationToken.None);
+
+        syncResult.ProcessedCount.Should().Be(0);
+        var itemResult = syncResult.Results.Should().ContainSingle().Subject;
+        itemResult.Status.Should().Be("Failed");
+        itemResult.Error.Should().Contain("Transaction amount must be between ₱0.01 and ₱100,000.00.");
+    }
+
+    [Fact]
+    public async Task ProcessBatchSync_GCashFeeExceedsMaximum_ReturnsFriendlyError()
+    {
+        var tenantId = Guid.NewGuid();
+        var contextOptions = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.Setup(service => service.TenantId).Returns(tenantId);
+        currentUser.Setup(service => service.UserId).Returns(Guid.NewGuid());
+        currentUser.Setup(service => service.IsAuthenticated).Returns(true);
+        await using var context = new AppDbContext(contextOptions, currentUser.Object);
+
+        var syncHandler = new ProcessBatchSyncCommandHandler(
+            context,
+            currentUser.Object,
+            NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+
+        var batch = new BatchSyncRequestDto
+        {
+            DeviceId = Guid.NewGuid(),
+            Operations = new List<SyncOperationDto>
+            {
+                new()
+                {
+                    SyncId = "excessive-gcash-fee",
+                    Entity = "GCashTxn",
+                    Action = "Insert",
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Payload = JsonSerializer.SerializeToElement(new
+                    {
+                        id = Guid.NewGuid(),
+                        type = "CashIn",
+                        amount = 500m,
+                        fee = 100_000.01m,
+                        refNo = "REF-FEE-EXCESS-1"
+                    })
+                }
+            }
+        };
+
+        var syncResult = await syncHandler.Handle(new ProcessBatchSyncCommand(batch), CancellationToken.None);
+
+        syncResult.ProcessedCount.Should().Be(0);
+        var itemResult = syncResult.Results.Should().ContainSingle().Subject;
+        itemResult.Status.Should().Be("Failed");
+        itemResult.Error.Should().Contain("Service fee must be between ₱0.00 and ₱100,000.00.");
+    }
+
+    private class ThrowingDbContext : AppDbContext
+    {
+        private readonly Exception _exceptionToThrow;
+
+        public ThrowingDbContext(DbContextOptions<AppDbContext> options, ICurrentUserService currentUserService, Exception exceptionToThrow)
+            : base(options, currentUserService)
+        {
+            _exceptionToThrow = exceptionToThrow;
+        }
+
+        public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            throw _exceptionToThrow;
+        }
+    }
+
+    [Fact]
+    public async Task ProcessBatchSyncCommand_ExtractFriendlyErrorMessage_NeverLeaksRawEFCoreMessage()
+    {
+        var tenantId = Guid.NewGuid();
+        var contextOptions = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.Setup(service => service.TenantId).Returns(tenantId);
+        currentUser.Setup(service => service.UserId).Returns(Guid.NewGuid());
+        currentUser.Setup(service => service.IsAuthenticated).Returns(true);
+
+        // Simulate a context where SaveChanges throws DbUpdateException with nested postgres 22003
+        var innerDbEx = new DbUpdateException(
+            "An error occurred while saving the entity changes. See the inner exception for details.",
+            new Exception("22003: numeric field overflow"));
+
+        await using var context = new ThrowingDbContext(contextOptions, currentUser.Object, innerDbEx);
+
+        var syncHandler = new ProcessBatchSyncCommandHandler(
+            context,
+            currentUser.Object,
+            NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+
+        var batch = new BatchSyncRequestDto
+        {
+            DeviceId = Guid.NewGuid(),
+            Operations = new List<SyncOperationDto>
+            {
+                new()
+                {
+                    SyncId = "overflow-test",
+                    Entity = "Product",
+                    Action = "Insert",
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Payload = JsonSerializer.SerializeToElement(new
+                    {
+                        id = Guid.NewGuid(),
+                        name = "Normal Price Soda",
+                        price = 100m,
+                        cost = 50m,
+                        stockQty = 5
+                    })
+                }
+            }
+        };
+
+        var syncResult = await syncHandler.Handle(new ProcessBatchSyncCommand(batch), CancellationToken.None);
+
+        var itemResult = syncResult.Results.Should().ContainSingle().Subject;
+        itemResult.Status.Should().Be("Failed");
+        itemResult.Error.Should().NotContain("An error occurred while saving the entity changes");
+        itemResult.Error.Should().Contain("Numeric value exceeds maximum database limit");
+    }
+
+    [Fact]
     public async Task Provision_RejectsAuthenticatedOwnerIdThatDiffersFromCaller()
     {
         var tenantId = Guid.NewGuid();

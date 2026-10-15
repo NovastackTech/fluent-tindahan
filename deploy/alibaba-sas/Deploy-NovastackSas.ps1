@@ -102,7 +102,7 @@ function New-ProjectArchive([string]$OutputPath) {
         # deploy/alibaba-sas/secrets.env is shipped on purpose and deleted by install.sh after merging.
         & robocopy $AppDir $stage /MIR /NFL /NDL /NJH /NJS /NP `
             /XD node_modules .git .github .agents .vs .idea .run bin obj TestResults coverage dist dev-dist `
-                .obsidian backups playwright-report test-results (Join-Path $AppDir 'tindahan') `
+                graphify-out .obsidian backups playwright-report test-results (Join-Path $AppDir 'tindahan') `
             /XF *.user .env .env.local docker-compose.override.yml alibaba-sas.env | Out-Null
         if ($LASTEXITCODE -ge 8) { throw "robocopy failed (exit $LASTEXITCODE)." }
 

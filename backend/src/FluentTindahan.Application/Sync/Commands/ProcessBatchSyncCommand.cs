@@ -157,7 +157,7 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
                 {
                     SyncId = syncId,
                     Status = "Failed",
-                    Error = ex.Message
+                    Error = ExtractFriendlyErrorMessage(ex)
                 };
             }
         }
@@ -170,6 +170,59 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
             ConflictCount = results.Count(r => r.Status == "DuplicateRef" || r.Status == "Conflict"),
             Results = results
         };
+    }
+
+    private static string ExtractFriendlyErrorMessage(Exception ex)
+    {
+        var current = ex;
+        var allMessages = new List<string>();
+
+        while (current != null)
+        {
+            if (!string.IsNullOrWhiteSpace(current.Message))
+            {
+                allMessages.Add(current.Message);
+            }
+            if (current is ArgumentException or InvalidOperationException)
+            {
+                return current.Message;
+            }
+            current = current.InnerException;
+        }
+
+        var combinedMessage = string.Join(" --> ", allMessages);
+
+        if (combinedMessage.Contains("22003", StringComparison.OrdinalIgnoreCase) ||
+            combinedMessage.Contains("numeric field overflow", StringComparison.OrdinalIgnoreCase) ||
+            combinedMessage.Contains("out of range", StringComparison.OrdinalIgnoreCase) ||
+            combinedMessage.Contains("overflow", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Numeric value exceeds maximum database limit (₱999,999.99).";
+        }
+
+        if (combinedMessage.Contains("23505", StringComparison.OrdinalIgnoreCase) ||
+            combinedMessage.Contains("duplicate key", StringComparison.OrdinalIgnoreCase) ||
+            combinedMessage.Contains("unique constraint", StringComparison.OrdinalIgnoreCase))
+        {
+            return "A record with this identifier or unique reference already exists.";
+        }
+
+        if (combinedMessage.Contains("23503", StringComparison.OrdinalIgnoreCase) ||
+            combinedMessage.Contains("foreign key", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Referenced record does not exist in database.";
+        }
+
+        var nonGeneric = allMessages.LastOrDefault(m =>
+            !m.Contains("An error occurred while saving the entity changes", StringComparison.OrdinalIgnoreCase) &&
+            !m.Contains("See the inner exception for details", StringComparison.OrdinalIgnoreCase));
+
+        if (!string.IsNullOrWhiteSpace(nonGeneric))
+        {
+            return nonGeneric;
+        }
+
+        return "Failed to save entity changes. Please verify the entered data.";
     }
 
     private class BatchSyncCounters
@@ -290,6 +343,21 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
                 }
             }
             return "Success";
+        }
+
+        const decimal MaxAllowedPrice = 999_999.99m;
+        if (raw.Price <= 0 || raw.Price > MaxAllowedPrice)
+        {
+            throw new ArgumentException($"Retail price must be between ₱0.01 and ₱{MaxAllowedPrice:N2}.");
+        }
+        if (raw.Cost < 0 || raw.Cost > MaxAllowedPrice)
+        {
+            throw new ArgumentException($"Cost price must be between ₱0.00 and ₱{MaxAllowedPrice:N2}.");
+        }
+        const int MaxAllowedStock = 999_999;
+        if (raw.StockQty < 0 || raw.StockQty > MaxAllowedStock)
+        {
+            throw new ArgumentException($"Stock quantity must be between 0 and {MaxAllowedStock:N0}.");
         }
 
         if (existing == null)
@@ -692,6 +760,16 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
         if (existing != null)
         {
             return "Success"; // idempotent
+        }
+
+        const decimal MaxAllowedGCashAmount = 100_000.00m;
+        if (raw.Amount <= 0 || raw.Amount > MaxAllowedGCashAmount)
+        {
+            throw new ArgumentException($"Transaction amount must be between ₱0.01 and ₱{MaxAllowedGCashAmount:N2}.");
+        }
+        if (raw.Fee < 0 || raw.Fee > MaxAllowedGCashAmount)
+        {
+            throw new ArgumentException($"Service fee must be between ₱0.00 and ₱{MaxAllowedGCashAmount:N2}.");
         }
 
         var refNorm = GCashTxn.NormalizeRef(raw.RefNo);

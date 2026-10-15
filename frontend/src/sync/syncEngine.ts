@@ -1,4 +1,12 @@
-import { db, type SyncQueueRecord } from '../db/db';
+import { db, type SyncQueueRecord, type ProductRecord, type DeadLetterRecord } from '../db/db';
+import {
+  MIN_PRODUCT_PRICE,
+  MAX_PRODUCT_PRICE,
+  MIN_PRODUCT_COST,
+  MAX_PRODUCT_COST,
+  MIN_PRODUCT_STOCK,
+  MAX_PRODUCT_STOCK
+} from '../constants/inventory';
 import {
   apiClient,
   ensureTenantProvisioned,
@@ -150,6 +158,10 @@ export async function updateQueueCounts() {
   const pending = await db.syncQueue.count();
   const deadLetter = await db.deadLetterQueue.count();
   useSyncStore.getState().setCounts(pending, deadLetter);
+  const errMsg = useSyncStore.getState().lastErrorMessage;
+  if (deadLetter === 0 && (errMsg?.includes('Dead Letter Queue') || errMsg?.includes('Nalipat sa Dead Letter Queue'))) {
+    useSyncStore.getState().setLastErrorMessage(null);
+  }
 }
 
 function getAuthSessionKey(): string {
@@ -392,29 +404,214 @@ export async function processSyncQueue(): Promise<{ processed: number; conflicts
   }
 }
 
-export async function retryDeadLetterItem(id: string) {
+export interface RetryDeadLetterResult {
+  success: boolean;
+  requiresEdit?: boolean;
+  error?: string;
+  item?: DeadLetterRecord;
+}
+
+export async function retryDeadLetterItem(
+  id: string,
+  correctedPayload?: Partial<ProductRecord>
+): Promise<RetryDeadLetterResult> {
   const item = await db.deadLetterQueue.get(id);
-  if (!item) return;
+  if (!item) {
+    return { success: false, error: 'Item not found' };
+  }
+
+  let payload = item.payload;
+
+  if (item.entity === 'Product' && item.action !== 'Delete') {
+    if (correctedPayload) {
+      // User explicitly confirmed/corrected the product values via edit form
+      const priceNum = Number(correctedPayload.price);
+      const costNum = Number(correctedPayload.cost);
+      const stockNum = Number(correctedPayload.stockQty ?? payload?.stockQty ?? 0);
+
+      if (isNaN(priceNum) || priceNum < MIN_PRODUCT_PRICE || priceNum > MAX_PRODUCT_PRICE) {
+        return {
+          success: false,
+          requiresEdit: true,
+          error: `Dapat ay ₱${MIN_PRODUCT_PRICE} hanggang ₱${MAX_PRODUCT_PRICE.toLocaleString()} ang presyo ng tinda.`
+        };
+      }
+      if (isNaN(costNum) || costNum < MIN_PRODUCT_COST || costNum > MAX_PRODUCT_COST) {
+        return {
+          success: false,
+          requiresEdit: true,
+          error: `Dapat ay ₱${MIN_PRODUCT_COST} hanggang ₱${MAX_PRODUCT_COST.toLocaleString()} ang puhunan.`
+        };
+      }
+      if (isNaN(stockNum) || stockNum < MIN_PRODUCT_STOCK || stockNum > MAX_PRODUCT_STOCK) {
+        return {
+          success: false,
+          requiresEdit: true,
+          error: `Dapat ay ${MIN_PRODUCT_STOCK} hanggang ${MAX_PRODUCT_STOCK.toLocaleString()} ang dami ng stock.`
+        };
+      }
+
+      const prodId = payload?.id || correctedPayload.id;
+      const nowIso = new Date().toISOString();
+      const updatedProduct: ProductRecord = {
+        ...payload,
+        ...correctedPayload,
+        id: prodId,
+        tenantId: payload?.tenantId || correctedPayload.tenantId || useAuthStore.getState().tenantId || '',
+        name: (correctedPayload.name ?? payload?.name ?? '').trim(),
+        price: priceNum,
+        cost: costNum,
+        stockQty: stockNum,
+        category: (correctedPayload.category ?? payload?.category ?? 'General').trim(),
+        barcode: correctedPayload.barcode !== undefined ? correctedPayload.barcode : payload?.barcode,
+        updatedAt: nowIso
+      };
+
+      if (prodId) {
+        await db.products.put(updatedProduct);
+      }
+      payload = updatedProduct;
+    } else {
+      // Retrying without explicit correctedPayload: NEVER AUTO-CLAMP!
+      let currentProduct = payload;
+      if (payload?.id) {
+        const localProduct = await db.products.get(payload.id);
+        if (localProduct) {
+          currentProduct = localProduct;
+        }
+      }
+
+      const priceNum = Number(currentProduct?.price);
+      const costNum = Number(currentProduct?.cost);
+      const stockNum = Number(currentProduct?.stockQty ?? 0);
+
+      const isPriceInvalid = isNaN(priceNum) || priceNum < MIN_PRODUCT_PRICE || priceNum > MAX_PRODUCT_PRICE;
+      const isCostInvalid = isNaN(costNum) || costNum < MIN_PRODUCT_COST || costNum > MAX_PRODUCT_COST;
+      const isStockInvalid = isNaN(stockNum) || stockNum < MIN_PRODUCT_STOCK || stockNum > MAX_PRODUCT_STOCK;
+
+      if (isPriceInvalid || isCostInvalid || isStockInvalid) {
+        // Do NOT auto-clamp and do NOT rewrite data. Item remains safely in DLQ.
+        return {
+          success: false,
+          requiresEdit: true,
+          error: isPriceInvalid
+            ? `Hindi wastong presyo (₱${currentProduct?.price}). Dapat ay ₱${MIN_PRODUCT_PRICE} hanggang ₱${MAX_PRODUCT_PRICE.toLocaleString()}.`
+            : isCostInvalid
+            ? `Hindi wastong puhunan (₱${currentProduct?.cost}). Dapat ay ₱${MIN_PRODUCT_COST} hanggang ₱${MAX_PRODUCT_COST.toLocaleString()}.`
+            : `Hindi wastong stock (${currentProduct?.stockQty}). Dapat ay ${MIN_PRODUCT_STOCK} hanggang ${MAX_PRODUCT_STOCK.toLocaleString()}.`,
+          item
+        };
+      }
+
+      // If valid, sync latest values from local record without modifying or clamping
+      if (payload?.id) {
+        const localProduct = await db.products.get(payload.id);
+        if (localProduct) {
+          payload = {
+            ...payload,
+            name: localProduct.name,
+            price: localProduct.price,
+            cost: localProduct.cost,
+            stockQty: localProduct.stockQty,
+            category: localProduct.category,
+            barcode: localProduct.barcode,
+            updatedAt: new Date().toISOString()
+          };
+        }
+      }
+    }
+  }
+
+  if (item.entity === 'GCashTxn' && payload?.id) {
+    const localTxn = await db.gcashTxns.get(payload.id);
+    if (localTxn && localTxn.amount > 0 && localTxn.amount <= 100000) {
+      payload = {
+        ...payload,
+        amount: localTxn.amount,
+        fee: localTxn.fee,
+        refNo: localTxn.refNo,
+        customerPhone: localTxn.customerPhone,
+        notes: localTxn.notes
+      };
+    }
+  }
 
   await db.syncQueue.add({
     id: item.id,
     entity: item.entity as any,
     action: item.action as any,
     timestamp: new Date().toISOString(),
-    payload: item.payload,
+    payload,
     status: 'Pending',
     retryCount: 0
   });
 
   await db.deadLetterQueue.delete(id);
+  const remainingCount = await db.deadLetterQueue.count();
+  useSyncStore.getState().setCounts(useSyncStore.getState().pendingCount + 1, remainingCount);
   await updateQueueCounts();
   if (navigator.onLine) {
     processSyncQueue().catch(console.error);
   }
+
+  return { success: true, item };
+}
+
+export const DLQ_ARCHIVE_STORAGE_KEY = 'tindahan_dlq_archive';
+
+export interface ArchivedDeadLetterRecord extends DeadLetterRecord {
+  archivedAt: string;
+}
+
+export function getArchivedDeadLetterItems(): ArchivedDeadLetterRecord[] {
+  try {
+    const raw = localStorage.getItem(DLQ_ARCHIVE_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function archiveDeadLetterRecord(item: DeadLetterRecord): void {
+  try {
+    const existing = getArchivedDeadLetterItems();
+    const updated = [
+      { ...item, archivedAt: new Date().toISOString() },
+      ...existing.filter((x) => x.id !== item.id)
+    ].slice(0, 100);
+    localStorage.setItem(DLQ_ARCHIVE_STORAGE_KEY, JSON.stringify(updated));
+  } catch (err) {
+    console.warn('Failed to archive dead letter item:', err);
+  }
+}
+
+export function clearDeadLetterArchive(): void {
+  try {
+    localStorage.removeItem(DLQ_ARCHIVE_STORAGE_KEY);
+  } catch (err) {
+    console.warn('Failed to clear dead letter archive:', err);
+  }
+}
+
+export async function deleteDeadLetterItem(id: string) {
+  const item = await db.deadLetterQueue.get(id);
+  if (item) {
+    archiveDeadLetterRecord(item);
+  }
+  await db.deadLetterQueue.delete(id);
+  const remaining = await db.deadLetterQueue.count();
+  useSyncStore.getState().setCounts(useSyncStore.getState().pendingCount, remaining);
+  await updateQueueCounts();
 }
 
 export async function clearDeadLetterQueue() {
+  const allItems = await db.deadLetterQueue.toArray();
+  for (const item of allItems) {
+    archiveDeadLetterRecord(item);
+  }
   await db.deadLetterQueue.clear();
+  useSyncStore.getState().setCounts(useSyncStore.getState().pendingCount, 0);
+  useSyncStore.getState().setLastErrorMessage(null);
   await updateQueueCounts();
 }
 

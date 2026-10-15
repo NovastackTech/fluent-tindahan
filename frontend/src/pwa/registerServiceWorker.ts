@@ -67,8 +67,15 @@ export function initServiceWorker(): Promise<void> {
  */
 export async function reloadAppForUpdate(): Promise<void> {
   if (updateSWFunction) {
-    await updateSWFunction(true);
-  } else if (typeof window !== 'undefined') {
+    try {
+      await updateSWFunction(true);
+      return;
+    } catch (error) {
+      console.error('[PWA] Service worker update failed, falling back to browser reload:', error);
+    }
+  }
+
+  if (typeof window !== 'undefined') {
     window.location.reload();
   }
 }

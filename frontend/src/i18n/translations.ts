@@ -92,6 +92,17 @@ export interface Translations {
     newDebtorTitle: string;
     saveAndSelectDebtor: string;
     debtorNameRequired: string;
+    insufficientStock: string;
+    stockLimitReached: string;
+    saleBlockedStock: string;
+    stockOverrideBtn: string;
+    stockOverrideDialogTitle: string;
+    stockOverrideDialogDesc: string;
+    stockOverrideConfirmBtn: string;
+    stockWarnNotice: string;
+    stockBlockedNotice: string;
+    stockWarnBanner: string;
+    stockOverriddenBanner: string;
   };
   utang: {
     title: string;
@@ -172,6 +183,10 @@ export interface Translations {
     saveTransaction: string;
     historyTitle: string;
     invalidAmountAlert: string;
+    amountMustBePositive: string;
+    amountExceedsMax: string;
+    feeExceedsAmount: string;
+    feeCannotBeNegative: string;
     duplicateRefWarning: string;
     phoneInvalid: string;
   };
@@ -275,9 +290,12 @@ export interface Translations {
     barcodeLabel: string;
     costLabel: string;
     costCannotBeNegative: string;
+    costExceedsMax: string;
     priceLabel: string;
     priceMustBePositive: string;
+    priceExceedsMax: string;
     stockLabel: string;
+    stockExceedsMax: string;
     profitPreview: string;
     marginPreview: string;
     noProductsFound: string;
@@ -307,9 +325,12 @@ export interface Translations {
     categoryLabel: string;
     costLabel: string;
     costCannotBeNegative: string;
+    costExceedsMax: string;
     priceLabel: string;
     priceMustBePositive: string;
+    priceExceedsMax: string;
     stockLabel: string;
+    stockExceedsMax: string;
     saveAndAddToCart: string;
     saveProduct: string;
     addedToCart: string;
@@ -353,6 +374,26 @@ export interface Translations {
     dlqClearBtn: string;
     dlqDesc: string;
     retryBtn: string;
+    dlqDismissBtn: string;
+    dlqEditBtn: string;
+    dlqEditDialogTitle: string;
+    dlqEditDialogDesc: string;
+    dlqSaveAndRetryBtn: string;
+    dlqRequiresCorrectionAlert: string;
+    dlqRetrySuccess: string;
+    dlqDismissConfirmTitle: string;
+    dlqDismissConfirmDesc: string;
+    dlqDismissConfirmWarning: string;
+    dlqDismissConfirmBtn: string;
+    dlqClearConfirmTitle: string;
+    dlqClearConfirmDesc: string;
+    dlqClearConfirmBtn: string;
+    stockPolicySection: string;
+    stockPolicyDesc: string;
+    stockPolicyWarn: string;
+    stockPolicyWarnDesc: string;
+    stockPolicyBlock: string;
+    stockPolicyBlockDesc: string;
     dataManagement: string;
     pullSuccessAlert: string;
     printerSection: string;
@@ -599,7 +640,18 @@ export const translations: Record<Language, Translations> = {
       addNewDebtorBtn: 'Magdagdag ng Suki',
       newDebtorTitle: 'Magrehistro ng Bagong Suki',
       saveAndSelectDebtor: 'I-save at Piliin',
-      debtorNameRequired: 'Pakiusap ilagay ang pangalan ng suki.'
+      debtorNameRequired: 'Pakiusap ilagay ang pangalan ng suki.',
+      insufficientStock: 'Kulang ang Stock',
+      stockLimitReached: 'Naabot na ang limitasyon ng stock',
+      saleBlockedStock: 'Hindi maaaring ituloy ang benta dahil kulang ang stock.',
+      stockOverrideBtn: 'I-override ang Stock',
+      stockOverrideDialogTitle: 'Kumpirmahin ang Pag-override sa Stock',
+      stockOverrideDialogDesc: 'Kulang ang nakatalang stock sa system para sa ilang paninda. Sa offline tindahan, posibleng may pisikal na paninda na hindi pa nai-encode ang delivery o hindi pa naka-sync. Nais mo bang ituloy pa rin ang benta?',
+      stockOverrideConfirmBtn: 'I-override at Ituloy ang Benta',
+      stockWarnNotice: 'Pansin: May mga panindang kulang ang nakatalang stock sa system (Pinapayagan dahil naka-set sa Babala Lamang).',
+      stockBlockedNotice: 'Kulang ang stock sa system. Pindutin ang "I-override ang Stock" upang payagan ang benta.',
+      stockWarnBanner: 'Pansin: Kulang ang nakatalang stock (Babala lamang).',
+      stockOverriddenBanner: 'Na-override ang stock para sa bentang ito.'
     },
     utang: {
       title: 'Talaan ng Utang ng mga Suki',
@@ -680,6 +732,10 @@ export const translations: Record<Language, Translations> = {
       saveTransaction: 'I-save ang Transaksyon',
       historyTitle: 'Kasaysayan ng GCash Ngayong Buwan',
       invalidAmountAlert: 'Maglagay ng wastong halaga.',
+      amountMustBePositive: 'Ang halaga ay dapat mas mataas sa ₱0.',
+      amountExceedsMax: 'Ang halaga ng transaksyon ay hindi maaaring lumagpas sa ₱100,000.00 (limitasyon ng GCash wallet/agent).',
+      feeExceedsAmount: 'Ang service fee ay hindi maaaring mas mataas sa halaga ng transaksyon.',
+      feeCannotBeNegative: 'Ang service fee ay hindi maaaring negatibo.',
       duplicateRefWarning: 'Ginamit na ang reference number. Hindi maaaring magtala ng doble.',
       phoneInvalid: 'Dapat ay wastong 11-digit Philippine mobile number (09XXXXXXXXX).'
     },
@@ -783,9 +839,12 @@ export const translations: Record<Language, Translations> = {
       barcodeLabel: 'Barcode (Opsyonal):',
       costLabel: 'Puhunan (Cost Price ₱):*',
       costCannotBeNegative: 'Hindi maaaring negatibo ang puhunan.',
+      costExceedsMax: 'Hindi maaaring lumampas sa ₱999,999.99 ang puhunan.',
       priceLabel: 'Presyo ng Tinda (SRP ₱):*',
       priceMustBePositive: 'Dapat mas mataas sa ₱0 ang presyo ng tinda.',
+      priceExceedsMax: 'Hindi maaaring lumampas sa ₱999,999.99 ang presyo.',
       stockLabel: 'Kasalukuyang Stock:*',
+      stockExceedsMax: 'Hindi maaaring lumampas sa 999,999 ang dami ng stock.',
       profitPreview: 'Tinatayang Kita bawat piraso:',
       marginPreview: 'Profit Margin:',
       noProductsFound: 'Walang natagpuang produkto na tumutugma sa filter.',
@@ -815,9 +874,12 @@ export const translations: Record<Language, Translations> = {
       categoryLabel: 'Kategorya:*',
       costLabel: 'Puhunan (Cost Price ₱):*',
       costCannotBeNegative: 'Hindi maaaring negatibo ang puhunan.',
+      costExceedsMax: 'Hindi maaaring lumampas sa ₱999,999.99 ang puhunan.',
       priceLabel: 'Presyo ng Tinda (SRP ₱):*',
       priceMustBePositive: 'Dapat mas mataas sa ₱0 ang presyo ng tinda.',
+      priceExceedsMax: 'Hindi maaaring lumampas sa ₱999,999.99 ang presyo.',
       stockLabel: 'Panimulang Stock:*',
+      stockExceedsMax: 'Hindi maaaring lumampas sa 999,999 ang dami ng stock.',
       saveAndAddToCart: 'I-save at Idagdag sa Cart',
       saveProduct: 'I-save ang Produkto',
       addedToCart: 'Naidagdag na sa Cart!'
@@ -861,6 +923,26 @@ export const translations: Record<Language, Translations> = {
       dlqClearBtn: 'Linisin ang DLQ',
       dlqDesc: 'Ang mga transaksyong paulit-ulit na bumagsak ay inihihiwalay rito upang hindi maipit ang sync.',
       retryBtn: 'Subukan Muli',
+      dlqDismissBtn: 'I-dismiss',
+      dlqEditBtn: 'Ayusin',
+      dlqEditDialogTitle: 'Ayusin ang Paninda (Dead Letter Queue)',
+      dlqEditDialogDesc: 'Bumagsak ang pag-sync ng panindang ito dahil sa maling halaga o datos. Pakitama ang mga detalye at kumpirmahin bago muling i-sync.',
+      dlqSaveAndRetryBtn: 'I-save at Subukan Muli',
+      dlqRequiresCorrectionAlert: 'May mga maling halaga sa paninda. Pakiusap itama ang presyo o puhunan bago muling i-sync.',
+      dlqRetrySuccess: 'Matagumpay na naitama ang paninda at naibalik sa sync queue!',
+      dlqDismissConfirmTitle: 'Kumpirmahin ang Pag-dismiss ng Datos',
+      dlqDismissConfirmDesc: 'Permanente itong aalisin sa queue at hindi na mai-sync sa cloud database:',
+      dlqDismissConfirmWarning: 'BABALA: Ang hindi naka-sync na transaksyong ito ay mabubura sa aktibong queue at hindi na maipapadala sa server.',
+      dlqDismissConfirmBtn: 'I-dismiss Nang Tuluyan',
+      dlqClearConfirmTitle: 'Linisin ang Lahat sa Dead Letter Queue?',
+      dlqClearConfirmDesc: 'Lahat ng bagsak na sync items sa queue ay permanente nang aalisin at hindi na maipapadala sa cloud database. Sigurado ka ba?',
+      dlqClearConfirmBtn: 'Linisin ang Lahat',
+      stockPolicySection: 'Patakaran sa Stock ng POS (Stock Policy)',
+      stockPolicyDesc: 'Piliin kung haharangin ang benta kapag 0 o kulang ang nakatalang stock sa system.',
+      stockPolicyWarn: 'Babala Lamang (Warn Only - Rekomendado sa Offline)',
+      stockPolicyWarnDesc: 'Magbibigay ng babala pero papayagan ang benta kapag may pisikal na paninda kahit 0 o kulang sa system.',
+      stockPolicyBlock: 'Mahigpit na I-block (Strict Block)',
+      stockPolicyBlockDesc: 'Bawal mag-checkout kapag 0 o kulang ang stock sa system maliban kung i-override ng may-ari.',
       dataManagement: 'Pamamahala ng Datos (Data Management)',
       pullSuccessAlert: 'Nai-download ang mga produkto mula sa cloud database.',
       printerSection: 'Resibo at Printer Device',
@@ -1105,7 +1187,18 @@ export const translations: Record<Language, Translations> = {
       addNewDebtorBtn: 'Add New Debtor',
       newDebtorTitle: 'Register New Debtor',
       saveAndSelectDebtor: 'Save & Select',
-      debtorNameRequired: 'Please enter customer name.'
+      debtorNameRequired: 'Please enter customer name.',
+      insufficientStock: 'Insufficient Stock',
+      stockLimitReached: 'Stock limit reached',
+      saleBlockedStock: 'Sale blocked due to insufficient stock.',
+      stockOverrideBtn: 'Override Stock',
+      stockOverrideDialogTitle: 'Confirm Stock Override',
+      stockOverrideDialogDesc: 'Recorded system stock is insufficient for some items in the cart. In offline neighborhood stores, restocks may not be entered yet or another device has not synced. Do you want to proceed with this sale?',
+      stockOverrideConfirmBtn: 'Override & Proceed to Checkout',
+      stockWarnNotice: 'Notice: Some items have insufficient system stock (Allowed under Warn Only policy).',
+      stockBlockedNotice: 'Insufficient system stock. Click "Override Stock" to allow this sale.',
+      stockWarnBanner: 'Notice: Recorded stock is insufficient (Warn only).',
+      stockOverriddenBanner: 'Stock check overridden for this sale.'
     },
     utang: {
       title: 'Customer Credit & Utang Ledger',
@@ -1186,6 +1279,10 @@ export const translations: Record<Language, Translations> = {
       saveTransaction: 'Save Transaction',
       historyTitle: "This Month's GCash History",
       invalidAmountAlert: 'Please enter a valid amount.',
+      amountMustBePositive: 'Transaction amount must be greater than ₱0.',
+      amountExceedsMax: 'Transaction amount cannot exceed ₱100,000.00 (GCash wallet/agent limit).',
+      feeExceedsAmount: 'Service fee cannot exceed transaction amount.',
+      feeCannotBeNegative: 'Service fee cannot be negative.',
       duplicateRefWarning: 'This reference number has already been used. Duplicate entries are not allowed.',
       phoneInvalid: 'Must be a valid 11-digit Philippine mobile number (09XXXXXXXXX).'
     },
@@ -1289,9 +1386,12 @@ export const translations: Record<Language, Translations> = {
       barcodeLabel: 'Barcode (Optional):',
       costLabel: 'Cost Price (₱):*',
       costCannotBeNegative: 'Cost price cannot be negative.',
+      costExceedsMax: 'Cost price cannot exceed ₱999,999.99.',
       priceLabel: 'Retail Price (SRP ₱):*',
       priceMustBePositive: 'Retail price must be greater than ₱0.',
+      priceExceedsMax: 'Retail price cannot exceed ₱999,999.99.',
       stockLabel: 'Current Stock Qty:*',
+      stockExceedsMax: 'Stock quantity cannot exceed 999,999.',
       profitPreview: 'Estimated Profit per unit:',
       marginPreview: 'Profit Margin:',
       noProductsFound: 'No products found matching the criteria.',
@@ -1321,9 +1421,12 @@ export const translations: Record<Language, Translations> = {
       categoryLabel: 'Category:*',
       costLabel: 'Cost Price (₱):*',
       costCannotBeNegative: 'Cost price cannot be negative.',
+      costExceedsMax: 'Cost price cannot exceed ₱999,999.99.',
       priceLabel: 'Retail Price (SRP ₱):*',
       priceMustBePositive: 'Retail price must be greater than ₱0.',
+      priceExceedsMax: 'Retail price cannot exceed ₱999,999.99.',
       stockLabel: 'Initial Stock:*',
+      stockExceedsMax: 'Stock quantity cannot exceed 999,999.',
       saveAndAddToCart: 'Save & Add to Cart',
       saveProduct: 'Save Product',
       addedToCart: 'Added to Cart!'
@@ -1367,6 +1470,26 @@ export const translations: Record<Language, Translations> = {
       dlqClearBtn: 'Clear DLQ',
       dlqDesc: 'Items that failed sync multiple times are isolated here to prevent blocking the queue.',
       retryBtn: 'Retry',
+      dlqDismissBtn: 'Dismiss',
+      dlqEditBtn: 'Edit / Fix',
+      dlqEditDialogTitle: 'Fix Product (Dead Letter Queue)',
+      dlqEditDialogDesc: 'This product failed to sync due to invalid values or data. Please review, correct the details, and confirm before retrying sync.',
+      dlqSaveAndRetryBtn: 'Save & Retry',
+      dlqRequiresCorrectionAlert: 'Product values are out of bounds. Please correct the price or cost before retrying.',
+      dlqRetrySuccess: 'Product corrected and re-queued for sync!',
+      dlqDismissConfirmTitle: 'Confirm Dismiss Unsynced Data',
+      dlqDismissConfirmDesc: 'This will permanently remove this item from the active queue and it will not be synced to the cloud database:',
+      dlqDismissConfirmWarning: 'WARNING: This unsynced record will be permanently dismissed from the active queue and will not be pushed to the server.',
+      dlqDismissConfirmBtn: 'Permanently Dismiss',
+      dlqClearConfirmTitle: 'Clear All Items in Dead Letter Queue?',
+      dlqClearConfirmDesc: 'All failed sync items in the queue will be permanently removed and will not be pushed to the cloud database. Are you sure?',
+      dlqClearConfirmBtn: 'Clear All Items',
+      stockPolicySection: 'POS Stock Validation Policy',
+      stockPolicyDesc: 'Choose whether sales are blocked when system stock is 0 or insufficient.',
+      stockPolicyWarn: 'Warn Only (Recommended for Offline)',
+      stockPolicyWarnDesc: 'Warn when stock is low or zero but allow sales if physical items exist.',
+      stockPolicyBlock: 'Strict Block',
+      stockPolicyBlockDesc: 'Block checkout when stock is 0 or insufficient unless overridden by store owner.',
       dataManagement: 'Data Management',
       pullSuccessAlert: 'Products successfully downloaded from cloud database.',
       printerSection: 'Receipt & Printer Device',

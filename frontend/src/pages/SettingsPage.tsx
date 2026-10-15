@@ -8,7 +8,13 @@ import {
   Button,
   Card,
   Badge,
-  Divider
+  Divider,
+  Dialog,
+  DialogSurface,
+  DialogTitle,
+  DialogBody,
+  DialogContent,
+  DialogActions
 } from '@fluentui/react-components';
 import {
   ArrowSyncRegular,
@@ -28,12 +34,16 @@ import {
   EditRegular,
   ShieldCheckmarkRegular,
   InfoRegular,
-  DocumentCheckmarkRegular
+  DocumentCheckmarkRegular,
+  BoxRegular
 } from '@fluentui/react-icons';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../db/db';
+import { db, type DeadLetterRecord } from '../db/db';
+import { FixDlqProductDialog } from '../components/FixDlqProductDialog';
+import { ConfirmDismissDlqDialog } from '../components/ConfirmDismissDlqDialog';
 import { useThemeStore } from '../state/themeStore';
 import { usePrinterStore } from '../state/printerStore';
+import { usePosSettingsStore } from '../state/posSettingsStore';
 import { DEFAULT_GCASH_FEE_TIERS, GCASH_FEE_BRACKETS, useGCashFeeStore } from '../state/gcashFeeStore';
 import { usePwaStore } from '../state/pwaStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
@@ -45,6 +55,7 @@ import {
   processSyncQueue,
   updateQueueCounts,
   retryDeadLetterItem,
+  deleteDeadLetterItem,
   clearDeadLetterQueue,
   pullCatalogFromServer
 } from '../sync/syncEngine';
@@ -87,6 +98,7 @@ export const SettingsPage: React.FC = () => {
   const { t, language, setLanguage } = useTranslation();
   const { themeMode, setThemeMode } = useThemeStore();
   const { paperWidth, setPaperWidth } = usePrinterStore();
+  const { stockValidationPolicy, setStockValidationPolicy } = usePosSettingsStore();
   const gcashFees = useGCashFeeStore((state) => state.feesByTenant[tenantId] || DEFAULT_GCASH_FEE_TIERS);
   const setGcashFee = useGCashFeeStore((state) => state.setFeeForTenant);
   const [gcashFeeDrafts, setGcashFeeDrafts] = useState<Record<string, string>>({});
@@ -118,6 +130,9 @@ export const SettingsPage: React.FC = () => {
   const pendingItems = pendingItemsResult || [];
   const deadLetterItems = deadLetterItemsResult || [];
   const displayedPendingCount = Math.max(pendingCount, pendingItems.length);
+  const [selectedDlqProduct, setSelectedDlqProduct] = useState<DeadLetterRecord | null>(null);
+  const [itemToDismiss, setItemToDismiss] = useState<DeadLetterRecord | null>(null);
+  const [isClearDlqConfirmOpen, setIsClearDlqConfirmOpen] = useState(false);
 
   useEffect(() => {
     updateQueueCounts().catch(console.error);
@@ -263,6 +278,40 @@ export const SettingsPage: React.FC = () => {
           >
             {t.settings.themeSystem}
           </Button>
+        </div>
+      </Card>
+
+      {/* POS Stock Policy */}
+      <Card className={styles.card}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+          <BoxRegular fontSize={20} />
+          <Text weight="bold" size={400}>{t.settings.stockPolicySection}</Text>
+        </div>
+        <Text size={200} style={{ color: tokens.colorNeutralForeground3, marginBottom: '12px', display: 'block' }}>
+          {t.settings.stockPolicyDesc}
+        </Text>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            <Button
+              appearance={stockValidationPolicy === 'warn' ? 'primary' : 'secondary'}
+              onClick={() => setStockValidationPolicy('warn')}
+              data-testid="stock-policy-warn-btn"
+            >
+              {t.settings.stockPolicyWarn}
+            </Button>
+            <Button
+              appearance={stockValidationPolicy === 'block' ? 'primary' : 'secondary'}
+              onClick={() => setStockValidationPolicy('block')}
+              data-testid="stock-policy-block-btn"
+            >
+              {t.settings.stockPolicyBlock}
+            </Button>
+          </div>
+          <Text size={200} style={{ color: tokens.colorNeutralForeground2, fontStyle: 'italic' }}>
+            {stockValidationPolicy === 'warn'
+              ? t.settings.stockPolicyWarnDesc
+              : t.settings.stockPolicyBlockDesc}
+          </Text>
         </div>
       </Card>
 
@@ -658,7 +707,7 @@ export const SettingsPage: React.FC = () => {
               size="small"
               appearance="subtle"
               icon={<DeleteRegular />}
-              onClick={() => clearDeadLetterQueue()}
+              onClick={() => setIsClearDlqConfirmOpen(true)}
             >
               {t.settings.dlqClearBtn}
             </Button>
@@ -673,14 +722,42 @@ export const SettingsPage: React.FC = () => {
               <div key={item.id} className={styles.queueItem}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <strong>{item.entity} ({item.action})</strong>
-                  <Button
-                    size="small"
-                    appearance="subtle"
-                    icon={<ArrowClockwiseRegular />}
-                    onClick={() => retryDeadLetterItem(item.id)}
-                  >
-                    {t.settings.retryBtn}
-                  </Button>
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    {item.entity === 'Product' && item.action !== 'Delete' && (
+                      <Button
+                        size="small"
+                        appearance="subtle"
+                        icon={<EditRegular />}
+                        onClick={() => setSelectedDlqProduct(item)}
+                        title={t.settings.dlqEditBtn}
+                      >
+                        {t.settings.dlqEditBtn}
+                      </Button>
+                    )}
+                    <Button
+                      size="small"
+                      appearance="subtle"
+                      icon={<ArrowClockwiseRegular />}
+                      onClick={async () => {
+                        const res = await retryDeadLetterItem(item.id);
+                        if (res && !res.success && res.requiresEdit && item.entity === 'Product') {
+                          setSelectedDlqProduct(item);
+                        }
+                      }}
+                      title={t.settings.retryBtn}
+                    >
+                      {t.settings.retryBtn}
+                    </Button>
+                    <Button
+                      size="small"
+                      appearance="subtle"
+                      icon={<DeleteRegular style={{ color: tokens.colorPaletteRedForeground1 }} />}
+                      onClick={() => setItemToDismiss(item)}
+                      title={t.settings.dlqDismissBtn}
+                    >
+                      {t.settings.dlqDismissBtn}
+                    </Button>
+                  </div>
                 </div>
                 <div style={{ color: tokens.colorPaletteRedForeground1, fontSize: '11px', marginTop: '2px' }}>
                   {item.errorMessage}
@@ -760,6 +837,65 @@ export const SettingsPage: React.FC = () => {
           </Button>
         </div>
       </Card>
+
+      <FixDlqProductDialog
+        isOpen={!!selectedDlqProduct}
+        item={selectedDlqProduct}
+        onClose={() => setSelectedDlqProduct(null)}
+      />
+
+      <ConfirmDismissDlqDialog
+        isOpen={!!itemToDismiss}
+        item={itemToDismiss}
+        onClose={() => setItemToDismiss(null)}
+        onConfirm={async () => {
+          if (itemToDismiss) {
+            await deleteDeadLetterItem(itemToDismiss.id);
+          }
+        }}
+      />
+
+      <Dialog
+        open={isClearDlqConfirmOpen}
+        onOpenChange={(_, data) => !data.open && setIsClearDlqConfirmOpen(false)}
+      >
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>{t.settings.dlqClearConfirmTitle}</DialogTitle>
+            <DialogContent>
+              <Text size={300}>{t.settings.dlqClearConfirmDesc}</Text>
+              <div style={{ marginTop: '12px' }}>
+                <Badge color="danger">
+                  {deadLetterItems.length} {language === 'tl' ? 'mga bagsak na transaksyon' : 'failed transactions'}
+                </Badge>
+              </div>
+            </DialogContent>
+            <DialogActions>
+              <Button
+                appearance="secondary"
+                onClick={() => setIsClearDlqConfirmOpen(false)}
+                data-testid="cancel-clear-dlq-btn"
+              >
+                {t.common.cancel}
+              </Button>
+              <Button
+                appearance="primary"
+                style={{
+                  backgroundColor: tokens.colorPaletteRedBackground3,
+                  color: tokens.colorPaletteRedForegroundInverted
+                }}
+                onClick={async () => {
+                  await clearDeadLetterQueue();
+                  setIsClearDlqConfirmOpen(false);
+                }}
+                data-testid="confirm-clear-dlq-btn"
+              >
+                {t.settings.dlqClearConfirmBtn}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
     </div>
   );
 };

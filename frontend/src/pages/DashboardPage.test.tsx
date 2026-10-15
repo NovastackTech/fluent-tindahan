@@ -86,10 +86,10 @@ describe('DashboardPage', () => {
     });
   });
 
-  it('shows an explicit zero low-stock count instead of total product count', async () => {
+  it('shows an explicit zero low-stock count when all products have healthy stock (> 5)', async () => {
     await db.products.bulkAdd([
-      { id: 'p-out', tenantId: 't-1', name: 'Out', price: 10, cost: 5, stockQty: 0, updatedAt: new Date().toISOString() },
-      { id: 'p-stocked', tenantId: 't-1', name: 'Stocked', price: 10, cost: 5, stockQty: 6, updatedAt: new Date().toISOString() }
+      { id: 'p-stocked-1', tenantId: 't-1', name: 'Stocked 1', price: 10, cost: 5, stockQty: 6, updatedAt: new Date().toISOString() },
+      { id: 'p-stocked-2', tenantId: 't-1', name: 'Stocked 2', price: 10, cost: 5, stockQty: 10, updatedAt: new Date().toISOString() }
     ]);
 
     renderDashboard();
@@ -100,7 +100,7 @@ describe('DashboardPage', () => {
     });
   });
 
-  it('counts low-stock products using the same range as Inventory (1 through 5)', async () => {
+  it('counts low-stock products including zero stock (all stockQty <= 5)', async () => {
     await db.products.bulkAdd([
       { id: 'p-out', tenantId: 't-1', name: 'Out', price: 10, cost: 5, stockQty: 0, updatedAt: new Date().toISOString() },
       { id: 'p-low-one', tenantId: 't-1', name: 'Low One', price: 10, cost: 5, stockQty: 1, updatedAt: new Date().toISOString() },
@@ -111,7 +111,26 @@ describe('DashboardPage', () => {
     renderDashboard();
 
     await waitFor(() => {
-      expect(screen.getByText(/2 Low Stock Alerts \(≤ 5\)|2 Paubos na Paninda \(≤ 5\)/i)).toBeInTheDocument();
+      expect(screen.getByText(/3 Low Stock Alerts \(≤ 5\)|3 Paubos na Paninda \(≤ 5\)/i)).toBeInTheDocument();
+    });
+  });
+
+  it('matches card count with subtitle when having one product with stock <= 5', async () => {
+    await db.products.add({
+      id: 'p-edge-zero',
+      tenantId: 't-1',
+      name: 'Tubig na Mineral',
+      price: 15,
+      cost: 10,
+      stockQty: 0,
+      updatedAt: new Date().toISOString()
+    });
+
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByText(/1 Low Stock Alerts \(≤ 5\)|1 Paubos na Paninda \(≤ 5\)/i)).toBeInTheDocument();
+      expect(screen.getByText(/1 (total products|kabuuang paninda)/i)).toBeInTheDocument();
     });
   });
 

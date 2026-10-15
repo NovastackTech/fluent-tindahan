@@ -27,6 +27,7 @@ import {
   DeleteRegular,
   ShoppingBagRegular,
   CheckmarkCircleRegular,
+  WarningRegular,
   MoneyRegular,
   PhoneRegular,
   NotebookRegular,
@@ -50,6 +51,8 @@ import { enqueueSync } from '../sync/syncEngine';
 import { ReceiptModal, type ReceiptData } from '../components/ReceiptModal';
 import { BarcodeScannerModal } from '../components/BarcodeScannerModal';
 import { QuickRegisterProductDialog } from '../components/QuickRegisterProductDialog';
+import { ConfirmStockOverrideDialog, type InsufficientStockItem } from '../components/ConfirmStockOverrideDialog';
+import { usePosSettingsStore } from '../state/posSettingsStore';
 import { playScanBeep } from '../utils/sound';
 import { useTranslation } from '../state/languageStore';
 
@@ -294,7 +297,12 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [unrecognizedBarcode, setUnrecognizedBarcode] = useState<string | null>(null);
   const [isQuickRegOpen, setIsQuickRegOpen] = useState(false);
-  const [scanToast, setScanToast] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<{ message: string; type: 'success' | 'warning' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'warning' = 'success', duration = 2500) => {
+    setToastMessage({ message, type });
+    setTimeout(() => setToastMessage(null), duration);
+  };
 
   // Quick add debtor states (for Utang checkout)
   const [isAddDebtorOpen, setIsAddDebtorOpen] = useState(false);
@@ -302,6 +310,12 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
   const [newDebtorPhone, setNewDebtorPhone] = useState('');
   const [newDebtorError, setNewDebtorError] = useState<string | null>(null);
   const [newDebtorPhoneError, setNewDebtorPhoneError] = useState<string | null>(null);
+
+  // POS Stock Validation Policy & Override
+  const { stockValidationPolicy } = usePosSettingsStore();
+  const [isStockOverridden, setIsStockOverridden] = useState(false);
+  const [isStockOverrideDialogOpen, setIsStockOverrideDialogOpen] = useState(false);
+  const [stockOverrideReturnTarget, setStockOverrideReturnTarget] = useState<'cart' | 'checkout'>('cart');
 
   // Live queries from Dexie
   const productResults = useLiveQuery(
@@ -341,9 +355,66 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
   const totalAmount = getTotalAmount();
   const totalCount = getTotalCount();
 
+  const handleAddProductToCart = (product: ProductRecord) => {
+    const stockLimit = Number(product.stockQty) || 0;
+    const allowOversell = stockValidationPolicy === 'warn' || isStockOverridden;
+
+    if (!allowOversell) {
+      if (stockLimit <= 0) {
+        showToast(
+          language === 'tl'
+            ? `Walang stock ang ${product.name}.`
+            : `${product.name} is out of stock.`,
+          'warning'
+        );
+        return;
+      }
+
+      // Inspect the immediate store state to prevent rapid-click race conditions
+      const latestItems = useCartStore.getState().items;
+      const existingInCart = latestItems.find((item) => item.productId === product.id);
+      const currentQty = existingInCart ? existingInCart.qty : 0;
+
+      if (currentQty >= stockLimit) {
+        showToast(
+          language === 'tl'
+            ? `Hanggang ${stockLimit} lang ang available na stock para sa ${product.name}.`
+            : `Only ${stockLimit} in stock for ${product.name}.`,
+          'warning'
+        );
+        return;
+      }
+    } else if (stockLimit <= 0) {
+      showToast(
+        language === 'tl'
+          ? `Pansin: Walang nakatalang stock ang ${product.name} sa system (Babala lamang).`
+          : `Notice: ${product.name} has 0 recorded stock in system (Warn only).`,
+        'warning'
+      );
+    }
+
+    const res = addItem(
+      { id: product.id, name: product.name, price: product.price, maxStock: allowOversell ? undefined : stockLimit },
+      allowOversell ? null : stockLimit
+    );
+
+    if (res?.capped && !res?.added) {
+      showToast(
+        language === 'tl'
+          ? `Hanggang ${stockLimit} lang ang available na stock para sa ${product.name}.`
+          : `Only ${stockLimit} in stock for ${product.name}.`,
+        'warning'
+      );
+    } else {
+      playScanBeep();
+    }
+  };
+
   const handleBarcodeProcess = (rawQuery: string) => {
     const trimmed = rawQuery.trim();
     if (!trimmed) return;
+
+    const allowOversell = stockValidationPolicy === 'warn' || isStockOverridden;
 
     // 1. Exact Barcode Match
     const exactBarcodeMatch = products.find(
@@ -351,10 +422,39 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
     );
 
     if (exactBarcodeMatch) {
-      addItem({ id: exactBarcodeMatch.id, name: exactBarcodeMatch.name, price: exactBarcodeMatch.price });
+      if (!allowOversell && exactBarcodeMatch.stockQty <= 0) {
+        showToast(
+          language === 'tl'
+            ? `Walang stock ang ${exactBarcodeMatch.name}.`
+            : `${exactBarcodeMatch.name} is out of stock.`,
+          'warning'
+        );
+        setSearchQuery('');
+        return;
+      }
+      if (!allowOversell) {
+        const inCart = cartItems.find((i) => i.productId === exactBarcodeMatch.id)?.qty || 0;
+        if (inCart >= exactBarcodeMatch.stockQty) {
+          showToast(
+            language === 'tl'
+              ? `Hanggang ${exactBarcodeMatch.stockQty} lang ang available na stock para sa ${exactBarcodeMatch.name}.`
+              : `Only ${exactBarcodeMatch.stockQty} in stock for ${exactBarcodeMatch.name}.`,
+            'warning'
+          );
+          setSearchQuery('');
+          return;
+        }
+      } else if (exactBarcodeMatch.stockQty <= 0) {
+        showToast(
+          language === 'tl'
+            ? `Pansin: Walang nakatalang stock ang ${exactBarcodeMatch.name} sa system (Babala lamang).`
+            : `Notice: ${exactBarcodeMatch.name} has 0 recorded stock in system (Warn only).`,
+          'warning'
+        );
+      }
+      addItem({ id: exactBarcodeMatch.id, name: exactBarcodeMatch.name, price: exactBarcodeMatch.price, maxStock: allowOversell ? undefined : exactBarcodeMatch.stockQty }, allowOversell ? null : exactBarcodeMatch.stockQty);
       playScanBeep();
-      setScanToast(`${exactBarcodeMatch.name} - ${t.barcode.addedToCart}`);
-      setTimeout(() => setScanToast(null), 2500);
+      showToast(`${exactBarcodeMatch.name} - ${t.barcode.addedToCart}`, 'success');
       setSearchQuery('');
       return;
     }
@@ -365,10 +465,39 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
     );
 
     if (exactNameMatch) {
-      addItem({ id: exactNameMatch.id, name: exactNameMatch.name, price: exactNameMatch.price });
+      if (!allowOversell && exactNameMatch.stockQty <= 0) {
+        showToast(
+          language === 'tl'
+            ? `Walang stock ang ${exactNameMatch.name}.`
+            : `${exactNameMatch.name} is out of stock.`,
+          'warning'
+        );
+        setSearchQuery('');
+        return;
+      }
+      if (!allowOversell) {
+        const inCart = cartItems.find((i) => i.productId === exactNameMatch.id)?.qty || 0;
+        if (inCart >= exactNameMatch.stockQty) {
+          showToast(
+            language === 'tl'
+              ? `Hanggang ${exactNameMatch.stockQty} lang ang available na stock para sa ${exactNameMatch.name}.`
+              : `Only ${exactNameMatch.stockQty} in stock for ${exactNameMatch.name}.`,
+            'warning'
+          );
+          setSearchQuery('');
+          return;
+        }
+      } else if (exactNameMatch.stockQty <= 0) {
+        showToast(
+          language === 'tl'
+            ? `Pansin: Walang nakatalang stock ang ${exactNameMatch.name} sa system (Babala lamang).`
+            : `Notice: ${exactNameMatch.name} has 0 recorded stock in system (Warn only).`,
+          'warning'
+        );
+      }
+      addItem({ id: exactNameMatch.id, name: exactNameMatch.name, price: exactNameMatch.price, maxStock: allowOversell ? undefined : exactNameMatch.stockQty }, allowOversell ? null : exactNameMatch.stockQty);
       playScanBeep();
-      setScanToast(`${exactNameMatch.name} - ${t.barcode.addedToCart}`);
-      setTimeout(() => setScanToast(null), 2500);
+      showToast(`${exactNameMatch.name} - ${t.barcode.addedToCart}`, 'success');
       setSearchQuery('');
       return;
     }
@@ -380,10 +509,39 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
 
     if (partialMatches.length === 1) {
       const match = partialMatches[0];
-      addItem({ id: match.id, name: match.name, price: match.price });
+      if (!allowOversell && match.stockQty <= 0) {
+        showToast(
+          language === 'tl'
+            ? `Walang stock ang ${match.name}.`
+            : `${match.name} is out of stock.`,
+          'warning'
+        );
+        setSearchQuery('');
+        return;
+      }
+      if (!allowOversell) {
+        const inCart = cartItems.find((i) => i.productId === match.id)?.qty || 0;
+        if (inCart >= match.stockQty) {
+          showToast(
+            language === 'tl'
+              ? `Hanggang ${match.stockQty} lang ang available na stock para sa ${match.name}.`
+              : `Only ${match.stockQty} in stock for ${match.name}.`,
+            'warning'
+          );
+          setSearchQuery('');
+          return;
+        }
+      } else if (match.stockQty <= 0) {
+        showToast(
+          language === 'tl'
+            ? `Pansin: Walang nakatalang stock ang ${match.name} sa system (Babala lamang).`
+            : `Notice: ${match.name} has 0 recorded stock in system (Warn only).`,
+          'warning'
+        );
+      }
+      addItem({ id: match.id, name: match.name, price: match.price, maxStock: allowOversell ? undefined : match.stockQty }, allowOversell ? null : match.stockQty);
       playScanBeep();
-      setScanToast(`${match.name} - ${t.barcode.addedToCart}`);
-      setTimeout(() => setScanToast(null), 2500);
+      showToast(`${match.name} - ${t.barcode.addedToCart}`, 'success');
       setSearchQuery('');
       return;
     }
@@ -401,10 +559,18 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
   };
 
   const handleProductRegistered = (newProduct: ProductRecord) => {
-    addItem({ id: newProduct.id, name: newProduct.name, price: newProduct.price });
+    if (newProduct.stockQty <= 0) {
+      showToast(
+        language === 'tl'
+          ? `Narehistro pero walang stock ang ${newProduct.name}.`
+          : `Registered but out of stock: ${newProduct.name}.`,
+        'warning'
+      );
+      return;
+    }
+    addItem({ id: newProduct.id, name: newProduct.name, price: newProduct.price, maxStock: newProduct.stockQty }, newProduct.stockQty);
     playScanBeep();
-    setScanToast(`${newProduct.name} - ${t.barcode.registeredSuccess}`);
-    setTimeout(() => setScanToast(null), 3000);
+    showToast(`${newProduct.name} - ${t.barcode.registeredSuccess}`, 'success');
   };
 
   const handleQuickBillClick = (billAmount: number) => {
@@ -453,6 +619,40 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
     return { isTenderValid: true, tenderError: '' };
   }, [paymentMethod, cashReceived, splitCashAmount, splitGCashAmount, totalAmount, language]);
 
+  // Cart stock validation against current products
+  const { isStockValid, stockError, insufficientStockItems } = useMemo(() => {
+    const insufficient: InsufficientStockItem[] = [];
+    let firstError = '';
+    for (const item of cartItems) {
+      const prod = products.find((p) => p.id === item.productId);
+      const available = prod ? (Number(prod.stockQty) || 0) : (item.maxStock ?? 0);
+      if (prod || item.maxStock !== undefined) {
+        if (available <= 0) {
+          insufficient.push({ name: item.name, qty: item.qty, available: Math.max(0, available) });
+          if (!firstError) {
+            firstError = language === 'tl'
+              ? `Walang stock ang "${item.name}". (Available: 0)`
+              : `"${item.name}" is out of stock. (Available: 0)`;
+          }
+        } else if (item.qty > available) {
+          insufficient.push({ name: item.name, qty: item.qty, available });
+          if (!firstError) {
+            firstError = language === 'tl'
+              ? `Kulang ang stock para sa "${item.name}". Available: ${available}, nasa cart: ${item.qty}.`
+              : `Insufficient stock for "${item.name}". Available: ${available}, in cart: ${item.qty}.`;
+          }
+        }
+      }
+    }
+    return {
+      isStockValid: insufficient.length === 0,
+      stockError: firstError,
+      insufficientStockItems: insufficient
+    };
+  }, [cartItems, products, language]);
+
+  const isStockAllowed = stockValidationPolicy === 'warn' || isStockOverridden || isStockValid;
+
   // Quick add new debtor during checkout
   const handleSaveNewDebtor = async () => {
     setNewDebtorError(null);
@@ -496,9 +696,31 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
     if (cartItems.length === 0) return;
     if (!isTenderValid) return;
 
-    if (paymentMethod === 'Utang' && !customerId) {
-      alert(t.pos.customerSelectRequired);
+    if (!isStockAllowed) {
+      showToast(stockError || (language === 'tl' ? 'Hindi maaaring ituloy ang benta dahil kulang ang stock.' : 'Sale cannot proceed due to insufficient stock.'), 'warning');
       return;
+    }
+
+    if (paymentMethod === 'Utang' && !customerId) {
+      showToast(t.pos.customerSelectRequired, 'warning');
+      return;
+    }
+
+    // Direct pre-flight check against IndexedDB if stock validation is blocking and not overridden
+    if (!isStockAllowed) {
+      for (const item of cartItems) {
+        const prod = await db.products.get(item.productId);
+        const available = Number(prod?.stockQty) || 0;
+        if (!prod || prod.stockQty === undefined || item.qty > available) {
+          showToast(
+            language === 'tl'
+              ? `Kulang ang stock para sa "${item.name}". Available: ${available}, nasa cart: ${item.qty}.`
+              : `Insufficient stock for "${item.name}". Available: ${available}, in cart: ${item.qty}.`,
+            'warning'
+          );
+          return;
+        }
+      }
     }
 
     usePwaStore.getState().setIsSaleInProgress(true);
@@ -540,15 +762,31 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
 
       // Save directly to Dexie
       await db.transaction('rw', db.sales, db.saleItems, db.utangLedger, db.customers, db.products, async () => {
+        // Atomic stock validation inside transaction if blocking and not overridden
+        if (!isStockAllowed) {
+          for (const item of cartItems) {
+            const prod = await db.products.get(item.productId);
+            const available = prod?.stockQty ?? 0;
+            if (!prod || prod.stockQty === undefined || item.qty > available) {
+              throw new Error(
+                language === 'tl'
+                  ? `Kulang ang stock para sa "${item.name}". Available: ${available}, kailangan: ${item.qty}.`
+                  : `Insufficient stock for "${item.name}". Available: ${available}, requested: ${item.qty}.`
+              );
+            }
+          }
+        }
+
         await db.sales.add(saleRecord);
         await db.saleItems.bulkAdd(saleItemRecords);
 
-        // Deduct stock in Dexie
+        // Deduct stock in Dexie (clamped to 0 to prevent negative stock in offline-first mode)
         for (const item of cartItems) {
           const prod = await db.products.get(item.productId);
           if (prod && prod.stockQty !== undefined) {
+            const nextStock = Math.max(0, prod.stockQty - item.qty);
             await db.products.update(item.productId, {
-              stockQty: Math.max(0, prod.stockQty - item.qty)
+              stockQty: nextStock
             });
           }
         }
@@ -630,6 +868,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
       });
 
       clearCart();
+      setIsStockOverridden(false);
       setIsCheckoutOpen(false);
       setIsCartOpen(false);
       setIsAddDebtorOpen(false);
@@ -637,6 +876,8 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
       setNewDebtorPhone('');
       setNewDebtorError(null);
       setNewDebtorPhoneError(null);
+    } catch (err: any) {
+      alert(err?.message || (language === 'tl' ? 'Nagkaroon ng aberya sa pagtatala ng benta.' : 'Error completing sale.'));
     } finally {
       usePwaStore.getState().setIsSaleInProgress(false);
     }
@@ -745,35 +986,66 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
               {t.pos.noProductsFound}
             </Text>
           )
-        ) : filteredProducts.map((p) => (
-          <Card
-            key={p.id}
-            className={styles.productCard}
-            onClick={() => addItem({ id: p.id, name: p.name, price: p.price })}
-          >
-            <div>
-              <Text weight="semibold" size={300} style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                {p.name}
-              </Text>
-              <Text size={100} style={{ color: tokens.colorNeutralForeground3, display: 'block', marginTop: '2px' }}>
-                {t.pos.stockLabel}: {p.stockQty} {p.stockQty <= 5 && <Badge size="extra-small" color="danger">{t.pos.lowStockBadge}</Badge>}
-              </Text>
-            </div>
+        ) : filteredProducts.map((p) => {
+          const itemInCart = cartItems.find((i) => i.productId === p.id);
+          const currentQty = itemInCart?.qty ?? 0;
+          const currentStock = Number(p.stockQty) || 0;
+          const isAtMaxStock = currentStock > 0 && currentQty >= currentStock;
+          const isOutOfStock = currentStock <= 0;
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
-              <span className={styles.productPrice}>{formatPeso(p.price)}</span>
-              <Button
-                size="small"
-                appearance="subtle"
-                icon={<AddRegular />}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  addItem({ id: p.id, name: p.name, price: p.price });
-                }}
-              />
-            </div>
-          </Card>
-        ))}
+          return (
+            <Card
+              key={p.id}
+              className={styles.productCard}
+              onClick={() => handleAddProductToCart(p)}
+              style={
+                isOutOfStock
+                  ? { opacity: 0.65 }
+                  : isAtMaxStock
+                  ? { opacity: 0.9, border: `1px solid ${tokens.colorPaletteYellowBorder2}` }
+                  : undefined
+              }
+            >
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '4px' }}>
+                  <Text weight="semibold" size={300} style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', flex: 1 }}>
+                    {p.name}
+                  </Text>
+                  {currentQty > 0 && (
+                    <Badge size="small" appearance="filled" color={isAtMaxStock ? 'warning' : 'brand'} aria-label={`${currentQty} in cart`}>
+                      {currentQty}×
+                    </Badge>
+                  )}
+                </div>
+                <Text size={100} style={{ color: tokens.colorNeutralForeground3, display: 'block', marginTop: '2px' }}>
+                  {t.pos.stockLabel}: {p.stockQty}{' '}
+                  {isOutOfStock ? (
+                    <Badge size="extra-small" color="danger">{t.pos.outOfStock}</Badge>
+                  ) : isAtMaxStock ? (
+                    <Badge size="extra-small" color="warning">{language === 'tl' ? 'Nasa limit na' : 'At max stock'}</Badge>
+                  ) : p.stockQty <= 5 ? (
+                    <Badge size="extra-small" color="warning">{t.pos.lowStockBadge}</Badge>
+                  ) : null}
+                </Text>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
+                <span className={styles.productPrice}>{formatPeso(p.price)}</span>
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  icon={<AddRegular />}
+                  disabled={isOutOfStock || isAtMaxStock}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleAddProductToCart(p);
+                  }}
+                  aria-label={`${t.pos.itemAdded}: ${p.name}`}
+                />
+              </div>
+            </Card>
+          );
+        })}
       </div>
 
       {/* Floating Bottom Cart Bar */}
@@ -794,6 +1066,11 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
               size="medium"
               onClick={(e) => {
                 e.stopPropagation();
+                if (!isStockAllowed) {
+                  setIsCartOpen(true);
+                  showToast(stockError, 'warning');
+                  return;
+                }
                 setIsCheckoutOpen(true);
               }}
             >
@@ -810,41 +1087,118 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
             <DialogTitle>{t.pos.itemsList} ({totalCount})</DialogTitle>
             <DialogContent>
               <div className={styles.cartList}>
-                {cartItems.map((item) => (
-                  <div key={item.productId} className={styles.cartItemRow}>
-                    <div style={{ flexGrow: 1, paddingRight: '8px' }}>
-                      <Text weight="semibold" size={300}>{item.name}</Text>
-                      <Text size={200} style={{ color: tokens.colorNeutralForeground3, display: 'block' }}>
-                        {formatPeso(item.price)} {t.pos.each}
-                      </Text>
-                    </div>
+                {cartItems.map((item) => {
+                  const prod = products.find((p) => p.id === item.productId);
+                  const availableStock = prod?.stockQty ?? item.maxStock;
+                  const allowOversell = stockValidationPolicy === 'warn' || isStockOverridden;
+                  const isAtLimit = !allowOversell && availableStock !== undefined && item.qty >= availableStock;
+                  const isExceeding = availableStock !== undefined && item.qty > availableStock;
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <Button
-                        size="small"
-                        icon={<SubtractRegular />}
-                        appearance="subtle"
-                        onClick={() => updateQty(item.productId, item.qty - 1)}
-                      />
-                      <Text weight="bold" size={300} style={{ minWidth: '24px', textAlign: 'center' }}>
-                        {item.qty}
-                      </Text>
-                      <Button
-                        size="small"
-                        icon={<AddRegular />}
-                        appearance="subtle"
-                        onClick={() => updateQty(item.productId, item.qty + 1)}
-                      />
-                      <Button
-                        size="small"
-                        icon={<DeleteRegular />}
-                        appearance="subtle"
-                        onClick={() => removeItem(item.productId)}
-                      />
+                  return (
+                    <div key={item.productId} className={styles.cartItemRow}>
+                      <div style={{ flexGrow: 1, paddingRight: '8px' }}>
+                        <Text weight="semibold" size={300}>{item.name}</Text>
+                        <Text size={200} style={{ color: tokens.colorNeutralForeground3, display: 'block' }}>
+                          {formatPeso(item.price)} {t.pos.each}
+                        </Text>
+                        {isExceeding ? (
+                          <Text size={100} style={{ color: tokens.colorPaletteRedForeground1, display: 'block', fontWeight: 'bold' }}>
+                            ⚠️ {language === 'tl' ? `Kulang ang stock! Available: ${availableStock}` : `Insufficient stock! Available: ${availableStock}`}
+                          </Text>
+                        ) : availableStock !== undefined ? (
+                          <Text size={100} style={{ color: tokens.colorNeutralForeground3, display: 'block' }}>
+                            {t.pos.stockLabel}: {availableStock}
+                          </Text>
+                        ) : null}
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Button
+                          size="small"
+                          icon={<SubtractRegular />}
+                          appearance="subtle"
+                          onClick={() => updateQty(item.productId, item.qty - 1, allowOversell ? null : availableStock)}
+                        />
+                        <Text weight="bold" size={300} style={{ minWidth: '24px', textAlign: 'center', color: isExceeding ? tokens.colorPaletteRedForeground1 : undefined }}>
+                          {item.qty}
+                        </Text>
+                        <Button
+                          size="small"
+                          icon={<AddRegular />}
+                          appearance="subtle"
+                          disabled={isAtLimit}
+                          onClick={() => {
+                            if (isAtLimit) {
+                              showToast(
+                                language === 'tl'
+                                  ? `Hanggang ${availableStock} lang ang available na stock para sa ${item.name}.`
+                                  : `Only ${availableStock} in stock for ${item.name}.`,
+                                'warning'
+                              );
+                              return;
+                            }
+                            updateQty(item.productId, item.qty + 1, allowOversell ? null : availableStock);
+                          }}
+                        />
+                        <Button
+                          size="small"
+                          icon={<DeleteRegular />}
+                          appearance="subtle"
+                          onClick={() => removeItem(item.productId)}
+                        />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
+
+              {!isStockValid && (
+                <div
+                  role="alert"
+                  style={{
+                    marginTop: '12px',
+                    padding: '8px 12px',
+                    borderRadius: tokens.borderRadiusMedium,
+                    backgroundColor: isStockAllowed
+                      ? tokens.colorPaletteYellowBackground1
+                      : tokens.colorPaletteRedBackground1,
+                    border: `1px solid ${
+                      isStockAllowed
+                        ? tokens.colorPaletteYellowBorder2
+                        : tokens.colorPaletteRedBorder2
+                    }`,
+                    color: isStockAllowed
+                      ? tokens.colorPaletteYellowForeground1
+                      : tokens.colorPaletteRedForeground1
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <WarningRegular />
+                      <Text size={200} weight="semibold">
+                        {isStockOverridden
+                          ? t.pos.stockOverriddenBanner
+                          : stockValidationPolicy === 'warn'
+                          ? t.pos.stockWarnBanner
+                          : stockError}
+                      </Text>
+                    </div>
+                    {stockValidationPolicy === 'block' && !isStockOverridden && (
+                      <Button
+                        size="small"
+                        appearance="outline"
+                        onClick={() => {
+                          setStockOverrideReturnTarget('cart');
+                          setIsCartOpen(false);
+                          setIsStockOverrideDialogOpen(true);
+                        }}
+                      >
+                        {t.pos.stockOverrideBtn}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <Divider style={{ margin: '12px 0' }} />
 
@@ -857,12 +1211,23 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
             </DialogContent>
 
             <DialogActions>
-              <Button appearance="subtle" onClick={clearCart}>
+              <Button
+                appearance="subtle"
+                onClick={() => {
+                  clearCart();
+                  setIsStockOverridden(false);
+                }}
+              >
                 {t.pos.clearCart}
               </Button>
               <Button
                 appearance="primary"
+                disabled={!isStockAllowed}
                 onClick={() => {
+                  if (!isStockAllowed) {
+                    showToast(stockError, 'warning');
+                    return;
+                  }
                   setIsCartOpen(false);
                   setIsCheckoutOpen(true);
                 }}
@@ -909,6 +1274,55 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
           <DialogBody>
             <DialogTitle>{t.pos.checkoutConfirm}</DialogTitle>
             <DialogContent>
+              {/* Insufficient Stock Warning in Checkout */}
+              {!isStockValid && (
+                <div
+                  role="alert"
+                  style={{
+                    marginBottom: '16px',
+                    padding: '12px',
+                    borderRadius: tokens.borderRadiusMedium,
+                    backgroundColor: isStockAllowed
+                      ? tokens.colorPaletteYellowBackground1
+                      : tokens.colorPaletteRedBackground1,
+                    border: `1px solid ${
+                      isStockAllowed
+                        ? tokens.colorPaletteYellowBorder2
+                        : tokens.colorPaletteRedBorder2
+                    }`,
+                    color: isStockAllowed
+                      ? tokens.colorPaletteYellowForeground1
+                      : tokens.colorPaletteRedForeground1
+                  }}
+                >
+                  <Text weight="semibold" size={300} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <WarningRegular />
+                    {isStockOverridden
+                      ? t.pos.stockOverriddenBanner
+                      : stockValidationPolicy === 'warn'
+                      ? t.pos.stockWarnBanner
+                      : t.pos.insufficientStock}
+                  </Text>
+                  <Text size={200} style={{ display: 'block', marginTop: '4px' }}>
+                    {stockError}
+                  </Text>
+                  {stockValidationPolicy === 'block' && !isStockOverridden && (
+                    <Button
+                      size="small"
+                      appearance="primary"
+                      style={{ marginTop: '8px' }}
+                      onClick={() => {
+                        setStockOverrideReturnTarget('checkout');
+                        setIsCheckoutOpen(false);
+                        setIsStockOverrideDialogOpen(true);
+                      }}
+                    >
+                      {t.pos.stockOverrideBtn}
+                    </Button>
+                  )}
+                </div>
+              )}
+
               <div style={{ textAlign: 'center', margin: '8px 0 16px' }}>
                 <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>{t.pos.totalDue}</Text>
                 <div style={{ fontSize: '32px', fontWeight: 'bold', color: tokens.colorBrandForeground1 }}>
@@ -1207,7 +1621,12 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
               >
                 {t.common.cancel}
               </Button>
-              <Button appearance="primary" icon={<CheckmarkCircleRegular />} onClick={handleCompleteSale} disabled={!isTenderValid}>
+              <Button
+                appearance="primary"
+                icon={<CheckmarkCircleRegular />}
+                onClick={handleCompleteSale}
+                disabled={!isTenderValid || !isStockAllowed}
+              >
                 {t.pos.completeSaleBtn}
               </Button>
             </DialogActions>
@@ -1232,9 +1651,35 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
         addToCartOnSave={true}
       />
 
-      {/* Scan Feedback Toast */}
-      {scanToast && (
+      {/* Confirm Stock Override Dialog */}
+      <ConfirmStockOverrideDialog
+        isOpen={isStockOverrideDialogOpen}
+        items={insufficientStockItems}
+        onClose={() => {
+          setIsStockOverrideDialogOpen(false);
+          if (stockOverrideReturnTarget === 'checkout') {
+            setIsCheckoutOpen(true);
+          } else {
+            setIsCartOpen(true);
+          }
+        }}
+        onConfirm={() => {
+          setIsStockOverridden(true);
+          setIsStockOverrideDialogOpen(false);
+          if (stockOverrideReturnTarget === 'checkout') {
+            setIsCheckoutOpen(true);
+          } else {
+            setIsCartOpen(true);
+          }
+          showToast(t.pos.stockOverriddenBanner, 'success');
+        }}
+      />
+
+      {/* Scan & Warning Feedback Toast */}
+      {toastMessage && (
         <div
+          role="status"
+          aria-live="polite"
           style={{
             position: 'fixed',
             bottom: '90px',
@@ -1242,7 +1687,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
             transform: 'translateX(-50%)',
             zIndex: 100,
             backgroundColor: tokens.colorNeutralBackground1,
-            border: `1px solid ${tokens.colorBrandStroke1}`,
+            border: `1px solid ${toastMessage.type === 'warning' ? tokens.colorPaletteRedBorder2 : tokens.colorBrandStroke1}`,
             borderRadius: '24px',
             padding: '8px 20px',
             boxShadow: tokens.shadow16,
@@ -1250,11 +1695,16 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
             alignItems: 'center',
             gap: '8px',
             fontWeight: 600,
-            fontSize: '13px'
+            fontSize: '13px',
+            color: toastMessage.type === 'warning' ? tokens.colorPaletteRedForeground1 : undefined
           }}
         >
-          <CheckmarkCircleRegular style={{ color: tokens.colorPaletteGreenForeground1 }} />
-          <span>{scanToast}</span>
+          {toastMessage.type === 'warning' ? (
+            <WarningRegular style={{ color: tokens.colorPaletteRedForeground1 }} />
+          ) : (
+            <CheckmarkCircleRegular style={{ color: tokens.colorPaletteGreenForeground1 }} />
+          )}
+          <span>{toastMessage.message}</span>
         </div>
       )}
     </div>

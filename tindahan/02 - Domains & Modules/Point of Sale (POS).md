@@ -85,6 +85,26 @@ Upon confirming checkout:
 
 ---
 
+## 6. Offline-First Stock Validation Policy & Override
+
+In physical sari-sari stores operating offline or with multi-device operations:
+- Local recorded stock may be out of date (e.g., new supplier delivery not yet encoded, or another family member rung up sales on a separate till that has not yet synced upstream).
+- A hard checkout block when system stock is 0 or low would prevent store owners from ringing up a customer who is physically holding the goods at the counter.
+
+Fluent Tindahan provides a configurable **POS Stock Policy** (`usePosSettingsStore.ts`):
+1. **Warn Only (`'warn'`, Default)**:
+   - When recorded stock is 0 or less than the cart quantity, an informative warning badge/toast is displayed to notify the cashier.
+   - Checkout is **never blocked**. The transaction proceeds seamlessly.
+   - In local Dexie updates, inventory stock is decremented cleanly using `Math.max(0, currentStock - soldQty)` to prevent negative values in the local database.
+   - Backend sync records the exact quantities sold on the append-only `SaleItems` ledger so financial totals and sales reporting are 100% accurate.
+
+2. **Strict Block with Owner Override (`'block'`)**:
+   - For stores desiring strict inventory enforcement, items at or above recorded stock cannot be added directly, and the checkout button is disabled if cart quantities exceed stock.
+   - However, store owners can click **"Pahintulutan ang Pagbenta (Override)" / "Override & Sell Anyway"** in the cart drawer or checkout dialog.
+   - An explicit confirmation modal (`ConfirmStockOverrideDialog.tsx`) details all products with insufficient recorded stock. Upon confirmation, the sale is unblocked and rings up without friction.
+
+---
+
 ## Related Notes
 - [[Inventory & Tingi]] — Product catalog management and stock levels.
 - [[Utang Ledger]] — Managing customer credit lines.

@@ -94,4 +94,65 @@ public class ProductHandlerTests
         result[0].Name.Should().Be("Apple Juice");
         result[1].Name.Should().Be("Zebra Candy");
     }
+
+    [Theory]
+    [InlineData(1_000_000)]
+    [InlineData(-1)]
+    public async Task CreateProduct_InvalidStockQty_ThrowsArgumentException(int invalidStock)
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var handler = new CreateProductCommandHandler(context, userMock.Object);
+
+        var command = new CreateProductCommand(
+            Name: "Test Item",
+            Price: 10.00m,
+            Cost: 5.00m,
+            StockQty: invalidStock
+        );
+
+        var act = () => handler.Handle(command, CancellationToken.None);
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*Stock quantity must be between 0 and 999,999*");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-5)]
+    [InlineData(1_000_000)]
+    public async Task CreateProduct_InvalidPrice_ThrowsArgumentException(decimal invalidPrice)
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var handler = new CreateProductCommandHandler(context, userMock.Object);
+
+        var command = new CreateProductCommand(
+            Name: "Test Item",
+            Price: invalidPrice,
+            Cost: 5.00m,
+            StockQty: 10
+        );
+
+        var act = () => handler.Handle(command, CancellationToken.None);
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*Retail price must be between ₱0.01 and ₱999,999.99*");
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(1_000_000)]
+    public async Task CreateProduct_InvalidCost_ThrowsArgumentException(decimal invalidCost)
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var handler = new CreateProductCommandHandler(context, userMock.Object);
+
+        var command = new CreateProductCommand(
+            Name: "Test Item",
+            Price: 10.00m,
+            Cost: invalidCost,
+            StockQty: 10
+        );
+
+        var act = () => handler.Handle(command, CancellationToken.None);
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*Cost price must be between ₱0.00 and ₱999,999.99*");
+    }
 }
