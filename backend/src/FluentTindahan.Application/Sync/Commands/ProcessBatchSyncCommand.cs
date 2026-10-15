@@ -157,7 +157,7 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
                 {
                     SyncId = syncId,
                     Status = "Failed",
-                    Error = ex.Message
+                    Error = ExtractFriendlyErrorMessage(ex)
                 };
             }
         }
@@ -170,6 +170,41 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
             ConflictCount = results.Count(r => r.Status == "DuplicateRef" || r.Status == "Conflict"),
             Results = results
         };
+    }
+
+    private static string ExtractFriendlyErrorMessage(Exception ex)
+    {
+        if (ex is ArgumentException or InvalidOperationException)
+        {
+            return ex.Message;
+        }
+
+        if (ex is DbUpdateException dbEx)
+        {
+            var inner = dbEx.InnerException;
+            var innerMsg = inner?.Message ?? string.Empty;
+
+            if (innerMsg.Contains("22003", StringComparison.OrdinalIgnoreCase) ||
+                innerMsg.Contains("numeric field overflow", StringComparison.OrdinalIgnoreCase) ||
+                innerMsg.Contains("out of range", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Numeric value exceeds maximum database limit (₱9,999,999,999.99).";
+            }
+
+            if (innerMsg.Contains("23505", StringComparison.OrdinalIgnoreCase) ||
+                innerMsg.Contains("duplicate key", StringComparison.OrdinalIgnoreCase) ||
+                innerMsg.Contains("unique constraint", StringComparison.OrdinalIgnoreCase))
+            {
+                return "A record with this identifier or unique reference already exists.";
+            }
+
+            if (!string.IsNullOrWhiteSpace(innerMsg))
+            {
+                return innerMsg;
+            }
+        }
+
+        return ex.InnerException?.Message ?? ex.Message;
     }
 
     private class BatchSyncCounters
@@ -290,6 +325,16 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
                 }
             }
             return "Success";
+        }
+
+        const decimal MaxAllowedPrice = 999_999.99m;
+        if (raw.Price <= 0 || raw.Price > MaxAllowedPrice)
+        {
+            throw new ArgumentException($"Retail price must be between ₱0.01 and ₱{MaxAllowedPrice:N2}.");
+        }
+        if (raw.Cost < 0 || raw.Cost > MaxAllowedPrice)
+        {
+            throw new ArgumentException($"Cost price must be between ₱0.00 and ₱{MaxAllowedPrice:N2}.");
         }
 
         if (existing == null)

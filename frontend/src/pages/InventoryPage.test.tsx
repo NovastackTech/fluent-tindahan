@@ -242,6 +242,32 @@ describe('InventoryPage', () => {
     });
   });
 
+  it('blocks saving a product with SRP exceeding reasonable maximum limit 999,999.99', async () => {
+    renderInventory();
+
+    const addBtn = screen.getByRole('button', { name: /Magdagdag ng Produkto|Add Product/i });
+    fireEvent.click(addBtn);
+
+    const nameInput = screen.getByPlaceholderText(/Lucky Me Pancit Canton Kalamansi/i);
+    fireEvent.change(nameInput, { target: { value: 'QA-TEST Luxury Soda' } });
+
+    const priceInput = screen.getByRole('spinbutton', { name: /Presyo ng Tinda|Retail Price/i });
+    fireEvent.change(priceInput, { target: { value: '99999999999' } });
+
+    const saveBtn = screen.getByRole('button', { name: /I-save|Save/i });
+    fireEvent.click(saveBtn);
+
+    expect(await screen.findByText(/Hindi maaaring lumampas sa ₱999,999.99 ang presyo|cannot exceed ₱999,999.99/i)).toBeInTheDocument();
+    expect(priceInput).toHaveAttribute('aria-invalid', 'true');
+
+    // Ensure not saved to Dexie
+    const added = await db.products.where('name').equals('QA-TEST Luxury Soda').first();
+    expect(added).toBeUndefined();
+    // Ensure not queued in syncQueue
+    const syncOps = await db.syncQueue.toArray();
+    expect(syncOps.some(op => op.payload?.name === 'QA-TEST Luxury Soda')).toBe(false);
+  });
+
   it('performs quick restock on a product', async () => {
     renderInventory();
 

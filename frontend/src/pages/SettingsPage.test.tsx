@@ -183,6 +183,59 @@ describe('SettingsPage', () => {
     }, { timeout: 2000 });
   });
 
+  it('allows dismissing individual DLQ items and clearing the entire DLQ', async () => {
+    await db.deadLetterQueue.bulkAdd([
+      {
+        id: 'dlq-a',
+        entity: 'Product',
+        action: 'Insert',
+        timestamp: new Date().toISOString(),
+        payload: { id: 'p-a' },
+        retryCount: 3,
+        errorMessage: 'Invalid product price',
+        failedAt: new Date().toISOString()
+      },
+      {
+        id: 'dlq-b',
+        entity: 'Sale',
+        action: 'Insert',
+        timestamp: new Date().toISOString(),
+        payload: { id: 's-b' },
+        retryCount: 3,
+        errorMessage: 'Invalid sale amount',
+        failedAt: new Date().toISOString()
+      }
+    ]);
+    useSyncStore.setState({ deadLetterCount: 2 });
+
+    renderSettings();
+
+    await waitFor(() => {
+      expect(screen.getByText(/Invalid product price/i)).toBeInTheDocument();
+      expect(screen.getByText(/Invalid sale amount/i)).toBeInTheDocument();
+    });
+
+    // Dismiss first item
+    const dismissButtons = screen.getAllByRole('button', { name: /I-dismiss|Dismiss/i });
+    expect(dismissButtons.length).toBe(2);
+    fireEvent.click(dismissButtons[0]);
+
+    await waitFor(async () => {
+      const remaining = await db.deadLetterQueue.toArray();
+      expect(remaining).toHaveLength(1);
+    });
+
+    // Clear entire DLQ
+    const clearBtn = screen.getByRole('button', { name: /Linisin ang DLQ|Clear DLQ/i });
+    fireEvent.click(clearBtn);
+
+    await waitFor(async () => {
+      const remaining = await db.deadLetterQueue.toArray();
+      expect(remaining).toHaveLength(0);
+      expect(useSyncStore.getState().deadLetterCount).toBe(0);
+    });
+  });
+
   it('matches the header queue count and never claims all synced while work is pending', async () => {
     const lastSyncedAt = new Date('2026-10-12T01:30:00.000Z');
     await db.syncQueue.bulkAdd(Array.from({ length: 8 }, (_, index) => ({

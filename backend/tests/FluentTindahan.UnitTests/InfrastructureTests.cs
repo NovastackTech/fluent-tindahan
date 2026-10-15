@@ -167,6 +167,31 @@ public class InfrastructureTests
     }
 
     [Fact]
+    public void CurrentUserService_DemoModeViaEnvVar_ResolvesCustomTenantAndUserWhenUnauthenticated()
+    {
+        var expectedTenant = Guid.NewGuid();
+        var expectedUser = Guid.NewGuid();
+
+        var context = new DefaultHttpContext();
+        context.Request.Headers["X-Tenant-Id"] = expectedTenant.ToString();
+        context.Request.Headers["X-User-Id"] = expectedUser.ToString();
+
+        var httpAccessorMock = new Mock<IHttpContextAccessor>();
+        httpAccessorMock.Setup(h => h.HttpContext).Returns(context);
+
+        var envMock = new Mock<IHostEnvironment>();
+        envMock.Setup(e => e.EnvironmentName).Returns(Environments.Production);
+
+        var configMock = new Mock<IConfiguration>();
+        configMock.Setup(c => c["DEMO_MODE"]).Returns("true");
+
+        var service = new CurrentUserService(httpAccessorMock.Object, envMock.Object, configMock.Object);
+
+        service.TenantId.Should().Be(expectedTenant);
+        service.UserId.Should().Be(expectedUser);
+    }
+
+    [Fact]
     public void CurrentUserService_NullEnvironment_DefaultsToSecureProductionBehavior()
     {
         var spoofedTenant = Guid.NewGuid();

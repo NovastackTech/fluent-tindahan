@@ -43,16 +43,23 @@ export function parseProductsCsv(fileOrText: File | string): Promise<ParsedProdu
           const price = parseFloat(rawPrice);
           if (isNaN(price) || price <= 0) {
             errors.push('Wastong presyo ang kailangan (Valid price > 0 required)');
+          } else if (price > 999999.99) {
+            errors.push('Hindi maaaring lumampas sa ₱999,999.99 ang presyo (Price cannot exceed ₱999,999.99)');
           }
 
           const rawCost = (row.cost ?? '0').toString().replace(/[^0-9.-]/g, '');
           const cost = isNaN(parseFloat(rawCost)) ? 0 : parseFloat(rawCost);
           if (cost < 0) {
             errors.push('Hindi puwedeng negatibo ang puhunan (Cost cannot be negative)');
+          } else if (cost > 999999.99) {
+            errors.push('Hindi maaaring lumampas sa ₱999,999.99 ang puhunan (Cost cannot exceed ₱999,999.99)');
           }
 
           const rawStock = (row.stockQty ?? '0').toString().replace(/[^0-9]/g, '');
           const stockQty = isNaN(parseInt(rawStock, 10)) ? 0 : parseInt(rawStock, 10);
+          if (stockQty > 999999) {
+            errors.push('Hindi maaaring lumampas sa 999,999 ang dami ng stock (Stock quantity cannot exceed 999,999)');
+          }
 
           const barcode = (row.barcode || '').toString().trim();
           const category = (row.category || 'General').toString().trim();

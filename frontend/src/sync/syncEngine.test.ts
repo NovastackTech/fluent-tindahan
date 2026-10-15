@@ -5,6 +5,7 @@ import {
   updateQueueCounts,
   processSyncQueue,
   retryDeadLetterItem,
+  deleteDeadLetterItem,
   clearDeadLetterQueue,
   pullCatalogFromServer,
   initSyncEngine,
@@ -350,7 +351,8 @@ describe('syncEngine', () => {
     expect(dlqItems).toHaveLength(0);
   });
 
-  it('clearDeadLetterQueue purges all dead letter entries', async () => {
+  it('clearDeadLetterQueue purges all dead letter entries and resets lastErrorMessage', async () => {
+    useSyncStore.setState({ lastErrorMessage: 'Nalipat sa Dead Letter Queue ang 1 transaksyon: Failed' });
     await db.deadLetterQueue.add({
       id: 'dlq-1',
       entity: 'Product',
@@ -366,6 +368,39 @@ describe('syncEngine', () => {
     const dlqItems = await db.deadLetterQueue.toArray();
     expect(dlqItems).toHaveLength(0);
     expect(useSyncStore.getState().deadLetterCount).toBe(0);
+    expect(useSyncStore.getState().lastErrorMessage).toBeNull();
+  });
+
+  it('deleteDeadLetterItem deletes an individual entry and updates counts', async () => {
+    await db.deadLetterQueue.bulkAdd([
+      {
+        id: 'dlq-item-1',
+        entity: 'Product',
+        action: 'Insert',
+        timestamp: new Date().toISOString(),
+        payload: { id: 'p-1' },
+        retryCount: 3,
+        failedAt: new Date().toISOString()
+      },
+      {
+        id: 'dlq-item-2',
+        entity: 'Product',
+        action: 'Insert',
+        timestamp: new Date().toISOString(),
+        payload: { id: 'p-2' },
+        retryCount: 3,
+        failedAt: new Date().toISOString()
+      }
+    ]);
+    await updateQueueCounts();
+    expect(useSyncStore.getState().deadLetterCount).toBe(2);
+
+    await deleteDeadLetterItem('dlq-item-1');
+
+    const remaining = await db.deadLetterQueue.toArray();
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].id).toBe('dlq-item-2');
+    expect(useSyncStore.getState().deadLetterCount).toBe(1);
   });
 
   it('pullCatalogFromServer fetches products and writes to Dexie without clearing errors or setting lastSyncedAt', async () => {

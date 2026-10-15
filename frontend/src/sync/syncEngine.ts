@@ -150,6 +150,9 @@ export async function updateQueueCounts() {
   const pending = await db.syncQueue.count();
   const deadLetter = await db.deadLetterQueue.count();
   useSyncStore.getState().setCounts(pending, deadLetter);
+  if (deadLetter === 0 && useSyncStore.getState().lastErrorMessage?.includes('Dead Letter Queue')) {
+    useSyncStore.getState().setLastErrorMessage(null);
+  }
 }
 
 function getAuthSessionKey(): string {
@@ -396,12 +399,43 @@ export async function retryDeadLetterItem(id: string) {
   const item = await db.deadLetterQueue.get(id);
   if (!item) return;
 
+  let payload = item.payload;
+  if (item.entity === 'Product' && payload?.id) {
+    const localProduct = await db.products.get(payload.id);
+    if (localProduct && localProduct.price <= 999999.99 && localProduct.cost <= 999999.99) {
+      payload = {
+        ...payload,
+        name: localProduct.name,
+        price: localProduct.price,
+        cost: localProduct.cost,
+        stockQty: localProduct.stockQty,
+        category: localProduct.category,
+        barcode: localProduct.barcode,
+        updatedAt: localProduct.updatedAt
+      };
+    }
+  }
+
+  if (item.entity === 'GCashTxn' && payload?.id) {
+    const localTxn = await db.gcashTxns.get(payload.id);
+    if (localTxn && localTxn.amount > 0 && localTxn.amount <= 100000) {
+      payload = {
+        ...payload,
+        amount: localTxn.amount,
+        fee: localTxn.fee,
+        refNo: localTxn.refNo,
+        customerPhone: localTxn.customerPhone,
+        notes: localTxn.notes
+      };
+    }
+  }
+
   await db.syncQueue.add({
     id: item.id,
     entity: item.entity as any,
     action: item.action as any,
     timestamp: new Date().toISOString(),
-    payload: item.payload,
+    payload,
     status: 'Pending',
     retryCount: 0
   });
@@ -413,8 +447,14 @@ export async function retryDeadLetterItem(id: string) {
   }
 }
 
+export async function deleteDeadLetterItem(id: string) {
+  await db.deadLetterQueue.delete(id);
+  await updateQueueCounts();
+}
+
 export async function clearDeadLetterQueue() {
   await db.deadLetterQueue.clear();
+  useSyncStore.getState().setLastErrorMessage(null);
   await updateQueueCounts();
 }
 

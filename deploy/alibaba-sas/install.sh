@@ -109,6 +109,7 @@ POSTGRES_DB=fluent_tindahan
 POSTGRES_USER=fluent
 POSTGRES_PASSWORD=$(random_secret 24)
 FIREBASE_PROJECT_ID=fluent-tindahan-dev
+DEMO_MODE=true
 PAYMONGO_SECRET_KEY=
 PAYMONGO_WEBHOOK_SECRET=
 PAYMONGO_FRONTEND_ORIGIN=https://${DOMAIN}
@@ -126,12 +127,13 @@ set_env_value COMPOSE_PROJECT_NAME "${PROJECT_NAME}"
 set_env_value HOST_HTTP_PORT "${HTTP_PORT}"
 set_env_value APP_URL "https://${DOMAIN}"
 [[ -n "$(env_value PAYMONGO_FRONTEND_ORIGIN "${ENV_FILE}")" ]] || set_env_value PAYMONGO_FRONTEND_ORIGIN "https://${DOMAIN}"
+[[ -n "$(env_value DEMO_MODE "${ENV_FILE}")" ]] || set_env_value DEMO_MODE "true"
 
 # Optional secrets pushed from the developer machine (deploy/alibaba-sas/secrets.env, gitignored).
 # POSTGRES_PASSWORD is deliberately not accepted: changing it would lock the API out of the existing database.
 if [[ -f "${SECRETS_FILE}" ]]; then
   sed -i 's/\r$//' "${SECRETS_FILE}"
-  for key in PAYMONGO_SECRET_KEY PAYMONGO_WEBHOOK_SECRET PAYMONGO_FRONTEND_ORIGIN FIREBASE_PROJECT_ID ASPNETCORE_ENVIRONMENT; do
+  for key in PAYMONGO_SECRET_KEY PAYMONGO_WEBHOOK_SECRET PAYMONGO_FRONTEND_ORIGIN FIREBASE_PROJECT_ID ASPNETCORE_ENVIRONMENT DEMO_MODE DemoMode; do
     value="$(env_value "${key}" "${SECRETS_FILE}")"
     if [[ -n "${value}" ]]; then
       set_env_value "${key}" "${value}"

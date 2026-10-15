@@ -92,6 +92,9 @@ export interface Translations {
     newDebtorTitle: string;
     saveAndSelectDebtor: string;
     debtorNameRequired: string;
+    insufficientStock: string;
+    stockLimitReached: string;
+    saleBlockedStock: string;
   };
   utang: {
     title: string;
@@ -172,6 +175,10 @@ export interface Translations {
     saveTransaction: string;
     historyTitle: string;
     invalidAmountAlert: string;
+    amountMustBePositive: string;
+    amountExceedsMax: string;
+    feeExceedsAmount: string;
+    feeCannotBeNegative: string;
     duplicateRefWarning: string;
     phoneInvalid: string;
   };
@@ -275,9 +282,12 @@ export interface Translations {
     barcodeLabel: string;
     costLabel: string;
     costCannotBeNegative: string;
+    costExceedsMax: string;
     priceLabel: string;
     priceMustBePositive: string;
+    priceExceedsMax: string;
     stockLabel: string;
+    stockExceedsMax: string;
     profitPreview: string;
     marginPreview: string;
     noProductsFound: string;
@@ -307,9 +317,12 @@ export interface Translations {
     categoryLabel: string;
     costLabel: string;
     costCannotBeNegative: string;
+    costExceedsMax: string;
     priceLabel: string;
     priceMustBePositive: string;
+    priceExceedsMax: string;
     stockLabel: string;
+    stockExceedsMax: string;
     saveAndAddToCart: string;
     saveProduct: string;
     addedToCart: string;
@@ -353,6 +366,7 @@ export interface Translations {
     dlqClearBtn: string;
     dlqDesc: string;
     retryBtn: string;
+    dlqDismissBtn: string;
     dataManagement: string;
     pullSuccessAlert: string;
     printerSection: string;
@@ -599,7 +613,10 @@ export const translations: Record<Language, Translations> = {
       addNewDebtorBtn: 'Magdagdag ng Suki',
       newDebtorTitle: 'Magrehistro ng Bagong Suki',
       saveAndSelectDebtor: 'I-save at Piliin',
-      debtorNameRequired: 'Pakiusap ilagay ang pangalan ng suki.'
+      debtorNameRequired: 'Pakiusap ilagay ang pangalan ng suki.',
+      insufficientStock: 'Kulang ang Stock',
+      stockLimitReached: 'Naabot na ang limitasyon ng stock',
+      saleBlockedStock: 'Hindi maaaring ituloy ang benta dahil kulang ang stock.'
     },
     utang: {
       title: 'Talaan ng Utang ng mga Suki',
@@ -680,6 +697,10 @@ export const translations: Record<Language, Translations> = {
       saveTransaction: 'I-save ang Transaksyon',
       historyTitle: 'Kasaysayan ng GCash Ngayong Buwan',
       invalidAmountAlert: 'Maglagay ng wastong halaga.',
+      amountMustBePositive: 'Ang halaga ay dapat mas mataas sa ₱0.',
+      amountExceedsMax: 'Ang halaga ng transaksyon ay hindi maaaring lumagpas sa ₱100,000.00 (limitasyon ng GCash wallet/agent).',
+      feeExceedsAmount: 'Ang service fee ay hindi maaaring mas mataas sa halaga ng transaksyon.',
+      feeCannotBeNegative: 'Ang service fee ay hindi maaaring negatibo.',
       duplicateRefWarning: 'Ginamit na ang reference number. Hindi maaaring magtala ng doble.',
       phoneInvalid: 'Dapat ay wastong 11-digit Philippine mobile number (09XXXXXXXXX).'
     },
@@ -783,9 +804,12 @@ export const translations: Record<Language, Translations> = {
       barcodeLabel: 'Barcode (Opsyonal):',
       costLabel: 'Puhunan (Cost Price ₱):*',
       costCannotBeNegative: 'Hindi maaaring negatibo ang puhunan.',
+      costExceedsMax: 'Hindi maaaring lumampas sa ₱999,999.99 ang puhunan.',
       priceLabel: 'Presyo ng Tinda (SRP ₱):*',
       priceMustBePositive: 'Dapat mas mataas sa ₱0 ang presyo ng tinda.',
+      priceExceedsMax: 'Hindi maaaring lumampas sa ₱999,999.99 ang presyo.',
       stockLabel: 'Kasalukuyang Stock:*',
+      stockExceedsMax: 'Hindi maaaring lumampas sa 999,999 ang dami ng stock.',
       profitPreview: 'Tinatayang Kita bawat piraso:',
       marginPreview: 'Profit Margin:',
       noProductsFound: 'Walang natagpuang produkto na tumutugma sa filter.',
@@ -815,9 +839,12 @@ export const translations: Record<Language, Translations> = {
       categoryLabel: 'Kategorya:*',
       costLabel: 'Puhunan (Cost Price ₱):*',
       costCannotBeNegative: 'Hindi maaaring negatibo ang puhunan.',
+      costExceedsMax: 'Hindi maaaring lumampas sa ₱999,999.99 ang puhunan.',
       priceLabel: 'Presyo ng Tinda (SRP ₱):*',
       priceMustBePositive: 'Dapat mas mataas sa ₱0 ang presyo ng tinda.',
+      priceExceedsMax: 'Hindi maaaring lumampas sa ₱999,999.99 ang presyo.',
       stockLabel: 'Panimulang Stock:*',
+      stockExceedsMax: 'Hindi maaaring lumampas sa 999,999 ang dami ng stock.',
       saveAndAddToCart: 'I-save at Idagdag sa Cart',
       saveProduct: 'I-save ang Produkto',
       addedToCart: 'Naidagdag na sa Cart!'
@@ -861,6 +888,7 @@ export const translations: Record<Language, Translations> = {
       dlqClearBtn: 'Linisin ang DLQ',
       dlqDesc: 'Ang mga transaksyong paulit-ulit na bumagsak ay inihihiwalay rito upang hindi maipit ang sync.',
       retryBtn: 'Subukan Muli',
+      dlqDismissBtn: 'I-dismiss',
       dataManagement: 'Pamamahala ng Datos (Data Management)',
       pullSuccessAlert: 'Nai-download ang mga produkto mula sa cloud database.',
       printerSection: 'Resibo at Printer Device',
@@ -1105,7 +1133,10 @@ export const translations: Record<Language, Translations> = {
       addNewDebtorBtn: 'Add New Debtor',
       newDebtorTitle: 'Register New Debtor',
       saveAndSelectDebtor: 'Save & Select',
-      debtorNameRequired: 'Please enter customer name.'
+      debtorNameRequired: 'Please enter customer name.',
+      insufficientStock: 'Insufficient Stock',
+      stockLimitReached: 'Stock limit reached',
+      saleBlockedStock: 'Sale blocked due to insufficient stock.'
     },
     utang: {
       title: 'Customer Credit & Utang Ledger',
@@ -1186,6 +1217,10 @@ export const translations: Record<Language, Translations> = {
       saveTransaction: 'Save Transaction',
       historyTitle: "This Month's GCash History",
       invalidAmountAlert: 'Please enter a valid amount.',
+      amountMustBePositive: 'Transaction amount must be greater than ₱0.',
+      amountExceedsMax: 'Transaction amount cannot exceed ₱100,000.00 (GCash wallet/agent limit).',
+      feeExceedsAmount: 'Service fee cannot exceed transaction amount.',
+      feeCannotBeNegative: 'Service fee cannot be negative.',
       duplicateRefWarning: 'This reference number has already been used. Duplicate entries are not allowed.',
       phoneInvalid: 'Must be a valid 11-digit Philippine mobile number (09XXXXXXXXX).'
     },
@@ -1289,9 +1324,12 @@ export const translations: Record<Language, Translations> = {
       barcodeLabel: 'Barcode (Optional):',
       costLabel: 'Cost Price (₱):*',
       costCannotBeNegative: 'Cost price cannot be negative.',
+      costExceedsMax: 'Cost price cannot exceed ₱999,999.99.',
       priceLabel: 'Retail Price (SRP ₱):*',
       priceMustBePositive: 'Retail price must be greater than ₱0.',
+      priceExceedsMax: 'Retail price cannot exceed ₱999,999.99.',
       stockLabel: 'Current Stock Qty:*',
+      stockExceedsMax: 'Stock quantity cannot exceed 999,999.',
       profitPreview: 'Estimated Profit per unit:',
       marginPreview: 'Profit Margin:',
       noProductsFound: 'No products found matching the criteria.',
@@ -1321,9 +1359,12 @@ export const translations: Record<Language, Translations> = {
       categoryLabel: 'Category:*',
       costLabel: 'Cost Price (₱):*',
       costCannotBeNegative: 'Cost price cannot be negative.',
+      costExceedsMax: 'Cost price cannot exceed ₱999,999.99.',
       priceLabel: 'Retail Price (SRP ₱):*',
       priceMustBePositive: 'Retail price must be greater than ₱0.',
+      priceExceedsMax: 'Retail price cannot exceed ₱999,999.99.',
       stockLabel: 'Initial Stock:*',
+      stockExceedsMax: 'Stock quantity cannot exceed 999,999.',
       saveAndAddToCart: 'Save & Add to Cart',
       saveProduct: 'Save Product',
       addedToCart: 'Added to Cart!'
@@ -1367,6 +1408,7 @@ export const translations: Record<Language, Translations> = {
       dlqClearBtn: 'Clear DLQ',
       dlqDesc: 'Items that failed sync multiple times are isolated here to prevent blocking the queue.',
       retryBtn: 'Retry',
+      dlqDismissBtn: 'Dismiss',
       dataManagement: 'Data Management',
       pullSuccessAlert: 'Products successfully downloaded from cloud database.',
       printerSection: 'Receipt & Printer Device',

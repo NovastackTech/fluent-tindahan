@@ -134,6 +134,56 @@ public class SyncControllerTests
     }
 
     [Fact]
+    public async Task ProcessBatchSync_ProductPriceExceedsMaximum_ReturnsFriendlyError()
+    {
+        var tenantId = Guid.NewGuid();
+        var contextOptions = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.Setup(service => service.TenantId).Returns(tenantId);
+        currentUser.Setup(service => service.UserId).Returns(Guid.NewGuid());
+        currentUser.Setup(service => service.IsAuthenticated).Returns(true);
+        await using var context = new AppDbContext(contextOptions, currentUser.Object);
+
+        var productId = Guid.NewGuid();
+        var syncHandler = new ProcessBatchSyncCommandHandler(
+            context,
+            currentUser.Object,
+            NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+
+        var batch = new BatchSyncRequestDto
+        {
+            DeviceId = Guid.NewGuid(),
+            Operations = new List<SyncOperationDto>
+            {
+                new()
+                {
+                    SyncId = "excessive-price-product",
+                    Entity = "Product",
+                    Action = "Insert",
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Payload = JsonSerializer.SerializeToElement(new
+                    {
+                        id = productId,
+                        name = "QA-TEST Luxury Soda",
+                        price = 99_999_999_999m,
+                        cost = 10m,
+                        stockQty = 5
+                    })
+                }
+            }
+        };
+
+        var syncResult = await syncHandler.Handle(new ProcessBatchSyncCommand(batch), CancellationToken.None);
+
+        syncResult.ProcessedCount.Should().Be(0);
+        var itemResult = syncResult.Results.Should().ContainSingle().Subject;
+        itemResult.Status.Should().Be("Failed");
+        itemResult.Error.Should().Contain("Retail price must be between ₱0.01 and ₱999,999.99.");
+    }
+
+    [Fact]
     public async Task Provision_RejectsAuthenticatedOwnerIdThatDiffersFromCaller()
     {
         var tenantId = Guid.NewGuid();

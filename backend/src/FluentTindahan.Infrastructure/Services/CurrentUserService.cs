@@ -37,7 +37,7 @@ public class CurrentUserService : ICurrentUserService
 
         if (_configuration != null)
         {
-            var demoEnabled = _configuration["DemoMode"] ?? _configuration["Demo:Enabled"];
+            var demoEnabled = _configuration["DemoMode"] ?? _configuration["Demo:Enabled"] ?? _configuration["DEMO_MODE"];
             if (string.Equals(demoEnabled, "true", StringComparison.OrdinalIgnoreCase))
             {
                 return true;

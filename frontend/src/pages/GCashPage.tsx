@@ -67,6 +67,8 @@ const useStyles = makeStyles({
   }
 });
 
+export const MAX_GCASH_AMOUNT = 100000;
+
 export const GCashPage: React.FC = () => {
   const styles = useStyles();
   const { t, language } = useTranslation();
@@ -93,6 +95,36 @@ export const GCashPage: React.FC = () => {
 
   const activeFee = customFee !== null ? parseFloat(customFee) || 0 : calculatedFee;
   const numAmount = parseFloat(amount) || 0;
+
+  const amountError = useMemo(() => {
+    if (amount.trim() === '') return '';
+    const val = parseFloat(amount);
+    if (isNaN(val) || val <= 0) {
+      return t.gcash.amountMustBePositive;
+    }
+    if (val > MAX_GCASH_AMOUNT) {
+      return t.gcash.amountExceedsMax;
+    }
+    return '';
+  }, [amount, t.gcash.amountMustBePositive, t.gcash.amountExceedsMax]);
+
+  const customFeeError = useMemo(() => {
+    if (customFee === null || customFee.trim() === '') return '';
+    const feeVal = parseFloat(customFee);
+    if (isNaN(feeVal) || feeVal < 0) {
+      return t.gcash.feeCannotBeNegative;
+    }
+    if (feeVal > MAX_GCASH_AMOUNT) {
+      return t.gcash.feeExceedsAmount;
+    }
+    if (txnType === 'CashOut' && feeVal > numAmount && numAmount > 0) {
+      return t.gcash.feeExceedsAmount;
+    }
+    return '';
+  }, [customFee, txnType, numAmount, t.gcash.feeCannotBeNegative, t.gcash.feeExceedsAmount]);
+
+  const isAmountValid = numAmount > 0 && numAmount <= MAX_GCASH_AMOUNT && !amountError;
+  const isSaveDisabled = isSaving || hasDuplicateRef || !isAmountValid || Boolean(customerPhoneError) || Boolean(customFeeError);
 
   // Live query for GCash logs
   const allTxns = useLiveQuery(
@@ -149,8 +181,7 @@ export const GCashPage: React.FC = () => {
     e.preventDefault();
     setCustomerPhoneError('');
 
-    if (numAmount <= 0) {
-      alert(t.gcash.invalidAmountAlert);
+    if (!isAmountValid || Boolean(customFeeError)) {
       return;
     }
 
@@ -385,6 +416,8 @@ export const GCashPage: React.FC = () => {
               <Input
                 type="number"
                 aria-label={t.gcash.amountLabel}
+                aria-invalid={Boolean(amountError)}
+                aria-describedby={amountError ? 'gcash-amount-error' : undefined}
                 style={{ width: '100%', marginTop: '4px' }}
                 value={amount}
                 onChange={(_, data) => {
@@ -393,8 +426,22 @@ export const GCashPage: React.FC = () => {
                 }}
                 placeholder="0.00"
                 contentBefore="₱"
+                min="1"
+                max={MAX_GCASH_AMOUNT.toString()}
+                step="any"
                 required
               />
+              {amountError && (
+                <Text
+                  id="gcash-amount-error"
+                  data-testid="gcash-amount-error"
+                  role="alert"
+                  size={200}
+                  style={{ color: tokens.colorPaletteRedForeground1, display: 'block', marginTop: '4px' }}
+                >
+                  {amountError}
+                </Text>
+              )}
             </div>
 
             <div>
@@ -405,11 +452,27 @@ export const GCashPage: React.FC = () => {
               <Input
                 type="number"
                 aria-label={t.gcash.feeLabel}
+                aria-invalid={Boolean(customFeeError)}
+                aria-describedby={customFeeError ? 'gcash-custom-fee-error' : undefined}
                 style={{ width: '100%', marginTop: '4px' }}
                 value={activeFee.toString()}
                 onChange={(_, data) => setCustomFee(data.value)}
                 contentBefore="₱"
+                min="0"
+                max={MAX_GCASH_AMOUNT.toString()}
+                step="any"
               />
+              {customFeeError && (
+                <Text
+                  id="gcash-custom-fee-error"
+                  data-testid="gcash-custom-fee-error"
+                  role="alert"
+                  size={200}
+                  style={{ color: tokens.colorPaletteRedForeground1, display: 'block', marginTop: '4px' }}
+                >
+                  {customFeeError}
+                </Text>
+              )}
             </div>
           </div>
 
@@ -477,14 +540,14 @@ export const GCashPage: React.FC = () => {
             />
           </div>
 
-          {numAmount > 0 && (
+          {isAmountValid && !customFeeError && (
             <div style={{ marginTop: '16px', padding: '12px', background: tokens.colorNeutralBackground2, borderRadius: '6px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Text size={300} weight="semibold">
                   {txnType === 'CashIn' ? t.gcash.totalFromCustomer : t.gcash.totalToCustomer}
                 </Text>
                 <Text size={500} weight="bold" style={{ color: tokens.colorBrandForeground1 }}>
-                  {formatPeso(txnType === 'CashIn' ? numAmount + activeFee : numAmount - activeFee)}
+                  {formatPeso(txnType === 'CashIn' ? numAmount + activeFee : Math.max(0, numAmount - activeFee))}
                 </Text>
               </div>
             </div>
@@ -494,7 +557,7 @@ export const GCashPage: React.FC = () => {
             type="submit"
             appearance="primary"
             icon={<CheckmarkRegular />}
-            disabled={isSaving || hasDuplicateRef}
+            disabled={isSaveDisabled}
             style={{ width: '100%', marginTop: '16px' }}
           >
             {t.gcash.saveTransaction} ({txnType === 'CashIn' ? 'Cash-In' : 'Cash-Out'})

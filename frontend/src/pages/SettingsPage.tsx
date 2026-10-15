@@ -45,6 +45,7 @@ import {
   processSyncQueue,
   updateQueueCounts,
   retryDeadLetterItem,
+  deleteDeadLetterItem,
   clearDeadLetterQueue,
   pullCatalogFromServer
 } from '../sync/syncEngine';
@@ -673,14 +674,26 @@ export const SettingsPage: React.FC = () => {
               <div key={item.id} className={styles.queueItem}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <strong>{item.entity} ({item.action})</strong>
-                  <Button
-                    size="small"
-                    appearance="subtle"
-                    icon={<ArrowClockwiseRegular />}
-                    onClick={() => retryDeadLetterItem(item.id)}
-                  >
-                    {t.settings.retryBtn}
-                  </Button>
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    <Button
+                      size="small"
+                      appearance="subtle"
+                      icon={<ArrowClockwiseRegular />}
+                      onClick={() => retryDeadLetterItem(item.id)}
+                      title={t.settings.retryBtn}
+                    >
+                      {t.settings.retryBtn}
+                    </Button>
+                    <Button
+                      size="small"
+                      appearance="subtle"
+                      icon={<DeleteRegular style={{ color: tokens.colorPaletteRedForeground1 }} />}
+                      onClick={() => deleteDeadLetterItem(item.id)}
+                      title={t.settings.dlqDismissBtn}
+                    >
+                      {t.settings.dlqDismissBtn}
+                    </Button>
+                  </div>
                 </div>
                 <div style={{ color: tokens.colorPaletteRedForeground1, fontSize: '11px', marginTop: '2px' }}>
                   {item.errorMessage}

@@ -557,6 +557,149 @@ describe('POSPage', () => {
       writable: true
     });
   });
+
+  it('caps cart quantity at available stock when clicking card repeatedly and warns user', async () => {
+    await db.products.clear();
+    await db.products.add({
+      id: 'qa-soda',
+      tenantId: 't-1',
+      name: 'QA-TEST Soda',
+      price: 15,
+      cost: 10,
+      stockQty: 3,
+      updatedAt: new Date().toISOString()
+    });
+
+    renderPOS();
+
+    await waitFor(() => {
+      expect(screen.getByText('QA-TEST Soda')).toBeInTheDocument();
+    });
+
+    const card = screen.getByText('QA-TEST Soda').closest('.fui-Card, [role="button"]') ||
+      screen.getByText('QA-TEST Soda');
+
+    // Click card 5 times
+    fireEvent.click(card);
+    fireEvent.click(card);
+    fireEvent.click(card);
+    fireEvent.click(card);
+    fireEvent.click(card);
+
+    // Quantity must be capped at 3 (available stock), not 5
+    const cart = useCartStore.getState();
+    expect(cart.items).toHaveLength(1);
+    expect(cart.items[0].qty).toBe(3);
+    expect(cart.getTotalCount()).toBe(3);
+    expect(cart.getTotalAmount()).toBe(45);
+
+    // Check that warning toast was displayed
+    await waitFor(() => {
+      expect(screen.getByText(/Hanggang 3 lang ang available na stock para sa QA-TEST Soda|Only 3 in stock/i)).toBeInTheDocument();
+    });
+
+    // Checkout with cash 100
+    const payBtn = screen.getByRole('button', { name: /Bayad|Pay/i });
+    fireEvent.click(payBtn);
+
+    // Enter 100 cash
+    const cashInput = screen.getByRole('spinbutton', { name: /Tinanggap na pera|Cash received/i });
+    fireEvent.change(cashInput, { target: { value: '100' } });
+
+    // Change should be 55 (100 - 45)
+    expect(screen.getByText('₱55.00')).toBeInTheDocument();
+
+    const completeBtn = screen.getByRole('button', { name: /Kumpletuhin ang Benta|Complete Sale/i });
+    fireEvent.click(completeBtn);
+
+    await waitFor(async () => {
+      const sales = await db.sales.toArray();
+      expect(sales).toHaveLength(1);
+      expect(sales[0].totalAmount).toBe(45);
+      expect(sales[0].cashReceived).toBe(100);
+      expect(sales[0].changeGiven).toBe(55);
+
+      const prod = await db.products.get('qa-soda');
+      expect(prod?.stockQty).toBe(0); // 3 - 3 = 0
+    });
+  });
+
+  it('prevents adding an out-of-stock product to the cart', async () => {
+    await db.products.clear();
+    await db.products.add({
+      id: 'qa-zero',
+      tenantId: 't-1',
+      name: 'Zero Stock Chips',
+      price: 25,
+      cost: 18,
+      stockQty: 0,
+      updatedAt: new Date().toISOString()
+    });
+
+    renderPOS();
+
+    await waitFor(() => {
+      expect(screen.getByText('Zero Stock Chips')).toBeInTheDocument();
+      expect(screen.getByText(/Ubos na|Out of stock/i)).toBeInTheDocument();
+    });
+
+    const card = screen.getByText('Zero Stock Chips');
+    fireEvent.click(card);
+
+    expect(useCartStore.getState().items).toHaveLength(0);
+    await waitFor(() => {
+      expect(screen.getByText(/Walang stock ang Zero Stock Chips|is out of stock/i)).toBeInTheDocument();
+    });
+  });
+
+  it('blocks sale and disables checkout when cart quantity exceeds available stock', async () => {
+    await db.products.clear();
+    await db.products.add({
+      id: 'qa-biscuit',
+      tenantId: 't-1',
+      name: 'QA Biscuit',
+      price: 10,
+      cost: 7,
+      stockQty: 2,
+      updatedAt: new Date().toISOString()
+    });
+
+    // Manually place 5 into the cart (e.g. from prior state or external update)
+    useCartStore.setState({
+      items: [
+        {
+          productId: 'qa-biscuit',
+          name: 'QA Biscuit',
+          price: 10,
+          qty: 5,
+          subtotal: 50,
+          priceCentavos: 1000,
+          subtotalCentavos: 5000,
+          maxStock: 2
+        }
+      ]
+    });
+
+    renderPOS();
+
+    await waitFor(() => {
+      expect(screen.getByText('QA Biscuit')).toBeInTheDocument();
+    });
+
+    // In Cart Drawer: clicking Pay opens drawer to resolve stock
+    const payBtn = screen.getByRole('button', { name: /Bayad|Pay/i });
+    fireEvent.click(payBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Kulang ang stock! Available: 2|Insufficient stock! Available: 2/i)).toBeInTheDocument();
+    });
+
+    // Try opening checkout dialog directly
+    useCartStore.setState({ cashReceived: 100 });
+    // Checkout button in drawer should be disabled
+    const checkoutDrawerBtn = screen.getByRole('button', { name: /Mag-Checkout|Checkout/i });
+    expect(checkoutDrawerBtn).toBeDisabled();
+  });
 });
 
 

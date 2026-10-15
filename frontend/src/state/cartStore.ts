@@ -8,6 +8,7 @@ export interface CartItem {
   subtotal: number;
   priceCentavos?: number;
   subtotalCentavos?: number;
+  maxStock?: number;
 }
 
 export const CART_STORAGE_KEY = 'fluent_tindahan_cart_state';
@@ -65,7 +66,8 @@ export const loadPersistedCart = (): Partial<PersistedCartState> => {
             qty,
             subtotal,
             priceCentavos: toCentavos(price),
-            subtotalCentavos
+            subtotalCentavos,
+            maxStock: typeof item.maxStock === 'number' ? item.maxStock : undefined
           };
         })
       : [];
@@ -128,9 +130,16 @@ interface CartState {
   splitGCashAmount: number;
   notes: string;
   
-  addItem: (product: { id: string; name: string; price: number }) => void;
+  addItem: (
+    product: { id: string; name: string; price: number; maxStock?: number },
+    maxStock?: number
+  ) => { added: boolean; capped: boolean };
   removeItem: (productId: string) => void;
-  updateQty: (productId: string, qty: number) => void;
+  updateQty: (
+    productId: string,
+    qty: number,
+    maxStock?: number
+  ) => { updated: boolean; capped: boolean };
   setCustomer: (id: string | null, name: string | null) => void;
   setPaymentMethod: (method: 'Cash' | 'GCash' | 'Split' | 'Utang') => void;
   setCashReceived: (amount: number) => void;
@@ -154,11 +163,32 @@ export const useCartStore = create<CartState>((set, get) => ({
   splitGCashAmount: initialPersisted.splitGCashAmount ?? 0,
   notes: initialPersisted.notes ?? '',
 
-  addItem: (product) => {
+  addItem: (product, maxStockArg) => {
+    let added = false;
+    let capped = false;
+
     set((state) => {
       const existing = state.items.find((item) => item.productId === product.id);
+      const stockLimit = maxStockArg !== undefined ? maxStockArg : (product.maxStock ?? existing?.maxStock);
+
+      if (stockLimit !== undefined && stockLimit <= 0) {
+        capped = true;
+        return state;
+      }
+
       if (existing) {
-        const newQty = existing.qty + 1;
+        if (stockLimit !== undefined && existing.qty >= stockLimit) {
+          capped = true;
+          return state;
+        }
+
+        const newQty = stockLimit !== undefined ? Math.min(existing.qty + 1, stockLimit) : existing.qty + 1;
+        if (newQty === existing.qty) {
+          capped = true;
+          return state;
+        }
+
+        added = true;
         const { subtotal, subtotalCentavos } = calculateItemSubtotal(existing.price, newQty);
         return {
           items: state.items.map((item) =>
@@ -168,12 +198,20 @@ export const useCartStore = create<CartState>((set, get) => ({
                   qty: newQty,
                   subtotal,
                   subtotalCentavos,
-                  priceCentavos: toCentavos(item.price)
+                  priceCentavos: toCentavos(item.price),
+                  maxStock: stockLimit
                 }
               : item
           )
         };
       }
+
+      if (stockLimit !== undefined && stockLimit < 1) {
+        capped = true;
+        return state;
+      }
+
+      added = true;
       const { subtotal, subtotalCentavos } = calculateItemSubtotal(product.price, 1);
       return {
         items: [
@@ -185,11 +223,14 @@ export const useCartStore = create<CartState>((set, get) => ({
             priceCentavos: toCentavos(product.price),
             qty: 1,
             subtotal,
-            subtotalCentavos
+            subtotalCentavos,
+            maxStock: stockLimit
           }
         ]
       };
     });
+
+    return { added, capped };
   },
 
   removeItem: (productId) => {
@@ -198,26 +239,42 @@ export const useCartStore = create<CartState>((set, get) => ({
     }));
   },
 
-  updateQty: (productId, qty) => {
+  updateQty: (productId, qty, maxStockArg) => {
     if (qty <= 0) {
       get().removeItem(productId);
-      return;
+      return { updated: true, capped: false };
     }
+    let updated = false;
+    let capped = false;
+
     set((state) => ({
       items: state.items.map((item) => {
         if (item.productId === productId) {
-          const { subtotal, subtotalCentavos } = calculateItemSubtotal(item.price, qty);
+          const stockLimit = maxStockArg !== undefined ? maxStockArg : item.maxStock;
+          let targetQty = qty;
+          if (stockLimit !== undefined && targetQty > stockLimit) {
+            targetQty = Math.max(0, stockLimit);
+            capped = true;
+          }
+          if (targetQty <= 0) {
+            return null as any;
+          }
+          updated = true;
+          const { subtotal, subtotalCentavos } = calculateItemSubtotal(item.price, targetQty);
           return {
             ...item,
-            qty,
+            qty: targetQty,
             subtotal,
             subtotalCentavos,
-            priceCentavos: toCentavos(item.price)
+            priceCentavos: toCentavos(item.price),
+            maxStock: stockLimit
           };
         }
         return item;
-      })
+      }).filter(Boolean)
     }));
+
+    return { updated, capped };
   },
 
   setCustomer: (id, name) => set({ customerId: id, customerName: name }),
