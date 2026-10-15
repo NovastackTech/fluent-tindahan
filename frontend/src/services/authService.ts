@@ -78,3 +78,13 @@ export async function refreshAuthToken(refreshToken: string): Promise<AuthRespon
   const response = await apiClient.post<AuthResponseDto>('/auth/refresh', { refreshToken });
   return response.data;
 }
+
+export async function logoutStore(refreshToken?: string | null): Promise<void> {
+  try {
+    await apiClient.post('/auth/logout', { refreshToken });
+  } catch (e) {
+    // Suppress network errors on logout (local-first Rule 1)
+    console.warn('[authService] Server logout notification failed:', e);
+  }
+}
+

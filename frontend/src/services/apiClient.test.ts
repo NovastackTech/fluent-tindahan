@@ -385,4 +385,140 @@ describe('apiClient', () => {
     axiosPostSpy.mockRestore();
     apiClientSpy.mockRestore();
   });
+
+  it('response interceptor clears tokens on 401 refresh error', async () => {
+    const axios = (await import('axios')).default;
+    useAuthStore.setState({
+      firebaseToken: 'old-access-token',
+      refreshToken: 'stale-refresh-token'
+    });
+
+    const axiosPostSpy = vi.spyOn(axios, 'post').mockRejectedValueOnce({
+      response: { status: 401, data: { message: 'Invalid refresh token' } }
+    });
+
+    const interceptor = (apiClient.interceptors.response as any).handlers[0];
+    const originalRequest: any = {
+      headers: { Authorization: 'Bearer old-access-token' },
+      url: '/products'
+    };
+
+    await expect(
+      interceptor.rejected({
+        response: { status: 401 },
+        config: originalRequest
+      })
+    ).rejects.toEqual(
+      expect.objectContaining({
+        response: expect.objectContaining({ status: 401 })
+      })
+    );
+
+    expect(useAuthStore.getState().firebaseToken).toBeNull();
+    expect(useAuthStore.getState().refreshToken).toBeNull();
+
+    axiosPostSpy.mockRestore();
+  });
+
+  it('response interceptor clears tokens on 403 refresh error', async () => {
+    const axios = (await import('axios')).default;
+    useAuthStore.setState({
+      firebaseToken: 'old-access-token',
+      refreshToken: 'forbidden-refresh-token'
+    });
+
+    const axiosPostSpy = vi.spyOn(axios, 'post').mockRejectedValueOnce({
+      response: { status: 403, data: { message: 'Refresh forbidden' } }
+    });
+
+    const interceptor = (apiClient.interceptors.response as any).handlers[0];
+    const originalRequest: any = {
+      headers: { Authorization: 'Bearer old-access-token' },
+      url: '/products'
+    };
+
+    await expect(
+      interceptor.rejected({
+        response: { status: 401 },
+        config: originalRequest
+      })
+    ).rejects.toEqual(
+      expect.objectContaining({
+        response: expect.objectContaining({ status: 403 })
+      })
+    );
+
+    expect(useAuthStore.getState().firebaseToken).toBeNull();
+    expect(useAuthStore.getState().refreshToken).toBeNull();
+
+    axiosPostSpy.mockRestore();
+  });
+
+  it('response interceptor preserves tokens and clears _retry on 500 server error', async () => {
+    const axios = (await import('axios')).default;
+    useAuthStore.setState({
+      firebaseToken: 'old-access-token',
+      refreshToken: 'preserve-me-refresh-token'
+    });
+
+    const axiosPostSpy = vi.spyOn(axios, 'post').mockRejectedValueOnce({
+      response: { status: 500, data: { message: 'Internal server error' } }
+    });
+
+    const interceptor = (apiClient.interceptors.response as any).handlers[0];
+    const originalRequest: any = {
+      headers: { Authorization: 'Bearer old-access-token' },
+      url: '/products'
+    };
+
+    await expect(
+      interceptor.rejected({
+        response: { status: 401 },
+        config: originalRequest
+      })
+    ).rejects.toEqual(
+      expect.objectContaining({
+        response: expect.objectContaining({ status: 500 })
+      })
+    );
+
+    // Tokens must be kept for future retry
+    expect(useAuthStore.getState().firebaseToken).toBe('old-access-token');
+    expect(useAuthStore.getState().refreshToken).toBe('preserve-me-refresh-token');
+    // _retry flag should be cleared so the request can retry
+    expect(originalRequest._retry).toBeUndefined();
+
+    axiosPostSpy.mockRestore();
+  });
+
+  it('response interceptor preserves tokens and clears _retry on network failure', async () => {
+    const axios = (await import('axios')).default;
+    useAuthStore.setState({
+      firebaseToken: 'old-access-token',
+      refreshToken: 'preserve-me-network-refresh-token'
+    });
+
+    const networkError = new Error('Network Error');
+    const axiosPostSpy = vi.spyOn(axios, 'post').mockRejectedValueOnce(networkError);
+
+    const interceptor = (apiClient.interceptors.response as any).handlers[0];
+    const originalRequest: any = {
+      headers: { Authorization: 'Bearer old-access-token' },
+      url: '/products'
+    };
+
+    await expect(
+      interceptor.rejected({
+        response: { status: 401 },
+        config: originalRequest
+      })
+    ).rejects.toThrow('Network Error');
+
+    // Tokens must remain intact
+    expect(useAuthStore.getState().firebaseToken).toBe('old-access-token');
+    expect(useAuthStore.getState().refreshToken).toBe('preserve-me-network-refresh-token');
+    expect(originalRequest._retry).toBeUndefined();
+
+    axiosPostSpy.mockRestore();
+  });
 });

@@ -594,6 +594,10 @@ export interface Translations {
     hydratingCatalog: string;
     switchAccountPrompt: string;
     registerPrompt: string;
+    loginUnsyncedTitle: string;
+    loginUnsyncedWarning: string;
+    loginUnsyncedNotice: string;
+    forceLoginBtn: string;
   };
   landing: {
     heroBadge: string;
@@ -1275,7 +1279,11 @@ export const translations: Record<Language, Translations> = {
       offlineRegisterNotice: 'Offline ang device: Nai-save ang tindahan sa lokal. Magpapatuloy ang cloud registration pagbalik ng internet.',
       hydratingCatalog: 'Kinukuha ang data ng tindahan mula sa cloud...',
       switchAccountPrompt: 'Mayroon ka na bang rehistradong tindahan? Mag-login dito.',
-      registerPrompt: 'Wala ka pang tindahan? Magrehistro rito.'
+      registerPrompt: 'Wala ka pang tindahan? Magrehistro rito.',
+      loginUnsyncedTitle: 'May Hindi Pa Nai-sync na Datos',
+      loginUnsyncedWarning: 'May {count} transaksyon na hindi pa nai-sync sa cloud mula sa kasalukuyang tindahan! Kung magla-log in ka sa ibang account, mabubura ang mga ito.',
+      loginUnsyncedNotice: 'Paalala: May {count} transaksyon na hindi pa nai-sync sa cloud sa device na ito.',
+      forceLoginBtn: 'I-wipe at Mag-login Pa Rin'
     },
     subscription: {
       planSection: 'Plano at Subscription',
@@ -2007,7 +2015,11 @@ export const translations: Record<Language, Translations> = {
       offlineRegisterNotice: 'Offline mode: Store saved locally. Cloud registration will sync when online.',
       hydratingCatalog: 'Hydrating store data from cloud...',
       switchAccountPrompt: 'Already have a registered store? Log in here.',
-      registerPrompt: 'Don\'t have a store yet? Register here.'
+      registerPrompt: 'Don\'t have a store yet? Register here.',
+      loginUnsyncedTitle: 'Unsynced Data Detected',
+      loginUnsyncedWarning: 'You have {count} unsynced transactions from the current store! Logging into another account will wipe this local data.',
+      loginUnsyncedNotice: 'Notice: You have {count} unsynced transactions on this device.',
+      forceLoginBtn: 'Wipe & Log In Anyway'
     },
     landing: {
       heroBadge: '🇵🇭 Built for Philippine Retail • 100% Offline-Ready',

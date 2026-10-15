@@ -28,11 +28,15 @@ import {
   CheckmarkCircleRegular
 } from '@fluentui/react-icons';
 import type { NavTab } from '../components/Navigation';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '../db/db';
+import { processSyncQueue } from '../sync/syncEngine';
+import { ConfirmUnsyncedLoginDialog } from '../components/ConfirmUnsyncedLoginDialog';
 import { useTranslation } from '../state/languageStore';
 import { useAuthStore } from '../state/authStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
 import { useGCashFeeStore, DEFAULT_GCASH_FEE_TIERS } from '../state/gcashFeeStore';
-import { registerStore, loginStore, loginPin } from '../services/authService';
+import { registerStore, loginStore, loginPin, type AuthResponseDto } from '../services/authService';
 import { createClientUuid, seedDexieDatabaseIfNeeded, DEFAULT_TENANT_ID } from '../db/seedData';
 
 export interface LoginPageProps {
@@ -136,6 +140,57 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   const [regPin, setRegPin] = useState('');
   const [regOfferGcash, setRegOfferGcash] = useState(true);
 
+  // Unsynced queue protection
+  const [isUnsyncedDialogOpen, setIsUnsyncedDialogOpen] = useState(false);
+  const [unsyncedLoginCount, setUnsyncedLoginCount] = useState(0);
+  const [pendingAuthPayload, setPendingAuthPayload] = useState<{
+    payload: AuthResponseDto;
+    localPin?: string;
+  } | null>(null);
+  const [isSyncingFirst, setIsSyncingFirst] = useState(false);
+  const pendingSyncCount = useLiveQuery(() => db.syncQueue.count(), []) || 0;
+
+  const handleConfirmWipeAndLogin = async () => {
+    if (!pendingAuthPayload) return;
+    setIsUnsyncedDialogOpen(false);
+    setIsSubmitting(true);
+    try {
+      await loginWithAuthPayload(
+        pendingAuthPayload.payload,
+        pendingAuthPayload.localPin,
+        true
+      );
+      void useSubscriptionStore.getState().refreshSubscription();
+      onNavigate('pos');
+    } finally {
+      setIsSubmitting(false);
+      setPendingAuthPayload(null);
+    }
+  };
+
+  const handleSyncFirst = async () => {
+    setIsSyncingFirst(true);
+    try {
+      await processSyncQueue();
+      const remaining = await db.syncQueue.count();
+      setUnsyncedLoginCount(remaining);
+      if (remaining === 0 && pendingAuthPayload) {
+        setIsUnsyncedDialogOpen(false);
+        await loginWithAuthPayload(
+          pendingAuthPayload.payload,
+          pendingAuthPayload.localPin,
+          false
+        );
+        void useSubscriptionStore.getState().refreshSubscription();
+        onNavigate('pos');
+      }
+    } catch (e) {
+      console.warn('Sync attempt failed:', e);
+    } finally {
+      setIsSyncingFirst(false);
+    }
+  };
+
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
@@ -172,7 +227,23 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
         });
       }
 
-      await loginWithAuthPayload(authResult, loginMode === 'pin' ? loginPinVal.trim() : undefined);
+      const loginRes = await loginWithAuthPayload(
+        authResult,
+        loginMode === 'pin' ? loginPinVal.trim() : undefined,
+        false
+      );
+
+      if (!loginRes.success) {
+        setPendingAuthPayload({
+          payload: authResult,
+          localPin: loginMode === 'pin' ? loginPinVal.trim() : undefined
+        });
+        setUnsyncedLoginCount(loginRes.unsyncedCount);
+        setIsUnsyncedDialogOpen(true);
+        setIsSubmitting(false);
+        return;
+      }
+
       void useSubscriptionStore.getState().refreshSubscription();
       onNavigate('pos');
     } catch (err: any) {
@@ -335,6 +406,28 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
         {authError && (
           <div className={styles.errorBanner} role="alert" data-testid="login-error-banner">
             <Text weight="semibold">{authError}</Text>
+          </div>
+        )}
+
+        {pendingSyncCount > 0 && (
+          <div
+            style={{
+              backgroundColor: tokens.colorPaletteYellowBackground1,
+              color: tokens.colorPaletteYellowForeground1,
+              border: `1px solid ${tokens.colorPaletteYellowBorder1}`,
+              borderRadius: tokens.borderRadiusMedium,
+              padding: `${tokens.spacingVerticalS} ${tokens.spacingHorizontalM}`,
+              marginBottom: tokens.spacingVerticalM,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+            role="status"
+            data-testid="login-unsynced-notice"
+          >
+            <Text size={200} weight="semibold">
+              {t.onboarding.loginUnsyncedNotice.replace('{count}', String(pendingSyncCount))}
+            </Text>
           </div>
         )}
 
@@ -546,6 +639,18 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
           </Button>
         </div>
       </Card>
+
+      <ConfirmUnsyncedLoginDialog
+        isOpen={isUnsyncedDialogOpen}
+        unsyncedCount={unsyncedLoginCount}
+        onClose={() => {
+          setIsUnsyncedDialogOpen(false);
+          setPendingAuthPayload(null);
+        }}
+        onConfirmWipeAndLogin={handleConfirmWipeAndLogin}
+        onSyncFirst={handleSyncFirst}
+        isSyncing={isSyncingFirst}
+      />
     </div>
   );
 };

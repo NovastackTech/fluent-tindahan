@@ -319,10 +319,15 @@ apiClient.interceptors.response.use(
         processQueue(null, newToken);
         originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
         return apiClient.request(originalRequest);
-      } catch (refreshErr) {
+      } catch (refreshErr: any) {
         processQueue(refreshErr, null);
-        setFirebaseToken(null);
-        setRefreshToken(null);
+        const refreshStatus = refreshErr?.response?.status;
+        if (refreshStatus === 401 || refreshStatus === 403) {
+          setFirebaseToken(null);
+          setRefreshToken(null);
+        } else {
+          delete originalRequest._retry;
+        }
         return Promise.reject(refreshErr);
       } finally {
         isRefreshing = false;

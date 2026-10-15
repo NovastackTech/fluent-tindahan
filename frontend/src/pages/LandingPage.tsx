@@ -45,7 +45,10 @@ import { useTranslation } from '../state/languageStore';
 import { useAuthStore } from '../state/authStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
 import { useGCashFeeStore, DEFAULT_GCASH_FEE_TIERS } from '../state/gcashFeeStore';
-import { registerStore, loginStore, loginPin } from '../services/authService';
+import { db } from '../db/db';
+import { processSyncQueue } from '../sync/syncEngine';
+import { ConfirmUnsyncedLoginDialog } from '../components/ConfirmUnsyncedLoginDialog';
+import { registerStore, loginStore, loginPin, type AuthResponseDto } from '../services/authService';
 import { createClientUuid, seedDexieDatabaseIfNeeded, DEFAULT_TENANT_ID } from '../db/seedData';
 import { formatPeso } from '../utils/currency';
 
@@ -370,6 +373,56 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
   const monthlyUtangRecovered = Math.round(calcDailySales * 30 * 0.018); // ~1.8% loss avoided
   const monthlyHoursSaved = Math.max(15, Math.round(calcDailySales / 250));
 
+  // Unsynced queue protection
+  const [isUnsyncedDialogOpen, setIsUnsyncedDialogOpen] = useState(false);
+  const [unsyncedLoginCount, setUnsyncedLoginCount] = useState(0);
+  const [pendingAuthPayload, setPendingAuthPayload] = useState<{
+    payload: AuthResponseDto;
+    localPin?: string;
+  } | null>(null);
+  const [isSyncingFirst, setIsSyncingFirst] = useState(false);
+
+  const handleConfirmWipeAndLogin = async () => {
+    if (!pendingAuthPayload) return;
+    setIsUnsyncedDialogOpen(false);
+    setIsSubmitting(true);
+    try {
+      await loginWithAuthPayload(
+        pendingAuthPayload.payload,
+        pendingAuthPayload.localPin,
+        true
+      );
+      void useSubscriptionStore.getState().refreshSubscription();
+      onNavigate('pos');
+    } finally {
+      setIsSubmitting(false);
+      setPendingAuthPayload(null);
+    }
+  };
+
+  const handleSyncFirst = async () => {
+    setIsSyncingFirst(true);
+    try {
+      await processSyncQueue();
+      const remaining = await db.syncQueue.count();
+      setUnsyncedLoginCount(remaining);
+      if (remaining === 0 && pendingAuthPayload) {
+        setIsUnsyncedDialogOpen(false);
+        await loginWithAuthPayload(
+          pendingAuthPayload.payload,
+          pendingAuthPayload.localPin,
+          false
+        );
+        void useSubscriptionStore.getState().refreshSubscription();
+        onNavigate('pos');
+      }
+    } catch (e) {
+      console.warn('Sync attempt failed:', e);
+    } finally {
+      setIsSyncingFirst(false);
+    }
+  };
+
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
@@ -406,7 +459,23 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
         });
       }
 
-      await loginWithAuthPayload(authResult, loginMode === 'pin' ? loginPinVal.trim() : undefined);
+      const loginRes = await loginWithAuthPayload(
+        authResult,
+        loginMode === 'pin' ? loginPinVal.trim() : undefined,
+        false
+      );
+
+      if (!loginRes.success) {
+        setPendingAuthPayload({
+          payload: authResult,
+          localPin: loginMode === 'pin' ? loginPinVal.trim() : undefined
+        });
+        setUnsyncedLoginCount(loginRes.unsyncedCount);
+        setIsUnsyncedDialogOpen(true);
+        setIsSubmitting(false);
+        return;
+      }
+
       void useSubscriptionStore.getState().refreshSubscription();
       onNavigate('pos');
     } catch (err: any) {
@@ -1389,6 +1458,18 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
           {t.landing.ctaBtn}
         </Button>
       </section>
+
+      <ConfirmUnsyncedLoginDialog
+        isOpen={isUnsyncedDialogOpen}
+        unsyncedCount={unsyncedLoginCount}
+        onClose={() => {
+          setIsUnsyncedDialogOpen(false);
+          setPendingAuthPayload(null);
+        }}
+        onConfirmWipeAndLogin={handleConfirmWipeAndLogin}
+        onSyncFirst={handleSyncFirst}
+        isSyncing={isSyncingFirst}
+      />
     </div>
   );
 };

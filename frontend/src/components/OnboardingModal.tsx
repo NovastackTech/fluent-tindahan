@@ -49,7 +49,9 @@ import { createClientUuid, seedDexieDatabaseIfNeeded } from '../db/seedData';
 import { db } from '../db/db';
 import { normalizePhilippineMobile } from '../utils/philippineMobile';
 import { DEFAULT_GCASH_FEE_TIERS, useGCashFeeStore } from '../state/gcashFeeStore';
-import { registerStore, loginStore, loginPin } from '../services/authService';
+import { processSyncQueue } from '../sync/syncEngine';
+import { ConfirmUnsyncedLoginDialog } from './ConfirmUnsyncedLoginDialog';
+import { registerStore, loginStore, loginPin, type AuthResponseDto } from '../services/authService';
 
 const useStyles = makeStyles({
   surface: {
@@ -181,6 +183,66 @@ export const OnboardingModal: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submissionInFlight = useRef(false);
   const onboardingIds = useRef<{ tenantId: string; userId: string } | null>(null);
+
+  // Unsynced queue protection
+  const [isUnsyncedDialogOpen, setIsUnsyncedDialogOpen] = useState(false);
+  const [unsyncedLoginCount, setUnsyncedLoginCount] = useState(0);
+  const [pendingAuthPayload, setPendingAuthPayload] = useState<{
+    payload: AuthResponseDto;
+    localPin?: string;
+  } | null>(null);
+  const [isSyncingFirst, setIsSyncingFirst] = useState(false);
+
+  const handleConfirmWipeAndLogin = async () => {
+    if (!pendingAuthPayload) return;
+    setIsUnsyncedDialogOpen(false);
+    setIsSubmitting(true);
+    try {
+      await loginWithAuthPayload(
+        pendingAuthPayload.payload,
+        pendingAuthPayload.localPin,
+        true
+      );
+      useSubscriptionStore.setState({
+        tier: pendingAuthPayload.payload.tier,
+        subscriptionEndDate: pendingAuthPayload.payload.subscriptionEndDate,
+        isActive: pendingAuthPayload.payload.tier !== 'Libre'
+      });
+      void useSubscriptionStore.getState().refreshSubscription();
+      closeOnboarding();
+    } finally {
+      setIsSubmitting(false);
+      setPendingAuthPayload(null);
+    }
+  };
+
+  const handleSyncFirst = async () => {
+    setIsSyncingFirst(true);
+    try {
+      await processSyncQueue();
+      const remaining = await db.syncQueue.count();
+      setUnsyncedLoginCount(remaining);
+      if (remaining === 0 && pendingAuthPayload) {
+        setIsUnsyncedDialogOpen(false);
+        await loginWithAuthPayload(
+          pendingAuthPayload.payload,
+          pendingAuthPayload.localPin,
+          false
+        );
+        useSubscriptionStore.setState({
+          tier: pendingAuthPayload.payload.tier,
+          subscriptionEndDate: pendingAuthPayload.payload.subscriptionEndDate,
+          isActive: pendingAuthPayload.payload.tier !== 'Libre'
+        });
+        void useSubscriptionStore.getState().refreshSubscription();
+        closeOnboarding();
+      }
+    } catch (e) {
+      console.warn('Sync attempt failed:', e);
+    } finally {
+      setIsSyncingFirst(false);
+    }
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -466,7 +528,23 @@ export const OnboardingModal: React.FC = () => {
         });
       }
 
-      await loginWithAuthPayload(authResult, loginMode === 'pin' ? loginPinVal.trim() : undefined);
+      const loginRes = await loginWithAuthPayload(
+        authResult,
+        loginMode === 'pin' ? loginPinVal.trim() : undefined,
+        false
+      );
+
+      if (!loginRes.success) {
+        setPendingAuthPayload({
+          payload: authResult,
+          localPin: loginMode === 'pin' ? loginPinVal.trim() : undefined
+        });
+        setUnsyncedLoginCount(loginRes.unsyncedCount);
+        setIsUnsyncedDialogOpen(true);
+        setIsSubmitting(false);
+        return;
+      }
+
       useSubscriptionStore.setState({
         tier: authResult.tier,
         subscriptionEndDate: authResult.subscriptionEndDate,
@@ -494,7 +572,8 @@ export const OnboardingModal: React.FC = () => {
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={(_, data) => !data.open && isEditMode && closeOnboarding()}>
+    <>
+      <Dialog open={isOpen} onOpenChange={(_, data) => !data.open && isEditMode && closeOnboarding()}>
       <DialogSurface className={styles.surface} aria-label={isEditMode ? t.onboarding.editTitle : t.onboarding.welcomeTitle}>
         <DialogBody>
           <div className={styles.headerRow}>
@@ -919,5 +998,18 @@ export const OnboardingModal: React.FC = () => {
         </DialogBody>
       </DialogSurface>
     </Dialog>
+
+    <ConfirmUnsyncedLoginDialog
+      isOpen={isUnsyncedDialogOpen}
+      unsyncedCount={unsyncedLoginCount}
+      onClose={() => {
+        setIsUnsyncedDialogOpen(false);
+        setPendingAuthPayload(null);
+      }}
+      onConfirmWipeAndLogin={handleConfirmWipeAndLogin}
+      onSyncFirst={handleSyncFirst}
+      isSyncing={isSyncingFirst}
+    />
+  </>
   );
 };

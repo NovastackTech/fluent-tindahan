@@ -4,7 +4,7 @@ import { db, type PlanTier } from '../db/db';
 import { DEMO_BUSINESS_NAME, DEMO_OWNER, DEMO_PHONE } from '../constants/demoProfile';
 import { getSyncStorageKey } from '../constants/sync';
 import { CURRENT_TERMS_VERSION } from '../legal/termsData';
-import { computeLocalPinHash, type AuthResponseDto } from '../services/authService';
+import { computeLocalPinHash, logoutStore, type AuthResponseDto } from '../services/authService';
 import { useGCashFeeStore } from './gcashFeeStore';
 
 export { DEMO_BUSINESS_NAME, DEMO_OWNER, DEMO_PHONE } from '../constants/demoProfile';
@@ -27,6 +27,11 @@ export interface OnboardingPayload extends StoreProfilePayload {
 }
 
 export interface LogoutResult {
+  success: boolean;
+  unsyncedCount: number;
+}
+
+export interface LoginResult {
   success: boolean;
   unsyncedCount: number;
 }
@@ -80,7 +85,7 @@ interface AuthState {
   closeOnboarding: () => void;
   completeOnboarding: (payload: OnboardingPayload) => void;
   updateStoreProfile: (payload: StoreProfilePayload) => void;
-  loginWithAuthPayload: (payload: AuthResponseDto, localPin?: string) => Promise<void>;
+  loginWithAuthPayload: (payload: AuthResponseDto, localPin?: string, forceWipe?: boolean) => Promise<LoginResult>;
   logout: (forceWipe?: boolean) => Promise<LogoutResult>;
 }
 
@@ -432,11 +437,26 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     });
   },
 
-  loginWithAuthPayload: async (payload: AuthResponseDto, localPin?: string) => {
+  loginWithAuthPayload: async (
+    payload: AuthResponseDto,
+    localPin?: string,
+    forceWipe = false
+  ): Promise<LoginResult> => {
     const currentTenantId = get().tenantId;
     const isNewTenant = payload.tenantId.toLowerCase() !== currentTenantId.toLowerCase();
 
     if (isNewTenant) {
+      let pendingCount = 0;
+      try {
+        pendingCount = await db.syncQueue.count();
+      } catch (e) {
+        console.warn('[authStore] Failed to check syncQueue count:', e);
+      }
+
+      if (pendingCount > 0 && !forceWipe) {
+        return { success: false, unsyncedCount: pendingCount };
+      }
+
       await clearAllLocalDexieTables();
       useGCashFeeStore.getState().resetFeeStore();
     }
@@ -496,6 +516,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       isOnboardingStatusReady: true,
       isOnboardingOpen: false
     });
+
+    return { success: true, unsyncedCount: 0 };
   },
 
   logout: async (forceWipe = false): Promise<LogoutResult> => {
@@ -508,6 +530,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     if (pendingCount > 0 && !forceWipe) {
       return { success: false, unsyncedCount: pendingCount };
+    }
+
+    const currentRefreshToken = get().refreshToken;
+    if (currentRefreshToken) {
+      void logoutStore(currentRefreshToken);
     }
 
     try {

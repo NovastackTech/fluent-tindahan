@@ -425,6 +425,13 @@ namespace FluentTindahan.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("PinLockoutEnd")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTimeOffset?>("RefreshTokenExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RefreshTokenIdHash")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
                     b.Property<string>("Role")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -439,6 +446,7 @@ namespace FluentTindahan.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("NormalizedEmail")
                         .IsUnique()
+                        .HasDatabaseName("IX_Users_NormalizedEmail")
                         .HasFilter("\"NormalizedEmail\" <> ''");
 
                     b.HasIndex("TenantId");

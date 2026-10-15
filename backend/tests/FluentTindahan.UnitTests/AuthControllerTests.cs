@@ -1320,6 +1320,199 @@ public class AuthControllerTests
         result.Result.Should().BeOfType<UnauthorizedObjectResult>();
     }
 
+    [Fact]
+    public async Task RefreshToken_RotatesOnUse_And_ReusedOldTokenIsRejectedAndRevokesSession()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        // 1. Register a user
+        var regResult = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "rotation.test@tindahan.ph",
+            Password = "Password123!",
+            BusinessName = "Rotation Test Store"
+        }, CancellationToken.None);
+        var regDto = ((OkObjectResult)regResult.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        var token1 = regDto.RefreshToken!;
+
+        var user = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == regDto.UserId);
+        user.RefreshTokenIdHash.Should().NotBeNullOrWhiteSpace();
+        var originalHash = user.RefreshTokenIdHash;
+
+        // 2. First refresh with token1 succeeds and rotates to token2
+        var refreshResult1 = await controller.Refresh(new AuthController.RefreshTokenRequest
+        {
+            RefreshToken = token1
+        }, CancellationToken.None);
+        refreshResult1.Result.Should().BeOfType<OkObjectResult>();
+        var refreshDto1 = ((OkObjectResult)refreshResult1.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        var token2 = refreshDto1.RefreshToken!;
+        token2.Should().NotBe(token1);
+
+        user = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == regDto.UserId);
+        user.RefreshTokenIdHash.Should().NotBe(originalHash);
+
+        // 3. Attacker replays token1 (reuse attempt)
+        var replayResult = await controller.Refresh(new AuthController.RefreshTokenRequest
+        {
+            RefreshToken = token1
+        }, CancellationToken.None);
+        replayResult.Result.Should().BeOfType<UnauthorizedObjectResult>();
+
+        // 4. Reuse detection immediately revokes the session in the database
+        user = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == regDto.UserId);
+        user.RefreshTokenIdHash.Should().BeNull();
+
+        // 5. Subsequent refresh with token2 is now ALSO rejected because the compromised session was revoked
+        var refreshResult2 = await controller.Refresh(new AuthController.RefreshTokenRequest
+        {
+            RefreshToken = token2
+        }, CancellationToken.None);
+        refreshResult2.Result.Should().BeOfType<UnauthorizedObjectResult>();
+    }
+
+    [Fact]
+    public async Task RefreshToken_RevokedAfterLogout_ReturnsUnauthorized()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        var regResult = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "logout.revocation@tindahan.ph",
+            Password = "Password123!",
+            BusinessName = "Logout Test Store"
+        }, CancellationToken.None);
+        var regDto = ((OkObjectResult)regResult.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        var refreshToken = regDto.RefreshToken!;
+
+        SetAuthenticatedUser(controller, regDto.UserId, regDto.TenantId, regDto.Email);
+
+        // Call Logout endpoint
+        var logoutResult = await controller.Logout(new AuthController.LogoutRequest(), CancellationToken.None);
+        logoutResult.Should().BeOfType<OkObjectResult>();
+
+        // Database record has no active refresh token
+        var user = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == regDto.UserId);
+        user.RefreshTokenIdHash.Should().BeNull();
+
+        // Refresh with old token fails
+        var refreshResult = await controller.Refresh(new AuthController.RefreshTokenRequest
+        {
+            RefreshToken = refreshToken
+        }, CancellationToken.None);
+        refreshResult.Result.Should().BeOfType<UnauthorizedObjectResult>();
+    }
+
+    [Fact]
+    public async Task Logout_WithRefreshTokenInBody_RevokesSessionWithoutBearerAuth()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        var regResult = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "bodylogout@tindahan.ph",
+            Password = "Password123!",
+            BusinessName = "Body Logout Store"
+        }, CancellationToken.None);
+        var regDto = ((OkObjectResult)regResult.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        // Unauthenticated controller (no bearer token)
+        var unauthController = CreateController(context);
+
+        var logoutResult = await unauthController.Logout(new AuthController.LogoutRequest
+        {
+            RefreshToken = regDto.RefreshToken
+        }, CancellationToken.None);
+        logoutResult.Should().BeOfType<OkObjectResult>();
+
+        var user = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == regDto.UserId);
+        user.RefreshTokenIdHash.Should().BeNull();
+
+        var refreshResult = await controller.Refresh(new AuthController.RefreshTokenRequest
+        {
+            RefreshToken = regDto.RefreshToken!
+        }, CancellationToken.None);
+        refreshResult.Result.Should().BeOfType<UnauthorizedObjectResult>();
+    }
+
+    [Fact]
+    public async Task RefreshToken_RevokedAfterPasswordChange_ReturnsUnauthorized()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        var regResult = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "pwdchange.revoke@tindahan.ph",
+            Password = "OldPassword123!",
+            BusinessName = "Password Change Store"
+        }, CancellationToken.None);
+        var regDto = ((OkObjectResult)regResult.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        var oldRefreshToken = regDto.RefreshToken!;
+
+        SetAuthenticatedUser(controller, regDto.UserId, regDto.TenantId, regDto.Email);
+
+        // Change password
+        var changeResult = await controller.ChangePassword(new AuthController.ChangePasswordRequest
+        {
+            CurrentPassword = "OldPassword123!",
+            NewPassword = "NewPassword999!"
+        }, CancellationToken.None);
+        changeResult.Should().BeOfType<OkObjectResult>();
+
+        // Old refresh token must be rejected
+        var refreshResult = await controller.Refresh(new AuthController.RefreshTokenRequest
+        {
+            RefreshToken = oldRefreshToken
+        }, CancellationToken.None);
+        refreshResult.Result.Should().BeOfType<UnauthorizedObjectResult>();
+
+        // Login with new password succeeds and issues fresh tokens
+        var newLoginResult = await controller.Login(new AuthController.LoginRequest
+        {
+            Email = "pwdchange.revoke@tindahan.ph",
+            Password = "NewPassword999!"
+        }, CancellationToken.None);
+        newLoginResult.Result.Should().BeOfType<OkObjectResult>();
+    }
+
+    [Fact]
+    public async Task RefreshToken_RevokedAfterPinChange_ReturnsUnauthorized()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        var regResult = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "pinchange.revoke@tindahan.ph",
+            Password = "Password123!",
+            Pin = "1111",
+            BusinessName = "Pin Change Store"
+        }, CancellationToken.None);
+        var regDto = ((OkObjectResult)regResult.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        var oldRefreshToken = regDto.RefreshToken!;
+
+        SetAuthenticatedUser(controller, regDto.UserId, regDto.TenantId, regDto.Email);
+
+        // Update PIN
+        var updatePinResult = await controller.UpdatePin(new AuthController.UpdatePinRequest
+        {
+            Password = "Password123!",
+            Pin = "9999"
+        }, CancellationToken.None);
+        updatePinResult.Should().BeOfType<OkObjectResult>();
+
+        // Old refresh token must be rejected
+        var refreshResult = await controller.Refresh(new AuthController.RefreshTokenRequest
+        {
+            RefreshToken = oldRefreshToken
+        }, CancellationToken.None);
+        refreshResult.Result.Should().BeOfType<UnauthorizedObjectResult>();
+    }
+
     private sealed class EmailRaceAppDbContext : AppDbContext
     {
         public bool ThrowExceptionOnSave { get; set; } = true;

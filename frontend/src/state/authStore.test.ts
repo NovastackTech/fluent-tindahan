@@ -324,6 +324,59 @@ describe('authStore', () => {
     expect(await db.syncQueue.count()).toBe(0);
   });
 
+  it('guards against login when unsynced items exist on new tenant unless forceWipe is true', async () => {
+    const { db } = await import('../db/db');
+    useAuthStore.setState({ tenantId: 'original-tenant-id' });
+    await db.syncQueue.add({
+      id: 'pending-sale-uuid-login',
+      entity: 'Sale',
+      action: 'Insert',
+      timestamp: new Date().toISOString(),
+      payload: { id: 's2', total: 200 },
+      status: 'Pending',
+      retryCount: 0
+    });
+
+    const newTenantPayload = {
+      tenantId: 'different-tenant-id',
+      userId: 'diff-user-id',
+      email: 'diff@tindahan.ph',
+      businessName: 'Different Store',
+      ownerName: 'Diff Owner',
+      phone: '09123456789',
+      role: 'Owner',
+      tier: 'Libre' as const,
+      planTier: 'Libre' as const,
+      subscriptionEndDate: null,
+      hasPin: false,
+      token: 'jwt-diff-token'
+    };
+
+    // Attempt gentle login without forceWipe
+    const gentleResult = await useAuthStore.getState().loginWithAuthPayload(newTenantPayload, undefined, false);
+    expect(gentleResult.success).toBe(false);
+    expect(gentleResult.unsyncedCount).toBe(1);
+    expect(useAuthStore.getState().tenantId).toBe('original-tenant-id'); // preserved!
+    expect(await db.syncQueue.count()).toBe(1); // queue NOT wiped!
+
+    // Attempt login to SAME tenant
+    const sameTenantPayload = {
+      ...newTenantPayload,
+      tenantId: 'original-tenant-id'
+    };
+    const sameResult = await useAuthStore.getState().loginWithAuthPayload(sameTenantPayload, undefined, false);
+    expect(sameResult.success).toBe(true);
+    expect(sameResult.unsyncedCount).toBe(0);
+    expect(await db.syncQueue.count()).toBe(1); // queue still preserved!
+
+    // Force wipe login to new tenant
+    const forceResult = await useAuthStore.getState().loginWithAuthPayload(newTenantPayload, undefined, true);
+    expect(forceResult.success).toBe(true);
+    expect(forceResult.unsyncedCount).toBe(0);
+    expect(useAuthStore.getState().tenantId).toBe('different-tenant-id');
+    expect(await db.syncQueue.count()).toBe(0); // cleared for new tenant!
+  });
+
   it('migrates legacy firebase token storage key to native backend auth token key', async () => {
     // Simulate existing user session storing token under legacy key
     localStorage.clear();
@@ -347,5 +400,25 @@ describe('authStore', () => {
     expect(localStorage.getItem(STORAGE_KEY_TOKEN)).toBeNull();
     expect(localStorage.getItem(LEGACY_STORAGE_KEY_FIREBASE_TOKEN)).toBeNull();
   });
+
+  it('notifies backend logout with refreshToken without failing local logout on network error', async () => {
+    const { apiClient } = await import('../services/apiClient');
+    const { useAuthStore: currentAuthStore } = await import('./authStore');
+    const postSpy = vi.spyOn(apiClient, 'post').mockRejectedValueOnce(new Error('Network offline'));
+
+    currentAuthStore.setState({
+      isOnboarded: true,
+      refreshToken: 'current-active-refresh-token'
+    });
+
+    const result = await currentAuthStore.getState().logout(true);
+    expect(result.success).toBe(true);
+    expect(postSpy).toHaveBeenCalledWith('/auth/logout', { refreshToken: 'current-active-refresh-token' });
+    expect(currentAuthStore.getState().refreshToken).toBeNull();
+    expect(currentAuthStore.getState().isOnboarded).toBe(false);
+
+    postSpy.mockRestore();
+  });
 });
+
 

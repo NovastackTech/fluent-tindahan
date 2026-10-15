@@ -1,5 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
@@ -95,16 +96,19 @@ public class JwtTokenService : IJwtTokenService
         return (tokenHandler.WriteToken(token), expiresAt);
     }
 
-    public (string RefreshToken, DateTimeOffset ExpiresAt) GenerateRefreshToken(
+    public (string RefreshToken, DateTimeOffset ExpiresAt, string TokenId) GenerateRefreshToken(
         Guid userId,
-        Guid tenantId)
+        Guid tenantId,
+        string? tokenId = null)
     {
         var now = _timeProvider.GetUtcNow();
         var expiresAt = now.AddDays(_refreshExpiryDays);
+        var resolvedTokenId = string.IsNullOrWhiteSpace(tokenId) ? Guid.NewGuid().ToString("N") : tokenId.Trim();
 
         var claims = new List<Claim>
         {
             new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),
+            new Claim(JwtRegisteredClaimNames.Jti, resolvedTokenId),
             new Claim("user_id", userId.ToString()),
             new Claim("tenant_id", tenantId.ToString()),
             new Claim("aud", _audience),
@@ -125,13 +129,14 @@ public class JwtTokenService : IJwtTokenService
 
         var tokenHandler = new JwtSecurityTokenHandler();
         var token = tokenHandler.CreateToken(tokenDescriptor);
-        return (tokenHandler.WriteToken(token), expiresAt);
+        return (tokenHandler.WriteToken(token), expiresAt, resolvedTokenId);
     }
 
-    public bool ValidateRefreshToken(string refreshToken, out Guid userId, out Guid tenantId)
+    public bool ValidateRefreshToken(string refreshToken, out Guid userId, out Guid tenantId, out string tokenId)
     {
         userId = Guid.Empty;
         tenantId = Guid.Empty;
+        tokenId = string.Empty;
 
         if (string.IsNullOrWhiteSpace(refreshToken))
         {
@@ -175,11 +180,16 @@ public class JwtTokenService : IJwtTokenService
                 ?? principal.FindFirst("user_id")?.Value;
 
             var tenantStr = principal.FindFirst("tenant_id")?.Value;
+            var jti = principal.FindFirst(JwtRegisteredClaimNames.Jti)?.Value
+                ?? principal.FindFirst("jti")?.Value;
 
-            if (Guid.TryParse(sub, out var parsedUser) && Guid.TryParse(tenantStr, out var parsedTenant))
+            if (Guid.TryParse(sub, out var parsedUser) &&
+                Guid.TryParse(tenantStr, out var parsedTenant) &&
+                !string.IsNullOrWhiteSpace(jti))
             {
                 userId = parsedUser;
                 tenantId = parsedTenant;
+                tokenId = jti;
                 return true;
             }
 
@@ -189,5 +199,22 @@ public class JwtTokenService : IJwtTokenService
         {
             return false;
         }
+    }
+
+    public bool ValidateRefreshToken(string refreshToken, out Guid userId, out Guid tenantId)
+    {
+        return ValidateRefreshToken(refreshToken, out userId, out tenantId, out _);
+    }
+
+    public string HashTokenId(string tokenId)
+    {
+        if (string.IsNullOrWhiteSpace(tokenId))
+        {
+            return string.Empty;
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(tokenId.Trim());
+        var hash = SHA256.HashData(bytes);
+        return Convert.ToHexString(hash).ToLowerInvariant();
     }
 }

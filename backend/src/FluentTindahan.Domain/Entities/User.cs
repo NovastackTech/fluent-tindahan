@@ -26,6 +26,12 @@ public class User : IMustHaveTenant
     public string FirebaseUid { get; set; } = string.Empty;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? LastLoginAt { get; set; }
+    /// <summary>
+    /// Cryptographic SHA-256 hash of the active refresh token ID (JTI).
+    /// Used for token rotation and instant revocation on logout, password change, or reuse detection.
+    /// </summary>
+    public string? RefreshTokenIdHash { get; set; }
+    public DateTimeOffset? RefreshTokenExpiresAt { get; set; }
 
     public Tenant? Tenant { get; set; }
 }

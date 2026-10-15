@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { FluentProvider } from '@fluentui/react-components';
 import { LoginPage } from './LoginPage';
 import { sariSariLightTheme } from '../theme/theme';
@@ -7,6 +7,7 @@ import { useAuthStore } from '../state/authStore';
 import { translations } from '../i18n/translations';
 import * as authService from '../services/authService';
 import * as seedData from '../db/seedData';
+import { db } from '../db/db';
 
 vi.mock('../services/authService', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/authService')>();
@@ -82,9 +83,10 @@ const renderLoginPage = (onNavigate = vi.fn()) => {
 describe('LoginPage Component', () => {
   const t = translations.tl;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     localStorage.clear();
+    await db.syncQueue.clear();
     useAuthStore.setState({
       isOnboarded: false,
       isOnboardingStatusReady: true,
@@ -226,5 +228,82 @@ describe('LoginPage Component', () => {
     fireEvent.click(backBtn);
 
     expect(onNavigate).toHaveBeenCalledWith('landing');
+  });
+
+  it('shows unsynced notice banner when db.syncQueue has pending items', async () => {
+    await db.syncQueue.add({
+      id: 'pending-item-1',
+      entity: 'Sale',
+      action: 'Insert',
+      timestamp: new Date().toISOString(),
+      payload: { id: 's1' },
+      status: 'Pending',
+      retryCount: 0
+    });
+
+    renderLoginPage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('login-unsynced-notice')).toBeInTheDocument();
+      expect(screen.getByText(/1 transaksyon na hindi pa nai-sync/i)).toBeInTheDocument();
+    });
+  });
+
+  it('prompts user with ConfirmUnsyncedLoginDialog when logging into a new tenant with unsynced mutations', async () => {
+    await db.syncQueue.add({
+      id: 'pending-item-2',
+      entity: 'Sale',
+      action: 'Insert',
+      timestamp: new Date().toISOString(),
+      payload: { id: 's2' },
+      status: 'Pending',
+      retryCount: 0
+    });
+
+    const { onNavigate } = renderLoginPage();
+
+    const emailInput = screen.getByPlaceholderText(t.landing.emailPlaceholder);
+    const passwordInput = screen.getByPlaceholderText(t.landing.passwordPlaceholder);
+    const submitBtn = screen.getByTestId('login-submit-btn');
+
+    fireEvent.change(emailInput, { target: { value: 'owner@tindahan.ph' } });
+    fireEvent.change(passwordInput, { target: { value: 'password123' } });
+    fireEvent.submit(submitBtn.closest('form')!);
+
+    // Dialog should appear asking user first
+    await waitFor(() => {
+      const dialog = screen.getByRole('dialog');
+      expect(within(dialog).getByText(/May Hindi Pa Nai-sync na Datos|Unsynced Data Detected/i)).toBeInTheDocument();
+      expect(within(dialog).getByText(/1 transaksyon na hindi pa nai-sync/i)).toBeInTheDocument();
+    });
+
+    // Should NOT have completed login yet
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(useAuthStore.getState().isOnboarded).toBe(false);
+
+    // Clicking cancel closes dialog and preserves unsynced records
+    const cancelBtn = within(screen.getByRole('dialog')).getByRole('button', { name: /Kanselahin|Cancel/i });
+    fireEvent.click(cancelBtn);
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+    expect(await db.syncQueue.count()).toBe(1);
+    expect(useAuthStore.getState().isOnboarded).toBe(false);
+
+    // Submitting again and choosing force login wipes and completes login
+    fireEvent.submit(submitBtn.closest('form')!);
+    await waitFor(() => {
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+    });
+
+    const wipeBtn = within(screen.getByRole('dialog')).getByRole('button', { name: /I-wipe at Mag-login Pa Rin|Wipe & Log In Anyway/i });
+    fireEvent.click(wipeBtn);
+
+    await waitFor(() => {
+      expect(useAuthStore.getState().isOnboarded).toBe(true);
+      expect(onNavigate).toHaveBeenCalledWith('pos');
+    });
+    expect(await db.syncQueue.count()).toBe(0);
   });
 });

@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -178,6 +179,20 @@ public class AuthController : ControllerBase
     {
         [Required]
         public string RefreshToken { get; init; } = string.Empty;
+    }
+
+    public sealed record LogoutRequest
+    {
+        public string? RefreshToken { get; init; }
+    }
+
+    public sealed record ChangePasswordRequest
+    {
+        [Required]
+        public string CurrentPassword { get; init; } = string.Empty;
+
+        [Required, MinLength(6, ErrorMessage = "Password must be at least 6 characters.")]
+        public string NewPassword { get; init; } = string.Empty;
     }
 
     public sealed record AuthResponseDto(
@@ -384,6 +399,11 @@ public class AuthController : ControllerBase
             user.PinHash = null;
         }
 
+        var (token, expiresAt) = _jwtTokenService.GenerateAccessToken(user.Id, tenant.Id);
+        var (refreshToken, refreshExpiresAt, tokenId) = _jwtTokenService.GenerateRefreshToken(user.Id, tenant.Id);
+        user.RefreshTokenIdHash = _jwtTokenService.HashTokenId(tokenId);
+        user.RefreshTokenExpiresAt = refreshExpiresAt;
+
         try
         {
             await _context.SaveChangesAsync(cancellationToken);
@@ -398,9 +418,6 @@ public class AuthController : ControllerBase
             _context.ChangeTracker.Clear();
             return Conflict(new { message = "May tindahan o user nang nakarehistro gamit ang ID na ito. / A store or user is already registered with this ID." });
         }
-
-        var (token, expiresAt) = _jwtTokenService.GenerateAccessToken(user.Id, tenant.Id);
-        var (refreshToken, _) = _jwtTokenService.GenerateRefreshToken(user.Id, tenant.Id);
 
         return Ok(new AuthResponseDto(
             tenant.Id,
@@ -503,11 +520,14 @@ public class AuthController : ControllerBase
         user.FailedPinAttempts = 0;
         user.PinLockoutEnd = null;
         user.LastLoginAt = DateTimeOffset.UtcNow;
-        await _context.SaveChangesAsync(cancellationToken);
-        ResetIpPinThrottle(GetClientIpAddress());
 
         var (token, expiresAt) = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId);
-        var (refreshToken, _) = _jwtTokenService.GenerateRefreshToken(user.Id, user.TenantId);
+        var (refreshToken, refreshExpiresAt, tokenId) = _jwtTokenService.GenerateRefreshToken(user.Id, user.TenantId);
+        user.RefreshTokenIdHash = _jwtTokenService.HashTokenId(tokenId);
+        user.RefreshTokenExpiresAt = refreshExpiresAt;
+
+        await _context.SaveChangesAsync(cancellationToken);
+        ResetIpPinThrottle(GetClientIpAddress());
 
         return Ok(new AuthResponseDto(
             user.TenantId,
@@ -698,6 +718,10 @@ public class AuthController : ControllerBase
 
             ResetIpPinThrottle(clientIp);
 
+            var (token, expiresAt) = _jwtTokenService.GenerateAccessToken(freshUser.Id, freshUser.TenantId);
+            var (refreshToken, refreshExpiresAt, tokenId) = _jwtTokenService.GenerateRefreshToken(freshUser.Id, freshUser.TenantId);
+            var tokenHash = _jwtTokenService.HashTokenId(tokenId);
+
             if (_context.Database.IsNpgsql())
             {
                 var now = DateTimeOffset.UtcNow;
@@ -706,7 +730,9 @@ public class AuthController : ControllerBase
                     .ExecuteUpdateAsync(s => s
                         .SetProperty(u => u.FailedPinAttempts, 0)
                         .SetProperty(u => u.PinLockoutEnd, (DateTimeOffset?)null)
-                        .SetProperty(u => u.LastLoginAt, now),
+                        .SetProperty(u => u.LastLoginAt, now)
+                        .SetProperty(u => u.RefreshTokenIdHash, tokenHash)
+                        .SetProperty(u => u.RefreshTokenExpiresAt, refreshExpiresAt),
                         cancellationToken);
             }
             else
@@ -714,11 +740,10 @@ public class AuthController : ControllerBase
                 freshUser.FailedPinAttempts = 0;
                 freshUser.PinLockoutEnd = null;
                 freshUser.LastLoginAt = DateTimeOffset.UtcNow;
+                freshUser.RefreshTokenIdHash = tokenHash;
+                freshUser.RefreshTokenExpiresAt = refreshExpiresAt;
                 await _context.SaveChangesAsync(cancellationToken);
             }
-
-            var (token, expiresAt) = _jwtTokenService.GenerateAccessToken(freshUser.Id, freshUser.TenantId);
-            var (refreshToken, _) = _jwtTokenService.GenerateRefreshToken(freshUser.Id, freshUser.TenantId);
 
             return Ok(new AuthResponseDto(
                 freshUser.TenantId,
@@ -848,6 +873,11 @@ public class AuthController : ControllerBase
 
         user.FailedPinAttempts = 0;
         user.PinLockoutEnd = null;
+
+        // Invalidate existing refresh tokens upon PIN change/removal
+        user.RefreshTokenIdHash = null;
+        user.RefreshTokenExpiresAt = null;
+
         await _context.SaveChangesAsync(cancellationToken);
         ResetIpPinThrottle(GetClientIpAddress());
 
@@ -862,7 +892,9 @@ public class AuthController : ControllerBase
 
     /// <summary>
     /// Renews an expired or expiring access token using a valid signed refresh token.
-    /// Validates HMAC-SHA256 signature, expiry, and user existence in database.
+    /// Validates HMAC-SHA256 signature, expiry, user existence, and verifies the hashed token ID in DB.
+    /// Implements single-use token rotation: rotates refresh token on every successful use and immediately
+    /// revokes the entire session if refresh token reuse is detected.
     /// </summary>
     [HttpPost("refresh")]
     [EnableRateLimiting("AuthSensitive")]
@@ -872,8 +904,9 @@ public class AuthController : ControllerBase
         [FromBody] RefreshTokenRequest request,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.RefreshToken) ||
-            !_jwtTokenService.ValidateRefreshToken(request.RefreshToken, out var userId, out var tenantId))
+        if (request == null ||
+            string.IsNullOrWhiteSpace(request.RefreshToken) ||
+            !_jwtTokenService.ValidateRefreshToken(request.RefreshToken, out var userId, out var tenantId, out var tokenId))
         {
             return Unauthorized(new { message = "Di-wasto o paso na ang session. Pakiusap mag-login muli. / Invalid or expired refresh token." });
         }
@@ -887,8 +920,42 @@ public class AuthController : ControllerBase
             return Unauthorized(new { message = "Hindi natagpuan ang account. / Account not found." });
         }
 
+        if (string.IsNullOrEmpty(user.RefreshTokenIdHash))
+        {
+            return Unauthorized(new { message = "Paso na o binawi ang session. Pakiusap mag-login muli. / Session revoked. Please log in again." });
+        }
+
+        if (user.RefreshTokenExpiresAt.HasValue && user.RefreshTokenExpiresAt.Value < DateTimeOffset.UtcNow)
+        {
+            user.RefreshTokenIdHash = null;
+            user.RefreshTokenExpiresAt = null;
+            await _context.SaveChangesAsync(cancellationToken);
+            return Unauthorized(new { message = "Paso na ang session. Pakiusap mag-login muli. / Refresh token expired." });
+        }
+
+        var incomingTokenIdHash = _jwtTokenService.HashTokenId(tokenId);
+        var matches = CryptographicOperations.FixedTimeEquals(
+            Encoding.UTF8.GetBytes(user.RefreshTokenIdHash),
+            Encoding.UTF8.GetBytes(incomingTokenIdHash));
+
+        if (!matches)
+        {
+            // Token reuse detected! Revoke the entire refresh chain immediately to protect the real user
+            user.RefreshTokenIdHash = null;
+            user.RefreshTokenExpiresAt = null;
+            await _context.SaveChangesAsync(cancellationToken);
+
+            return Unauthorized(new { message = "Di-wasto o nagamit na ang refresh token. Pakiusap mag-login muli. / Invalid or already used refresh token." });
+        }
+
+        // Rotate on use: issue new access token and new refresh token with a new token ID
         var (token, expiresAt) = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId);
-        var (newRefreshToken, _) = _jwtTokenService.GenerateRefreshToken(user.Id, user.TenantId);
+        var (newRefreshToken, newRefreshExpiresAt, newTokenId) = _jwtTokenService.GenerateRefreshToken(user.Id, user.TenantId);
+
+        user.RefreshTokenIdHash = _jwtTokenService.HashTokenId(newTokenId);
+        user.RefreshTokenExpiresAt = newRefreshExpiresAt;
+        user.LastLoginAt = DateTimeOffset.UtcNow;
+        await _context.SaveChangesAsync(cancellationToken);
 
         return Ok(new AuthResponseDto(
             user.TenantId,
@@ -906,6 +973,157 @@ public class AuthController : ControllerBase
             expiresAt,
             newRefreshToken
         ));
+    }
+
+    /// <summary>
+    /// Revokes the current session by clearing the user's stored refresh token ID hash.
+    /// Accepts an authenticated session (Bearer token) or an explicit RefreshToken in the request body.
+    /// </summary>
+    [HttpPost("logout")]
+    [Route("/auth/logout")]
+    [Route("/api/auth/logout")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> Logout(
+        [FromBody] LogoutRequest? request,
+        CancellationToken cancellationToken)
+    {
+        Guid? userId = _currentUserService?.UserId;
+        if (!userId.HasValue || userId == Guid.Empty)
+        {
+            var userPrincipal = HttpContext?.User;
+            var subClaim = userPrincipal?.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                ?? userPrincipal?.FindFirst("sub")?.Value
+                ?? userPrincipal?.FindFirst("user_id")?.Value;
+
+            if (Guid.TryParse(subClaim, out var parsedSub))
+            {
+                userId = parsedSub;
+            }
+        }
+
+        if ((!userId.HasValue || userId == Guid.Empty) && !string.IsNullOrWhiteSpace(request?.RefreshToken))
+        {
+            if (_jwtTokenService.ValidateRefreshToken(request.RefreshToken, out var parsedUser, out _, out _))
+            {
+                userId = parsedUser;
+            }
+        }
+
+        if (userId.HasValue && userId != Guid.Empty)
+        {
+            var user = await _context.Users.IgnoreQueryFilters()
+                .FirstOrDefaultAsync(u => u.Id == userId.Value, cancellationToken);
+
+            if (user != null)
+            {
+                user.RefreshTokenIdHash = null;
+                user.RefreshTokenExpiresAt = null;
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+        }
+
+        return Ok(new { message = "Naka-logout na nang matagumpay. / Logged out successfully." });
+    }
+
+    /// <summary>
+    /// Updates the owner's master password after verifying current password.
+    /// Immediately revokes all existing refresh tokens to protect against stolen tokens.
+    /// </summary>
+    [Authorize]
+    [EnableRateLimiting("AuthSensitive")]
+    [HttpPost("change-password")]
+    [HttpPut("password")]
+    [Route("/auth/change-password")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> ChangePassword(
+        [FromBody] ChangePasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request == null || !ModelState.IsValid || string.IsNullOrWhiteSpace(request.CurrentPassword) || string.IsNullOrWhiteSpace(request.NewPassword))
+        {
+            return BadRequest(ModelState.IsValid ? (object)new { message = "Kailangan ng kasalukuyan at bagong password. / Current and new password are required." } : ModelState);
+        }
+
+        var userId = _currentUserService?.UserId;
+        if (!userId.HasValue || userId == Guid.Empty)
+        {
+            var userPrincipal = HttpContext?.User;
+            var subClaim = userPrincipal?.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                ?? userPrincipal?.FindFirst("sub")?.Value
+                ?? userPrincipal?.FindFirst("user_id")?.Value;
+
+            if (Guid.TryParse(subClaim, out var parsedSub))
+            {
+                userId = parsedSub;
+            }
+        }
+
+        if (!userId.HasValue || userId == Guid.Empty)
+        {
+            return Unauthorized(new { message = "User is not authenticated." });
+        }
+
+        var user = await _context.Users.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Id == userId.Value, cancellationToken);
+
+        if (user == null || string.IsNullOrEmpty(user.PasswordHash))
+        {
+            return Unauthorized(new { message = "Hindi natagpuan ang account o walang password. / User not found or password not configured." });
+        }
+
+        if (user.PasswordLockoutEnd.HasValue && user.PasswordLockoutEnd.Value > DateTimeOffset.UtcNow)
+        {
+            var remaining = Math.Max(1, (int)Math.Ceiling((user.PasswordLockoutEnd.Value - DateTimeOffset.UtcNow).TotalMinutes));
+            return StatusCode(StatusCodes.Status429TooManyRequests, new
+            {
+                message = $"Naka-lockout ang account dahil sa sunod-sunod na maling pagsubok sa password. Maghintay nang {remaining} minuto. / Account locked due to repeated failed password attempts. Wait {remaining} minutes.",
+                lockoutMinutes = remaining,
+                accountLocked = true
+            });
+        }
+
+        var verifyResult = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.CurrentPassword);
+        if (verifyResult == PasswordVerificationResult.Failed)
+        {
+            user.FailedPasswordAttempts++;
+            if (user.FailedPasswordAttempts >= 5)
+            {
+                user.PasswordLockoutEnd = DateTimeOffset.UtcNow.AddMinutes(15);
+            }
+            await _context.SaveChangesAsync(cancellationToken);
+
+            if (user.FailedPasswordAttempts >= 5)
+            {
+                return StatusCode(StatusCodes.Status429TooManyRequests, new
+                {
+                    message = "Naka-lockout ang account dahil sa 5 sunod-sunod na maling pagsubok sa password. Maghintay nang 15 minuto. / Account locked for 15 minutes due to 5 failed password attempts.",
+                    lockoutMinutes = 15,
+                    accountLocked = true
+                });
+            }
+
+            var remainingAttempts = 5 - user.FailedPasswordAttempts;
+            return Unauthorized(new
+            {
+                message = $"Maling kasalukuyang password. May natitira ka pang {remainingAttempts} pagsubok bago mag-lockout. / Invalid current password. {remainingAttempts} attempts remaining.",
+                remainingAttempts
+            });
+        }
+
+        user.PasswordHash = _passwordHasher.HashPassword(user, request.NewPassword);
+        user.FailedPasswordAttempts = 0;
+        user.PasswordLockoutEnd = null;
+
+        // Revoke all existing refresh tokens
+        user.RefreshTokenIdHash = null;
+        user.RefreshTokenExpiresAt = null;
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return Ok(new { message = "Matagumpay na nabago ang password. Na-revoke ang lahat ng lumang sessions. / Password changed successfully. All previous sessions revoked." });
     }
 
     /// <summary>

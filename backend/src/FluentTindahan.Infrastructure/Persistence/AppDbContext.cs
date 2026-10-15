@@ -81,6 +81,8 @@ public class AppDbContext : DbContext, IApplicationDbContext
             builder.Property(u => u.Phone).IsRequired().HasMaxLength(30);
             builder.Property(u => u.Role).IsRequired().HasMaxLength(50);
             builder.Property(u => u.FirebaseUid).HasMaxLength(128);
+            builder.Property(u => u.RefreshTokenIdHash).HasMaxLength(128);
+            builder.Property(u => u.RefreshTokenExpiresAt);
 
             builder.HasIndex(u => u.TenantId);
             builder.HasIndex(u => u.FirebaseUid);
