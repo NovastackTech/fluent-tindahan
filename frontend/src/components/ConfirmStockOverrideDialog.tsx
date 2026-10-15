@@ -61,13 +61,6 @@ const useStyles = makeStyles({
     paddingTop: tokens.spacingVerticalXXS,
     paddingBottom: tokens.spacingVerticalXXS,
     borderBottom: `1px solid ${tokens.colorNeutralStroke3}`
-  },
-  overrideBtn: {
-    backgroundColor: tokens.colorPaletteGoldBackground2,
-    color: tokens.colorPaletteGoldForeground2,
-    '&:hover': {
-      backgroundColor: tokens.colorPaletteGoldBackground1
-    }
   }
 });
 

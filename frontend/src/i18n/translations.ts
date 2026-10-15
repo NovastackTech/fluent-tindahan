@@ -101,6 +101,8 @@ export interface Translations {
     stockOverrideConfirmBtn: string;
     stockWarnNotice: string;
     stockBlockedNotice: string;
+    stockWarnBanner: string;
+    stockOverriddenBanner: string;
   };
   utang: {
     title: string;
@@ -647,7 +649,9 @@ export const translations: Record<Language, Translations> = {
       stockOverrideDialogDesc: 'Kulang ang nakatalang stock sa system para sa ilang paninda. Sa offline tindahan, posibleng may pisikal na paninda na hindi pa nai-encode ang delivery o hindi pa naka-sync. Nais mo bang ituloy pa rin ang benta?',
       stockOverrideConfirmBtn: 'I-override at Ituloy ang Benta',
       stockWarnNotice: 'Pansin: May mga panindang kulang ang nakatalang stock sa system (Pinapayagan dahil naka-set sa Babala Lamang).',
-      stockBlockedNotice: 'Kulang ang stock sa system. Pindutin ang "I-override ang Stock" upang payagan ang benta.'
+      stockBlockedNotice: 'Kulang ang stock sa system. Pindutin ang "I-override ang Stock" upang payagan ang benta.',
+      stockWarnBanner: 'Pansin: Kulang ang nakatalang stock (Babala lamang).',
+      stockOverriddenBanner: 'Na-override ang stock para sa bentang ito.'
     },
     utang: {
       title: 'Talaan ng Utang ng mga Suki',
@@ -1192,7 +1196,9 @@ export const translations: Record<Language, Translations> = {
       stockOverrideDialogDesc: 'Recorded system stock is insufficient for some items in the cart. In offline neighborhood stores, restocks may not be entered yet or another device has not synced. Do you want to proceed with this sale?',
       stockOverrideConfirmBtn: 'Override & Proceed to Checkout',
       stockWarnNotice: 'Notice: Some items have insufficient system stock (Allowed under Warn Only policy).',
-      stockBlockedNotice: 'Insufficient system stock. Click "Override Stock" to allow this sale.'
+      stockBlockedNotice: 'Insufficient system stock. Click "Override Stock" to allow this sale.',
+      stockWarnBanner: 'Notice: Recorded stock is insufficient (Warn only).',
+      stockOverriddenBanner: 'Stock check overridden for this sale.'
     },
     utang: {
       title: 'Customer Credit & Utang Ledger',

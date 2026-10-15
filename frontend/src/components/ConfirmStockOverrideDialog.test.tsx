@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { FluentProvider } from '@fluentui/react-components';
 import { ConfirmStockOverrideDialog } from './ConfirmStockOverrideDialog';
@@ -11,7 +11,7 @@ describe('ConfirmStockOverrideDialog', () => {
   });
 
   it('renders nothing when isOpen is false', () => {
-    const { container } = render(
+    render(
       <FluentProvider theme={sariSariLightTheme}>
         <ConfirmStockOverrideDialog
           isOpen={false}

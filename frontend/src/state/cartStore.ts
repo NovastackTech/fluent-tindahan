@@ -141,13 +141,13 @@ interface CartState {
   
   addItem: (
     product: { id: string; name: string; price: number; maxStock?: number },
-    maxStock?: number
+    maxStock?: number | null
   ) => { added: boolean; capped: boolean };
   removeItem: (productId: string) => void;
   updateQty: (
     productId: string,
     qty: number,
-    maxStock?: number
+    maxStock?: number | null
   ) => { updated: boolean; capped: boolean };
   setCustomer: (id: string | null, name: string | null) => void;
   setPaymentMethod: (method: 'Cash' | 'GCash' | 'Split' | 'Utang') => void;
