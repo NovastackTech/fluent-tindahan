@@ -401,6 +401,34 @@ export interface Translations {
     description: string;
     acceptBtn: string;
     declineBtn: string;
+    closeBtn: string;
+    viewTermsLink: string;
+    termsCheckboxPrefix: string;
+    termsCheckboxLinkText: string;
+    termsCheckboxSuffix: string;
+    acceptedVersionNotice: string;
+  };
+  disclaimer: {
+    buttonLabel: string;
+    modalTitle: string;
+    section1Title: string;
+    section1Desc: string;
+    section2Title: string;
+    section2Desc: string;
+    section3Title: string;
+    section3Desc: string;
+    section4Title: string;
+    section4Desc: string;
+    closeBtn: string;
+    legalCardTitle: string;
+    legalCardDesc: string;
+    viewPrivacyBtn: string;
+    viewFullTermsBtn: string;
+    openFullTerms: string;
+  };
+  terms: {
+    philippinesBadge: string;
+    langToggleTitle: string;
   };
   pwa: {
     installTitle: string;
@@ -880,7 +908,35 @@ export const translations: Record<Language, Translations> = {
       title: 'Paunawa sa Pagkapribado ng Datos (RA 10173)',
       description: 'Sumusunod ang Fluent Tindahan sa Philippine Data Privacy Act of 2012. Ang iyong mga talaan ng benta, suki, at GCash ay ligtas na nakatago sa iyong lokal na device.',
       acceptBtn: 'Sumasang-ayon Ako',
-      declineBtn: 'Tanggihan'
+      declineBtn: 'Tanggihan',
+      closeBtn: 'Isara',
+      viewTermsLink: 'Tingnan ang Buong Tuntunin sa Paggamit (Terms of Use & AUP)',
+      termsCheckboxPrefix: 'Nabasa at sinasang-ayunan ko ang ',
+      termsCheckboxLinkText: 'Mga Tuntunin sa Paggamit (Terms of Use & AUP)',
+      termsCheckboxSuffix: ' at Patakaran sa Data Privacy.',
+      acceptedVersionNotice: 'Tinanggap ang Bersyon ng Tuntunin:'
+    },
+    disclaimer: {
+      buttonLabel: 'Disclaimer',
+      modalTitle: 'Mahalagang Paunawa at Paggamit',
+      section1Title: 'Kagamitan sa Pagtala, Hindi BIR-Certified Cash Register.',
+      section1Desc: 'Ang Fluent Tindahan ay isang offline-first na digital na talaan upang tulungan ang mga may-ari ng tindahan sa pagsubaybay ng imbentaryo, araw-araw na benta, at listahan ng utang. Hindi ito rehistradong Electronic Invoicing System o sertipikadong cash register machine (CRM) ng BIR. Ang mga kumpirmasyon sa checkout at printed slip ay pansariling gabay lamang ng tindahan at hindi katumbas ng opisyal na BIR Official Receipts (OR) o Sales Invoices (SI).',
+      section2Title: 'Pananagutan sa Batas, Permit, at Buwis.',
+      section2Desc: 'Ang may-ari ng tindahan ang may buong pananagutan sa pagsunod sa lahat ng batas pangnegosyo sa Pilipinas, kabilang ang mga permit sa barangay at munisipyo (LGU), patakaran ng DTI at FDA, at tamang pagdedeklara ng buwis sa Bureau of Internal Revenue (BIR). Tiyaking mag-isyu ng mga opisyal na resibo kung saan ito itinatakda ng batas.',
+      section3Title: 'Sariling Talaan at Hindi Tagaproseso ng Pondo.',
+      section3Desc: 'Lahat ng presyo, bilang ng paninda, listahan ng pautang, at GCash log ay sariling inilagay ng tindero at nakatago sa iyong lokal na device. Ang Fluent Tindahan ay hindi bangko, e-wallet, o remittance center, at hindi nagpoproseso o humahawak ng pera. Ang talaan ng GCash ay sariling reference lamang upang hindi malimutan ang mga reference number at bayarin.',
+      section4Title: 'Independiyenteng Negosyo at Hangganan ng Pananagutan.',
+      section4Desc: 'Ang bawat tindahan ay nagsasariling negosyo. Nagbibigay lamang ang Fluent Tindahan ng software upang mapadali ang pamamahala, at walang pananagutan ang platform sa kalidad ng paninda, presyo, relasyon sa suki, o kasunduan sa pautang.',
+      closeBtn: 'Naiintindihan Ko',
+      legalCardTitle: 'Legal, Pagsunod, at Pagtanggi (Disclaimer)',
+      legalCardDesc: 'Tingnan ang mga impormasyon ukol sa legal na pagsunod sa BIR, Republic Act 10173 (Data Privacy Act), at mga panuntunan sa paggamit ng app.',
+      viewPrivacyBtn: 'Tingnan ang Privacy Notice (RA 10173)',
+      viewFullTermsBtn: 'Tuntunin sa Paggamit at AUP',
+      openFullTerms: 'Basahin ang Buong Tuntunin at Patakaran (Terms of Use & AUP)'
+    },
+    terms: {
+      philippinesBadge: 'Pilipinas',
+      langToggleTitle: 'Switch to English'
     },
     pwa: {
       installTitle: 'I-install ang Fluent Tindahan App',
@@ -1358,7 +1414,35 @@ export const translations: Record<Language, Translations> = {
       title: 'Data Privacy Notice (RA 10173)',
       description: 'Fluent Tindahan complies with the Philippine Data Privacy Act of 2012. Your sales, customer, and GCash records are kept securely on your local device.',
       acceptBtn: 'I Agree',
-      declineBtn: 'Decline'
+      declineBtn: 'Decline',
+      closeBtn: 'Close',
+      viewTermsLink: 'View Full Terms of Use & Acceptable Usage Policy (AUP)',
+      termsCheckboxPrefix: 'I have read and agree to the ',
+      termsCheckboxLinkText: 'Terms of Use & Acceptable Usage Policy (AUP)',
+      termsCheckboxSuffix: ' and Data Privacy Policy.',
+      acceptedVersionNotice: 'Accepted Terms Version:'
+    },
+    disclaimer: {
+      buttonLabel: 'Disclaimer',
+      modalTitle: 'Important Notice & Usage Terms',
+      section1Title: 'Record-Keeping Tool, Not a BIR-Certified Register.',
+      section1Desc: 'Fluent Tindahan functions as an offline-first digital ledger to assist store owners with managing daily stock, sales tallying, and customer utang records. It is not an accredited Electronic Invoicing System or certified cash register machine (CRM). System summaries and printed slips are for internal shop management only and do not constitute BIR-registered Official Receipts (OR) or Sales Invoices (SI).',
+      section2Title: 'Merchant Legal & Tax Obligations.',
+      section2Desc: 'Store operators are solely responsible for compliance with all applicable Philippine laws, including local government permits (barangay and municipal), DTI and FDA retail guidelines, and tax declarations with the Bureau of Internal Revenue (BIR). Retailers must issue official receipts and invoices in accordance with national regulations.',
+      section3Title: 'Self-Reported Records & Non-Payment Processor.',
+      section3Desc: 'All product catalog data, retail prices, customer debt balances, and GCash logs are inputted directly by the merchant and retained on local storage. Fluent Tindahan does not hold custody of financial funds, provide banking services, or execute money remittances. Digital payment entries serve exclusively as personal record-keeping references.',
+      section4Title: 'Independent Retail Operations & Liability Limit.',
+      section4Desc: 'Store merchants operate independently. Fluent Tindahan provides assistive productivity software and assumes no responsibility for merchant products, retail transactions, customer credit agreements, or commercial disputes.',
+      closeBtn: 'Understood & Close',
+      legalCardTitle: 'Legal, Compliance & Disclaimers',
+      legalCardDesc: 'Review regulatory compliance information regarding BIR tax obligations, Philippine Data Privacy Act (RA 10173), and software operation boundaries.',
+      viewPrivacyBtn: 'View Privacy Notice (RA 10173)',
+      viewFullTermsBtn: 'Terms of Use & AUP',
+      openFullTerms: 'Read Full Terms of Use & Acceptable Usage Policy (AUP)'
+    },
+    terms: {
+      philippinesBadge: 'Philippines',
+      langToggleTitle: 'Lumipat sa Tagalog'
     },
     pwa: {
       installTitle: 'Install Fluent Tindahan App',

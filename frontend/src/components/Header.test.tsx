@@ -8,11 +8,13 @@ import { useThemeStore } from '../state/themeStore';
 import { useLanguageStore } from '../state/languageStore';
 import { usePwaStore } from '../state/pwaStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
+import { useDisclaimerStore } from '../state/disclaimerStore';
 
 describe('Header', () => {
   beforeEach(() => {
     useAuthStore.setState({ businessName: "Aling Nena's Store" });
     useSubscriptionStore.setState({ tier: 'Libre', isUpgradeModalOpen: false });
+    useDisclaimerStore.setState({ isDisclaimerOpen: false });
     useThemeStore.setState({ themeMode: 'light', isDarkMode: false });
     useLanguageStore.setState({ language: 'tl' });
     usePwaStore.setState({ isInstallable: false, isStandalone: false, isInstalled: false });
@@ -104,6 +106,16 @@ describe('Header', () => {
     fireEvent.click(planBtn);
 
     expect(useSubscriptionStore.getState().isUpgradeModalOpen).toBe(true);
+  });
+
+  it('renders disclaimer button and opens disclaimer modal on click', () => {
+    renderHeader();
+
+    const disclaimerBtn = screen.getByTestId('header-disclaimer-btn');
+    expect(disclaimerBtn).toBeInTheDocument();
+
+    fireEvent.click(disclaimerBtn);
+    expect(useDisclaimerStore.getState().isDisclaimerOpen).toBe(true);
   });
 });
 

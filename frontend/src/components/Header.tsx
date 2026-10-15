@@ -17,7 +17,8 @@ import {
   CloudDismissRegular,
   ArrowSyncRegular,
   GlobeRegular,
-  ArrowDownloadRegular
+  ArrowDownloadRegular,
+  InfoRegular
 } from '@fluentui/react-icons';
 import { useThemeStore } from '../state/themeStore';
 import { useSyncStore, processSyncQueue } from '../sync/syncEngine';
@@ -25,6 +26,7 @@ import { useAuthStore } from '../state/authStore';
 import { useTranslation } from '../state/languageStore';
 import { usePwaStore } from '../state/pwaStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
+import { useDisclaimerStore } from '../state/disclaimerStore';
 import { SubscriptionModal } from './SubscriptionModal';
 
 const useStyles = makeStyles({
@@ -78,6 +80,15 @@ const useStyles = makeStyles({
   langButton: {
     fontWeight: 600,
     fontSize: tokens.fontSizeBase200
+  },
+  disclaimerBtn: {
+    fontWeight: 600,
+    fontSize: tokens.fontSizeBase200
+  },
+  disclaimerLabel: {
+    '@media (max-width: 480px)': {
+      display: 'none'
+    }
   }
 });
 
@@ -89,6 +100,7 @@ export const Header: React.FC = () => {
   const { t, language, toggleLanguage } = useTranslation();
   const { isInstallable, isStandalone, isInstalled, promptInstall } = usePwaStore();
   const { tier, openUpgradeModal } = useSubscriptionStore();
+  const openDisclaimer = useDisclaimerStore((s) => s.openDisclaimer);
 
   const handleManualSync = () => {
     if (isOnline) {
@@ -217,6 +229,21 @@ export const Header: React.FC = () => {
               />
             </Tooltip>
           )}
+
+          {/* Disclaimer shortcut button */}
+          <Tooltip content={t.disclaimer.buttonLabel} relationship="label">
+            <Button
+              appearance="subtle"
+              size="small"
+              className={styles.disclaimerBtn}
+              icon={<InfoRegular />}
+              onClick={openDisclaimer}
+              aria-label={t.disclaimer.buttonLabel}
+              data-testid="header-disclaimer-btn"
+            >
+              <span className={styles.disclaimerLabel}>{t.disclaimer.buttonLabel}</span>
+            </Button>
+          </Tooltip>
 
           {/* Theme mode cycle: Light -> Dark -> System -> Light */}
           <Tooltip
