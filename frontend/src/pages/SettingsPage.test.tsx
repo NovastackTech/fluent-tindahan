@@ -688,13 +688,16 @@ describe('SettingsPage', () => {
     fireEvent.click(cancelBtn);
     expect(useAuthStore.getState().tenantId).toBe('settings-test-tenant');
 
-    // Click logout again and force logout
-    fireEvent.click(screen.getByRole('button', { name: /Mag-log Out|Log Out/i }));
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /I-log Out Pa Rin|Force Log Out/i })).toBeInTheDocument();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
 
-    const forceLogoutBtn = screen.getByRole('button', { name: /I-log Out Pa Rin|Force Log Out/i });
+    // Click logout again and force logout
+    const logoutAgainBtn = screen.getByRole('button', { name: /Mag-log Out|Log Out/i });
+    await act(async () => {
+      fireEvent.click(logoutAgainBtn);
+    });
+    const forceLogoutBtn = await screen.findByRole('button', { name: /I-log Out Pa Rin|Force Log Out/i });
     await act(async () => {
       fireEvent.click(forceLogoutBtn);
     });

@@ -13,14 +13,17 @@ vi.mock('../services/authService', async (importOriginal) => {
     ...actual,
     loginPin: vi.fn(),
     loginStore: vi.fn(),
-    computeLocalPinHash: vi.fn()
+    computeLocalPinHash: vi.fn(),
+    verifyLocalPin: vi.fn()
   };
 });
 
 describe('SessionLockModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     useLanguageStore.setState({ language: 'tl' });
+    useAuthStore.getState().resetOfflinePinFailures();
     useAuthStore.setState({
       tenantId: 'test-tenant-123',
       userId: 'test-user-456',
@@ -63,9 +66,9 @@ describe('SessionLockModal', () => {
     expect(screen.getByRole('button', { name: /I-unlock ang Kaha/i })).toBeInTheDocument();
   });
 
-  it('unlocks session via offline localPinVerifier SHA-256 match', async () => {
-    useAuthStore.setState({ localPinVerifier: 'hashed-verifier-1234' });
-    vi.mocked(authService.computeLocalPinHash).mockResolvedValue('hashed-verifier-1234');
+  it('unlocks session via offline localPinVerifier match', async () => {
+    useAuthStore.setState({ localPinVerifier: 'pbkdf2:v1:100000:salt:hash' });
+    vi.mocked(authService.verifyLocalPin).mockResolvedValue(true);
 
     renderModal();
 
@@ -79,14 +82,15 @@ describe('SessionLockModal', () => {
     fireEvent.click(unlockBtn);
 
     await waitFor(() => {
-      expect(authService.computeLocalPinHash).toHaveBeenCalledWith('1234', 'test-tenant-123');
+      expect(authService.verifyLocalPin).toHaveBeenCalledWith('1234', 'pbkdf2:v1:100000:salt:hash', 'test-tenant-123');
       expect(useAuthStore.getState().isSessionLocked).toBe(false);
+      expect(useAuthStore.getState().offlineFailedPinAttempts).toBe(0);
     });
   });
 
   it('unlocks session via online loginPin when offline verifier does not match', async () => {
     useAuthStore.setState({ localPinVerifier: 'different-hash' });
-    vi.mocked(authService.computeLocalPinHash).mockResolvedValue('computed-mismatch');
+    vi.mocked(authService.verifyLocalPin).mockResolvedValue(false);
     vi.mocked(authService.loginPin).mockResolvedValue({
       token: 'jwt-token-online',
       tenantId: 'test-tenant-123',
@@ -119,6 +123,84 @@ describe('SessionLockModal', () => {
         pin: '1234'
       });
       expect(useAuthStore.getState().isSessionLocked).toBe(false);
+    });
+  });
+
+  it('locks out offline after 5 consecutive failed PIN attempts and disables keypad', async () => {
+    useAuthStore.setState({ localPinVerifier: 'pbkdf2:v1:100000:salt:hash' });
+    vi.mocked(authService.verifyLocalPin).mockResolvedValue(false);
+    vi.mocked(authService.loginPin).mockRejectedValue(new Error('Network offline'));
+
+    renderModal();
+
+    const unlockBtn = screen.getByRole('button', { name: /I-unlock ang Kaha/i });
+
+    // Fail 5 times
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      fireEvent.click(screen.getByRole('button', { name: '9' }));
+      fireEvent.click(screen.getByRole('button', { name: '9' }));
+      fireEvent.click(screen.getByRole('button', { name: '9' }));
+      fireEvent.click(screen.getByRole('button', { name: '9' }));
+      fireEvent.click(unlockBtn);
+      await waitFor(() => {
+        expect(useAuthStore.getState().offlineFailedPinAttempts).toBe(attempt);
+      });
+    }
+
+    await waitFor(() => {
+      expect(useAuthStore.getState().offlineFailedPinAttempts).toBe(5);
+      expect(useAuthStore.getState().isOfflinePinLockedOut()).toBe(true);
+      expect(screen.getByText(/Naka-lockout ang PIN nang \d+ minuto|PIN locked for \d+ minutes/i)).toBeInTheDocument();
+      // Keypad button 1 should now be disabled
+      expect(screen.getByRole('button', { name: '1' })).toBeDisabled();
+    });
+  });
+
+  it('allows unlocking with master password even when PIN is locked out', async () => {
+    // Start in locked-out state
+    useAuthStore.getState().recordOfflinePinFailure();
+    useAuthStore.getState().recordOfflinePinFailure();
+    useAuthStore.getState().recordOfflinePinFailure();
+    useAuthStore.getState().recordOfflinePinFailure();
+    useAuthStore.getState().recordOfflinePinFailure();
+    expect(useAuthStore.getState().isOfflinePinLockedOut()).toBe(true);
+
+    vi.mocked(authService.loginStore).mockResolvedValue({
+      token: 'jwt-token-password',
+      tenantId: 'test-tenant-123',
+      userId: 'test-user-456',
+      email: 'owner@tindahan.ph',
+      businessName: "Aling Nena's Store",
+      ownerName: 'Nena Santos',
+      phone: '09171234567',
+      role: 'Owner',
+      tier: 'Libre',
+      planTier: 'Libre',
+      subscriptionEndDate: null,
+      hasPin: true,
+      expiresAt: '2030-01-01T00:00:00Z'
+    });
+
+    renderModal();
+
+    expect(screen.getByText(/Naka-lockout ang PIN nang \d+ minuto|PIN locked for \d+ minutes/i)).toBeInTheDocument();
+
+    // Switch to password mode
+    fireEvent.click(screen.getByRole('button', { name: /Gamit ang Password|Use Password/i }));
+
+    const passInput = screen.getByLabelText(/Password/i);
+    fireEvent.change(passInput, { target: { value: 'MasterPassword123!' } });
+
+    const unlockBtn = screen.getByRole('button', { name: /I-unlock ang Kaha/i });
+    fireEvent.click(unlockBtn);
+
+    await waitFor(() => {
+      expect(authService.loginStore).toHaveBeenCalledWith({
+        email: 'owner@tindahan.ph',
+        password: 'MasterPassword123!'
+      });
+      expect(useAuthStore.getState().isSessionLocked).toBe(false);
+      expect(useAuthStore.getState().isOfflinePinLockedOut()).toBe(false);
     });
   });
 

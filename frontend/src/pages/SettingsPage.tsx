@@ -51,7 +51,7 @@ import { FixDlqProductDialog } from '../components/FixDlqProductDialog';
 import { ConfirmDismissDlqDialog } from '../components/ConfirmDismissDlqDialog';
 import { useThemeStore } from '../state/themeStore';
 import { usePrinterStore } from '../state/printerStore';
-import { updatePin } from '../services/authService';
+import { updatePin, generateLocalPinVerifier } from '../services/authService';
 import { usePosSettingsStore } from '../state/posSettingsStore';
 import { DEFAULT_GCASH_FEE_TIERS, GCASH_FEE_BRACKETS, useGCashFeeStore } from '../state/gcashFeeStore';
 import { usePwaStore } from '../state/pwaStore';
@@ -115,6 +115,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
     userEmail,
     hasPin,
     setHasPin,
+    setLocalPinVerifier,
     setIsSessionLocked,
     openOnboarding,
     logout,
@@ -255,6 +256,14 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
         pin: pinDialogNewPin.trim() || null
       });
       setHasPin(result.hasPin);
+      if (result.hasPin && pinDialogNewPin.trim()) {
+        const verifier = await generateLocalPinVerifier(pinDialogNewPin.trim());
+        setLocalPinVerifier(verifier);
+        useAuthStore.getState().resetOfflinePinFailures();
+      } else {
+        setLocalPinVerifier(null);
+        useAuthStore.getState().resetOfflinePinFailures();
+      }
       setPinDialogSuccess(t.settings.pinUpdatedSuccess);
       setTimeout(() => {
         setIsPinDialogOpen(false);

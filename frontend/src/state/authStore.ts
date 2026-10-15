@@ -4,7 +4,7 @@ import { db, type PlanTier } from '../db/db';
 import { DEMO_BUSINESS_NAME, DEMO_OWNER, DEMO_PHONE } from '../constants/demoProfile';
 import { getSyncStorageKey } from '../constants/sync';
 import { CURRENT_TERMS_VERSION } from '../legal/termsData';
-import { computeLocalPinHash, logoutStore, type AuthResponseDto } from '../services/authService';
+import { generateLocalPinVerifier, logoutStore, type AuthResponseDto } from '../services/authService';
 import { useGCashFeeStore } from './gcashFeeStore';
 
 export { DEMO_BUSINESS_NAME, DEMO_OWNER, DEMO_PHONE } from '../constants/demoProfile';
@@ -72,6 +72,12 @@ interface AuthState {
   setHasPin: (hasPin: boolean) => void;
   setLocalPinVerifier: (verifier: string | null) => void;
   setIsSessionLocked: (locked: boolean) => void;
+  offlineFailedPinAttempts: number;
+  offlinePinLockoutEnd: string | null;
+  recordOfflinePinFailure: () => { attempts: number; isLockedOut: boolean; lockoutMinutes: number };
+  resetOfflinePinFailures: () => void;
+  isOfflinePinLockedOut: () => boolean;
+  getOfflinePinLockoutMinutesRemaining: () => number;
   confirmServerIdentity: (tenantId: string, userId: string) => void;
   setBusinessName: (businessName: string) => void;
   setOwnerName: (ownerName: string) => void;
@@ -99,6 +105,10 @@ export const STORAGE_KEY_USER_EMAIL = 'fluent_tindahan_user_email_v1';
 export const STORAGE_KEY_LAST_EMAIL = 'fluent_tindahan_last_email_v1';
 export const STORAGE_KEY_HAS_PIN = 'fluent_tindahan_has_pin_v1';
 export const STORAGE_KEY_LOCAL_PIN_HASH = 'fluent_tindahan_local_pin_hash_v1';
+export const STORAGE_KEY_OFFLINE_PIN_FAILURES = 'fluent_tindahan_offline_pin_failures_v1';
+export const STORAGE_KEY_OFFLINE_PIN_LOCKOUT_END = 'fluent_tindahan_offline_pin_lockout_end_v1';
+export const MAX_OFFLINE_PIN_ATTEMPTS = 5;
+export const OFFLINE_PIN_LOCKOUT_DURATION_MS = 15 * 60 * 1000;
 export const STORAGE_KEY_SESSION_LOCKED = 'fluent_tindahan_session_locked_v1';
 export const STORAGE_KEY_LOCAL_TENANT_ID = 'fluent_tindahan_local_tenant_id_v1';
 export const STORAGE_KEY_CONFIRMED_TENANT_ID = 'fluent_tindahan_server_confirmed_tenant_id_v1';
@@ -124,6 +134,8 @@ const initialUserId = localStorage.getItem(STORAGE_KEY_USER_ID) || DEFAULT_USER_
 const initialUserEmail = localStorage.getItem(STORAGE_KEY_USER_EMAIL) || '';
 const initialHasPin = localStorage.getItem(STORAGE_KEY_HAS_PIN) === 'true';
 const initialLocalPinHash = localStorage.getItem(STORAGE_KEY_LOCAL_PIN_HASH);
+const initialOfflineFailures = parseInt(localStorage.getItem(STORAGE_KEY_OFFLINE_PIN_FAILURES) || '0', 10);
+const initialOfflineLockoutEnd = localStorage.getItem(STORAGE_KEY_OFFLINE_PIN_LOCKOUT_END);
 const initialSessionLocked = localStorage.getItem(STORAGE_KEY_SESSION_LOCKED) === 'true';
 const initialLocallyCreatedTenantId = localStorage.getItem(STORAGE_KEY_LOCAL_TENANT_ID);
 const initialServerConfirmedTenantId = localStorage.getItem(STORAGE_KEY_CONFIRMED_TENANT_ID);
@@ -181,6 +193,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   subscriptionEndDate: initialSubsEnd,
   firebaseToken: initialToken,
   refreshToken: initialRefreshToken,
+  offlineFailedPinAttempts: isNaN(initialOfflineFailures) ? 0 : initialOfflineFailures,
+  offlinePinLockoutEnd: initialOfflineLockoutEnd,
   consentAccepted: initialConsent,
   termsAcceptedVersion: initialTermsVersion,
   isPrivacyNoticeOpen: false,
@@ -263,6 +277,60 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   setIsSessionLocked: (locked: boolean) => {
     localStorage.setItem(STORAGE_KEY_SESSION_LOCKED, locked ? 'true' : 'false');
     set({ isSessionLocked: locked });
+  },
+
+  isOfflinePinLockedOut: () => {
+    const { offlinePinLockoutEnd } = get();
+    if (!offlinePinLockoutEnd) return false;
+    const lockoutDate = new Date(offlinePinLockoutEnd).getTime();
+    if (isNaN(lockoutDate)) return false;
+    if (Date.now() < lockoutDate) {
+      return true;
+    }
+    localStorage.removeItem(STORAGE_KEY_OFFLINE_PIN_LOCKOUT_END);
+    localStorage.setItem(STORAGE_KEY_OFFLINE_PIN_FAILURES, '0');
+    set({ offlinePinLockoutEnd: null, offlineFailedPinAttempts: 0 });
+    return false;
+  },
+
+  getOfflinePinLockoutMinutesRemaining: () => {
+    const { offlinePinLockoutEnd } = get();
+    if (!offlinePinLockoutEnd) return 0;
+    const diffMs = new Date(offlinePinLockoutEnd).getTime() - Date.now();
+    if (diffMs <= 0) return 0;
+    return Math.ceil(diffMs / (60 * 1000));
+  },
+
+  recordOfflinePinFailure: () => {
+    const current = get().offlineFailedPinAttempts + 1;
+    let lockoutEnd = get().offlinePinLockoutEnd;
+    let isLockedOut = false;
+    let lockoutMinutes = 0;
+
+    if (current >= MAX_OFFLINE_PIN_ATTEMPTS) {
+      const expires = new Date(Date.now() + OFFLINE_PIN_LOCKOUT_DURATION_MS).toISOString();
+      lockoutEnd = expires;
+      isLockedOut = true;
+      lockoutMinutes = 15;
+      localStorage.setItem(STORAGE_KEY_OFFLINE_PIN_LOCKOUT_END, expires);
+    }
+
+    localStorage.setItem(STORAGE_KEY_OFFLINE_PIN_FAILURES, String(current));
+    set({
+      offlineFailedPinAttempts: current,
+      offlinePinLockoutEnd: lockoutEnd
+    });
+
+    return { attempts: current, isLockedOut, lockoutMinutes };
+  },
+
+  resetOfflinePinFailures: () => {
+    localStorage.removeItem(STORAGE_KEY_OFFLINE_PIN_FAILURES);
+    localStorage.removeItem(STORAGE_KEY_OFFLINE_PIN_LOCKOUT_END);
+    set({
+      offlineFailedPinAttempts: 0,
+      offlinePinLockoutEnd: null
+    });
   },
 
   confirmServerIdentity: (tenantId: string, userId: string) => {
@@ -463,10 +531,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     let localVerifier: string | null = null;
     if (localPin) {
-      localVerifier = await computeLocalPinHash(localPin, payload.tenantId);
+      localVerifier = await generateLocalPinVerifier(localPin);
       localStorage.setItem(STORAGE_KEY_LOCAL_PIN_HASH, localVerifier);
+      localStorage.removeItem(STORAGE_KEY_OFFLINE_PIN_FAILURES);
+      localStorage.removeItem(STORAGE_KEY_OFFLINE_PIN_LOCKOUT_END);
     } else if (!payload.hasPin) {
       localStorage.removeItem(STORAGE_KEY_LOCAL_PIN_HASH);
+      localStorage.removeItem(STORAGE_KEY_OFFLINE_PIN_FAILURES);
+      localStorage.removeItem(STORAGE_KEY_OFFLINE_PIN_LOCKOUT_END);
     }
 
     localStorage.setItem(STORAGE_KEY_TENANT_ID, payload.tenantId);
@@ -501,6 +573,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       hasPin: payload.hasPin,
       localPinVerifier: localVerifier,
       isSessionLocked: false,
+      offlineFailedPinAttempts: 0,
+      offlinePinLockoutEnd: null,
       serverConfirmedTenantId: payload.tenantId,
       serverConfirmedUserId: payload.userId,
       locallyCreatedTenantId: null,
@@ -563,7 +637,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       STORAGE_KEY_SUBS_END,
       STORAGE_KEY_LOCAL_TENANT_ID,
       STORAGE_KEY_CONFIRMED_TENANT_ID,
-      STORAGE_KEY_CONFIRMED_USER_ID
+      STORAGE_KEY_CONFIRMED_USER_ID,
+      STORAGE_KEY_OFFLINE_PIN_FAILURES,
+      STORAGE_KEY_OFFLINE_PIN_LOCKOUT_END
     ];
     for (const key of keysToRemove) {
       localStorage.removeItem(key);
@@ -576,6 +652,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       hasPin: false,
       localPinVerifier: null,
       isSessionLocked: false,
+      offlineFailedPinAttempts: 0,
+      offlinePinLockoutEnd: null,
       locallyCreatedTenantId: null,
       serverConfirmedTenantId: null,
       serverConfirmedUserId: null,

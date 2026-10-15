@@ -429,6 +429,7 @@ export interface Translations {
     sessionLockedDesc: string;
     unlockBtn: string;
     invalidPinOrPassword: string;
+    pinLockedError: string;
   };
   receipt: {
     watermark: string;
@@ -1140,7 +1141,8 @@ export const translations: Record<Language, Translations> = {
       sessionLockedTitle: 'Naka-lock ang Kaha',
       sessionLockedDesc: 'Ipasok ang iyong PIN o Password para buksan muli ang tindahan.',
       unlockBtn: 'I-unlock ang Kaha',
-      invalidPinOrPassword: 'Maling PIN o Password.'
+      invalidPinOrPassword: 'Maling PIN o Password.',
+      pinLockedError: 'Masyadong maraming maling pagsubok. Naka-lockout ang PIN nang {minutes} minuto. Gamitin ang password.'
     },
     receipt: {
       watermark: 'HINDI OPISYAL NA RESIBO\nPARA SA PAGKILALA LAMANG',
@@ -1850,7 +1852,8 @@ export const translations: Record<Language, Translations> = {
       sessionLockedTitle: 'Till Screen Locked',
       sessionLockedDesc: 'Enter your PIN or Password to unlock your store.',
       unlockBtn: 'Unlock Till',
-      invalidPinOrPassword: 'Invalid PIN or Password.'
+      invalidPinOrPassword: 'Invalid PIN or Password.',
+      pinLockedError: 'Too many failed attempts. PIN locked for {minutes} minutes. Please use your password.'
     },
     receipt: {
       watermark: 'NOT AN OFFICIAL RECEIPT\nFOR ACKNOWLEDGMENT ONLY',

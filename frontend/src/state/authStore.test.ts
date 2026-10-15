@@ -282,9 +282,44 @@ describe('authStore', () => {
     expect(state.firebaseToken).toBe('jwt-auth-token-123');
     expect(state.refreshToken).toBe('jwt-refresh-token-456');
     expect(state.localPinVerifier).not.toBeNull();
+    expect(state.localPinVerifier).toMatch(/^pbkdf2:v1:100000:[0-9a-f]{32}:[0-9a-f]{64}$/);
     expect(state.tier).toBe('TindahanPro');
     expect(localStorage.getItem('fluent_tindahan_tenant_id_v1')).toBe(authPayload.tenantId);
     expect(localStorage.getItem('fluent_tindahan_refresh_token_v1')).toBe('jwt-refresh-token-456');
+  });
+
+  it('tracks offline PIN failures and locks out after 5 consecutive failed attempts', () => {
+    const store = useAuthStore.getState();
+
+    expect(store.isOfflinePinLockedOut()).toBe(false);
+    expect(store.offlineFailedPinAttempts).toBe(0);
+
+    // Fail 4 times
+    for (let i = 1; i <= 4; i++) {
+      const res = store.recordOfflinePinFailure();
+      expect(res.attempts).toBe(i);
+      expect(res.isLockedOut).toBe(false);
+      expect(store.isOfflinePinLockedOut()).toBe(false);
+    }
+
+    // 5th failure triggers lockout
+    const fifth = store.recordOfflinePinFailure();
+    expect(fifth.attempts).toBe(5);
+    expect(fifth.isLockedOut).toBe(true);
+    expect(fifth.lockoutMinutes).toBe(15);
+    expect(store.isOfflinePinLockedOut()).toBe(true);
+    expect(store.getOfflinePinLockoutMinutesRemaining()).toBeGreaterThanOrEqual(14);
+
+    // Persisted in localStorage
+    expect(localStorage.getItem('fluent_tindahan_offline_pin_failures_v1')).toBe('5');
+    expect(localStorage.getItem('fluent_tindahan_offline_pin_lockout_end_v1')).not.toBeNull();
+
+    // Resetting failures clears lockout
+    store.resetOfflinePinFailures();
+    expect(store.isOfflinePinLockedOut()).toBe(false);
+    expect(store.offlineFailedPinAttempts).toBe(0);
+    expect(localStorage.getItem('fluent_tindahan_offline_pin_failures_v1')).toBeNull();
+    expect(localStorage.getItem('fluent_tindahan_offline_pin_lockout_end_v1')).toBeNull();
   });
 
   it('setRefreshToken updates state and localStorage', () => {

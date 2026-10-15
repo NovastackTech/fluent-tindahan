@@ -23,7 +23,7 @@ import {
 } from '@fluentui/react-icons';
 import { useAuthStore } from '../state/authStore';
 import { useTranslation } from '../state/languageStore';
-import { computeLocalPinHash, loginPin, loginStore } from '../services/authService';
+import { verifyLocalPin, loginPin, loginStore } from '../services/authService';
 
 const useStyles = makeStyles({
   surface: {
@@ -78,7 +78,11 @@ export const SessionLockModal: React.FC = () => {
     userEmail,
     tenantId,
     localPinVerifier,
-    businessName
+    businessName,
+    isOfflinePinLockedOut,
+    getOfflinePinLockoutMinutesRemaining,
+    recordOfflinePinFailure,
+    resetOfflinePinFailures
   } = useAuthStore();
 
   const [pin, setPin] = useState('');
@@ -91,6 +95,10 @@ export const SessionLockModal: React.FC = () => {
   if (!isSessionLocked || !hasPin) {
     return null;
   }
+
+  const isLocked = !usePassword && isOfflinePinLockedOut();
+  const lockoutMinutes = isLocked ? getOfflinePinLockoutMinutesRemaining() : 0;
+  const displayedError = error || (isLocked ? t.settings.pinLockedError.replace('{minutes}', String(lockoutMinutes || 15)) : '');
 
   const handleUnlock = async () => {
     if (isVerifying) return;
@@ -105,6 +113,7 @@ export const SessionLockModal: React.FC = () => {
           return;
         }
         await loginStore({ email: userEmail, password });
+        resetOfflinePinFailures();
         setIsSessionLocked(false);
         setPassword('');
         setPin('');
@@ -115,10 +124,20 @@ export const SessionLockModal: React.FC = () => {
           return;
         }
 
+        // Check if offline lockout is currently active
+        if (isOfflinePinLockedOut()) {
+          const remaining = getOfflinePinLockoutMinutesRemaining();
+          setError(t.settings.pinLockedError.replace('{minutes}', String(remaining || 15)));
+          setPin('');
+          setIsVerifying(false);
+          return;
+        }
+
         // 1. Offline fast check if localPinVerifier is present
         if (localPinVerifier) {
-          const hashedInput = await computeLocalPinHash(pin, tenantId);
-          if (hashedInput === localPinVerifier) {
+          const isMatch = await verifyLocalPin(pin, localPinVerifier, tenantId);
+          if (isMatch) {
+            resetOfflinePinFailures();
             setIsSessionLocked(false);
             setPin('');
             setIsVerifying(false);
@@ -126,13 +145,36 @@ export const SessionLockModal: React.FC = () => {
           }
         }
 
-        // 2. If online or no localPinVerifier match, check with backend API
+        // 2. If localPinVerifier did not match (or wasn't set)
         if (navigator.onLine) {
-          await loginPin({ email: userEmail, pin });
-          setIsSessionLocked(false);
-          setPin('');
+          try {
+            await loginPin({ email: userEmail, pin });
+            resetOfflinePinFailures();
+            setIsSessionLocked(false);
+            setPin('');
+          } catch (apiErr: any) {
+            if (apiErr?.response?.status === 429) {
+              const msg = apiErr?.response?.data?.message || t.settings.pinLockedError.replace('{minutes}', '15');
+              setError(msg);
+            } else {
+              const failure = recordOfflinePinFailure();
+              if (failure.isLockedOut) {
+                setError(t.settings.pinLockedError.replace('{minutes}', String(failure.lockoutMinutes || 15)));
+              } else {
+                setError(apiErr?.response?.data?.message || t.settings.invalidPinOrPassword);
+              }
+            }
+            setPin('');
+          }
         } else {
-          setError(t.settings.invalidPinOrPassword);
+          // Offline and local verification failed
+          const failure = recordOfflinePinFailure();
+          if (failure.isLockedOut) {
+            setError(t.settings.pinLockedError.replace('{minutes}', String(failure.lockoutMinutes || 15)));
+          } else {
+            setError(t.settings.invalidPinOrPassword);
+          }
+          setPin('');
         }
       }
     } catch (err: any) {
@@ -174,9 +216,9 @@ export const SessionLockModal: React.FC = () => {
           </Text>
 
           <DialogContent style={{ marginTop: tokens.spacingVerticalM }}>
-            {error && (
+            {displayedError && (
               <Text role="alert" size={200} className={styles.errorText}>
-                {error}
+                {displayedError}
               </Text>
             )}
 
@@ -193,6 +235,7 @@ export const SessionLockModal: React.FC = () => {
                     style={{ textAlign: 'center', fontSize: '24px', letterSpacing: '8px' }}
                     contentBefore={<KeyRegular />}
                     autoFocus
+                    disabled={isVerifying || isLocked}
                   />
                 </Field>
 
@@ -202,6 +245,7 @@ export const SessionLockModal: React.FC = () => {
                       key={k}
                       className={styles.keypadBtn}
                       appearance="secondary"
+                      disabled={isVerifying || isLocked}
                       onClick={() => {
                         if (k === 'C') setPin('');
                         else if (k === '⌫') handleBackspace();
@@ -266,7 +310,7 @@ export const SessionLockModal: React.FC = () => {
               size="large"
               icon={isVerifying ? <Spinner size="extra-tiny" /> : <LockClosedRegular />}
               onClick={handleUnlock}
-              disabled={isVerifying || (!usePassword && pin.length < 4) || (usePassword && !password)}
+              disabled={isVerifying || (!usePassword && (isLocked || pin.length < 4)) || (usePassword && !password)}
             >
               {t.settings.unlockBtn}
             </Button>
