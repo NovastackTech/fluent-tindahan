@@ -348,7 +348,8 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
   const totalCount = getTotalCount();
 
   const handleAddProductToCart = (product: ProductRecord) => {
-    if (product.stockQty <= 0) {
+    const stockLimit = Number(product.stockQty) || 0;
+    if (stockLimit <= 0) {
       showToast(
         language === 'tl'
           ? `Walang stock ang ${product.name}.`
@@ -358,29 +359,31 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
       return;
     }
 
-    const existingInCart = cartItems.find((item) => item.productId === product.id);
+    // Inspect the immediate store state to prevent rapid-click race conditions
+    const latestItems = useCartStore.getState().items;
+    const existingInCart = latestItems.find((item) => item.productId === product.id);
     const currentQty = existingInCart ? existingInCart.qty : 0;
 
-    if (currentQty >= product.stockQty) {
+    if (currentQty >= stockLimit) {
       showToast(
         language === 'tl'
-          ? `Hanggang ${product.stockQty} lang ang available na stock para sa ${product.name}.`
-          : `Only ${product.stockQty} in stock for ${product.name}.`,
+          ? `Hanggang ${stockLimit} lang ang available na stock para sa ${product.name}.`
+          : `Only ${stockLimit} in stock for ${product.name}.`,
         'warning'
       );
       return;
     }
 
     const res = addItem(
-      { id: product.id, name: product.name, price: product.price, maxStock: product.stockQty },
-      product.stockQty
+      { id: product.id, name: product.name, price: product.price, maxStock: stockLimit },
+      stockLimit
     );
 
     if (res?.capped && !res?.added) {
       showToast(
         language === 'tl'
-          ? `Hanggang ${product.stockQty} lang ang available na stock para sa ${product.name}.`
-          : `Only ${product.stockQty} in stock for ${product.name}.`,
+          ? `Hanggang ${stockLimit} lang ang available na stock para sa ${product.name}.`
+          : `Only ${stockLimit} in stock for ${product.name}.`,
         'warning'
       );
     } else {
@@ -572,8 +575,9 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
   const { isStockValid, stockError } = useMemo(() => {
     for (const item of cartItems) {
       const prod = products.find((p) => p.id === item.productId);
-      if (prod) {
-        if (prod.stockQty <= 0) {
+      const available = prod ? (Number(prod.stockQty) || 0) : (item.maxStock ?? 0);
+      if (prod || item.maxStock !== undefined) {
+        if (available <= 0) {
           return {
             isStockValid: false,
             stockError: language === 'tl'
@@ -581,12 +585,12 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
               : `"${item.name}" is out of stock. (Available: 0)`
           };
         }
-        if (item.qty > prod.stockQty) {
+        if (item.qty > available) {
           return {
             isStockValid: false,
             stockError: language === 'tl'
-              ? `Kulang ang stock para sa "${item.name}". Available: ${prod.stockQty}, nasa cart: ${item.qty}.`
-              : `Insufficient stock for "${item.name}". Available: ${prod.stockQty}, in cart: ${item.qty}.`
+              ? `Kulang ang stock para sa "${item.name}". Available: ${available}, nasa cart: ${item.qty}.`
+              : `Insufficient stock for "${item.name}". Available: ${available}, in cart: ${item.qty}.`
           };
         }
       }
@@ -638,24 +642,25 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
     if (!isTenderValid) return;
 
     if (!isStockValid) {
-      alert(stockError || (language === 'tl' ? 'Hindi maaaring ituloy ang benta dahil kulang ang stock.' : 'Sale cannot proceed due to insufficient stock.'));
+      showToast(stockError || (language === 'tl' ? 'Hindi maaaring ituloy ang benta dahil kulang ang stock.' : 'Sale cannot proceed due to insufficient stock.'), 'warning');
       return;
     }
 
     if (paymentMethod === 'Utang' && !customerId) {
-      alert(t.pos.customerSelectRequired);
+      showToast(t.pos.customerSelectRequired, 'warning');
       return;
     }
 
     // Direct pre-flight check against IndexedDB
     for (const item of cartItems) {
       const prod = await db.products.get(item.productId);
-      const available = prod?.stockQty ?? 0;
+      const available = Number(prod?.stockQty) || 0;
       if (!prod || prod.stockQty === undefined || item.qty > available) {
-        alert(
+        showToast(
           language === 'tl'
             ? `Kulang ang stock para sa "${item.name}". Available: ${available}, nasa cart: ${item.qty}.`
-            : `Insufficient stock for "${item.name}". Available: ${available}, in cart: ${item.qty}.`
+            : `Insufficient stock for "${item.name}". Available: ${available}, in cart: ${item.qty}.`,
+          'warning'
         );
         return;
       }
@@ -927,24 +932,40 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
         ) : filteredProducts.map((p) => {
           const itemInCart = cartItems.find((i) => i.productId === p.id);
           const currentQty = itemInCart?.qty ?? 0;
-          const isAtMaxStock = p.stockQty !== undefined && currentQty >= p.stockQty;
-          const isOutOfStock = p.stockQty <= 0;
+          const currentStock = Number(p.stockQty) || 0;
+          const isAtMaxStock = currentStock > 0 && currentQty >= currentStock;
+          const isOutOfStock = currentStock <= 0;
 
           return (
             <Card
               key={p.id}
               className={styles.productCard}
               onClick={() => handleAddProductToCart(p)}
-              style={isOutOfStock ? { opacity: 0.65 } : undefined}
+              style={
+                isOutOfStock
+                  ? { opacity: 0.65 }
+                  : isAtMaxStock
+                  ? { opacity: 0.9, border: `1px solid ${tokens.colorPaletteYellowBorder2}` }
+                  : undefined
+              }
             >
               <div>
-                <Text weight="semibold" size={300} style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                  {p.name}
-                </Text>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '4px' }}>
+                  <Text weight="semibold" size={300} style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', flex: 1 }}>
+                    {p.name}
+                  </Text>
+                  {currentQty > 0 && (
+                    <Badge size="small" appearance="filled" color={isAtMaxStock ? 'warning' : 'brand'} aria-label={`${currentQty} in cart`}>
+                      {currentQty}×
+                    </Badge>
+                  )}
+                </div>
                 <Text size={100} style={{ color: tokens.colorNeutralForeground3, display: 'block', marginTop: '2px' }}>
                   {t.pos.stockLabel}: {p.stockQty}{' '}
                   {isOutOfStock ? (
                     <Badge size="extra-small" color="danger">{t.pos.outOfStock}</Badge>
+                  ) : isAtMaxStock ? (
+                    <Badge size="extra-small" color="warning">{language === 'tl' ? 'Nasa limit na' : 'At max stock'}</Badge>
                   ) : p.stockQty <= 5 ? (
                     <Badge size="extra-small" color="warning">{t.pos.lowStockBadge}</Badge>
                   ) : null}

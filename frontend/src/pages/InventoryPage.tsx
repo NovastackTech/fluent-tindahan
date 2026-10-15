@@ -569,9 +569,12 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
       setFormNameError(t.inventory.productNameRequired);
       return;
     }
-    const costNum = Number(formCost) || 0;
-    const priceNum = Number(formPrice) || 0;
-    const stockNum = Number(formStock) || 0;
+    const costClean = typeof formCost === 'string' ? formCost.replace(/,/g, '').trim() : formCost;
+    const priceClean = typeof formPrice === 'string' ? formPrice.replace(/,/g, '').trim() : formPrice;
+    const stockClean = typeof formStock === 'string' ? formStock.replace(/,/g, '').trim() : formStock;
+    const costNum = Number(costClean) || 0;
+    const priceNum = Number(priceClean) || 0;
+    const stockNum = Number(stockClean) || 0;
 
     if (costNum < 0) {
       setFormCostError(t.inventory.costCannotBeNegative);
@@ -1325,7 +1328,8 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                     style={{ width: '100%' }}
                     value={formCost === '' ? '' : formCost.toString()}
                     onChange={(_, data) => {
-                      setFormCost(data.value === '' ? '' : Number(data.value));
+                      const clean = data.value.replace(/,/g, '').trim();
+                      setFormCost(clean === '' ? '' : Number(clean));
                       if (formCostError) setFormCostError('');
                     }}
                   />
@@ -1352,7 +1356,8 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                     style={{ width: '100%' }}
                     value={formPrice === '' ? '' : formPrice.toString()}
                     onChange={(_, data) => {
-                      setFormPrice(data.value === '' ? '' : Number(data.value));
+                      const clean = data.value.replace(/,/g, '').trim();
+                      setFormPrice(clean === '' ? '' : Number(clean));
                       if (formPriceError) setFormPriceError('');
                     }}
                   />

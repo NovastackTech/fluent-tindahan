@@ -174,37 +174,55 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
 
     private static string ExtractFriendlyErrorMessage(Exception ex)
     {
-        if (ex is ArgumentException or InvalidOperationException)
+        var current = ex;
+        var allMessages = new List<string>();
+
+        while (current != null)
         {
-            return ex.Message;
+            if (!string.IsNullOrWhiteSpace(current.Message))
+            {
+                allMessages.Add(current.Message);
+            }
+            if (current is ArgumentException or InvalidOperationException)
+            {
+                return current.Message;
+            }
+            current = current.InnerException;
         }
 
-        if (ex is DbUpdateException dbEx)
+        var combinedMessage = string.Join(" --> ", allMessages);
+
+        if (combinedMessage.Contains("22003", StringComparison.OrdinalIgnoreCase) ||
+            combinedMessage.Contains("numeric field overflow", StringComparison.OrdinalIgnoreCase) ||
+            combinedMessage.Contains("out of range", StringComparison.OrdinalIgnoreCase) ||
+            combinedMessage.Contains("overflow", StringComparison.OrdinalIgnoreCase))
         {
-            var inner = dbEx.InnerException;
-            var innerMsg = inner?.Message ?? string.Empty;
-
-            if (innerMsg.Contains("22003", StringComparison.OrdinalIgnoreCase) ||
-                innerMsg.Contains("numeric field overflow", StringComparison.OrdinalIgnoreCase) ||
-                innerMsg.Contains("out of range", StringComparison.OrdinalIgnoreCase))
-            {
-                return "Numeric value exceeds maximum database limit (₱9,999,999,999.99).";
-            }
-
-            if (innerMsg.Contains("23505", StringComparison.OrdinalIgnoreCase) ||
-                innerMsg.Contains("duplicate key", StringComparison.OrdinalIgnoreCase) ||
-                innerMsg.Contains("unique constraint", StringComparison.OrdinalIgnoreCase))
-            {
-                return "A record with this identifier or unique reference already exists.";
-            }
-
-            if (!string.IsNullOrWhiteSpace(innerMsg))
-            {
-                return innerMsg;
-            }
+            return "Numeric value exceeds maximum database limit (₱999,999.99).";
         }
 
-        return ex.InnerException?.Message ?? ex.Message;
+        if (combinedMessage.Contains("23505", StringComparison.OrdinalIgnoreCase) ||
+            combinedMessage.Contains("duplicate key", StringComparison.OrdinalIgnoreCase) ||
+            combinedMessage.Contains("unique constraint", StringComparison.OrdinalIgnoreCase))
+        {
+            return "A record with this identifier or unique reference already exists.";
+        }
+
+        if (combinedMessage.Contains("23503", StringComparison.OrdinalIgnoreCase) ||
+            combinedMessage.Contains("foreign key", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Referenced record does not exist in database.";
+        }
+
+        var nonGeneric = allMessages.LastOrDefault(m =>
+            !m.Contains("An error occurred while saving the entity changes", StringComparison.OrdinalIgnoreCase) &&
+            !m.Contains("See the inner exception for details", StringComparison.OrdinalIgnoreCase));
+
+        if (!string.IsNullOrWhiteSpace(nonGeneric))
+        {
+            return nonGeneric;
+        }
+
+        return "Failed to save entity changes. Please verify the entered data.";
     }
 
     private class BatchSyncCounters

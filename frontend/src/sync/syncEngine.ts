@@ -150,7 +150,8 @@ export async function updateQueueCounts() {
   const pending = await db.syncQueue.count();
   const deadLetter = await db.deadLetterQueue.count();
   useSyncStore.getState().setCounts(pending, deadLetter);
-  if (deadLetter === 0 && useSyncStore.getState().lastErrorMessage?.includes('Dead Letter Queue')) {
+  const errMsg = useSyncStore.getState().lastErrorMessage;
+  if (deadLetter === 0 && (errMsg?.includes('Dead Letter Queue') || errMsg?.includes('Nalipat sa Dead Letter Queue'))) {
     useSyncStore.getState().setLastErrorMessage(null);
   }
 }
@@ -402,16 +403,28 @@ export async function retryDeadLetterItem(id: string) {
   let payload = item.payload;
   if (item.entity === 'Product' && payload?.id) {
     const localProduct = await db.products.get(payload.id);
-    if (localProduct && localProduct.price <= 999999.99 && localProduct.cost <= 999999.99) {
+    if (localProduct) {
+      const sanitizedPrice = Math.min(Math.max(0.01, Number(localProduct.price) || 0.01), 999999.99);
+      const sanitizedCost = Math.min(Math.max(0, Number(localProduct.cost) || 0), 999999.99);
+      if (sanitizedPrice !== localProduct.price || sanitizedCost !== localProduct.cost) {
+        await db.products.update(payload.id, { price: sanitizedPrice, cost: sanitizedCost });
+      }
       payload = {
         ...payload,
         name: localProduct.name,
-        price: localProduct.price,
-        cost: localProduct.cost,
+        price: sanitizedPrice,
+        cost: sanitizedCost,
         stockQty: localProduct.stockQty,
         category: localProduct.category,
         barcode: localProduct.barcode,
-        updatedAt: localProduct.updatedAt
+        updatedAt: new Date().toISOString()
+      };
+    } else {
+      payload = {
+        ...payload,
+        price: Math.min(Math.max(0.01, Number(payload.price) || 0.01), 999999.99),
+        cost: Math.min(Math.max(0, Number(payload.cost) || 0), 999999.99),
+        updatedAt: new Date().toISOString()
       };
     }
   }
@@ -441,6 +454,8 @@ export async function retryDeadLetterItem(id: string) {
   });
 
   await db.deadLetterQueue.delete(id);
+  const remainingCount = await db.deadLetterQueue.count();
+  useSyncStore.getState().setCounts(useSyncStore.getState().pendingCount + 1, remainingCount);
   await updateQueueCounts();
   if (navigator.onLine) {
     processSyncQueue().catch(console.error);
@@ -449,11 +464,14 @@ export async function retryDeadLetterItem(id: string) {
 
 export async function deleteDeadLetterItem(id: string) {
   await db.deadLetterQueue.delete(id);
+  const remaining = await db.deadLetterQueue.count();
+  useSyncStore.getState().setCounts(useSyncStore.getState().pendingCount, remaining);
   await updateQueueCounts();
 }
 
 export async function clearDeadLetterQueue() {
   await db.deadLetterQueue.clear();
+  useSyncStore.getState().setCounts(useSyncStore.getState().pendingCount, 0);
   useSyncStore.getState().setLastErrorMessage(null);
   await updateQueueCounts();
 }

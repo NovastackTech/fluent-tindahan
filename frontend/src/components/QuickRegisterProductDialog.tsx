@@ -133,8 +133,8 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
 
   if (!isOpen || !unrecognizedBarcode) return null;
 
-  const costNum = Number(cost) || 0;
-  const priceNum = Number(price) || 0;
+  const costNum = Number(String(cost).replace(/,/g, '')) || 0;
+  const priceNum = Number(String(price).replace(/,/g, '')) || 0;
   const unitProfit = Math.max(0, priceNum - costNum);
   const marginPct = priceNum > 0 ? ((priceNum - costNum) / priceNum) * 100 : 0;
 

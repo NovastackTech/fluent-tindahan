@@ -105,7 +105,16 @@ export const savePersistedCart = (state: PersistedCartState) => {
     }
 
     const data: PersistedCartState = {
-      items: state.items || [],
+      items: (state.items || []).map((i) => ({
+        productId: i.productId,
+        name: i.name,
+        price: i.price,
+        qty: i.qty,
+        subtotal: i.subtotal,
+        priceCentavos: i.priceCentavos,
+        subtotalCentavos: i.subtotalCentavos,
+        maxStock: typeof i.maxStock === 'number' ? i.maxStock : undefined
+      })),
       customerId: state.customerId ?? null,
       customerName: state.customerName ?? null,
       paymentMethod: state.paymentMethod || 'Cash',
@@ -169,7 +178,8 @@ export const useCartStore = create<CartState>((set, get) => ({
 
     set((state) => {
       const existing = state.items.find((item) => item.productId === product.id);
-      const stockLimit = maxStockArg !== undefined ? maxStockArg : (product.maxStock ?? existing?.maxStock);
+      const rawLimit = maxStockArg !== undefined ? maxStockArg : (product.maxStock ?? existing?.maxStock);
+      const stockLimit = rawLimit !== undefined && rawLimit !== null && !isNaN(Number(rawLimit)) ? Number(rawLimit) : undefined;
 
       if (stockLimit !== undefined && stockLimit <= 0) {
         capped = true;
@@ -250,7 +260,8 @@ export const useCartStore = create<CartState>((set, get) => ({
     set((state) => ({
       items: state.items.map((item) => {
         if (item.productId === productId) {
-          const stockLimit = maxStockArg !== undefined ? maxStockArg : item.maxStock;
+          const rawLimit = maxStockArg !== undefined ? maxStockArg : item.maxStock;
+          const stockLimit = rawLimit !== undefined && rawLimit !== null && !isNaN(Number(rawLimit)) ? Number(rawLimit) : undefined;
           let targetQty = qty;
           if (stockLimit !== undefined && targetQty > stockLimit) {
             targetQty = Math.max(0, stockLimit);

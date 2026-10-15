@@ -183,6 +183,77 @@ public class SyncControllerTests
         itemResult.Error.Should().Contain("Retail price must be between ₱0.01 and ₱999,999.99.");
     }
 
+    private class ThrowingDbContext : AppDbContext
+    {
+        private readonly Exception _exceptionToThrow;
+
+        public ThrowingDbContext(DbContextOptions<AppDbContext> options, ICurrentUserService currentUserService, Exception exceptionToThrow)
+            : base(options, currentUserService)
+        {
+            _exceptionToThrow = exceptionToThrow;
+        }
+
+        public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            throw _exceptionToThrow;
+        }
+    }
+
+    [Fact]
+    public async Task ProcessBatchSyncCommand_ExtractFriendlyErrorMessage_NeverLeaksRawEFCoreMessage()
+    {
+        var tenantId = Guid.NewGuid();
+        var contextOptions = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.Setup(service => service.TenantId).Returns(tenantId);
+        currentUser.Setup(service => service.UserId).Returns(Guid.NewGuid());
+        currentUser.Setup(service => service.IsAuthenticated).Returns(true);
+
+        // Simulate a context where SaveChanges throws DbUpdateException with nested postgres 22003
+        var innerDbEx = new DbUpdateException(
+            "An error occurred while saving the entity changes. See the inner exception for details.",
+            new Exception("22003: numeric field overflow"));
+
+        await using var context = new ThrowingDbContext(contextOptions, currentUser.Object, innerDbEx);
+
+        var syncHandler = new ProcessBatchSyncCommandHandler(
+            context,
+            currentUser.Object,
+            NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+
+        var batch = new BatchSyncRequestDto
+        {
+            DeviceId = Guid.NewGuid(),
+            Operations = new List<SyncOperationDto>
+            {
+                new()
+                {
+                    SyncId = "overflow-test",
+                    Entity = "Product",
+                    Action = "Insert",
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Payload = JsonSerializer.SerializeToElement(new
+                    {
+                        id = Guid.NewGuid(),
+                        name = "Normal Price Soda",
+                        price = 100m,
+                        cost = 50m,
+                        stockQty = 5
+                    })
+                }
+            }
+        };
+
+        var syncResult = await syncHandler.Handle(new ProcessBatchSyncCommand(batch), CancellationToken.None);
+
+        var itemResult = syncResult.Results.Should().ContainSingle().Subject;
+        itemResult.Status.Should().Be("Failed");
+        itemResult.Error.Should().NotContain("An error occurred while saving the entity changes");
+        itemResult.Error.Should().Contain("Numeric value exceeds maximum database limit");
+    }
+
     [Fact]
     public async Task Provision_RejectsAuthenticatedOwnerIdThatDiffersFromCaller()
     {
