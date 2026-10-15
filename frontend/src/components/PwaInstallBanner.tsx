@@ -67,10 +67,10 @@ export const PwaInstallBanner: React.FC = () => {
         intent="success"
         layout="multiline"
       >
-        <MessageBarTitle>
-          {t.pwa.installTitle}
-        </MessageBarTitle>
         <MessageBarBody>
+          <MessageBarTitle>
+            {t.pwa.installTitle}
+          </MessageBarTitle>
           <div>{t.pwa.installDesc}</div>
           {isIos && !isInstallable && (
             <div className={styles.iosBox}>

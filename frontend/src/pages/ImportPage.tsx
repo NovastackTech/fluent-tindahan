@@ -154,11 +154,11 @@ export const ImportPage: React.FC = () => {
       </div>
 
       {isCsvLocked && (
-        <MessageBar intent="warning" style={{ marginBottom: '16px' }}>
-          <MessageBarTitle>
-            {language === 'tl' ? 'Pro Feature: CSV Bulk Import' : 'Pro Feature: CSV Bulk Import'}
-          </MessageBarTitle>
+        <MessageBar intent="warning" layout="multiline" style={{ marginBottom: '16px' }}>
           <MessageBarBody>
+            <MessageBarTitle>
+              {language === 'tl' ? 'Pro Feature: CSV Bulk Import' : 'Pro Feature: CSV Bulk Import'}
+            </MessageBarTitle>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
               <span>
                 {language === 'tl'
@@ -174,9 +174,11 @@ export const ImportPage: React.FC = () => {
       )}
 
       {importResult && (
-        <MessageBar intent="success" style={{ marginBottom: '16px' }}>
-          <MessageBarTitle>{language === 'tl' ? 'Import Tagumpay!' : 'Import Succeeded!'}</MessageBarTitle>
-          <MessageBarBody>{importResult}</MessageBarBody>
+        <MessageBar intent="success" layout="multiline" style={{ marginBottom: '16px' }}>
+          <MessageBarBody>
+            <MessageBarTitle>{language === 'tl' ? 'Import Tagumpay!' : 'Import Succeeded!'}</MessageBarTitle>
+            {importResult}
+          </MessageBarBody>
         </MessageBar>
       )}
 

@@ -78,10 +78,10 @@ export const PwaUpdateToast: React.FC = () => {
         intent="info"
         layout="multiline"
       >
-        <MessageBarTitle>
-          {t.pwa.updateTitle}
-        </MessageBarTitle>
         <MessageBarBody>
+          <MessageBarTitle>
+            {t.pwa.updateTitle}
+          </MessageBarTitle>
           {t.pwa.updateDesc}
           {warningMessage && (
             <div className={styles.warningRow}>

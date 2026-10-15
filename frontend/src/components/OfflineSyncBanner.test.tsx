@@ -52,4 +52,22 @@ describe('OfflineSyncBanner', () => {
     expect(retryBtn).toBeInTheDocument();
     expect(retryBtn).not.toBeDisabled();
   });
+
+  it('renders sync error with dismiss button and clears on click', () => {
+    useSyncStore.setState({
+      isOnline: true,
+      pendingCount: 0,
+      deadLetterCount: 0,
+      lastErrorMessage: 'The server could not verify this store.'
+    });
+    renderBanner();
+
+    expect(screen.getByText(/Problema sa Pag-sync|Sync Error/i)).toBeInTheDocument();
+    expect(screen.getByText('The server could not verify this store.')).toBeInTheDocument();
+
+    const dismissBtn = screen.getByRole('button', { name: /Isara|Close|Dismiss/i });
+    expect(dismissBtn).toBeInTheDocument();
+    dismissBtn.click();
+    expect(useSyncStore.getState().lastErrorMessage).toBeNull();
+  });
 });
