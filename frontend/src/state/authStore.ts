@@ -302,8 +302,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   recordOfflinePinFailure: () => {
-    const current = get().offlineFailedPinAttempts + 1;
+    let attempts = get().offlineFailedPinAttempts;
+    const existingLockoutEnd = get().offlinePinLockoutEnd;
+    if (existingLockoutEnd) {
+      const lockoutDate = new Date(existingLockoutEnd).getTime();
+      if (!isNaN(lockoutDate) && Date.now() >= lockoutDate) {
+        attempts = 0;
+        localStorage.removeItem(STORAGE_KEY_OFFLINE_PIN_LOCKOUT_END);
+      }
+    }
+
+    const current = attempts + 1;
     let lockoutEnd = get().offlinePinLockoutEnd;
+    if (existingLockoutEnd && attempts === 0) {
+      lockoutEnd = null;
+    }
     let isLockedOut = false;
     let lockoutMinutes = 0;
 

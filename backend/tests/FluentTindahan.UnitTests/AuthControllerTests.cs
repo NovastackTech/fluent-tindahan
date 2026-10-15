@@ -222,7 +222,7 @@ public class AuthControllerTests
     }
 
     [Fact]
-    public async Task Register_AnonymouslyProvisionedTenant_UpgradesPlaceholderUserSuccessfully()
+    public async Task Register_AnonymouslyProvisionedTenant_AuthenticatedAsPlaceholder_UpgradesPlaceholderUserSuccessfully()
     {
         var (context, _) = CreateInMemoryContext();
         var controller = CreateController(context);
@@ -250,6 +250,9 @@ public class AuthControllerTests
             CreatedAt = DateTimeOffset.UtcNow
         });
         await context.SaveChangesAsync();
+
+        // The caller is authenticated as that placeholder user
+        SetAuthenticatedUser(controller, provisionedUserId, provisionedTenantId);
 
         // Now user establishes account credentials via Register with the same TenantId and UserId
         var regRequest = new AuthController.RegisterRequest
@@ -279,6 +282,162 @@ public class AuthControllerTests
         tenantUsers[0].NormalizedEmail.Should().Be("owner@offlinefirst.ph");
         tenantUsers[0].PasswordHash.Should().NotBeNullOrWhiteSpace();
         tenantUsers[0].PinHash.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task Register_AnonymouslyProvisionedTenant_WithValidDeviceSessionToken_UpgradesPlaceholderUserSuccessfully()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var jwtService = DefaultJwtService;
+        var controller = CreateController(context, jwtService);
+
+        var provisionedTenantId = Guid.NewGuid();
+        var provisionedUserId = Guid.NewGuid();
+
+        // Generate a valid refresh token representing the device session
+        var (refreshToken, refExp, tokenId) = jwtService.GenerateRefreshToken(provisionedUserId, provisionedTenantId);
+
+        context.Tenants.Add(new Tenant
+        {
+            Id = provisionedTenantId,
+            BusinessName = "Device Session Store",
+            Tier = PlanTier.Libre,
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+        context.Users.Add(new User
+        {
+            Id = provisionedUserId,
+            TenantId = provisionedTenantId,
+            Email = string.Empty,
+            NormalizedEmail = string.Empty,
+            PasswordHash = string.Empty,
+            Phone = "09171234567",
+            Role = "Owner",
+            RefreshTokenIdHash = jwtService.HashTokenId(tokenId),
+            RefreshTokenExpiresAt = refExp,
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+        await context.SaveChangesAsync();
+
+        // Caller is NOT authenticated via Bearer token, but supplies the valid device session refresh token
+        var regRequest = new AuthController.RegisterRequest
+        {
+            TenantId = provisionedTenantId,
+            UserId = provisionedUserId,
+            RefreshToken = refreshToken,
+            Email = "session.owner@offlinefirst.ph",
+            Password = "MasterPassword123!",
+            BusinessName = "Device Session Store Upgraded"
+        };
+        var regResult = await controller.Register(regRequest, CancellationToken.None);
+
+        regResult.Result.Should().BeOfType<OkObjectResult>();
+        var okResult = (OkObjectResult)regResult.Result!;
+        var dto = okResult.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        dto.TenantId.Should().Be(provisionedTenantId);
+        dto.UserId.Should().Be(provisionedUserId);
+        dto.Email.Should().Be("session.owner@offlinefirst.ph");
+
+        var tenantUsers = await context.Users.IgnoreQueryFilters()
+            .Where(u => u.TenantId == provisionedTenantId)
+            .ToListAsync();
+        tenantUsers.Should().HaveCount(1);
+        tenantUsers[0].NormalizedEmail.Should().Be("session.owner@offlinefirst.ph");
+    }
+
+    [Fact]
+    public async Task Register_AnonymouslyProvisionedTenant_FromIdsAlone_Returns401Unauthorized()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        var provisionedTenantId = Guid.NewGuid();
+        var provisionedUserId = Guid.NewGuid();
+
+        context.Tenants.Add(new Tenant
+        {
+            Id = provisionedTenantId,
+            BusinessName = "Offline First Store",
+            Tier = PlanTier.Libre,
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+        context.Users.Add(new User
+        {
+            Id = provisionedUserId,
+            TenantId = provisionedTenantId,
+            Email = string.Empty,
+            NormalizedEmail = string.Empty,
+            PasswordHash = string.Empty,
+            Phone = "09171234567",
+            Role = "Owner",
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+        await context.SaveChangesAsync();
+
+        // Attacker attempts to upgrade using TenantId and UserId alone without auth or device session
+        var regRequest = new AuthController.RegisterRequest
+        {
+            TenantId = provisionedTenantId,
+            UserId = provisionedUserId,
+            Email = "attacker@hijack.ph",
+            Password = "AttackerPassword123!",
+            BusinessName = "Hijacked Store"
+        };
+        var regResult = await controller.Register(regRequest, CancellationToken.None);
+
+        regResult.Result.Should().BeOfType<UnauthorizedObjectResult>();
+        var unauthorized = (UnauthorizedObjectResult)regResult.Result!;
+        unauthorized.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+    }
+
+    [Fact]
+    public async Task Register_AnonymouslyProvisionedTenant_WithAttackerRefreshToken_Returns401Unauthorized()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var jwtService = DefaultJwtService;
+        var controller = CreateController(context, jwtService);
+
+        var provisionedTenantId = Guid.NewGuid();
+        var provisionedUserId = Guid.NewGuid();
+        var attackerUserId = Guid.NewGuid();
+
+        // Refresh token minted for a different user
+        var (attackerRefreshToken, _, _) = jwtService.GenerateRefreshToken(attackerUserId, provisionedTenantId);
+
+        context.Tenants.Add(new Tenant
+        {
+            Id = provisionedTenantId,
+            BusinessName = "Victim Store",
+            Tier = PlanTier.Libre,
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+        context.Users.Add(new User
+        {
+            Id = provisionedUserId,
+            TenantId = provisionedTenantId,
+            Email = string.Empty,
+            NormalizedEmail = string.Empty,
+            PasswordHash = string.Empty,
+            Role = "Owner",
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+        await context.SaveChangesAsync();
+
+        var regRequest = new AuthController.RegisterRequest
+        {
+            TenantId = provisionedTenantId,
+            UserId = provisionedUserId,
+            RefreshToken = attackerRefreshToken,
+            Email = "attacker@spoof.ph",
+            Password = "AttackerPassword123!",
+            BusinessName = "Victim Store Hijack"
+        };
+        var regResult = await controller.Register(regRequest, CancellationToken.None);
+
+        regResult.Result.Should().BeOfType<UnauthorizedObjectResult>();
+        var unauthorized = (UnauthorizedObjectResult)regResult.Result!;
+        unauthorized.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
     }
 
     [Fact]
@@ -1208,10 +1367,9 @@ public class AuthControllerTests
         principal.FindFirst("user_id")?.Value.Should().Be(clientUserId.ToString());
         principal.FindFirst("token_type")?.Value.Should().Be("access");
 
-        // Verify tokens are kept minimal: email and role claims are not embedded in token payload
-        principal.FindFirst("email").Should().BeNull();
-        principal.FindFirst("role").Should().BeNull();
-        principal.FindFirst(ClaimTypes.Role).Should().BeNull();
+        // Verify role claim is embedded in token payload
+        principal.FindFirst(ClaimTypes.Role)?.Value.Should().Be("Owner");
+        principal.FindFirst("role")?.Value.Should().Be("Owner");
     }
 
     [Fact]
@@ -1982,6 +2140,105 @@ public class AuthControllerTests
         }
 
         AuthController.ResetAllIpPinThrottles();
+    }
+
+    [Fact]
+    public async Task Login_WhenPasswordLockoutEndIsInPast_ResetsCounterToZeroBeforeCountingNewFailure()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        var regResult = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "pastpasswordlock@tindahan.ph",
+            Password = "RealPassword123!",
+            BusinessName = "Past Lockout Store"
+        }, CancellationToken.None);
+
+        var user = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.NormalizedEmail == "pastpasswordlock@tindahan.ph");
+        user.FailedPasswordAttempts = 5;
+        user.PasswordLockoutEnd = DateTimeOffset.UtcNow.AddMinutes(-10);
+        await context.SaveChangesAsync(CancellationToken.None);
+
+        // First attempt with wrong password after lockout expired
+        var failResult = await controller.Login(new AuthController.LoginRequest
+        {
+            Email = "pastpasswordlock@tindahan.ph",
+            Password = "WrongPassword123!"
+        }, CancellationToken.None);
+
+        failResult.Result.Should().BeOfType<UnauthorizedObjectResult>();
+        var userAfter = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.NormalizedEmail == "pastpasswordlock@tindahan.ph");
+        userAfter.FailedPasswordAttempts.Should().Be(1);
+        userAfter.PasswordLockoutEnd.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task LoginWithPin_WhenPinLockoutEndIsInPast_ResetsCounterToZeroBeforeCountingNewFailure()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        var regResult = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "pastpinlock@tindahan.ph",
+            Password = "RealPassword123!",
+            BusinessName = "Past PIN Lockout Store"
+        }, CancellationToken.None);
+
+        var user = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.NormalizedEmail == "pastpinlock@tindahan.ph");
+        var hasher = new PasswordHasher<User>();
+        user.PinHash = hasher.HashPassword(user, "1234");
+        user.FailedPinAttempts = 5;
+        user.PinLockoutEnd = DateTimeOffset.UtcNow.AddMinutes(-5);
+        await context.SaveChangesAsync(CancellationToken.None);
+
+        // First attempt with wrong PIN after lockout expired
+        var failResult = await controller.LoginPin(new AuthController.LoginPinRequest
+        {
+            Email = "pastpinlock@tindahan.ph",
+            Pin = "9999"
+        }, CancellationToken.None);
+
+        failResult.Result.Should().BeOfType<UnauthorizedObjectResult>();
+        var userAfter = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.NormalizedEmail == "pastpinlock@tindahan.ph");
+        userAfter.FailedPinAttempts.Should().Be(1);
+        userAfter.PinLockoutEnd.Should().BeNull();
+
+        AuthController.ResetAllIpPinThrottles();
+    }
+
+    [Fact]
+    public async Task UpdatePin_WhenPasswordLockoutEndIsInPast_ResetsCounterToZeroBeforeCountingNewFailure()
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        var regResult = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "pastupdatepinlock@tindahan.ph",
+            Password = "RealPassword123!",
+            BusinessName = "Past UpdatePin Lock Store"
+        }, CancellationToken.None);
+
+        var user = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.NormalizedEmail == "pastupdatepinlock@tindahan.ph");
+        user.FailedPasswordAttempts = 5;
+        user.PasswordLockoutEnd = DateTimeOffset.UtcNow.AddMinutes(-10);
+        await context.SaveChangesAsync(CancellationToken.None);
+
+        SetAuthenticatedUser(controller, user.Id, user.TenantId, user.Email);
+
+        // Attempt UpdatePin with wrong password after lockout expired
+        var failResult = await controller.UpdatePin(new AuthController.UpdatePinRequest
+        {
+            Password = "WrongPassword123!",
+            Pin = "5678"
+        }, CancellationToken.None);
+
+        failResult.Should().BeOfType<UnauthorizedObjectResult>();
+        var userAfter = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.NormalizedEmail == "pastupdatepinlock@tindahan.ph");
+        userAfter.FailedPasswordAttempts.Should().Be(1);
+        userAfter.PasswordLockoutEnd.Should().BeNull();
     }
 }
 

@@ -133,11 +133,13 @@ public class User : IMustHaveTenant
   - `POST /api/auth/login`:
     - Queries user by `NormalizedEmail` via `.IgnoreQueryFilters()`.
     - Validates password against stored `PasswordHash` (transparently rehashing if `PasswordVerificationResult.SuccessRehashNeeded`).
-    - Resets `FailedPinAttempts = 0` and `PinLockoutEnd = null`, updates `LastLoginAt`.
+    - If `PasswordLockoutEnd` is in the past, resets `FailedPasswordAttempts = 0` before counting a new failure.
+    - Resets `FailedPinAttempts = 0`, `FailedPasswordAttempts = 0`, `PasswordLockoutEnd = null`, and `PinLockoutEnd = null`, updates `LastLoginAt`.
     - Returns `AuthResponseDto`.
   - `POST /api/auth/login-pin`:
     - Queries user by `NormalizedEmail` via `.IgnoreQueryFilters()`.
     - Checks if `PinLockoutEnd > DateTimeOffset.UtcNow`. If locked out, returns `429 Too Many Requests` with remaining lockout duration.
+    - If `PinLockoutEnd` is in the past, resets `FailedPinAttempts = 0` before counting a new failure.
     - Validates PIN against stored `PinHash`. On failure, increments `FailedPinAttempts` and sets a 15-minute `PinLockoutEnd` on the 5th failed attempt.
     - On success, resets `FailedPinAttempts = 0` and returns `AuthResponseDto`.
   - `PUT /api/auth/pin` (`[Authorize]`):
@@ -145,6 +147,7 @@ public class User : IMustHaveTenant
 
 #### [MODIFY] [`TenantController.cs`](file:///d:/Projects/fluent-tindahan/backend/src/FluentTindahan.WebApi/Controllers/TenantController.cs)
 - Add optional `Email` property to `ProvisionTenantRequest` and update user `Email` / `NormalizedEmail` during standard sync provisioning without overwriting existing non-empty credentials with blank values.
+- `CurrentUserService.Role`: Resolves role from token claims (`ClaimTypes.Role`, `"role"`), falls back to database lookup by `UserId` if absent, and defaults to least-privileged `"Staff"` (or `null` when unauthenticated in production) to prevent privilege escalation.
 
 ---
 

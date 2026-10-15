@@ -18,13 +18,16 @@ public class TenantController : ControllerBase
 {
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUserService;
+    private readonly IJwtTokenService? _jwtTokenService;
 
     public TenantController(
         IApplicationDbContext context,
-        ICurrentUserService currentUserService)
+        ICurrentUserService currentUserService,
+        IJwtTokenService? jwtTokenService = null)
     {
         _context = context;
         _currentUserService = currentUserService;
+        _jwtTokenService = jwtTokenService;
     }
 
     public record TenantProfileDto(
@@ -50,7 +53,13 @@ public class TenantController : ControllerBase
     }
 
     /// <summary>Confirms the current tenant and owner user are ready for sync.</summary>
-    public sealed record ProvisionTenantResponse(Guid TenantId, Guid UserId, PlanTier Tier);
+    public sealed record ProvisionTenantResponse(
+        Guid TenantId,
+        Guid UserId,
+        PlanTier Tier,
+        string? Token = null,
+        string? RefreshToken = null,
+        string? DeviceSessionToken = null);
 
     /// <summary>
     /// Retrieves the current tenant's profile, including active PlanTier and SubscriptionEndDate.
@@ -176,18 +185,32 @@ public class TenantController : ControllerBase
                 return Forbid();
             }
 
-            _context.Users.Add(new User
+            user = new User
             {
                 Id = ownerId,
                 TenantId = tenantId,
                 Phone = request.Phone?.Trim() ?? string.Empty,
                 Role = "Owner",
                 CreatedAt = DateTimeOffset.UtcNow
-            });
+            };
+            _context.Users.Add(user);
         }
         else if (string.IsNullOrWhiteSpace(user.Phone) && !string.IsNullOrWhiteSpace(request.Phone))
         {
             user.Phone = request.Phone.Trim();
+        }
+
+        string? token = null;
+        string? refreshToken = null;
+
+        if (_jwtTokenService != null)
+        {
+            var (accToken, _) = _jwtTokenService.GenerateAccessToken(ownerId, tenantId, role: "Owner");
+            var (refToken, refExpiresAt, tokenId) = _jwtTokenService.GenerateRefreshToken(ownerId, tenantId);
+            user.RefreshTokenIdHash = _jwtTokenService.HashTokenId(tokenId);
+            user.RefreshTokenExpiresAt = refExpiresAt;
+            token = accToken;
+            refreshToken = refToken;
         }
 
         try
@@ -199,14 +222,22 @@ public class TenantController : ControllerBase
             _context.ChangeTracker.Clear();
 
             var existingTenant = await _context.Tenants.IgnoreQueryFilters()
-                .AsNoTracking()
                 .FirstOrDefaultAsync(candidate => candidate.Id == tenantId, cancellationToken);
             var existingOwner = await _context.Users.IgnoreQueryFilters()
-                .AsNoTracking()
                 .FirstOrDefaultAsync(candidate => candidate.Id == ownerId, cancellationToken);
 
             if (existingTenant != null && existingOwner?.TenantId == tenantId)
             {
+                if (_jwtTokenService != null)
+                {
+                    var (accToken, _) = _jwtTokenService.GenerateAccessToken(ownerId, tenantId, role: "Owner");
+                    var (refToken, refExpiresAt, tokenId) = _jwtTokenService.GenerateRefreshToken(ownerId, tenantId);
+                    existingOwner.RefreshTokenIdHash = _jwtTokenService.HashTokenId(tokenId);
+                    existingOwner.RefreshTokenExpiresAt = refExpiresAt;
+                    await _context.SaveChangesAsync(cancellationToken);
+                    return Ok(new ProvisionTenantResponse(tenantId, ownerId, existingTenant.Tier, accToken, refToken, refToken));
+                }
+
                 return Ok(new ProvisionTenantResponse(tenantId, ownerId, existingTenant.Tier));
             }
 
@@ -224,7 +255,7 @@ public class TenantController : ControllerBase
             throw;
         }
 
-        return Ok(new ProvisionTenantResponse(tenantId, ownerId, tenant.Tier));
+        return Ok(new ProvisionTenantResponse(tenantId, ownerId, tenant.Tier, token, refreshToken, refreshToken));
     }
 
     private static bool IsUniqueConstraintViolation(DbUpdateException exception)

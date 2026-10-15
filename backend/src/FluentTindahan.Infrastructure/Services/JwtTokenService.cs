@@ -67,8 +67,9 @@ public class JwtTokenService : IJwtTokenService
         var now = _timeProvider.GetUtcNow();
         var expiresAt = now.AddMinutes(_expiryMinutes);
 
-        // Keep token payload minimal: only essential principal identifiers (sub, user_id, tenant_id, aud, token_type).
-        // Omits Email and Role to keep bearer tokens lightweight and prevent personal data leakage in headers.
+        // Include principal identifiers and role claim in token payload.
+        // Fallback role is the least privileged ("Staff") when not explicitly provided.
+        var effectiveRole = !string.IsNullOrWhiteSpace(role) ? role : "Staff";
         var claims = new List<Claim>
         {
             new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),
@@ -76,7 +77,9 @@ public class JwtTokenService : IJwtTokenService
             new Claim("tenant_id", tenantId.ToString()),
             new Claim("TenantId", tenantId.ToString()),
             new Claim("aud", _audience),
-            new Claim("token_type", "access")
+            new Claim("token_type", "access"),
+            new Claim(ClaimTypes.Role, effectiveRole),
+            new Claim("role", effectiveRole)
         };
 
         var notBefore = expiresAt < now ? expiresAt.AddMinutes(-5).UtcDateTime : now.UtcDateTime;

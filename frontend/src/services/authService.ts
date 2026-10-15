@@ -27,6 +27,8 @@ export interface RegisterRequestPayload {
   businessName: string;
   ownerName?: string;
   phone?: string;
+  refreshToken?: string;
+  deviceSessionToken?: string;
 }
 
 export interface LoginRequestPayload {
@@ -142,7 +144,14 @@ export async function computeLocalPinHash(pin: string, salt: string): Promise<st
 }
 
 export async function registerStore(payload: RegisterRequestPayload): Promise<AuthResponseDto> {
-  const response = await apiClient.post<AuthResponseDto>('/auth/register', payload);
+  const storedRefreshToken = typeof localStorage !== 'undefined'
+    ? localStorage.getItem('fluent_tindahan_refresh_token_v1')
+    : null;
+  const requestPayload: RegisterRequestPayload = {
+    ...payload,
+    refreshToken: payload.refreshToken || storedRefreshToken || undefined
+  };
+  const response = await apiClient.post<AuthResponseDto>('/auth/register', requestPayload);
   return response.data;
 }
 

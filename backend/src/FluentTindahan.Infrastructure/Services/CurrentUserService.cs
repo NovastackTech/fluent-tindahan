@@ -1,7 +1,9 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
+using FluentTindahan.Application.Common.Interfaces;
 using FluentTindahan.Domain.Interfaces;
 
 namespace FluentTindahan.Infrastructure.Services;
@@ -147,8 +149,52 @@ public class CurrentUserService : ICurrentUserService
         _httpContextAccessor.HttpContext?.User.FindFirst("user_id")?.Value
         ?? _httpContextAccessor.HttpContext?.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
-    public string? Role =>
-        _httpContextAccessor.HttpContext?.User.FindFirst(ClaimTypes.Role)?.Value ?? "Owner";
+    public string? Role
+    {
+        get
+        {
+            var user = _httpContextAccessor.HttpContext?.User;
+            var roleClaim = user?.FindFirst(ClaimTypes.Role)?.Value
+                ?? user?.FindFirst("role")?.Value;
+
+            if (!string.IsNullOrWhiteSpace(roleClaim))
+            {
+                return roleClaim;
+            }
+
+            // Look up from database if user is authenticated and claims are missing the role
+            if (_httpContextAccessor.HttpContext != null && UserId.HasValue && UserId != Guid.Empty)
+            {
+                try
+                {
+                    var dbContext = _httpContextAccessor.HttpContext.RequestServices.GetService(typeof(IApplicationDbContext)) as IApplicationDbContext;
+                    if (dbContext != null)
+                    {
+                        var dbUser = dbContext.Users.IgnoreQueryFilters()
+                            .AsNoTracking()
+                            .FirstOrDefault(u => u.Id == UserId.Value);
+                        if (dbUser != null && !string.IsNullOrWhiteSpace(dbUser.Role))
+                        {
+                            return dbUser.Role;
+                        }
+                    }
+                }
+                catch
+                {
+                    // Fall through to less privileged fallback if database lookup fails
+                }
+            }
+
+            // In Development or Demo mode when unauthenticated, default to Owner to support local dev seeding
+            if (IsDevelopmentOrDemoMode() && !IsAuthenticated)
+            {
+                return "Owner";
+            }
+
+            // Make the fallback less privileged: return "Staff" for authenticated users without an explicit role, or null when unauthenticated
+            return IsAuthenticated ? "Staff" : null;
+        }
+    }
 
     public bool IsAuthenticated =>
         _httpContextAccessor.HttpContext?.User.Identity?.IsAuthenticated ?? false;

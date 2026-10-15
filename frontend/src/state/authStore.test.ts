@@ -322,6 +322,23 @@ describe('authStore', () => {
     expect(localStorage.getItem('fluent_tindahan_offline_pin_lockout_end_v1')).toBeNull();
   });
 
+  it('resets offline failed PIN attempts to 0 before counting new failure when lockoutEnd is in the past', () => {
+    const pastLockout = new Date(Date.now() - 60000).toISOString();
+    localStorage.setItem('fluent_tindahan_offline_pin_failures_v1', '5');
+    localStorage.setItem('fluent_tindahan_offline_pin_lockout_end_v1', pastLockout);
+    useAuthStore.setState({
+      offlineFailedPinAttempts: 5,
+      offlinePinLockoutEnd: pastLockout
+    });
+
+    const result = useAuthStore.getState().recordOfflinePinFailure();
+
+    expect(result.attempts).toBe(1);
+    expect(result.isLockedOut).toBe(false);
+    expect(useAuthStore.getState().offlineFailedPinAttempts).toBe(1);
+    expect(useAuthStore.getState().offlinePinLockoutEnd).toBeNull();
+  });
+
   it('setRefreshToken updates state and localStorage', () => {
     useAuthStore.getState().setRefreshToken('new-refresh-token');
     expect(useAuthStore.getState().refreshToken).toBe('new-refresh-token');

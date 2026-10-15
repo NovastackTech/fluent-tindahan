@@ -90,6 +90,12 @@ public class AuthController : ControllerBase
         var info = _ipPinThrottles.GetOrAdd(clientIp, _ => new IpPinThrottleInfo());
         lock (info)
         {
+            if (info.LockoutEnd.HasValue && info.LockoutEnd.Value <= DateTimeOffset.UtcNow)
+            {
+                info.FailedAttempts = 0;
+                info.LockoutEnd = null;
+            }
+
             info.FailedAttempts++;
             if (info.FailedAttempts >= 5)
             {
@@ -143,6 +149,8 @@ public class AuthController : ControllerBase
 
         public Guid? TenantId { get; init; }
         public Guid? UserId { get; init; }
+        public string? DeviceSessionToken { get; init; }
+        public string? RefreshToken { get; init; }
     }
 
     public sealed record LoginRequest
@@ -292,6 +300,80 @@ public class AuthController : ControllerBase
                     return Conflict(new { message = "May tindahan nang nakarehistro gamit ang ID na ito. / This store is already registered." });
                 }
 
+                // Security invariant: Only allow the upgrade from a request authenticated as that placeholder user,
+                // or from the same device session, not from IDs alone.
+                var placeholderUser = existingUsers[0];
+
+                var claimUserId = _currentUserService?.UserId;
+                if (!claimUserId.HasValue || claimUserId == Guid.Empty)
+                {
+                    var userPrincipal = HttpContext?.User;
+                    var sub = userPrincipal?.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                        ?? userPrincipal?.FindFirst("sub")?.Value
+                        ?? userPrincipal?.FindFirst("user_id")?.Value;
+                    if (Guid.TryParse(sub, out var parsedSub) && parsedSub != Guid.Empty)
+                    {
+                        claimUserId = parsedSub;
+                    }
+                }
+
+                var claimTenantId = _currentUserService?.TenantId;
+                if (!claimTenantId.HasValue || claimTenantId == Guid.Empty)
+                {
+                    var userPrincipal = HttpContext?.User;
+                    var tClaim = userPrincipal?.FindFirst("tenant_id")?.Value
+                        ?? userPrincipal?.FindFirst("TenantId")?.Value;
+                    if (Guid.TryParse(tClaim, out var parsedTenant) && parsedTenant != Guid.Empty)
+                    {
+                        claimTenantId = parsedTenant;
+                    }
+                }
+
+                var isAuthenticated = (_currentUserService != null && _currentUserService.IsAuthenticated)
+                    || (HttpContext?.User?.Identity?.IsAuthenticated == true);
+
+                var isCallerAuthenticatedAsPlaceholder = isAuthenticated &&
+                    claimUserId.HasValue &&
+                    claimUserId.Value == placeholderUser.Id &&
+                    claimTenantId.HasValue &&
+                    claimTenantId.Value == tenantId;
+
+                var isSameDeviceSession = false;
+
+                var candidateSessionToken = request.DeviceSessionToken
+                    ?? request.RefreshToken
+                    ?? (Request?.Headers.TryGetValue("X-Device-Session", out var dsHeader) == true ? dsHeader.ToString() : null)
+                    ?? (Request?.Headers.TryGetValue("X-Refresh-Token", out var rtHeader) == true ? rtHeader.ToString() : null);
+
+                if (!string.IsNullOrWhiteSpace(candidateSessionToken))
+                {
+                    if (_jwtTokenService.ValidateRefreshToken(candidateSessionToken, out var sessionUserId, out var sessionTenantId, out var sessionTokenId))
+                    {
+                        if (sessionUserId == placeholderUser.Id && sessionTenantId == tenantId)
+                        {
+                            if (!string.IsNullOrEmpty(placeholderUser.RefreshTokenIdHash))
+                            {
+                                var incomingTokenIdHash = _jwtTokenService.HashTokenId(sessionTokenId);
+                                isSameDeviceSession = CryptographicOperations.FixedTimeEquals(
+                                    Encoding.UTF8.GetBytes(placeholderUser.RefreshTokenIdHash),
+                                    Encoding.UTF8.GetBytes(incomingTokenIdHash));
+                            }
+                            else
+                            {
+                                isSameDeviceSession = true;
+                            }
+                        }
+                    }
+                }
+
+                if (!isCallerAuthenticatedAsPlaceholder && !isSameDeviceSession)
+                {
+                    return Unauthorized(new
+                    {
+                        message = "Hindi pinapayagan ang pag-upgrade ng tindahang ito nang walang authenticated session mula sa parehong device. / Upgrading this store is only allowed from an authenticated session from the same device, not from IDs alone."
+                    });
+                }
+
                 tenant = existingTenant;
                 if (string.IsNullOrWhiteSpace(tenant.BusinessName))
                 {
@@ -399,7 +481,7 @@ public class AuthController : ControllerBase
             user.PinHash = null;
         }
 
-        var (token, expiresAt) = _jwtTokenService.GenerateAccessToken(user.Id, tenant.Id);
+        var (token, expiresAt) = _jwtTokenService.GenerateAccessToken(user.Id, tenant.Id, email: user.Email, role: user.Role);
         var (refreshToken, refreshExpiresAt, tokenId) = _jwtTokenService.GenerateRefreshToken(user.Id, tenant.Id);
         user.RefreshTokenIdHash = _jwtTokenService.HashTokenId(tokenId);
         user.RefreshTokenExpiresAt = refreshExpiresAt;
@@ -471,15 +553,21 @@ public class AuthController : ControllerBase
             return Unauthorized(new { message = "Maling email o password. / Invalid email or password." });
         }
 
-        if (user.PasswordLockoutEnd.HasValue && user.PasswordLockoutEnd.Value > DateTimeOffset.UtcNow)
+        if (user.PasswordLockoutEnd.HasValue)
         {
-            var remaining = Math.Max(1, (int)Math.Ceiling((user.PasswordLockoutEnd.Value - DateTimeOffset.UtcNow).TotalMinutes));
-            return StatusCode(StatusCodes.Status429TooManyRequests, new
+            if (user.PasswordLockoutEnd.Value > DateTimeOffset.UtcNow)
             {
-                message = $"Naka-lockout ang account dahil sa sunod-sunod na maling pagsubok sa password. Maghintay nang {remaining} minuto. / Account locked due to repeated failed password attempts. Wait {remaining} minutes.",
-                lockoutMinutes = remaining,
-                accountLocked = true
-            });
+                var remaining = Math.Max(1, (int)Math.Ceiling((user.PasswordLockoutEnd.Value - DateTimeOffset.UtcNow).TotalMinutes));
+                return StatusCode(StatusCodes.Status429TooManyRequests, new
+                {
+                    message = $"Naka-lockout ang account dahil sa sunod-sunod na maling pagsubok sa password. Maghintay nang {remaining} minuto. / Account locked due to repeated failed password attempts. Wait {remaining} minutes.",
+                    lockoutMinutes = remaining,
+                    accountLocked = true
+                });
+            }
+
+            user.FailedPasswordAttempts = 0;
+            user.PasswordLockoutEnd = null;
         }
 
         var verifyResult = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
@@ -521,7 +609,7 @@ public class AuthController : ControllerBase
         user.PinLockoutEnd = null;
         user.LastLoginAt = DateTimeOffset.UtcNow;
 
-        var (token, expiresAt) = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId);
+        var (token, expiresAt) = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId, email: user.Email, role: user.Role);
         var (refreshToken, refreshExpiresAt, tokenId) = _jwtTokenService.GenerateRefreshToken(user.Id, user.TenantId);
         user.RefreshTokenIdHash = _jwtTokenService.HashTokenId(tokenId);
         user.RefreshTokenExpiresAt = refreshExpiresAt;
@@ -631,26 +719,51 @@ public class AuthController : ControllerBase
                 return Unauthorized(new { message = "Maling email o PIN code. / Invalid email or PIN code." });
             }
 
-            if (freshUser.PasswordLockoutEnd.HasValue && freshUser.PasswordLockoutEnd.Value > DateTimeOffset.UtcNow)
+            if (freshUser.PasswordLockoutEnd.HasValue)
             {
-                var remaining = Math.Max(1, (int)Math.Ceiling((freshUser.PasswordLockoutEnd.Value - DateTimeOffset.UtcNow).TotalMinutes));
-                return StatusCode(StatusCodes.Status429TooManyRequests, new
+                if (freshUser.PasswordLockoutEnd.Value > DateTimeOffset.UtcNow)
                 {
-                    message = $"Naka-lockout ang account dahil sa sunod-sunod na maling pagsubok sa password. Maghintay nang {remaining} minuto. / Account locked due to repeated failed password attempts. Wait {remaining} minutes.",
-                    lockoutMinutes = remaining,
-                    accountLocked = true
-                });
+                    var remaining = Math.Max(1, (int)Math.Ceiling((freshUser.PasswordLockoutEnd.Value - DateTimeOffset.UtcNow).TotalMinutes));
+                    return StatusCode(StatusCodes.Status429TooManyRequests, new
+                    {
+                        message = $"Naka-lockout ang account dahil sa sunod-sunod na maling pagsubok sa password. Maghintay nang {remaining} minuto. / Account locked due to repeated failed password attempts. Wait {remaining} minutes.",
+                        lockoutMinutes = remaining,
+                        accountLocked = true
+                    });
+                }
+
+                freshUser.FailedPasswordAttempts = 0;
+                freshUser.PasswordLockoutEnd = null;
             }
 
-            if (freshUser.PinLockoutEnd.HasValue && freshUser.PinLockoutEnd.Value > DateTimeOffset.UtcNow)
+            if (freshUser.PinLockoutEnd.HasValue)
             {
-                var remaining = Math.Max(1, (int)Math.Ceiling((freshUser.PinLockoutEnd.Value - DateTimeOffset.UtcNow).TotalMinutes));
-                return StatusCode(StatusCodes.Status429TooManyRequests, new
+                if (freshUser.PinLockoutEnd.Value > DateTimeOffset.UtcNow)
                 {
-                    message = $"Naka-lockout ang PIN dahil sa sunod-sunod na maling pagsubok. Mag-login gamit ang Password o maghintay nang {remaining} minuto. / PIN locked. Use password or wait {remaining} minutes.",
-                    lockoutMinutes = remaining,
-                    pinLocked = true
-                });
+                    var remaining = Math.Max(1, (int)Math.Ceiling((freshUser.PinLockoutEnd.Value - DateTimeOffset.UtcNow).TotalMinutes));
+                    return StatusCode(StatusCodes.Status429TooManyRequests, new
+                    {
+                        message = $"Naka-lockout ang PIN dahil sa sunod-sunod na maling pagsubok. Mag-login gamit ang Password o maghintay nang {remaining} minuto. / PIN locked. Use password or wait {remaining} minutes.",
+                        lockoutMinutes = remaining,
+                        pinLocked = true
+                    });
+                }
+
+                freshUser.FailedPinAttempts = 0;
+                freshUser.PinLockoutEnd = null;
+                if (_context.Database.IsNpgsql())
+                {
+                    await _context.Users.IgnoreQueryFilters()
+                        .Where(u => u.Id == freshUser.Id)
+                        .ExecuteUpdateAsync(s => s
+                            .SetProperty(u => u.FailedPinAttempts, 0)
+                            .SetProperty(u => u.PinLockoutEnd, (DateTimeOffset?)null),
+                            cancellationToken);
+                }
+                else
+                {
+                    await _context.SaveChangesAsync(cancellationToken);
+                }
             }
 
             var pin = (request.Pin ?? string.Empty).Trim();
@@ -718,7 +831,7 @@ public class AuthController : ControllerBase
 
             ResetIpPinThrottle(clientIp);
 
-            var (token, expiresAt) = _jwtTokenService.GenerateAccessToken(freshUser.Id, freshUser.TenantId);
+            var (token, expiresAt) = _jwtTokenService.GenerateAccessToken(freshUser.Id, freshUser.TenantId, email: freshUser.Email, role: freshUser.Role);
             var (refreshToken, refreshExpiresAt, tokenId) = _jwtTokenService.GenerateRefreshToken(freshUser.Id, freshUser.TenantId);
             var tokenHash = _jwtTokenService.HashTokenId(tokenId);
 
@@ -815,15 +928,21 @@ public class AuthController : ControllerBase
             return Unauthorized(new { message = "Hindi natagpuan ang account o walang password. / User not found or password not configured." });
         }
 
-        if (user.PasswordLockoutEnd.HasValue && user.PasswordLockoutEnd.Value > DateTimeOffset.UtcNow)
+        if (user.PasswordLockoutEnd.HasValue)
         {
-            var remaining = Math.Max(1, (int)Math.Ceiling((user.PasswordLockoutEnd.Value - DateTimeOffset.UtcNow).TotalMinutes));
-            return StatusCode(StatusCodes.Status429TooManyRequests, new
+            if (user.PasswordLockoutEnd.Value > DateTimeOffset.UtcNow)
             {
-                message = $"Naka-lockout ang account dahil sa sunod-sunod na maling pagsubok sa password. Maghintay nang {remaining} minuto. / Account locked due to repeated failed password attempts. Wait {remaining} minutes.",
-                lockoutMinutes = remaining,
-                accountLocked = true
-            });
+                var remaining = Math.Max(1, (int)Math.Ceiling((user.PasswordLockoutEnd.Value - DateTimeOffset.UtcNow).TotalMinutes));
+                return StatusCode(StatusCodes.Status429TooManyRequests, new
+                {
+                    message = $"Naka-lockout ang account dahil sa sunod-sunod na maling pagsubok sa password. Maghintay nang {remaining} minuto. / Account locked due to repeated failed password attempts. Wait {remaining} minutes.",
+                    lockoutMinutes = remaining,
+                    accountLocked = true
+                });
+            }
+
+            user.FailedPasswordAttempts = 0;
+            user.PasswordLockoutEnd = null;
         }
 
         var verifyResult = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
@@ -949,7 +1068,7 @@ public class AuthController : ControllerBase
         }
 
         // Rotate on use: issue new access token and new refresh token with a new token ID
-        var (token, expiresAt) = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId);
+        var (token, expiresAt) = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId, email: user.Email, role: user.Role);
         var (newRefreshToken, newRefreshExpiresAt, newTokenId) = _jwtTokenService.GenerateRefreshToken(user.Id, user.TenantId);
 
         user.RefreshTokenIdHash = _jwtTokenService.HashTokenId(newTokenId);
@@ -1074,15 +1193,21 @@ public class AuthController : ControllerBase
             return Unauthorized(new { message = "Hindi natagpuan ang account o walang password. / User not found or password not configured." });
         }
 
-        if (user.PasswordLockoutEnd.HasValue && user.PasswordLockoutEnd.Value > DateTimeOffset.UtcNow)
+        if (user.PasswordLockoutEnd.HasValue)
         {
-            var remaining = Math.Max(1, (int)Math.Ceiling((user.PasswordLockoutEnd.Value - DateTimeOffset.UtcNow).TotalMinutes));
-            return StatusCode(StatusCodes.Status429TooManyRequests, new
+            if (user.PasswordLockoutEnd.Value > DateTimeOffset.UtcNow)
             {
-                message = $"Naka-lockout ang account dahil sa sunod-sunod na maling pagsubok sa password. Maghintay nang {remaining} minuto. / Account locked due to repeated failed password attempts. Wait {remaining} minutes.",
-                lockoutMinutes = remaining,
-                accountLocked = true
-            });
+                var remaining = Math.Max(1, (int)Math.Ceiling((user.PasswordLockoutEnd.Value - DateTimeOffset.UtcNow).TotalMinutes));
+                return StatusCode(StatusCodes.Status429TooManyRequests, new
+                {
+                    message = $"Naka-lockout ang account dahil sa sunod-sunod na maling pagsubok sa password. Maghintay nang {remaining} minuto. / Account locked due to repeated failed password attempts. Wait {remaining} minutes.",
+                    lockoutMinutes = remaining,
+                    accountLocked = true
+                });
+            }
+
+            user.FailedPasswordAttempts = 0;
+            user.PasswordLockoutEnd = null;
         }
 
         var verifyResult = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.CurrentPassword);

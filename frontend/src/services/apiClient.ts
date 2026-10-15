@@ -169,6 +169,13 @@ async function provisionTenantSession({
     throw new TenantProvisioningError(409);
   }
 
+  if (response.data?.token) {
+    useAuthStore.getState().setFirebaseToken(response.data.token);
+  }
+  if (response.data?.refreshToken) {
+    useAuthStore.getState().setRefreshToken(response.data.refreshToken);
+  }
+
   const normalizedProvisionedTenantId = provisionedTenantId.toLowerCase();
   const canonicalTenantId = normalizedProvisionedTenantId === tenantId.toLowerCase()
     ? tenantId

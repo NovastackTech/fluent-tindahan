@@ -60,6 +60,7 @@ public class InfrastructureTests
 
         service.TenantId.Should().Be(Guid.Empty);
         service.UserId.Should().BeNull();
+        service.Role.Should().BeNull();
         service.IsAuthenticated.Should().BeFalse();
     }
 
@@ -397,6 +398,94 @@ public class InfrastructureTests
         service.UserId.Should().Be(claimUser);
         service.TenantId.Should().NotBe(spoofedHeaderTenant);
         service.UserId.Should().NotBe(spoofedHeaderUser);
+        service.Role.Should().Be("Staff"); // Less privileged fallback when no role claim is present
+    }
+
+    [Fact]
+    public void CurrentUserService_AuthenticatedWithoutRoleClaim_LooksUpFromDatabase()
+    {
+        var expectedTenant = Guid.NewGuid();
+        var expectedUser = Guid.NewGuid();
+
+        var claims = new[]
+        {
+            new Claim("tenant_id", expectedTenant.ToString()),
+            new Claim("sub", expectedUser.ToString())
+        };
+        var identity = new ClaimsIdentity(claims, "Bearer");
+        var principal = new ClaimsPrincipal(identity);
+
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+
+        var userMock = new Mock<ICurrentUserService>();
+        using var dbContext = new AppDbContext(options, userMock.Object);
+        dbContext.Tenants.Add(new Tenant { Id = expectedTenant, BusinessName = "Role Test Store" });
+        dbContext.Users.Add(new User
+        {
+            Id = expectedUser,
+            TenantId = expectedTenant,
+            Role = "Owner"
+        });
+        dbContext.SaveChanges();
+
+        var serviceProviderMock = new Mock<IServiceProvider>();
+        serviceProviderMock
+            .Setup(sp => sp.GetService(typeof(IApplicationDbContext)))
+            .Returns(dbContext);
+
+        var context = new DefaultHttpContext
+        {
+            User = principal,
+            RequestServices = serviceProviderMock.Object
+        };
+
+        var httpAccessorMock = new Mock<IHttpContextAccessor>();
+        httpAccessorMock.Setup(h => h.HttpContext).Returns(context);
+
+        var service = new CurrentUserService(httpAccessorMock.Object);
+
+        service.Role.Should().Be("Owner");
+    }
+
+    [Fact]
+    public void CurrentUserService_AuthenticatedWithoutRoleClaim_NoDatabaseMatch_FallsBackToStaff()
+    {
+        var expectedTenant = Guid.NewGuid();
+        var expectedUser = Guid.NewGuid();
+
+        var claims = new[]
+        {
+            new Claim("tenant_id", expectedTenant.ToString()),
+            new Claim("sub", expectedUser.ToString())
+        };
+        var identity = new ClaimsIdentity(claims, "Bearer");
+        var principal = new ClaimsPrincipal(identity);
+
+        var context = new DefaultHttpContext { User = principal };
+
+        var httpAccessorMock = new Mock<IHttpContextAccessor>();
+        httpAccessorMock.Setup(h => h.HttpContext).Returns(context);
+
+        var service = new CurrentUserService(httpAccessorMock.Object);
+
+        service.Role.Should().Be("Staff");
+    }
+
+    [Fact]
+    public void CurrentUserService_UnauthenticatedInProduction_ReturnsNullRole()
+    {
+        var context = new DefaultHttpContext(); // No user, unauthenticated
+        var envMock = new Mock<IHostEnvironment>();
+        envMock.Setup(e => e.EnvironmentName).Returns(Environments.Production);
+
+        var httpAccessorMock = new Mock<IHttpContextAccessor>();
+        httpAccessorMock.Setup(h => h.HttpContext).Returns(context);
+
+        var service = new CurrentUserService(httpAccessorMock.Object, envMock.Object);
+
+        service.Role.Should().BeNull();
     }
 
     [Fact]
