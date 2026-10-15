@@ -134,8 +134,9 @@ describe('UtangPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /I-save ang Suki|Save Customer/i }));
 
     await waitFor(() => {
-      expect(alertMock).toHaveBeenCalledWith(expect.stringMatching(/Hindi maaaring negatibo|cannot be negative/i));
+      expect(screen.getByRole('alert')).toHaveTextContent(/Hindi maaaring negatibo|cannot be negative/i);
     });
+    expect(alertMock).not.toHaveBeenCalled();
     expect(await db.customers.toArray()).toHaveLength(0);
     expect(await db.utangLedger.toArray()).toHaveLength(0);
     expect(await db.syncQueue.toArray()).toHaveLength(0);
@@ -396,8 +397,9 @@ describe('UtangPage', () => {
     fireEvent.click(confirmBtn);
 
     await waitFor(() => {
-      expect(alertMock).toHaveBeenCalledWith(expect.stringMatching(/Hindi puwedeng lumampas ang bayad|cannot exceed/i));
+      expect(screen.getByRole('alert')).toHaveTextContent(/Hindi puwedeng lumampas ang bayad|cannot exceed/i);
     });
+    expect(alertMock).not.toHaveBeenCalled();
 
     // Verify balance was untouched and no ledger row was added
     const cust = await db.customers.get('cust-overpay');
@@ -442,8 +444,9 @@ describe('UtangPage', () => {
     fireEvent.click(confirmBtn);
 
     await waitFor(() => {
-      expect(alertMock).toHaveBeenCalledWith(expect.stringMatching(/Hindi puwedeng lumampas ang bayad|cannot exceed/i));
+      expect(screen.getByRole('alert')).toHaveTextContent(/Hindi puwedeng lumampas ang bayad|cannot exceed/i);
     });
+    expect(alertMock).not.toHaveBeenCalled();
 
     const cust = await db.customers.get('cust-zero');
     expect(cust?.totalUtangBalance).toBe(0);

@@ -114,12 +114,14 @@ export const UtangPage: React.FC = () => {
   const [newCustPhone, setNewCustPhone] = useState('');
   const [newCustPhoneError, setNewCustPhoneError] = useState('');
   const [newCustInitialUtang, setNewCustInitialUtang] = useState('');
+  const [newCustInitialUtangError, setNewCustInitialUtangError] = useState('');
 
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentAmountError, setPaymentAmountError] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
 
   const [creditAmount, setCreditAmount] = useState('');
+  const [creditAmountError, setCreditAmountError] = useState('');
   const [creditNotes, setCreditNotes] = useState('');
 
   const tenantId = useAuthStore((s) => s.tenantId);
@@ -159,6 +161,7 @@ export const UtangPage: React.FC = () => {
   const handleCreateCustomer = async () => {
     setNewCustNameError('');
     setNewCustPhoneError('');
+    setNewCustInitialUtangError('');
 
     if (!newCustName.trim()) {
       setNewCustNameError(t.utang.customerNameRequired);
@@ -173,7 +176,7 @@ export const UtangPage: React.FC = () => {
 
     const enteredInitialBalance = newCustInitialUtang.trim() === '' ? 0 : Number(newCustInitialUtang);
     if (!Number.isFinite(enteredInitialBalance) || enteredInitialBalance < 0) {
-      alert(
+      setNewCustInitialUtangError(
         language === 'tl'
           ? 'Hindi maaaring negatibo ang panimulang balanse ng utang.'
           : 'The opening utang balance cannot be negative.'
@@ -238,6 +241,16 @@ export const UtangPage: React.FC = () => {
       setPaymentAmountError(t.utang.paymentAmountInvalid);
       return;
     }
+
+    const currentBalance = selectedCustomer.totalUtangBalance ?? 0;
+    if (Math.round(amount * 100) > Math.round(currentBalance * 100)) {
+      setPaymentAmountError(
+        language === 'tl'
+          ? `Hindi puwedeng lumampas ang bayad (${formatPeso(amount)}) sa balanse ng utang (${formatPeso(currentBalance)}).`
+          : `Payment (${formatPeso(amount)}) cannot exceed the outstanding balance (${formatPeso(currentBalance)}).`
+      );
+      return;
+    }
     setPaymentAmountError('');
 
     savingRef.current = true;
@@ -257,13 +270,13 @@ export const UtangPage: React.FC = () => {
       // Atomic read-check-write so concurrent submits cannot both pass the check
       const result = await db.transaction('rw', db.customers, db.utangLedger, db.syncQueue, async () => {
         const fresh = await db.customers.get(selectedCustomer.id);
-        const currentBalance = fresh?.totalUtangBalance ?? selectedCustomer.totalUtangBalance ?? 0;
-        if (Math.round(amount * 100) > Math.round(currentBalance * 100)) {
-          return { ok: false as const, currentBalance };
+        const latestBalance = fresh?.totalUtangBalance ?? selectedCustomer.totalUtangBalance ?? 0;
+        if (Math.round(amount * 100) > Math.round(latestBalance * 100)) {
+          return { ok: false as const, currentBalance: latestBalance };
         }
         await db.utangLedger.add(ledgerRecord);
         await addSyncRecord('UtangLedger', 'Insert', ledgerRecord);
-        const newBalance = Math.round(currentBalance * 100 - amount * 100) / 100;
+        const newBalance = Math.round(latestBalance * 100 - amount * 100) / 100;
         await db.customers.update(selectedCustomer.id, {
           totalUtangBalance: newBalance,
           updatedAt: now
@@ -272,7 +285,7 @@ export const UtangPage: React.FC = () => {
       });
 
       if (!result.ok) {
-        alert(
+        setPaymentAmountError(
           language === 'tl'
             ? `Hindi puwedeng lumampas ang bayad (${formatPeso(amount)}) sa balanse ng utang (${formatPeso(result.currentBalance)}).`
             : `Payment (${formatPeso(amount)}) cannot exceed the outstanding balance (${formatPeso(result.currentBalance)}).`
@@ -302,7 +315,15 @@ export const UtangPage: React.FC = () => {
   const handleAddCredit = async () => {
     if (!selectedCustomer || selectedCustomer.tenantId !== tenantId || savingRef.current) return;
     const amount = parseFloat(creditAmount);
-    if (isNaN(amount) || amount <= 0) return;
+    if (isNaN(amount) || amount <= 0) {
+      setCreditAmountError(
+        language === 'tl'
+          ? 'Ang halaga ng utang ay dapat higit sa ₱0.'
+          : 'Credit amount must be greater than ₱0.'
+      );
+      return;
+    }
+    setCreditAmountError('');
 
     savingRef.current = true;
     setIsSaving(true);
@@ -636,12 +657,21 @@ export const UtangPage: React.FC = () => {
                 <Text size={200} weight="semibold">{t.utang.creditAmountLabel}</Text>
                 <Input
                   type="number"
+                  aria-invalid={!!creditAmountError}
                   style={{ width: '100%', marginTop: '4px' }}
                   value={creditAmount}
-                  onChange={(_, data) => setCreditAmount(data.value)}
+                  onChange={(_, data) => {
+                    setCreditAmount(data.value);
+                    if (creditAmountError) setCreditAmountError('');
+                  }}
                   placeholder="0.00"
                   contentBefore="₱"
                 />
+                {creditAmountError && (
+                  <Text role="alert" size={200} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
+                    {creditAmountError}
+                  </Text>
+                )}
               </div>
 
               <div style={{ margin: '12px 0' }}>
@@ -674,6 +704,7 @@ export const UtangPage: React.FC = () => {
         if (!data.open) {
           setNewCustNameError('');
           setNewCustPhoneError('');
+          setNewCustInitialUtangError('');
         }
       }}>
         <DialogSurface>
@@ -731,12 +762,22 @@ export const UtangPage: React.FC = () => {
                   min={0}
                   step="0.01"
                   aria-label={t.utang.initialDebtLabel}
+                  aria-invalid={!!newCustInitialUtangError}
+                  aria-describedby={newCustInitialUtangError ? 'utang-initial-debt-error' : undefined}
                   style={{ width: '100%', marginTop: '4px' }}
                   value={newCustInitialUtang}
-                  onChange={(_, data) => setNewCustInitialUtang(data.value)}
+                  onChange={(_, data) => {
+                    setNewCustInitialUtang(data.value);
+                    if (newCustInitialUtangError) setNewCustInitialUtangError('');
+                  }}
                   placeholder="0.00"
                   contentBefore="₱"
                 />
+                {newCustInitialUtangError && (
+                  <Text id="utang-initial-debt-error" role="alert" size={200} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
+                    {newCustInitialUtangError}
+                  </Text>
+                )}
               </div>
             </DialogContent>
 

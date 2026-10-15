@@ -17,6 +17,7 @@
 **/*.log
 **/*.pdf
 tindahan
+graphify-out
 .env
 .env.*
 !.env.example

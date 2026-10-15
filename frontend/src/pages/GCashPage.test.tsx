@@ -121,6 +121,29 @@ describe('GCashPage', () => {
     });
   });
 
+  it('displays inline error for invalid negative amount without saving or calling window.alert', async () => {
+    const alertMock = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    renderGCash();
+
+    const amountInput = screen.getByRole('spinbutton', { name: /Halaga.*Amount|Amount/i });
+    fireEvent.change(amountInput, { target: { value: '-50' } });
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/Ang halaga ay dapat mas mataas sa ₱0|Transaction amount must be greater than ₱0/i);
+    expect(amountInput).toHaveAttribute('aria-invalid', 'true');
+
+    const submitBtn = screen.getByRole('button', { name: /Itala ang GCash|Record GCash|Cash-In/i });
+    expect(submitBtn).toBeDisabled();
+
+    const form = amountInput.closest('form');
+    if (form) {
+      fireEvent.submit(form);
+    }
+    expect(alertMock).not.toHaveBeenCalled();
+    expect(await db.gcashTxns.toArray()).toHaveLength(0);
+
+    alertMock.mockRestore();
+  });
+
   it('uses the configured tenant-specific fixed fee', () => {
     const tenantId = useAuthStore.getState().tenantId;
     useGCashFeeStore.getState().setFeeForTenant(tenantId, 0, 7);

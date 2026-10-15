@@ -75,6 +75,7 @@ export const GCashPage: React.FC = () => {
   const { tier, canAddGCashTxn, openUpgradeModal } = useSubscriptionStore();
   const [txnType, setTxnType] = useState<'CashIn' | 'CashOut'>('CashIn');
   const [amount, setAmount] = useState('');
+  const [amountTouched, setAmountTouched] = useState(false);
   const [customFee, setCustomFee] = useState<string | null>(null);
   const [refNo, setRefNo] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -97,7 +98,9 @@ export const GCashPage: React.FC = () => {
   const numAmount = parseFloat(amount) || 0;
 
   const amountError = useMemo(() => {
-    if (amount.trim() === '') return '';
+    if (amount.trim() === '') {
+      return amountTouched ? t.gcash.amountMustBePositive : '';
+    }
     const val = parseFloat(amount);
     if (isNaN(val) || val <= 0) {
       return t.gcash.amountMustBePositive;
@@ -106,7 +109,7 @@ export const GCashPage: React.FC = () => {
       return t.gcash.amountExceedsMax;
     }
     return '';
-  }, [amount, t.gcash.amountMustBePositive, t.gcash.amountExceedsMax]);
+  }, [amount, amountTouched, t.gcash.amountMustBePositive, t.gcash.amountExceedsMax]);
 
   const customFeeError = useMemo(() => {
     if (customFee === null || customFee.trim() === '') return '';
@@ -123,9 +126,6 @@ export const GCashPage: React.FC = () => {
     return '';
   }, [customFee, txnType, numAmount, t.gcash.feeCannotBeNegative, t.gcash.feeExceedsAmount]);
 
-  const isAmountValid = numAmount > 0 && numAmount <= MAX_GCASH_AMOUNT && !amountError;
-  const isSaveDisabled = isSaving || hasDuplicateRef || !isAmountValid || Boolean(customerPhoneError) || Boolean(customFeeError);
-
   // Live query for GCash logs
   const allTxns = useLiveQuery(
     () => db.gcashTxns.where('tenantId').equals(tenantId).reverse().sortBy('date'),
@@ -139,6 +139,9 @@ export const GCashPage: React.FC = () => {
     [tenantId, enteredRefNorm]
   );
   const hasDuplicateRef = Boolean(duplicateRefTxn);
+
+  const isAmountValid = numAmount > 0 && numAmount <= MAX_GCASH_AMOUNT && !amountError;
+  const isSaveDisabled = isSaving || hasDuplicateRef || !isAmountValid || Boolean(customerPhoneError) || Boolean(customFeeError);
   const resolutions = useLiveQuery(
     () => db.gcashTxnResolutions.where('tenantId').equals(tenantId).toArray(),
     [tenantId]
@@ -180,6 +183,7 @@ export const GCashPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setCustomerPhoneError('');
+    setAmountTouched(true);
 
     if (!isAmountValid || Boolean(customFeeError)) {
       return;
@@ -249,6 +253,7 @@ export const GCashPage: React.FC = () => {
 
       // Reset form
       setAmount('');
+      setAmountTouched(false);
       setCustomFee(null);
       setRefNo('');
       setCustomerPhone('');
@@ -400,7 +405,7 @@ export const GCashPage: React.FC = () => {
 
       {/* GCash Entry Form */}
       <Card className={styles.card}>
-        <form onSubmit={handleSubmit}>
+        <form noValidate onSubmit={handleSubmit}>
           <TabList
             selectedValue={txnType}
             onTabSelect={(_, data) => setTxnType(data.value as any)}
@@ -422,14 +427,13 @@ export const GCashPage: React.FC = () => {
                 value={amount}
                 onChange={(_, data) => {
                   setAmount(data.value);
+                  setAmountTouched(true);
                   setCustomFee(null); // Recalculate auto fee on amount change
                 }}
                 placeholder="0.00"
                 contentBefore="₱"
-                min="1"
                 max={MAX_GCASH_AMOUNT.toString()}
                 step="any"
-                required
               />
               {amountError && (
                 <Text

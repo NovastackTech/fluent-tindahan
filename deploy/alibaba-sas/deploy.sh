@@ -92,13 +92,16 @@ else
   log "Database not running (or --no-backup) - skipping pre-deploy snapshot."
 fi
 
-BUILD_ARGS=()
+BUILD_ARGS=(--progress=plain)
 [[ "${NO_CACHE}" == "true" ]] && BUILD_ARGS+=(--no-cache)
 
-log "Building images (this may take several minutes on SAS)..."
+log "Building images sequentially with plain logs to avoid memory thrashing on SAS..."
 export DOCKER_BUILDKIT=1
 export COMPOSE_DOCKER_CLI_BUILD=1
-compose build "${BUILD_ARGS[@]+"${BUILD_ARGS[@]}"}"
+log "Building backend (api)..."
+compose build "${BUILD_ARGS[@]}" api
+log "Building frontend (web)..."
+compose build "${BUILD_ARGS[@]}" web
 
 log "Starting containers..."
 compose up -d --remove-orphans
