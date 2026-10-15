@@ -119,7 +119,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   const gcashResolutions = useLiveQuery(() => db.gcashTxnResolutions.where('tenantId').equals(tenantId).toArray(), [tenantId]);
   const products = useLiveQuery(() => db.products.where('tenantId').equals(tenantId).toArray(), [tenantId]) || [];
 
-  const lowStockProducts = products.filter((p) => (p.stockQty || 0) > 0 && (p.stockQty || 0) <= 5);
+  const lowStockProducts = products.filter((p) => (p.stockQty ?? 0) <= 5);
 
   // Today's boundaries
   const todayStr = toLocalDateKey(new Date());
