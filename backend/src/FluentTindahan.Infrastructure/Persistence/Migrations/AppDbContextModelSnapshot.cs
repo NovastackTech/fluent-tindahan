@@ -123,6 +123,7 @@ namespace FluentTindahan.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("TenantId", "RefNoNorm")
                         .IsUnique()
+                        .HasDatabaseName("IX_GCashTransactions_TenantId_RefNoNorm")
                         .HasFilter("\"RefNoNorm\" <> ''");
 
                     b.ToTable("GCashTransactions", (string)null);
@@ -370,15 +371,51 @@ namespace FluentTindahan.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasDefaultValue("");
+
+                    b.Property<int>("FailedPinAttempts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.Property<string>("FirebaseUid")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
 
+                    b.Property<DateTimeOffset?>("LastLoginAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("NormalizedEmail")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasDefaultValue("");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasDefaultValue("");
+
                     b.Property<string>("Phone")
                         .IsRequired()
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)");
+
+                    b.Property<string>("PinHash")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<DateTimeOffset?>("PinLockoutEnd")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Role")
                         .IsRequired()
@@ -391,6 +428,10 @@ namespace FluentTindahan.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("FirebaseUid");
+
+                    b.HasIndex("NormalizedEmail")
+                        .IsUnique()
+                        .HasFilter("\"NormalizedEmail\" <> ''");
 
                     b.HasIndex("TenantId");
 

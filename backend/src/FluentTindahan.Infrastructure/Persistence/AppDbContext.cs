@@ -69,12 +69,22 @@ public class AppDbContext : DbContext, IApplicationDbContext
             builder.ToTable("Users");
             builder.HasKey(u => u.Id);
             builder.Property(u => u.Id).HasDefaultValueSql("gen_random_uuid()");
+            builder.Property(u => u.Email).IsRequired().HasMaxLength(256).HasDefaultValue("");
+            builder.Property(u => u.NormalizedEmail).IsRequired().HasMaxLength(256).HasDefaultValue("");
+            builder.Property(u => u.PasswordHash).IsRequired().HasMaxLength(512).HasDefaultValue("");
+            builder.Property(u => u.PinHash).HasMaxLength(512);
+            builder.Property(u => u.FailedPinAttempts).HasDefaultValue(0);
+            builder.Property(u => u.PinLockoutEnd);
+            builder.Property(u => u.LastLoginAt);
             builder.Property(u => u.Phone).IsRequired().HasMaxLength(30);
             builder.Property(u => u.Role).IsRequired().HasMaxLength(50);
             builder.Property(u => u.FirebaseUid).HasMaxLength(128);
 
             builder.HasIndex(u => u.TenantId);
             builder.HasIndex(u => u.FirebaseUid);
+            builder.HasIndex(u => u.NormalizedEmail)
+                .IsUnique()
+                .HasFilter("\"NormalizedEmail\" <> ''");
 
             builder.HasOne(u => u.Tenant)
                 .WithMany(t => t.Users)

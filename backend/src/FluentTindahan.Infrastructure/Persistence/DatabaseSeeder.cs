@@ -37,16 +37,36 @@ public static class DatabaseSeeder
         var user = await context.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == userId);
         if (user == null)
         {
+            var passwordHasher = new Microsoft.AspNetCore.Identity.PasswordHasher<User>();
             user = new User
             {
                 Id = userId,
                 TenantId = tenantId,
+                Email = "nena@fluent-tindahan.ph",
+                NormalizedEmail = "nena@fluent-tindahan.ph",
                 Phone = "09171234567",
                 Role = "Owner",
                 FirebaseUid = "demo-firebase-uid",
                 CreatedAt = DateTimeOffset.UtcNow
             };
+            user.PasswordHash = passwordHasher.HashPassword(user, "Password123!");
+            user.PinHash = passwordHasher.HashPassword(user, "1234");
             context.Users.Add(user);
+            await context.SaveChangesAsync();
+        }
+        else if (string.IsNullOrEmpty(user.Email) || string.IsNullOrEmpty(user.PasswordHash))
+        {
+            var passwordHasher = new Microsoft.AspNetCore.Identity.PasswordHasher<User>();
+            if (string.IsNullOrEmpty(user.Email))
+            {
+                user.Email = "nena@fluent-tindahan.ph";
+                user.NormalizedEmail = "nena@fluent-tindahan.ph";
+            }
+            if (string.IsNullOrEmpty(user.PasswordHash))
+            {
+                user.PasswordHash = passwordHasher.HashPassword(user, "Password123!");
+                user.PinHash ??= passwordHasher.HashPassword(user, "1234");
+            }
             await context.SaveChangesAsync();
         }
 

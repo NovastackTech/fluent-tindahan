@@ -58,6 +58,7 @@ export async function ensureTenantProvisioned(): Promise<void> {
     firebaseToken,
     businessName,
     userPhone,
+    userEmail,
     isOnboarded,
     isOnboardingStatusReady,
     locallyCreatedTenantId,
@@ -103,6 +104,7 @@ export async function ensureTenantProvisioned(): Promise<void> {
     firebaseToken,
     businessName,
     userPhone,
+    userEmail,
     locallyCreatedTenantId,
     normalizedTenantId,
     confirmedTenantId,
@@ -125,6 +127,7 @@ async function provisionTenantSession({
   firebaseToken,
   businessName,
   userPhone,
+  userEmail,
   locallyCreatedTenantId,
   normalizedTenantId,
   confirmedTenantId,
@@ -136,6 +139,7 @@ async function provisionTenantSession({
   firebaseToken: string | null;
   businessName: string;
   userPhone: string;
+  userEmail: string;
   locallyCreatedTenantId: string | null;
   normalizedTenantId: string;
   confirmedTenantId: string | undefined;
@@ -146,7 +150,8 @@ async function provisionTenantSession({
     response = await apiClient.put('/tenant/provision', {
       userId: requestedUserId,
       businessName,
-      phone: userPhone
+      phone: userPhone,
+      email: userEmail || undefined
     });
   } catch (err) {
     const status = (err as { response?: { status?: unknown } })?.response?.status;

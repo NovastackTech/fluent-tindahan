@@ -13,13 +13,29 @@ import { useDisclaimerStore } from '../state/disclaimerStore';
 import { useTermsStore } from '../state/termsStore';
 import { db } from '../db/db';
 import { DEFAULT_GCASH_FEE_TIERS, GCASH_FEE_STORAGE_KEY, useGCashFeeStore } from '../state/gcashFeeStore';
+import * as authService from '../services/authService';
+
+vi.mock('../services/authService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/authService')>();
+  return {
+    ...actual,
+    updatePin: vi.fn().mockImplementation(async ({ pin }) => ({
+      success: true,
+      hasPin: Boolean(pin && pin.trim())
+    }))
+  };
+});
 
 describe('SettingsPage', () => {
   beforeEach(async () => {
+    vi.clearAllMocks();
     useGCashFeeStore.setState({ feesByTenant: {} });
     useAuthStore.setState({
       tenantId: 'settings-test-tenant',
       businessName: "Aling Nena's Tindahan & GCash",
+      userEmail: 'nena@fluent-tindahan.ph',
+      hasPin: false,
+      isSessionLocked: false,
       role: 'Owner'
     });
     useSyncStore.setState({
@@ -580,6 +596,137 @@ describe('SettingsPage', () => {
 
     await waitFor(async () => {
       expect(await db.deadLetterQueue.count()).toBe(0);
+    });
+  });
+
+  it('renders user email address and PIN status badge', () => {
+    useAuthStore.setState({
+      userEmail: 'nena@fluent-tindahan.ph',
+      hasPin: true
+    });
+
+    renderSettings();
+
+    expect(screen.getByText('nena@fluent-tindahan.ph')).toBeInTheDocument();
+    expect(screen.getByText(/Naka-set \(Aktibo\)|Active \(Set\)/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /I-lock ang Kaha|Lock Till Screen/i })).toBeInTheDocument();
+  });
+
+  it('locks session when Lock Till button is clicked', () => {
+    useAuthStore.setState({
+      userEmail: 'nena@fluent-tindahan.ph',
+      hasPin: true,
+      isSessionLocked: false
+    });
+
+    renderSettings();
+
+    const lockBtn = screen.getByRole('button', { name: /I-lock ang Kaha|Lock Till Screen/i });
+    fireEvent.click(lockBtn);
+
+    expect(useAuthStore.getState().isSessionLocked).toBe(true);
+  });
+
+  it('opens PIN dialog and allows updating PIN', async () => {
+    useAuthStore.setState({
+      userEmail: 'nena@fluent-tindahan.ph',
+      hasPin: false
+    });
+
+    renderSettings();
+
+    const setPinBtn = screen.getByRole('button', { name: /Mag-set ng PIN|Set PIN/i });
+    fireEvent.click(setPinBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Quick POS PIN Settings/i)).toBeInTheDocument();
+    });
+
+    const passInput = screen.getByPlaceholderText('••••••••');
+    fireEvent.change(passInput, { target: { value: 'CurrentPass123' } });
+
+    const pinInput = screen.getByPlaceholderText('4-6 digits');
+    fireEvent.change(pinInput, { target: { value: '5678' } });
+
+    const saveBtn = screen.getByRole('button', { name: /I-save|Save/i });
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(authService.updatePin).toHaveBeenCalledWith({
+        email: 'nena@fluent-tindahan.ph',
+        password: 'CurrentPass123',
+        pin: '5678'
+      });
+      expect(useAuthStore.getState().hasPin).toBe(true);
+    });
+  });
+
+  it('shows safe logout warning when pending mutations exist in syncQueue', async () => {
+    await db.syncQueue.add({
+      id: 'sync-1',
+      entity: 'Sale',
+      action: 'Insert',
+      timestamp: new Date().toISOString(),
+      payload: { id: 'sale-1', total: 100 },
+      status: 'Pending',
+      retryCount: 0
+    });
+
+    renderSettings();
+
+    const logoutBtn = screen.getByRole('button', { name: /Mag-log Out|Log Out/i });
+    fireEvent.click(logoutBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/May 1 transaksyon na hindi pa nai-sync sa cloud|You have 1 unsynced transactions/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /I-log Out Pa Rin|Force Log Out/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /I-sync Muna Bago Mag-logout|Sync First/i })).toBeInTheDocument();
+    });
+
+    // Clicking cancel should keep user logged in
+    const cancelBtn = screen.getByRole('button', { name: /Kanselahin|Cancel/i });
+    fireEvent.click(cancelBtn);
+    expect(useAuthStore.getState().tenantId).toBe('settings-test-tenant');
+
+    // Click logout again and force logout
+    fireEvent.click(screen.getByRole('button', { name: /Mag-log Out|Log Out/i }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /I-log Out Pa Rin|Force Log Out/i })).toBeInTheDocument();
+    });
+
+    const forceLogoutBtn = screen.getByRole('button', { name: /I-log Out Pa Rin|Force Log Out/i });
+    await act(async () => {
+      fireEvent.click(forceLogoutBtn);
+    });
+
+    await waitFor(() => {
+      expect(useAuthStore.getState().userEmail).toBe('');
+      expect(useAuthStore.getState().isOnboardingOpen).toBe(true);
+    });
+  });
+
+  it('completes safe logout without warning when syncQueue is empty', async () => {
+    expect(await db.syncQueue.count()).toBe(0);
+
+    renderSettings();
+
+    const logoutBtn = screen.getByRole('button', { name: /Mag-log Out|Log Out/i });
+    fireEvent.click(logoutBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Sigurado ka bang magla-log out\?|Are you sure you want to log out\?/i)).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText(/hindi pa nai-sync|unsynced transaction/i)).not.toBeInTheDocument();
+
+    const confirmLogoutBtn = screen.getAllByRole('button', { name: /Mag-log Out|Log Out/i })[1];
+    await act(async () => {
+      fireEvent.click(confirmLogoutBtn);
+    });
+
+    await waitFor(() => {
+      expect(useAuthStore.getState().userEmail).toBe('');
+      expect(useAuthStore.getState().isOnboardingOpen).toBe(true);
     });
   });
 });

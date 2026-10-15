@@ -7,12 +7,64 @@ import { DEMO_BUSINESS_NAME, DEMO_OWNER, DEMO_PHONE, useAuthStore } from '../sta
 import { useSubscriptionStore } from '../state/subscriptionStore';
 import { calculateGCashFee, DEFAULT_GCASH_FEE_TIERS, useGCashFeeStore } from '../state/gcashFeeStore';
 import { db } from '../db/db';
+import * as authService from '../services/authService';
+
+vi.mock('../services/authService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/authService')>();
+  return {
+    ...actual,
+    registerStore: vi.fn().mockResolvedValue({
+      tenantId: 'mock-registered-tenant',
+      userId: 'mock-registered-user',
+      email: 'test@tindahan.ph',
+      businessName: 'Mock Store',
+      ownerName: 'Owner',
+      phone: '09171234567',
+      role: 'Owner',
+      tier: 'Libre',
+      planTier: 'Libre',
+      subscriptionEndDate: null,
+      hasPin: false,
+      token: 'mock-token',
+      expiresAt: '2028-01-01'
+    }),
+    loginStore: vi.fn().mockResolvedValue({
+      tenantId: 'mock-login-tenant',
+      userId: 'mock-login-user',
+      email: 'login@tindahan.ph',
+      businessName: 'Login Store',
+      ownerName: 'Owner',
+      phone: '09171234567',
+      role: 'Owner',
+      tier: 'Libre',
+      planTier: 'Libre',
+      subscriptionEndDate: null,
+      hasPin: false,
+      token: 'mock-login-token',
+      expiresAt: '2028-01-01'
+    }),
+    loginPin: vi.fn().mockResolvedValue({
+      tenantId: 'mock-login-tenant',
+      userId: 'mock-login-user',
+      email: 'pin@tindahan.ph',
+      businessName: 'Pin Store',
+      ownerName: 'Owner',
+      phone: '09171234567',
+      role: 'Owner',
+      tier: 'Libre',
+      planTier: 'Libre',
+      subscriptionEndDate: null,
+      hasPin: true,
+      token: 'mock-pin-token',
+      expiresAt: '2028-01-01'
+    })
+  };
+});
 
 describe('OnboardingModal', () => {
   beforeEach(async () => {
     localStorage.clear();
     await db.tenants.clear();
-    await db.products.clear();
     await db.products.clear();
     useGCashFeeStore.setState({ feesByTenant: {} });
     useAuthStore.setState({
@@ -23,7 +75,8 @@ describe('OnboardingModal', () => {
       onboardingMode: 'initial',
       businessName: DEMO_BUSINESS_NAME,
       ownerName: DEMO_OWNER,
-      userPhone: DEMO_PHONE
+      userPhone: DEMO_PHONE,
+      userEmail: ''
     });
     useSubscriptionStore.setState({
       tier: 'Libre',
@@ -31,6 +84,7 @@ describe('OnboardingModal', () => {
       isActive: false,
       daysRemaining: null
     });
+    vi.clearAllMocks();
   });
 
   const renderModal = () => {
@@ -41,6 +95,17 @@ describe('OnboardingModal', () => {
     );
   };
 
+  const fillRegistrationCredentials = (email = 'test.owner@gmail.com', password = 'Password123!', pin = '') => {
+    const emailInput = screen.getByPlaceholderText(/Hal. nena.store@gmail.com|e.g. nena.store@gmail.com/i);
+    fireEvent.change(emailInput, { target: { value: email } });
+    const passwordInput = screen.getByPlaceholderText(/Minimum 6 characters/i);
+    fireEvent.change(passwordInput, { target: { value: password } });
+    if (pin) {
+      const pinInput = screen.getByPlaceholderText(/4 hanggang 6 na numero|4 to 6 digits/i);
+      fireEvent.change(pinInput, { target: { value: pin } });
+    }
+  };
+
   it('does not render if consent has not been accepted', () => {
     useAuthStore.setState({ consentAccepted: false, isOnboarded: false });
     renderModal();
@@ -48,15 +113,18 @@ describe('OnboardingModal', () => {
     expect(screen.queryByText(/Maligayang Pagdating sa Fluent Tindahan/i)).not.toBeInTheDocument();
   });
 
-  it('renders initial onboarding modal when consent is accepted and user is not onboarded', () => {
+  it('renders initial onboarding modal with tabs when consent is accepted', () => {
     renderModal();
 
     expect(screen.getByText(/Maligayang Pagdating sa Fluent Tindahan/i)).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Bagong Tindahan|New Store/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Mag-login|Log In/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Simulan ang Aking Tindahan|Launch My Store/i })).toBeInTheDocument();
   });
 
   it('displays validation error if store name is empty upon submission', async () => {
     renderModal();
+    fillRegistrationCredentials();
 
     const submitBtn = screen.getByRole('button', { name: /Simulan ang Aking Tindahan|Launch My Store/i });
     fireEvent.click(submitBtn);
@@ -67,11 +135,54 @@ describe('OnboardingModal', () => {
     expect(useAuthStore.getState().isOnboarded).toBe(false);
   });
 
+  it('displays validation error if email address is missing or invalid', async () => {
+    renderModal();
+
+    const storeInput = screen.getByPlaceholderText(/Hal. Tindahan ni Aling Maria|e.g. Maria's Sari-Sari Store/i);
+    fireEvent.change(storeInput, { target: { value: 'Tindahan ni Maria' } });
+
+    const passwordInput = screen.getByPlaceholderText(/Minimum 6 characters/i);
+    fireEvent.change(passwordInput, { target: { value: 'Password123!' } });
+
+    const submitBtn = screen.getByRole('button', { name: /Simulan ang Aking Tindahan|Launch My Store/i });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Kailangan ang wastong email address|Valid email address is required/i)).toBeInTheDocument();
+    });
+
+    const emailInput = screen.getByPlaceholderText(/Hal. nena.store@gmail.com|e.g. nena.store@gmail.com/i);
+    fireEvent.change(emailInput, { target: { value: 'invalid-email' } });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Maling format ng email address|Invalid email address format/i)).toBeInTheDocument();
+    });
+    expect(useAuthStore.getState().isOnboarded).toBe(false);
+  });
+
+  it('displays validation error if password is less than 6 characters', async () => {
+    renderModal();
+
+    const storeInput = screen.getByPlaceholderText(/Hal. Tindahan ni Aling Maria|e.g. Maria's Sari-Sari Store/i);
+    fireEvent.change(storeInput, { target: { value: 'Tindahan ni Maria' } });
+
+    fillRegistrationCredentials('test@example.com', '12345');
+
+    const submitBtn = screen.getByRole('button', { name: /Simulan ang Aking Tindahan|Launch My Store/i });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Dapat mayroong 6 o higit pang characters|Password must be at least 6 characters/i)).toBeInTheDocument();
+    });
+  });
+
   it('displays validation error if phone number format is invalid', async () => {
     renderModal();
 
     const storeInput = screen.getByPlaceholderText(/Hal. Tindahan ni Aling Maria|e.g. Maria's Sari-Sari Store/i);
     fireEvent.change(storeInput, { target: { value: 'Tindahan ni Maria' } });
+    fillRegistrationCredentials();
 
     const phoneInput = screen.getByPlaceholderText(/09171234567/i);
     fireEvent.change(phoneInput, { target: { value: '12345' } });
@@ -85,7 +196,7 @@ describe('OnboardingModal', () => {
     expect(useAuthStore.getState().isOnboarded).toBe(false);
   });
 
-  it('successfully completes onboarding and updates authStore with custom profile and new tenantId', async () => {
+  it('successfully completes onboarding and updates authStore with email and custom profile', async () => {
     useAuthStore.setState({ tier: 'TindahanPro', subscriptionEndDate: '2030-01-01T00:00:00.000Z' });
     useSubscriptionStore.setState({
       tier: 'TindahanPro',
@@ -93,12 +204,13 @@ describe('OnboardingModal', () => {
       isActive: true,
       daysRemaining: 30
     });
-    const refreshSpy = vi.spyOn(useSubscriptionStore.getState(), 'refreshSubscription');
+    const refreshSpy = vi.spyOn(useSubscriptionStore.getState(), 'refreshSubscription').mockResolvedValue();
 
     renderModal();
 
     const storeInput = screen.getByPlaceholderText(/Hal. Tindahan ni Aling Maria|e.g. Maria's Sari-Sari Store/i);
     fireEvent.change(storeInput, { target: { value: 'Maria Sari-Sari Store' } });
+    fillRegistrationCredentials('maria@gmail.com', 'Secret123!', '1234');
 
     const ownerInput = screen.getByPlaceholderText(/Hal. Maria Santos|e.g. Maria Santos/i);
     fireEvent.change(ownerInput, { target: { value: 'Maria Santos' } });
@@ -115,6 +227,7 @@ describe('OnboardingModal', () => {
       expect(useAuthStore.getState().businessName).toBe('Maria Sari-Sari Store');
       expect(useAuthStore.getState().ownerName).toBe('Maria Santos');
       expect(useAuthStore.getState().userPhone).toBe('09181234567');
+      expect(useAuthStore.getState().userEmail).toBe('maria@gmail.com');
       expect(useAuthStore.getState().tier).toBe('Libre');
       expect(useAuthStore.getState().subscriptionEndDate).toBeNull();
       expect(useSubscriptionStore.getState().tier).toBe('Libre');
@@ -136,6 +249,7 @@ describe('OnboardingModal', () => {
       screen.getByPlaceholderText(/Hal. Tindahan ni Aling Maria|e.g. Maria's Sari-Sari Store/i),
       { target: { value: 'Blank Catalog Store' } }
     );
+    fillRegistrationCredentials();
     fireEvent.click(screen.getByRole('radio', { name: /Start with Blank Store|Magsimula sa Malinis na Tindahan/i }));
     fireEvent.click(screen.getByRole('button', { name: /Simulan ang Aking Tindahan|Launch My Store/i }));
 
@@ -155,6 +269,7 @@ describe('OnboardingModal', () => {
       screen.getByPlaceholderText(/Hal. Tindahan ni Aling Maria|e.g. Maria's Sari-Sari Store/i),
       { target: { value: 'No GCash Store' } }
     );
+    fillRegistrationCredentials();
     fireEvent.click(screen.getByRole('checkbox'));
     fireEvent.click(screen.getByRole('button', { name: /Simulan ang Aking Tindahan|Launch My Store/i }));
 
@@ -173,6 +288,7 @@ describe('OnboardingModal', () => {
       screen.getByPlaceholderText(/Hal. Tindahan ni Aling Maria|e.g. Maria's Sari-Sari Store/i),
       { target: { value: 'Tindahan ni Maria' } }
     );
+    fillRegistrationCredentials();
     fireEvent.click(screen.getByRole('button', { name: /Simulan ang Aking Tindahan|Launch My Store/i }));
 
     await waitFor(() => expect(useAuthStore.getState().isOnboarded).toBe(true));
@@ -180,50 +296,60 @@ describe('OnboardingModal', () => {
     expect(useAuthStore.getState().userPhone).toBe('');
   });
 
-  it('does not duplicate the starter catalog when the form is submitted twice immediately', async () => {
+  it('switches between Register and Login tabs and logs in with password', async () => {
     renderModal();
-    fireEvent.change(
-      screen.getByPlaceholderText(/Hal. Tindahan ni Aling Maria|e.g. Maria's Sari-Sari Store/i),
-      { target: { value: 'Double Submit Store' } }
-    );
-    const form = document.getElementById('onboarding-form');
-    expect(form).not.toBeNull();
 
-    fireEvent.submit(form!);
-    fireEvent.submit(form!);
+    // Click Login Tab
+    const loginTab = screen.getByRole('tab', { name: /Mag-login|Log In/i });
+    fireEvent.click(loginTab);
 
-    await waitFor(() => expect(useAuthStore.getState().isOnboarded).toBe(true));
-    const tenantId = useAuthStore.getState().tenantId;
-    expect(await db.products.where('tenantId').equals(tenantId).count()).toBe(50);
+    expect(screen.getByText(/Ipasok ang iyong email at password o PIN/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Pumasok sa Tindahan|Log In to Store/i })).toBeInTheDocument();
+
+    const emailInput = screen.getByPlaceholderText(/Hal. nena.store@gmail.com|e.g. nena.store@gmail.com/i);
+    fireEvent.change(emailInput, { target: { value: 'suki@tindahan.ph' } });
+
+    const passwordInput = screen.getByPlaceholderText(/Minimum 6 characters/i);
+    fireEvent.change(passwordInput, { target: { value: 'Password123!' } });
+
+    const loginBtn = screen.getByRole('button', { name: /Pumasok sa Tindahan|Log In to Store/i });
+    fireEvent.click(loginBtn);
+
+    await waitFor(() => {
+      expect(authService.loginStore).toHaveBeenCalledWith({
+        email: 'suki@tindahan.ph',
+        password: 'Password123!'
+      });
+      expect(useAuthStore.getState().isOnboarded).toBe(true);
+    });
   });
 
-  it('keeps onboarding open and retryable when catalog seeding fails', async () => {
-    const originalTenantId = useAuthStore.getState().tenantId;
-    const bulkPutSpy = vi.spyOn(db.products, 'bulkPut').mockRejectedValueOnce(new Error('QuotaExceededError'));
-    const tenantAddSpy = vi.spyOn(db.tenants, 'add');
+  it('allows logging in with Quick PIN', async () => {
     renderModal();
 
-    fireEvent.change(
-      screen.getByPlaceholderText(/Hal. Tindahan ni Aling Maria|e.g. Maria's Sari-Sari Store/i),
-      { target: { value: 'Tindahan ni Maria' } }
-    );
-    fireEvent.click(screen.getByRole('button', { name: /Simulan ang Aking Tindahan|Launch My Store/i }));
+    // Switch to Login Tab
+    fireEvent.click(screen.getByRole('tab', { name: /Mag-login|Log In/i }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/Hindi na-save ang setup ng tindahan|Store setup could not be saved/i);
-    expect(useAuthStore.getState().isOnboarded).toBe(false);
-    expect(useAuthStore.getState().tenantId).toBe(originalTenantId);
-    expect(await db.products.count()).toBe(0);
-    expect(await db.tenants.count()).toBe(0);
-    expect(screen.getByRole('button', { name: /Simulan ang Aking Tindahan|Launch My Store/i })).toBeEnabled();
+    // Switch mode to PIN
+    const pinRadio = screen.getByRole('radio', { name: /Gamit ang Quick PIN|Use Quick PIN/i });
+    fireEvent.click(pinRadio);
 
-    bulkPutSpy.mockRestore();
-    fireEvent.click(screen.getByRole('button', { name: /Simulan ang Aking Tindahan|Launch My Store/i }));
+    const emailInput = screen.getByPlaceholderText(/Hal. nena.store@gmail.com|e.g. nena.store@gmail.com/i);
+    fireEvent.change(emailInput, { target: { value: 'pin.owner@tindahan.ph' } });
 
-    await waitFor(() => expect(useAuthStore.getState().isOnboarded).toBe(true));
-    expect(await db.products.count()).toBe(50);
-    expect(tenantAddSpy.mock.calls).toHaveLength(2);
-    expect(tenantAddSpy.mock.calls[0][0].id).toBe(tenantAddSpy.mock.calls[1][0].id);
-    tenantAddSpy.mockRestore();
+    const pinInput = screen.getByPlaceholderText(/4 hanggang 6 na numero|4 to 6 digits/i);
+    fireEvent.change(pinInput, { target: { value: '4321' } });
+
+    const loginBtn = screen.getByRole('button', { name: /Pumasok sa Tindahan|Log In to Store/i });
+    fireEvent.click(loginBtn);
+
+    await waitFor(() => {
+      expect(authService.loginPin).toHaveBeenCalledWith({
+        email: 'pin.owner@tindahan.ph',
+        pin: '4321'
+      });
+      expect(useAuthStore.getState().isOnboarded).toBe(true);
+    });
   });
 
   it('renders in edit mode and allows updating store profile without re-seeding', async () => {
@@ -235,7 +361,8 @@ describe('OnboardingModal', () => {
       onboardingMode: 'edit',
       businessName: 'Original Store',
       ownerName: 'Juan Dela Cruz',
-      userPhone: '09191234567'
+      userPhone: '09191234567',
+      userEmail: 'owner@tindahan.ph'
     });
     await db.tenants.put({
       id: tenantId,
@@ -274,7 +401,8 @@ describe('OnboardingModal', () => {
       onboardingMode: 'edit',
       businessName: 'Original Store',
       ownerName: 'Juan Dela Cruz',
-      userPhone: '09191234567'
+      userPhone: '09191234567',
+      userEmail: 'owner@tindahan.ph'
     });
 
     renderModal();

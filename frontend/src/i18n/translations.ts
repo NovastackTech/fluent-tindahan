@@ -405,6 +405,30 @@ export interface Translations {
     gcashFeeDesc: string;
     gcashFeeRange: string;
     gcashFixedFee: string;
+    emailLabel: string;
+    pinStatusLabel: string;
+    pinActive: string;
+    pinInactive: string;
+    setPinBtn: string;
+    changePinBtn: string;
+    clearPinBtn: string;
+    lockSessionBtn: string;
+    switchAccountBtn: string;
+    logoutBtn: string;
+    logoutConfirmTitle: string;
+    logoutConfirmDesc: string;
+    logoutUnsyncedWarning: string;
+    forceLogoutBtn: string;
+    syncFirstBtn: string;
+    pinDialogTitle: string;
+    pinDialogDesc: string;
+    currentPasswordLabel: string;
+    newPinLabel: string;
+    pinUpdatedSuccess: string;
+    sessionLockedTitle: string;
+    sessionLockedDesc: string;
+    unlockBtn: string;
+    invalidPinOrPassword: string;
   };
   receipt: {
     watermark: string;
@@ -545,6 +569,31 @@ export interface Translations {
     launchBtn: string;
     saveProfileBtn: string;
     cancelBtn: string;
+    emailLabel: string;
+    emailPlaceholder: string;
+    emailRequired: string;
+    emailInvalid: string;
+    passwordLabel: string;
+    passwordPlaceholder: string;
+    passwordRequired: string;
+    passwordMinLength: string;
+    pinLabel: string;
+    pinPlaceholder: string;
+    pinHint: string;
+    pinInvalid: string;
+    registerTab: string;
+    loginTab: string;
+    loginSubtitle: string;
+    loginModePassword: string;
+    loginModePin: string;
+    loginBtn: string;
+    loginSuccess: string;
+    loginFailed: string;
+    emailAlreadyExists: string;
+    offlineRegisterNotice: string;
+    hydratingCatalog: string;
+    switchAccountPrompt: string;
+    registerPrompt: string;
   };
 }
 
@@ -953,7 +1002,31 @@ export const translations: Record<Language, Translations> = {
       gcashFeeSection: 'Mga Bayad sa GCash',
       gcashFeeDesc: 'Itakda ang nakapirming singil ayon sa halaga ng transaksyon. Awtomatikong sine-save sa device na ito.',
       gcashFeeRange: 'Halaga ng Transaksyon',
-      gcashFixedFee: 'Nakapirming Bayad'
+      gcashFixedFee: 'Nakapirming Bayad',
+      emailLabel: 'Email Address:',
+      pinStatusLabel: 'Quick POS PIN:',
+      pinActive: 'Naka-set (Aktibo)',
+      pinInactive: 'Wala pang PIN',
+      setPinBtn: 'Mag-set ng PIN',
+      changePinBtn: 'Palitan ang PIN',
+      clearPinBtn: 'Alisin ang PIN',
+      lockSessionBtn: 'I-lock ang Kaha',
+      switchAccountBtn: 'Magpalit ng Tindahan (Switch Account)',
+      logoutBtn: 'Mag-log Out',
+      logoutConfirmTitle: 'Sigurado ka bang magla-log out?',
+      logoutConfirmDesc: 'Mabubura ang lokal na data sa device na ito bago magpalit ng account. Tiyaking naka-sync ang lahat ng benta.',
+      logoutUnsyncedWarning: 'May {count} transaksyon na hindi pa nai-sync sa cloud! Kung magla-log out ka ngayon, maaaring mawala ang mga ito.',
+      forceLogoutBtn: 'I-log Out Pa Rin',
+      syncFirstBtn: 'I-sync Muna Bago Mag-logout',
+      pinDialogTitle: 'Quick POS PIN Settings',
+      pinDialogDesc: 'I-update o i-set ang 4-6 digit PIN gamit ang iyong password.',
+      currentPasswordLabel: 'Kasalukuyang Password',
+      newPinLabel: 'Bagong PIN (4-6 digits, iwanang blangko kung nais alisin)',
+      pinUpdatedSuccess: 'Matagumpay na na-update ang PIN.',
+      sessionLockedTitle: 'Naka-lock ang Kaha',
+      sessionLockedDesc: 'Ipasok ang iyong PIN o Password para buksan muli ang tindahan.',
+      unlockBtn: 'I-unlock ang Kaha',
+      invalidPinOrPassword: 'Maling PIN o Password.'
     },
     receipt: {
       watermark: 'HINDI OPISYAL NA RESIBO\nPARA SA PAGKILALA LAMANG',
@@ -1067,7 +1140,32 @@ export const translations: Record<Language, Translations> = {
       gcashToggleDesc: 'I-enable upang ma-preconfigure ang karaniwang bayarin sa serbisyo ng GCash.',
       launchBtn: 'Simulan ang Aking Tindahan',
       saveProfileBtn: 'I-save ang Profile',
-      cancelBtn: 'Kanselahin'
+      cancelBtn: 'Kanselahin',
+      emailLabel: 'Email Address',
+      emailPlaceholder: 'Hal. nena.store@gmail.com',
+      emailRequired: 'Kailangan ang wastong email address.',
+      emailInvalid: 'Maling format ng email address.',
+      passwordLabel: 'Password',
+      passwordPlaceholder: 'Minimum 6 characters',
+      passwordRequired: 'Kailangan ang password (minimum 6 characters).',
+      passwordMinLength: 'Dapat mayroong 6 o higit pang characters ang password.',
+      pinLabel: 'Quick POS PIN (Opsyonal)',
+      pinPlaceholder: '4 hanggang 6 na numero',
+      pinHint: 'Gamitin para sa mabilisang pag-unlock ng kaha / POS nang hindi paulit-ulit na nagta-type ng buong password.',
+      pinInvalid: 'Ang PIN ay dapat 4 hanggang 6 na digit (mga numero lamang).',
+      registerTab: 'Bagong Tindahan',
+      loginTab: 'Mag-login',
+      loginSubtitle: 'Ipasok ang iyong email at password o PIN para buksan ang tindahan.',
+      loginModePassword: 'Gamit ang Password',
+      loginModePin: 'Gamit ang Quick PIN',
+      loginBtn: 'Pumasok sa Tindahan',
+      loginSuccess: 'Maligayang pagbabalik! Nabuksan na ang iyong tindahan.',
+      loginFailed: 'Maling email, password, o PIN.',
+      emailAlreadyExists: 'May tindahan nang nakarehistro gamit ang email na ito. Pakipili ang Mag-login.',
+      offlineRegisterNotice: 'Offline ang device: Nai-save ang tindahan sa lokal. Magpapatuloy ang cloud registration pagbalik ng internet.',
+      hydratingCatalog: 'Kinukuha ang data ng tindahan mula sa cloud...',
+      switchAccountPrompt: 'Mayroon ka na bang rehistradong tindahan? Mag-login dito.',
+      registerPrompt: 'Wala ka pang tindahan? Magrehistro rito.'
     },
     subscription: {
       planSection: 'Plano at Subscription',
@@ -1500,7 +1598,31 @@ export const translations: Record<Language, Translations> = {
       gcashFeeSection: 'GCash Transaction Fees',
       gcashFeeDesc: 'Set the fixed fee for each transaction amount bracket. Fees save automatically on this device.',
       gcashFeeRange: 'Transaction Amount',
-      gcashFixedFee: 'Fixed Fee'
+      gcashFixedFee: 'Fixed Fee',
+      emailLabel: 'Email Address:',
+      pinStatusLabel: 'Quick POS PIN:',
+      pinActive: 'Active (Set)',
+      pinInactive: 'Not Set',
+      setPinBtn: 'Set PIN',
+      changePinBtn: 'Change PIN',
+      clearPinBtn: 'Clear PIN',
+      lockSessionBtn: 'Lock Till Screen',
+      switchAccountBtn: 'Switch Account',
+      logoutBtn: 'Log Out',
+      logoutConfirmTitle: 'Are you sure you want to log out?',
+      logoutConfirmDesc: 'Local data on this device will be cleared before switching accounts. Make sure all sales are synced.',
+      logoutUnsyncedWarning: 'You have {count} unsynced transactions! Logging out now may cause data loss.',
+      forceLogoutBtn: 'Force Log Out',
+      syncFirstBtn: 'Sync First',
+      pinDialogTitle: 'Quick POS PIN Settings',
+      pinDialogDesc: 'Update or set your 4-6 digit PIN using your password.',
+      currentPasswordLabel: 'Current Password',
+      newPinLabel: 'New PIN (4-6 digits, leave blank to remove)',
+      pinUpdatedSuccess: 'PIN updated successfully.',
+      sessionLockedTitle: 'Till Screen Locked',
+      sessionLockedDesc: 'Enter your PIN or Password to unlock your store.',
+      unlockBtn: 'Unlock Till',
+      invalidPinOrPassword: 'Invalid PIN or Password.'
     },
     receipt: {
       watermark: 'NOT AN OFFICIAL RECEIPT\nFOR ACKNOWLEDGMENT ONLY',
@@ -1640,7 +1762,32 @@ export const translations: Record<Language, Translations> = {
       gcashToggleDesc: 'Pre-configures default transaction fee brackets for GCash remittance.',
       launchBtn: 'Launch My Store',
       saveProfileBtn: 'Save Profile',
-      cancelBtn: 'Cancel'
+      cancelBtn: 'Cancel',
+      emailLabel: 'Email Address',
+      emailPlaceholder: 'e.g. nena.store@gmail.com',
+      emailRequired: 'Valid email address is required.',
+      emailInvalid: 'Invalid email address format.',
+      passwordLabel: 'Password',
+      passwordPlaceholder: 'Minimum 6 characters',
+      passwordRequired: 'Password is required (minimum 6 characters).',
+      passwordMinLength: 'Password must be at least 6 characters.',
+      pinLabel: 'Quick POS PIN (Optional)',
+      pinPlaceholder: '4 to 6 digits',
+      pinHint: 'Used for quick till unlock without repeatedly typing your full password.',
+      pinInvalid: 'PIN must be between 4 and 6 numeric digits.',
+      registerTab: 'New Store (Register)',
+      loginTab: 'Log In',
+      loginSubtitle: 'Enter your email and password or PIN to access your store.',
+      loginModePassword: 'Use Password',
+      loginModePin: 'Use Quick PIN',
+      loginBtn: 'Log In to Store',
+      loginSuccess: 'Welcome back! Store opened successfully.',
+      loginFailed: 'Invalid email, password, or PIN.',
+      emailAlreadyExists: 'A store is already registered with this email. Please select Log In.',
+      offlineRegisterNotice: 'Offline mode: Store saved locally. Cloud registration will sync when online.',
+      hydratingCatalog: 'Hydrating store data from cloud...',
+      switchAccountPrompt: 'Already have a registered store? Log in here.',
+      registerPrompt: 'Don\'t have a store yet? Register here.'
     }
   }
 };

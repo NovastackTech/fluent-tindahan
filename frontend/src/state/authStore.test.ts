@@ -125,11 +125,11 @@ describe('authStore', () => {
     expect(localStorage.getItem('fluent_tindahan_user_id_v1')).toBeNull();
   });
 
-  it('sets firebase token and clears it on logout', () => {
+  it('sets firebase token and clears it on logout', async () => {
     useAuthStore.getState().setFirebaseToken('sample-jwt-token');
     expect(useAuthStore.getState().firebaseToken).toBe('sample-jwt-token');
 
-    useAuthStore.getState().logout();
+    await useAuthStore.getState().logout(true);
     expect(useAuthStore.getState().firebaseToken).toBeNull();
   });
 
@@ -223,5 +223,83 @@ describe('authStore', () => {
     expect(state.userPhone).toBe('');
     expect(localStorage.getItem('fluent_tindahan_owner_name_v1')).toBe('');
     expect(localStorage.getItem('fluent_tindahan_user_phone_v1')).toBe('');
+  });
+
+  it('sets and persists user email and last login email', () => {
+    useAuthStore.getState().setUserEmail('nanay.suki@gmail.com');
+
+    expect(useAuthStore.getState().userEmail).toBe('nanay.suki@gmail.com');
+    expect(localStorage.getItem('fluent_tindahan_user_email_v1')).toBe('nanay.suki@gmail.com');
+    expect(localStorage.getItem('fluent_tindahan_last_email_v1')).toBe('nanay.suki@gmail.com');
+  });
+
+  it('manages PIN status and local verifier', () => {
+    useAuthStore.getState().setHasPin(true);
+    useAuthStore.getState().setLocalPinVerifier('mock-sha256-hash');
+    useAuthStore.getState().setIsSessionLocked(true);
+
+    expect(useAuthStore.getState().hasPin).toBe(true);
+    expect(useAuthStore.getState().localPinVerifier).toBe('mock-sha256-hash');
+    expect(useAuthStore.getState().isSessionLocked).toBe(true);
+
+    useAuthStore.getState().setHasPin(false);
+    expect(useAuthStore.getState().hasPin).toBe(false);
+    expect(useAuthStore.getState().localPinVerifier).toBeNull();
+    expect(useAuthStore.getState().isSessionLocked).toBe(false);
+  });
+
+  it('logs in with auth payload, updating identity and token', async () => {
+    const authPayload = {
+      tenantId: '11111111-1111-1111-1111-111111111111',
+      userId: '22222222-2222-2222-2222-222222222222',
+      email: 'owner@tindahan.ph',
+      businessName: 'Cloud Tindahan',
+      ownerName: 'Nanay Nena',
+      phone: '09171234567',
+      role: 'Owner' as const,
+      tier: 'TindahanPro' as const,
+      planTier: 'TindahanPro',
+      subscriptionEndDate: '2028-12-31T23:59:59Z',
+      hasPin: true,
+      token: 'jwt-auth-token-123',
+      expiresAt: '2027-10-15T00:00:00Z'
+    };
+
+    await useAuthStore.getState().loginWithAuthPayload(authPayload, '1234');
+
+    const state = useAuthStore.getState();
+    expect(state.tenantId).toBe(authPayload.tenantId);
+    expect(state.userId).toBe(authPayload.userId);
+    expect(state.userEmail).toBe('owner@tindahan.ph');
+    expect(state.businessName).toBe('Cloud Tindahan');
+    expect(state.hasPin).toBe(true);
+    expect(state.firebaseToken).toBe('jwt-auth-token-123');
+    expect(state.localPinVerifier).not.toBeNull();
+    expect(state.tier).toBe('TindahanPro');
+    expect(localStorage.getItem('fluent_tindahan_tenant_id_v1')).toBe(authPayload.tenantId);
+  });
+
+  it('guards against logout when unsynced items exist in syncQueue unless forceWipe is true', async () => {
+    const { db } = await import('../db/db');
+    await db.syncQueue.add({
+      id: 'pending-sale-uuid',
+      entity: 'Sale',
+      action: 'Insert',
+      timestamp: new Date().toISOString(),
+      payload: { id: 's1', total: 100 },
+      status: 'Pending',
+      retryCount: 0
+    });
+
+    const gentleResult = await useAuthStore.getState().logout(false);
+    expect(gentleResult.success).toBe(false);
+    expect(gentleResult.unsyncedCount).toBe(1);
+    expect(useAuthStore.getState().isOnboarded).toBe(true); // still logged in
+
+    const forceResult = await useAuthStore.getState().logout(true);
+    expect(forceResult.success).toBe(true);
+    expect(forceResult.unsyncedCount).toBe(0);
+    expect(useAuthStore.getState().isOnboarded).toBe(false);
+    expect(await db.syncQueue.count()).toBe(0);
   });
 });

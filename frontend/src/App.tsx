@@ -14,6 +14,7 @@ import { PwaInstallBanner } from './components/PwaInstallBanner';
 import { PwaUpdateToast } from './components/PwaUpdateToast';
 import { PrivacyConsentDialog } from './components/PrivacyConsentDialog';
 import { OnboardingModal } from './components/OnboardingModal';
+import { SessionLockModal } from './components/SessionLockModal';
 import { DisclaimerModal } from './components/DisclaimerModal';
 import { TermsModal } from './components/TermsModal';
 import { initSyncEngine } from './sync/syncEngine';
@@ -223,6 +224,7 @@ export const App: React.FC = () => {
         <Navigation activeTab={activeTab} onTabChange={handleTabChange} />
         <PrivacyConsentDialog />
         <OnboardingModal />
+        <SessionLockModal />
         <DisclaimerModal />
         <TermsModal />
       </div>
