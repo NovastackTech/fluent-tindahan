@@ -139,7 +139,6 @@ export const OnboardingModal: React.FC = () => {
     userEmail,
     consentAccepted,
     isOnboarded,
-    isOnboardingStatusReady,
     isOnboardingOpen,
     onboardingMode,
     closeOnboarding,
