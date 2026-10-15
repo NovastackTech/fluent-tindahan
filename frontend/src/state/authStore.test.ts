@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useAuthStore } from './authStore';
 import { DEFAULT_TENANT_ID, DEFAULT_USER_ID } from '../db/seedData';
 import { DEMO_BUSINESS_NAME, DEMO_OWNER, DEMO_PHONE } from '../constants/demoProfile';
+import type { AuthResponseDto } from '../services/authService';
 
 describe('authStore', () => {
   beforeEach(() => {
@@ -337,7 +338,7 @@ describe('authStore', () => {
       retryCount: 0
     });
 
-    const newTenantPayload = {
+    const newTenantPayload: AuthResponseDto = {
       tenantId: 'different-tenant-id',
       userId: 'diff-user-id',
       email: 'diff@tindahan.ph',
@@ -349,7 +350,8 @@ describe('authStore', () => {
       planTier: 'Libre' as const,
       subscriptionEndDate: null,
       hasPin: false,
-      token: 'jwt-diff-token'
+      token: 'jwt-diff-token',
+      expiresAt: '2028-01-01'
     };
 
     // Attempt gentle login without forceWipe
