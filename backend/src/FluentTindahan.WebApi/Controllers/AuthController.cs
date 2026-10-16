@@ -8,6 +8,7 @@ using FluentTindahan.Application.Common.Interfaces;
 using FluentTindahan.Domain.Entities;
 using FluentTindahan.Domain.Enums;
 using FluentTindahan.Domain.Interfaces;
+using FluentTindahan.WebApi.Authorization;
 using FluentTindahan.WebApi.Controllers.Helpers;
 
 namespace FluentTindahan.WebApi.Controllers;
@@ -123,6 +124,29 @@ public class AuthController : ControllerBase
 
         [Required, MinLength(6, ErrorMessage = "Password must be at least 6 characters.")]
         public string NewPassword { get; init; } = string.Empty;
+    }
+
+    public sealed record UpdateProfileRequest
+    {
+        [StringLength(200)]
+        public string? BusinessName { get; init; }
+
+        [EmailAddress, StringLength(256)]
+        public string? Email { get; init; }
+
+        [StringLength(100)]
+        public string? OwnerName { get; init; }
+
+        [StringLength(30)]
+        public string? Phone { get; init; }
+
+        [StringLength(128)]
+        public string? CurrentPassword { get; init; }
+
+        [RegularExpression(@"^\d{4,6}$", ErrorMessage = "PIN must be between 4 and 6 digits.")]
+        public string? Pin { get; init; }
+
+        public string? RefreshToken { get; init; }
     }
 
     public sealed record AuthResponseDto(
@@ -255,6 +279,10 @@ public class AuthController : ControllerBase
                 user.Email = displayEmail;
                 user.NormalizedEmail = normalizedEmail;
                 user.Phone = request.Phone?.Trim() ?? user.Phone;
+                if (!string.IsNullOrWhiteSpace(request.OwnerName))
+                {
+                    user.OwnerName = request.OwnerName.Trim();
+                }
                 user.Role = "Owner";
                 AuthLockoutHelper.ResetPinLockout(user);
                 AuthLockoutHelper.ResetPasswordLockout(user);
@@ -288,6 +316,7 @@ public class AuthController : ControllerBase
                     Email = displayEmail,
                     NormalizedEmail = normalizedEmail,
                     Phone = request.Phone?.Trim() ?? string.Empty,
+                    OwnerName = string.IsNullOrWhiteSpace(request.OwnerName) ? null : request.OwnerName.Trim(),
                     Role = "Owner",
                     FailedPinAttempts = 0,
                     PinLockoutEnd = null,
@@ -327,6 +356,7 @@ public class AuthController : ControllerBase
                 Email = displayEmail,
                 NormalizedEmail = normalizedEmail,
                 Phone = request.Phone?.Trim() ?? string.Empty,
+                OwnerName = string.IsNullOrWhiteSpace(request.OwnerName) ? null : request.OwnerName.Trim(),
                 Role = "Owner",
                 FailedPinAttempts = 0,
                 PinLockoutEnd = null,
@@ -371,7 +401,7 @@ public class AuthController : ControllerBase
             tenant,
             access,
             refreshToken,
-            request.OwnerName?.Trim() ?? string.Empty));
+            user.OwnerName));
     }
 
     /// <summary>
@@ -849,5 +879,252 @@ public class AuthController : ControllerBase
         await _context.SaveChangesAsync(cancellationToken);
 
         return Ok(new { message = "Matagumpay na nabago ang password. Na-revoke ang lahat ng lumang sessions. / Password changed successfully. All previous sessions revoked." });
+    }
+
+    /// <summary>
+    /// Updates the store and owner profile (BusinessName, OwnerName, Phone, and optionally Email).
+    /// Returns the updated AuthResponseDto and issues a refreshed access token.
+    /// </summary>
+    [Authorize(Policy = AuthorizationPolicies.TenantResolved)]
+    [HttpPut("profile")]
+    [ProducesResponseType(typeof(AuthResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<AuthResponseDto>> UpdateProfile(
+        [FromBody] UpdateProfileRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request == null || !ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
+        var userId = AuthClaimsHelper.ResolveUserId(_currentUserService, HttpContext?.User);
+        if (!userId.HasValue || userId == Guid.Empty)
+        {
+            return Unauthorized(new { message = "User is not authenticated." });
+        }
+
+        var tenantId = _currentUserService.TenantId;
+        var user = await _context.Users.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Id == userId.Value, cancellationToken);
+        if (user == null)
+        {
+            return Unauthorized(new { message = "Hindi natagpuan ang account. / User account not found." });
+        }
+
+        var tenant = await _context.Tenants.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == user.TenantId, cancellationToken);
+        if (tenant == null)
+        {
+            return NotFound(new { message = "Hindi natagpuan ang tindahan. / Store not found." });
+        }
+
+        if (tenantId != Guid.Empty && user.TenantId != tenantId)
+        {
+            return Forbid();
+        }
+
+        if (request.BusinessName != null)
+        {
+            var cleanBusinessName = request.BusinessName.Trim();
+            if (cleanBusinessName.Length < 2)
+            {
+                return BadRequest(new { message = "Kailangan ng pangalan ng tindahan (minimum 2 letra). / Store name is required (minimum 2 chars)." });
+            }
+
+            var isChangingBusinessName = !string.Equals(tenant.BusinessName, cleanBusinessName, StringComparison.Ordinal);
+            if (isChangingBusinessName && !string.Equals(user.Role, "Owner", StringComparison.OrdinalIgnoreCase))
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = "May-ari lamang ang maaaring magpalit ng pangalan ng tindahan. / Only the store owner can change the business name." });
+            }
+
+            if (isChangingBusinessName)
+            {
+                tenant.BusinessName = cleanBusinessName;
+            }
+        }
+
+        if (request.OwnerName != null)
+        {
+            user.OwnerName = string.IsNullOrWhiteSpace(request.OwnerName) ? null : request.OwnerName.Trim();
+        }
+
+        if (request.Phone != null)
+        {
+            user.Phone = string.IsNullOrWhiteSpace(request.Phone) ? string.Empty : request.Phone.Trim();
+        }
+
+        var isEmailChanging = false;
+        string? cleanEmail = null;
+        string? normalizedEmail = null;
+
+        if (request.Email != null)
+        {
+            cleanEmail = CleanDisplayEmail(request.Email);
+            normalizedEmail = NormalizeEmail(request.Email);
+            if (string.IsNullOrWhiteSpace(normalizedEmail) || !new EmailAddressAttribute().IsValid(normalizedEmail))
+            {
+                return BadRequest(new { message = "Kailangan ng wastong email address. / Valid email address is required." });
+            }
+
+            if (!string.Equals(user.NormalizedEmail, normalizedEmail, StringComparison.OrdinalIgnoreCase))
+            {
+                isEmailChanging = true;
+            }
+        }
+
+        string? responseRefreshToken = null;
+
+        if (isEmailChanging)
+        {
+            // Verify password or PIN if user has credentials configured
+            var hasPassword = !string.IsNullOrEmpty(user.PasswordHash);
+            var hasPin = !string.IsNullOrEmpty(user.PinHash);
+
+            if (hasPassword || hasPin)
+            {
+                var passwordProvided = !string.IsNullOrWhiteSpace(request.CurrentPassword);
+                var pinProvided = !string.IsNullOrWhiteSpace(request.Pin);
+
+                if (!passwordProvided && !pinProvided)
+                {
+                    return BadRequest(new { message = "Kailangan ng kasalukuyang password o PIN upang palitan ang email address. / Current password or PIN is required to change email address." });
+                }
+
+                var verified = false;
+
+                if (passwordProvided)
+                {
+                    if (AuthLockoutHelper.CheckPasswordLockout(user, _timeProvider, out var lockoutMinutes))
+                    {
+                        return AuthLockoutHelper.PasswordLockedOutResult(lockoutMinutes);
+                    }
+
+                    if (hasPassword)
+                    {
+                        var pwdVerify = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.CurrentPassword!);
+                        if (pwdVerify == PasswordVerificationResult.Failed)
+                        {
+                            AuthLockoutHelper.RecordPasswordFailure(user, _timeProvider, out var isLockedOut, out var lockMinutes, out var remainingAttempts);
+                            await _context.SaveChangesAsync(cancellationToken);
+                            if (isLockedOut)
+                            {
+                                return AuthLockoutHelper.PasswordLockedOutResult(lockMinutes, isInitial: true);
+                            }
+                            return BadRequest(new
+                            {
+                                message = $"Maling kasalukuyang password. May natitira ka pang {remainingAttempts} pagsubok bago mag-lockout. / Invalid current password. {remainingAttempts} attempts remaining.",
+                                remainingAttempts
+                            });
+                        }
+
+                        if (pwdVerify == PasswordVerificationResult.SuccessRehashNeeded)
+                        {
+                            user.PasswordHash = _passwordHasher.HashPassword(user, request.CurrentPassword!);
+                        }
+                        AuthLockoutHelper.ResetPasswordLockout(user);
+                        verified = true;
+                    }
+                    else if (!pinProvided)
+                    {
+                        return BadRequest(new { message = "Walang naka-set na password ang account. Mangyaring gamitin ang PIN. / Account has no password set. Please use PIN." });
+                    }
+                }
+
+                if (!verified && pinProvided)
+                {
+                    if (AuthLockoutHelper.CheckPinLockout(user, _timeProvider, out var pinLockoutMinutes))
+                    {
+                        return AuthLockoutHelper.PinLockedOutResult(pinLockoutMinutes);
+                    }
+
+                    if (hasPin)
+                    {
+                        var cleanPin = request.Pin!.Trim();
+                        var pinVerify = _passwordHasher.VerifyHashedPassword(user, user.PinHash!, cleanPin);
+                        if (pinVerify == PasswordVerificationResult.Failed)
+                        {
+                            AuthLockoutHelper.RecordPinFailureInMemory(user, _timeProvider, out var isPinLockedOut, out var pinLockMinutes, out var remainingPinAttempts);
+                            await _context.SaveChangesAsync(cancellationToken);
+                            if (isPinLockedOut)
+                            {
+                                return AuthLockoutHelper.PinLockedOutResult(pinLockMinutes, isInitial: true);
+                            }
+                            return BadRequest(new
+                            {
+                                message = $"Maling PIN. May natitira ka pang {remainingPinAttempts} pagsubok bago mag-lockout. / Invalid PIN. {remainingPinAttempts} attempts remaining.",
+                                remainingAttempts = remainingPinAttempts
+                            });
+                        }
+                        AuthLockoutHelper.ResetPinLockout(user);
+                        verified = true;
+                    }
+                    else
+                    {
+                        return BadRequest(new { message = "Walang naka-set na PIN ang account. Mangyaring gamitin ang kasalukuyang password. / Account has no PIN set. Please use current password." });
+                    }
+                }
+
+                if (!verified)
+                {
+                    return BadRequest(new { message = "Kailangan ng wastong kasalukuyang password o PIN upang palitan ang email address. / Valid current password or PIN is required to change email address." });
+                }
+            }
+
+            var emailExists = await _context.Users.IgnoreQueryFilters()
+                .AnyAsync(u => u.NormalizedEmail == normalizedEmail && u.Id != user.Id, cancellationToken);
+            if (emailExists)
+            {
+                return Conflict(new { message = "May account nang nakarehistro gamit ang email na ito. / An account is already registered with this email." });
+            }
+            user.Email = cleanEmail!;
+            user.NormalizedEmail = normalizedEmail!;
+
+            // Revoke other refresh tokens on email change
+            string? currentFamilyId = null;
+            string? currentTokenId = null;
+            if (!string.IsNullOrWhiteSpace(request.RefreshToken) &&
+                _jwtTokenService.ValidateRefreshToken(request.RefreshToken, out var refUid, out _, out var tokenId, out var famId) &&
+                refUid == user.Id)
+            {
+                currentFamilyId = famId;
+                currentTokenId = tokenId;
+            }
+
+            await AuthRefreshTokenHelper.RevokeOtherSessionsForUserAsync(
+                _context, user, user.Id, currentFamilyId, _timeProvider, cancellationToken);
+
+            if (currentFamilyId != null && currentTokenId != null)
+            {
+                var (rToken, _, _, _) = await AuthRefreshTokenHelper.RotatePresentedRefreshTokenAsync(
+                    _context, _jwtTokenService, user, tenant.Id, _timeProvider, currentTokenId, currentFamilyId, cancellationToken);
+                responseRefreshToken = rToken;
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(request.RefreshToken) &&
+            _jwtTokenService.ValidateRefreshToken(request.RefreshToken, out var refUid, out _, out var tokenId, out var famId) &&
+            refUid == user.Id)
+        {
+            var (rToken, _, _, _) = await AuthRefreshTokenHelper.RotatePresentedRefreshTokenAsync(
+                _context, _jwtTokenService, user, tenant.Id, _timeProvider, tokenId, famId, cancellationToken);
+            responseRefreshToken = rToken;
+        }
+
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsUniqueEmailViolation(ex))
+        {
+            _context.ChangeTracker.Clear();
+            return Conflict(new { message = "May account nang nakarehistro gamit ang email na ito. / An account is already registered with this email." });
+        }
+
+        var access = _jwtTokenService.GenerateAccessToken(user.Id, tenant.Id, email: user.Email, role: user.Role);
+        return Ok(AuthResponseBuilder.Build(user, tenant, access, refreshToken: responseRefreshToken, ownerName: user.OwnerName));
     }
 }

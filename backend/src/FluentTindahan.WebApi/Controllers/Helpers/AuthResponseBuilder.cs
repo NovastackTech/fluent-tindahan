@@ -23,7 +23,7 @@ public static class AuthResponseBuilder
             user.Id,
             user.Email,
             resolvedTenant?.BusinessName ?? string.Empty,
-            ownerName,
+            ownerName ?? user.OwnerName,
             user.Phone,
             user.Role,
             tier,

@@ -49,9 +49,10 @@ import { createClientUuid, seedDexieDatabaseIfNeeded } from '../db/seedData';
 import { db } from '../db/db';
 import { normalizePhilippineMobile } from '../utils/philippineMobile';
 import { DEFAULT_GCASH_FEE_TIERS, useGCashFeeStore } from '../state/gcashFeeStore';
-import { processSyncQueue } from '../sync/syncEngine';
+import { processSyncQueue, updateQueueCounts } from '../sync/syncEngine';
 import { ConfirmUnsyncedLoginDialog } from './ConfirmUnsyncedLoginDialog';
-import { registerStore, loginStore, loginPin, type AuthResponseDto } from '../services/authService';
+import { registerStore, loginStore, loginPin, updateProfile, type AuthResponseDto } from '../services/authService';
+import { queuePendingProfileUpdate, clearPendingProfileUpdate } from '../services/profileSync';
 
 const useStyles = makeStyles({
   surface: {
@@ -139,6 +140,8 @@ export const OnboardingModal: React.FC = () => {
     ownerName,
     userPhone,
     userEmail,
+    role,
+    hasPin,
     consentAccepted,
     isOnboarded,
     isOnboardingOpen,
@@ -162,8 +165,14 @@ export const OnboardingModal: React.FC = () => {
   const [formPassword, setFormPassword] = useState('');
   const [formPin, setFormPin] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [formCurrentPassword, setFormCurrentPassword] = useState('');
+  const [formCurrentPin, setFormCurrentPin] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [currentPasswordError, setCurrentPasswordError] = useState('');
   const [catalogChoice, setCatalogChoice] = useState<'standard' | 'empty'>('standard');
   const [offersGcash, setOffersGcash] = useState(true);
+
+  const isEmailChanged = isEditMode && formEmail.trim().toLowerCase() !== (userEmail || '').trim().toLowerCase();
 
   // Login Fields
   const [loginEmail, setLoginEmail] = useState('');
@@ -183,6 +192,15 @@ export const OnboardingModal: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submissionInFlight = useRef(false);
   const onboardingIds = useRef<{ tenantId: string; userId: string } | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (noticeTimer.current) {
+        clearTimeout(noticeTimer.current);
+      }
+    };
+  }, []);
 
   // Unsynced queue protection
   const [isUnsyncedDialogOpen, setIsUnsyncedDialogOpen] = useState(false);
@@ -263,6 +281,10 @@ export const OnboardingModal: React.FC = () => {
       setFormPin('');
       setLoginPassword('');
       setLoginPinVal('');
+      setFormCurrentPassword('');
+      setFormCurrentPin('');
+      setShowCurrentPassword(false);
+      setCurrentPasswordError('');
       setBusinessNameError('');
       setPhoneError('');
       setEmailError('');
@@ -291,22 +313,34 @@ export const OnboardingModal: React.FC = () => {
     }
 
     const trimmedEmail = formEmail.trim();
-    if (isEditMode) {
-      if (trimmedEmail && !EMAIL_REGEX.test(trimmedEmail)) {
-        setEmailError(t.onboarding.emailInvalid);
-        isValid = false;
-      } else {
-        setEmailError('');
-      }
+    if (!trimmedEmail) {
+      setEmailError(t.onboarding.emailRequired);
+      isValid = false;
+    } else if (!EMAIL_REGEX.test(trimmedEmail)) {
+      setEmailError(t.onboarding.emailInvalid);
+      isValid = false;
     } else {
-      if (!trimmedEmail) {
-        setEmailError(t.onboarding.emailRequired);
-        isValid = false;
-      } else if (!EMAIL_REGEX.test(trimmedEmail)) {
-        setEmailError(t.onboarding.emailInvalid);
-        isValid = false;
+      setEmailError('');
+    }
+
+    if (isEditMode) {
+      if (isEmailChanged) {
+        if (!formCurrentPassword.trim() && !formCurrentPin.trim()) {
+          setCurrentPasswordError(t.onboarding.currentPasswordRequired);
+          isValid = false;
+        } else {
+          setCurrentPasswordError('');
+        }
+
+        if (formCurrentPin.trim() && !PIN_REGEX.test(formCurrentPin.trim())) {
+          setPinError(t.onboarding.pinInvalid);
+          isValid = false;
+        } else {
+          setPinError('');
+        }
       } else {
-        setEmailError('');
+        setCurrentPasswordError('');
+        setPinError('');
       }
     }
 
@@ -399,20 +433,82 @@ export const OnboardingModal: React.FC = () => {
         : '';
 
       if (isEditMode) {
-        updateStoreProfile({
-          businessName: trimmedBusinessName,
-          ownerName: trimmedOwnerName,
-          userPhone: normalizedPhone,
-          userEmail: trimmedEmail
-        });
+        const isChangingStoreName = trimmedBusinessName !== (businessName || '').trim();
+        if (isChangingStoreName && role !== 'Owner') {
+          setSubmissionError(t.onboarding.ownerOnlyBusinessName);
+          setIsSubmitting(false);
+          submissionInFlight.current = false;
+          return;
+        }
 
-        await db.tenants.update(tenantId, {
-          businessName: trimmedBusinessName,
-          updatedAt: new Date().toISOString()
-        }).catch(console.warn);
+        try {
+          const authResult = await updateProfile({
+            businessName: trimmedBusinessName,
+            ownerName: trimmedOwnerName,
+            phone: normalizedPhone,
+            email: trimmedEmail,
+            ...(isEmailChanged ? {
+              currentPassword: formCurrentPassword.trim() || undefined,
+              pin: formCurrentPin.trim() || undefined
+            } : {})
+          });
 
-        closeOnboarding();
-        return;
+          await loginWithAuthPayload(authResult);
+          clearPendingProfileUpdate();
+          void updateQueueCounts();
+
+          await db.tenants.update(tenantId, {
+            businessName: trimmedBusinessName,
+            updatedAt: new Date().toISOString()
+          }).catch(console.warn);
+
+          closeOnboarding();
+          return;
+        } catch (serverError: any) {
+          const status = serverError?.response?.status;
+          const serverMessage = serverError?.response?.data?.message;
+
+          if (status === 400 || status === 401 || status === 403 || status === 409 || status === 429) {
+            setSubmissionError(
+              serverMessage ||
+              (status === 403 ? t.onboarding.ownerOnlyBusinessName : undefined) ||
+              (status === 409 ? t.onboarding.emailAlreadyExists : undefined) ||
+              'May error sa pag-update ng profile.'
+            );
+            setIsSubmitting(false);
+            submissionInFlight.current = false;
+            return;
+          }
+
+          console.warn('[OnboardingModal] Profile update server sync deferred:', serverError);
+          updateStoreProfile({
+            businessName: trimmedBusinessName,
+            ownerName: trimmedOwnerName,
+            userPhone: normalizedPhone,
+            userEmail: isEmailChanged ? (userEmail || '') : trimmedEmail
+          });
+
+          queuePendingProfileUpdate({
+            businessName: trimmedBusinessName,
+            ownerName: trimmedOwnerName,
+            phone: normalizedPhone,
+            // email change requires re-verification online; never persist credentials
+            ...(isEmailChanged ? {} : { email: trimmedEmail })
+          }, tenantId);
+
+          setOfflineNotice(t.onboarding.savedLocallyNotice);
+          void updateQueueCounts();
+
+          await db.tenants.update(tenantId, {
+            businessName: trimmedBusinessName,
+            updatedAt: new Date().toISOString()
+          }).catch(console.warn);
+
+          noticeTimer.current = setTimeout(() => {
+            closeOnboarding();
+          }, 400);
+          return;
+        }
       }
 
       if (!onboardingIds.current) {
@@ -654,16 +750,18 @@ export const OnboardingModal: React.FC = () => {
                     required
                     validationState={businessNameError ? 'error' : 'none'}
                     validationMessage={businessNameError}
+                    hint={isEditMode && role !== 'Owner' ? t.onboarding.ownerOnlyBusinessName : undefined}
                   >
                     <Input
                       value={formBusinessName}
+                      disabled={isEditMode && role !== 'Owner'}
                       onChange={(_, data) => {
                         setFormBusinessName(data.value);
                         if (businessNameError) setBusinessNameError('');
                       }}
                       placeholder={t.onboarding.storeNamePlaceholder}
                       contentBefore={<BuildingShopRegular />}
-                      autoFocus
+                      autoFocus={!isEditMode || role === 'Owner'}
                     />
                   </Field>
 
@@ -685,6 +783,67 @@ export const OnboardingModal: React.FC = () => {
                       contentBefore={<MailRegular />}
                     />
                   </Field>
+
+                  {/* Current Password & PIN required when changing email in Edit Mode */}
+                  {isEditMode && isEmailChanged && (
+                    <>
+                      <Field
+                        label={t.onboarding.currentPasswordLabel}
+                        required
+                        hint={t.onboarding.currentPasswordHint}
+                        validationState={currentPasswordError ? 'error' : 'none'}
+                        validationMessage={currentPasswordError}
+                      >
+                        <div className={styles.passwordInputWrapper}>
+                          <Input
+                            type={showCurrentPassword ? 'text' : 'password'}
+                            value={formCurrentPassword}
+                            onChange={(_, data) => {
+                              setFormCurrentPassword(data.value);
+                              if (currentPasswordError) setCurrentPasswordError('');
+                            }}
+                            placeholder={t.onboarding.currentPasswordPlaceholder}
+                            contentBefore={<LockClosedRegular />}
+                            contentAfter={
+                              <Button
+                                appearance="subtle"
+                                size="small"
+                                icon={showCurrentPassword ? <EyeOffRegular /> : <EyeRegular />}
+                                onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                                type="button"
+                              />
+                            }
+                            style={{ width: '100%' }}
+                          />
+                        </div>
+                      </Field>
+
+                      {hasPin && (
+                        <Field
+                          label={t.onboarding.pinLabel}
+                          hint={t.onboarding.pinHint}
+                          validationState={pinError ? 'error' : 'none'}
+                          validationMessage={pinError}
+                        >
+                          <Input
+                            type="password"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            maxLength={6}
+                            value={formCurrentPin}
+                            onChange={(_, data) => {
+                              const cleaned = data.value.replace(/\D/g, '').slice(0, 6);
+                              setFormCurrentPin(cleaned);
+                              if (pinError) setPinError('');
+                              if (currentPasswordError) setCurrentPasswordError('');
+                            }}
+                            placeholder={t.onboarding.pinPlaceholder}
+                            contentBefore={<KeyRegular />}
+                          />
+                        </Field>
+                      )}
+                    </>
+                  )}
 
                   {/* Password & PIN (Only in Initial Setup) */}
                   {!isEditMode && (

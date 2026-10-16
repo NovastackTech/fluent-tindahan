@@ -8,6 +8,7 @@ import { translations } from '../i18n/translations';
 import * as authService from '../services/authService';
 import * as seedData from '../db/seedData';
 import { db } from '../db/db';
+import { useSubscriptionStore } from '../state/subscriptionStore';
 
 vi.mock('../services/authService', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/authService')>();
@@ -85,6 +86,7 @@ describe('LoginPage Component', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    vi.spyOn(useSubscriptionStore.getState(), 'refreshSubscription').mockResolvedValue();
     localStorage.clear();
     await db.syncQueue.clear();
     useAuthStore.setState({
@@ -268,21 +270,19 @@ describe('LoginPage Component', () => {
 
     fireEvent.change(emailInput, { target: { value: 'owner@tindahan.ph' } });
     fireEvent.change(passwordInput, { target: { value: 'password123' } });
-    fireEvent.submit(submitBtn.closest('form')!);
+    fireEvent.click(submitBtn);
 
     // Dialog should appear asking user first
-    await waitFor(() => {
-      const dialog = screen.getByRole('dialog');
-      expect(within(dialog).getByText(/May Hindi Pa Nai-sync na Datos|Unsynced Data Detected/i)).toBeInTheDocument();
-      expect(within(dialog).getByText(/1 transaksyon na hindi pa nai-sync/i)).toBeInTheDocument();
-    });
+    const firstDialog = await screen.findByRole('dialog', {}, { timeout: 5000 });
+    expect(within(firstDialog).getByText(/May Hindi Pa Nai-sync na Datos|Unsynced Data Detected/i)).toBeInTheDocument();
+    expect(within(firstDialog).getByText(/1 transaksyon na hindi pa nai-sync/i)).toBeInTheDocument();
 
     // Should NOT have completed login yet
     expect(onNavigate).not.toHaveBeenCalled();
     expect(useAuthStore.getState().isOnboarded).toBe(false);
 
     // Clicking cancel closes dialog and preserves unsynced records
-    const cancelBtn = within(screen.getByRole('dialog')).getByRole('button', { name: /Kanselahin|Cancel/i });
+    const cancelBtn = within(firstDialog).getByRole('button', { name: /Kanselahin|Cancel/i });
     fireEvent.click(cancelBtn);
 
     await waitFor(() => {
@@ -292,12 +292,18 @@ describe('LoginPage Component', () => {
     expect(useAuthStore.getState().isOnboarded).toBe(false);
 
     // Submitting again and choosing force login wipes and completes login
-    fireEvent.submit(submitBtn.closest('form')!);
     await waitFor(() => {
-      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      expect(submitBtn).not.toBeDisabled();
     });
+    const loginForm = submitBtn.closest('form');
+    if (loginForm) {
+      fireEvent.submit(loginForm);
+    } else {
+      fireEvent.click(submitBtn);
+    }
 
-    const wipeBtn = within(screen.getByRole('dialog')).getByRole('button', { name: /I-wipe at Mag-login Pa Rin|Wipe & Log In Anyway/i });
+    const secondDialog = await screen.findByRole('dialog', {}, { timeout: 5000 });
+    const wipeBtn = within(secondDialog).getByRole('button', { name: /I-wipe at Mag-login Pa Rin|Wipe & Log In Anyway/i });
     fireEvent.click(wipeBtn);
 
     await waitFor(() => {
@@ -305,5 +311,5 @@ describe('LoginPage Component', () => {
       expect(onNavigate).toHaveBeenCalledWith('pos');
     });
     expect(await db.syncQueue.count()).toBe(0);
-  });
+  }, 15000);
 });

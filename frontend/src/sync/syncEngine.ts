@@ -16,6 +16,7 @@ import {
 import { useAuthStore } from '../state/authStore';
 import { createClientUuid } from '../utils/uuid';
 import { create } from 'zustand';
+import { hasPendingProfileUpdate, syncPendingProfileUpdate } from '../services/profileSync';
 
 import { STORAGE_KEY_LAST_SYNCED, getSyncStorageKey } from '../constants/sync';
 export { STORAGE_KEY_LAST_SYNCED, getSyncStorageKey };
@@ -155,7 +156,9 @@ export async function enqueueSync(
 }
 
 export async function updateQueueCounts() {
-  const pending = await db.syncQueue.count();
+  const pendingQueue = await db.syncQueue.count();
+  const profilePending = hasPendingProfileUpdate() ? 1 : 0;
+  const pending = pendingQueue + profilePending;
   const deadLetter = await db.deadLetterQueue.count();
   useSyncStore.getState().setCounts(pending, deadLetter);
   const errMsg = useSyncStore.getState().lastErrorMessage;
@@ -173,6 +176,16 @@ export async function processSyncQueue(): Promise<{ processed: number; conflicts
   const auth = useAuthStore.getState();
   if (!auth.isOnboardingStatusReady || !auth.isOnboarded) {
     return { processed: 0, conflicts: 0, errors: 0 };
+  }
+
+  // Attempt to sync pending profile update if queued
+  if (hasPendingProfileUpdate()) {
+    try {
+      await syncPendingProfileUpdate();
+      await updateQueueCounts();
+    } catch (e) {
+      console.warn('[syncEngine] Pending profile sync failed:', e);
+    }
   }
 
   const store = useSyncStore.getState();
@@ -649,6 +662,9 @@ export function initSyncEngine() {
 
   window.addEventListener('online', () => {
     store.setOnline(true);
+    syncPendingProfileUpdate()
+      .then(() => updateQueueCounts())
+      .catch(console.error);
     processSyncQueue().catch(console.error);
   });
 

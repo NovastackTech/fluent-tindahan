@@ -56,6 +56,9 @@ backups/
 *.env
 *.env.*
 deploy/*.env
+client_secret*.json
+*credentials*.json
+*.credentials.json
 
 # Explicit exceptions: allow environment templates and non-secret Vite environment settings in frontend/
 !.env.example

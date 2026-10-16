@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   generateLocalPinVerifier,
   verifyLocalPin,
@@ -53,4 +53,74 @@ describe('authService PIN cryptography', () => {
     expect(await verifyLocalPin(pin, legacyVerifier, salt)).toBe(true);
     expect(await verifyLocalPin('0000', legacyVerifier, salt)).toBe(false);
   });
+
+  it('updateProfile calls PUT /auth/profile with expected payload and returns data', async () => {
+    const { updateProfile } = await import('./authService');
+    const { apiClient } = await import('./apiClient');
+
+    const mockResponse = {
+      tenantId: 'tenant-123',
+      userId: 'user-123',
+      email: 'owner@tindahan.ph',
+      businessName: 'My Store',
+      ownerName: 'Owner Name',
+      phone: '09171234567',
+      role: 'Owner' as const,
+      tier: 'Libre' as const,
+      planTier: 'Libre',
+      subscriptionEndDate: null,
+      hasPin: false,
+      token: 'jwt-123',
+      expiresAt: '2028-01-01'
+    };
+
+    const putSpy = vi.spyOn(apiClient, 'put').mockResolvedValueOnce({ data: mockResponse });
+
+    const result = await updateProfile({
+      businessName: 'My Store',
+      ownerName: 'Owner Name',
+      phone: '09171234567',
+      email: 'owner@tindahan.ph'
+    });
+
+    expect(putSpy).toHaveBeenCalledWith('/auth/profile', {
+      businessName: 'My Store',
+      ownerName: 'Owner Name',
+      phone: '09171234567',
+      email: 'owner@tindahan.ph'
+    });
+    expect(result).toEqual(mockResponse);
+  });
+
+  it('updateProfile includes currentPassword, pin, and stored refreshToken in request payload', async () => {
+    const { updateProfile } = await import('./authService');
+    const { apiClient } = await import('./apiClient');
+
+    localStorage.setItem('fluent_tindahan_refresh_token_v1', 'stored-refresh-token');
+
+    const putSpy = vi.spyOn(apiClient, 'put').mockResolvedValueOnce({
+      data: {
+        businessName: 'My Store',
+        email: 'new@tindahan.ph'
+      }
+    });
+
+    await updateProfile({
+      businessName: 'My Store',
+      email: 'new@tindahan.ph',
+      currentPassword: 'SecretPassword123!',
+      pin: '1234'
+    });
+
+    expect(putSpy).toHaveBeenCalledWith('/auth/profile', {
+      businessName: 'My Store',
+      email: 'new@tindahan.ph',
+      currentPassword: 'SecretPassword123!',
+      pin: '1234',
+      refreshToken: 'stored-refresh-token'
+    });
+
+    localStorage.removeItem('fluent_tindahan_refresh_token_v1');
+  });
 });
+

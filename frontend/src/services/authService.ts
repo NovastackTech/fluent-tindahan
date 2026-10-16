@@ -40,6 +40,16 @@ export interface LoginPinRequestPayload {
   pin: string;
 }
 
+export interface UpdateProfileRequestPayload {
+  businessName?: string | null;
+  ownerName?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  currentPassword?: string;
+  pin?: string;
+  refreshToken?: string;
+}
+
 export interface UpdatePinRequestPayload {
   email: string;
   password: string;
@@ -166,6 +176,18 @@ export async function loginPin(payload: LoginPinRequestPayload): Promise<AuthRes
 
 export async function updatePin(payload: UpdatePinRequestPayload): Promise<{ message: string; hasPin: boolean }> {
   const response = await apiClient.put<{ message: string; hasPin: boolean }>('/auth/pin', payload);
+  return response.data;
+}
+
+export async function updateProfile(payload: UpdateProfileRequestPayload): Promise<AuthResponseDto> {
+  const storedRefreshToken = typeof localStorage !== 'undefined'
+    ? localStorage.getItem('fluent_tindahan_refresh_token_v1')
+    : null;
+  const requestPayload: UpdateProfileRequestPayload = {
+    ...payload,
+    refreshToken: payload.refreshToken || storedRefreshToken || undefined
+  };
+  const response = await apiClient.put<AuthResponseDto>('/auth/profile', requestPayload);
   return response.data;
 }
 

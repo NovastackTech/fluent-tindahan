@@ -17,6 +17,7 @@ public class User : IMustHaveTenant
     public int FailedPasswordAttempts { get; set; } = 0;
     public DateTimeOffset? PasswordLockoutEnd { get; set; }
     public string Phone { get; set; } = string.Empty;
+    public string? OwnerName { get; set; }
     public string Role { get; set; } = "Owner"; // "Owner", "Staff"
     /// <summary>
     /// Legacy external authentication subject identifier (formerly Firebase Auth UID).

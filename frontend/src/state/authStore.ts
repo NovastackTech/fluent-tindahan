@@ -6,15 +6,20 @@ import { getSyncStorageKey } from '../constants/sync';
 import { CURRENT_TERMS_VERSION } from '../legal/termsData';
 import { generateLocalPinVerifier, logoutStore, type AuthResponseDto } from '../services/authService';
 import { useGCashFeeStore } from './gcashFeeStore';
+import {
+  hasPendingProfileUpdate,
+  clearPendingProfileUpdate,
+  STORAGE_KEY_PENDING_PROFILE_UPDATE
+} from '../services/profileSync';
 
 export { DEMO_BUSINESS_NAME, DEMO_OWNER, DEMO_PHONE } from '../constants/demoProfile';
 export { CURRENT_TERMS_VERSION } from '../legal/termsData';
 
 export interface StoreProfilePayload {
-  businessName: string;
-  ownerName?: string;
-  userPhone?: string;
-  userEmail?: string;
+  businessName?: string | null;
+  ownerName?: string | null;
+  userPhone?: string | null;
+  userEmail?: string | null;
 }
 
 export interface OnboardingPayload extends StoreProfilePayload {
@@ -443,7 +448,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const userId = startsNewTenant && existingUserId === DEFAULT_USER_ID
       ? createClientUuid()
       : existingUserId;
-    const businessName = payload.businessName.trim();
+    const businessName = (payload.businessName || '').trim();
     const ownerName = (payload.ownerName || '').trim();
     const userPhone = (payload.userPhone || '').trim();
     const userEmail = (payload.userEmail || '').trim();
@@ -496,25 +501,46 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   updateStoreProfile: (payload: StoreProfilePayload) => {
-    const businessName = payload.businessName.trim();
-    const ownerName = (payload.ownerName || '').trim();
-    const userPhone = (payload.userPhone || '').trim();
-    const userEmail = (payload.userEmail || '').trim();
+    const currentState = get();
+    let nextBusinessName = currentState.businessName;
+    let nextOwnerName = currentState.ownerName;
+    let nextUserPhone = currentState.userPhone;
+    let nextUserEmail = currentState.userEmail;
 
-    localStorage.setItem(STORAGE_KEY_STORE_NAME, businessName);
-    localStorage.setItem(STORAGE_KEY_OWNER_NAME, ownerName);
-    localStorage.setItem(STORAGE_KEY_USER_PHONE, userPhone);
-    if (userEmail) {
-      localStorage.setItem(STORAGE_KEY_USER_EMAIL, userEmail);
-      localStorage.setItem(STORAGE_KEY_LAST_EMAIL, userEmail);
+    if (payload.businessName !== undefined && payload.businessName !== null) {
+      const trimmed = payload.businessName.trim();
+      if (trimmed.length > 0) {
+        nextBusinessName = trimmed;
+        localStorage.setItem(STORAGE_KEY_STORE_NAME, trimmed);
+      }
+    }
+
+    if (payload.ownerName !== undefined && payload.ownerName !== null) {
+      const trimmed = payload.ownerName.trim();
+      nextOwnerName = trimmed;
+      localStorage.setItem(STORAGE_KEY_OWNER_NAME, trimmed);
+    }
+
+    if (payload.userPhone !== undefined && payload.userPhone !== null) {
+      const trimmed = payload.userPhone.trim();
+      nextUserPhone = trimmed;
+      localStorage.setItem(STORAGE_KEY_USER_PHONE, trimmed);
+    }
+
+    if (payload.userEmail !== undefined && payload.userEmail !== null) {
+      const trimmed = payload.userEmail.trim();
+      if (trimmed.length > 0) {
+        nextUserEmail = trimmed;
+        localStorage.setItem(STORAGE_KEY_USER_EMAIL, trimmed);
+        localStorage.setItem(STORAGE_KEY_LAST_EMAIL, trimmed);
+      }
     }
 
     set({
-      businessName,
-      ownerName,
-      userPhone,
-      userEmail: userEmail || get().userEmail,
-      isOnboardingOpen: false
+      businessName: nextBusinessName,
+      ownerName: nextOwnerName,
+      userPhone: nextUserPhone,
+      userEmail: nextUserEmail
     });
   },
 
@@ -611,6 +637,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     let pendingCount = 0;
     try {
       pendingCount = await db.syncQueue.count();
+      if (hasPendingProfileUpdate()) {
+        pendingCount += 1;
+      }
     } catch (e) {
       console.warn('[authStore] Failed to check syncQueue count:', e);
     }
@@ -652,11 +681,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       STORAGE_KEY_CONFIRMED_TENANT_ID,
       STORAGE_KEY_CONFIRMED_USER_ID,
       STORAGE_KEY_OFFLINE_PIN_FAILURES,
-      STORAGE_KEY_OFFLINE_PIN_LOCKOUT_END
+      STORAGE_KEY_OFFLINE_PIN_LOCKOUT_END,
+      STORAGE_KEY_PENDING_PROFILE_UPDATE
     ];
     for (const key of keysToRemove) {
       localStorage.removeItem(key);
     }
+    clearPendingProfileUpdate();
 
     set({
       tenantId: DEFAULT_TENANT_ID,

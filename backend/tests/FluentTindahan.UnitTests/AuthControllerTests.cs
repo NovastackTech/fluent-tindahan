@@ -18,6 +18,7 @@ using FluentTindahan.Domain.Interfaces;
 using FluentTindahan.Infrastructure.Persistence;
 using FluentTindahan.Infrastructure.Services;
 using FluentTindahan.WebApi.Controllers;
+using FluentTindahan.WebApi.Controllers.Helpers;
 using Npgsql;
 using Xunit;
 
@@ -2529,5 +2530,592 @@ public class AuthControllerTests
         var (token, _) = service.GenerateAccessToken(Guid.NewGuid(), Guid.NewGuid());
         token.Should().NotBeNullOrWhiteSpace();
     }
+
+    [Fact]
+    public async Task Register_And_Login_PreservesAndReturnsOwnerName()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        var regResult = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "maria@sarisari.ph",
+            Password = "Password123!",
+            BusinessName = "Maria Tindahan",
+            OwnerName = "Maria Santos",
+            Phone = "09171234567",
+            Pin = "1234"
+        }, CancellationToken.None);
+
+        var regOk = regResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var regDto = regOk.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        regDto.OwnerName.Should().Be("Maria Santos");
+
+        var dbUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Email == "maria@sarisari.ph");
+        dbUser.OwnerName.Should().Be("Maria Santos");
+
+        // Login with password should return OwnerName
+        var loginResult = await controller.Login(new AuthController.LoginRequest
+        {
+            Email = "maria@sarisari.ph",
+            Password = "Password123!"
+        }, CancellationToken.None);
+
+        var loginOk = loginResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var loginDto = loginOk.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        loginDto.OwnerName.Should().Be("Maria Santos");
+
+        // Login with PIN should return OwnerName
+        var pinResult = await controller.LoginPin(new AuthController.LoginPinRequest
+        {
+            Email = "maria@sarisari.ph",
+            Pin = "1234"
+        }, CancellationToken.None);
+
+        var pinOk = pinResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var pinDto = pinOk.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        pinDto.OwnerName.Should().Be("Maria Santos");
+    }
+
+    private static async Task<(AuthController controller, Guid userId, Guid tenantId)> SetupAuthenticatedTestStoreAsync(
+        AppDbContext context,
+        string email = "owner@tindahan.ph",
+        string role = "Owner",
+        string businessName = "Initial Store Name",
+        string? ownerName = "Initial Owner",
+        string? phone = "09181112233",
+        string password = "Password123!",
+        string? pin = null)
+    {
+        var registrationController = CreateController(context);
+        var regResult = await registrationController.Register(new AuthController.RegisterRequest
+        {
+            Email = email,
+            Password = password,
+            BusinessName = businessName,
+            OwnerName = ownerName,
+            Phone = phone,
+            Pin = pin
+        }, CancellationToken.None);
+
+        var regDto = ((OkObjectResult)regResult.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        var userId = regDto.UserId;
+        var tenantId = regDto.TenantId;
+
+        if (role != "Owner")
+        {
+            var user = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
+            user.Role = role;
+            await context.SaveChangesAsync();
+        }
+
+        var mockCurrentUserService = new Mock<ICurrentUserService>();
+        mockCurrentUserService.Setup(s => s.UserId).Returns(userId);
+        mockCurrentUserService.Setup(s => s.TenantId).Returns(tenantId);
+        mockCurrentUserService.Setup(s => s.IsAuthenticated).Returns(true);
+
+        var authController = CreateController(context, currentUserService: mockCurrentUserService.Object);
+        SetAuthenticatedUser(authController, userId, tenantId, email: email, role: role);
+
+        return (authController, userId, tenantId);
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenAuthenticated_UpdatesDatabaseAndReturnsUpdatedDto()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var (authController, userId, tenantId) = await SetupAuthenticatedTestStoreAsync(
+            context,
+            email: "owner@tindahan.ph",
+            businessName: "Initial Store Name",
+            ownerName: "Initial Owner",
+            phone: "09181112233");
+
+        var updateResult = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "Updated Tindahan Store",
+            OwnerName = "Updated Owner",
+            Phone = "09171234567",
+            Email = "updated-owner@example.ph",
+            CurrentPassword = "Password123!"
+        }, CancellationToken.None);
+
+        var ok = updateResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = ok.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        dto.BusinessName.Should().Be("Updated Tindahan Store");
+        dto.OwnerName.Should().Be("Updated Owner");
+        dto.Phone.Should().Be("09171234567");
+        dto.Email.Should().Be("updated-owner@example.ph");
+
+        // Verify database persistence across logout/re-login
+        var dbTenant = await context.Tenants.IgnoreQueryFilters().FirstAsync(t => t.Id == tenantId);
+        dbTenant.BusinessName.Should().Be("Updated Tindahan Store");
+
+        var dbUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
+        dbUser.OwnerName.Should().Be("Updated Owner");
+        dbUser.Phone.Should().Be("09171234567");
+        dbUser.Email.Should().Be("updated-owner@example.ph");
+        dbUser.NormalizedEmail.Should().Be("updated-owner@example.ph");
+
+        // Re-login after "logout" retrieves the updated persisted data
+        var controller = CreateController(context);
+        var reloginResult = await controller.Login(new AuthController.LoginRequest
+        {
+            Email = "updated-owner@example.ph",
+            Password = "Password123!"
+        }, CancellationToken.None);
+
+        var reloginDto = ((OkObjectResult)reloginResult.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        reloginDto.BusinessName.Should().Be("Updated Tindahan Store");
+        reloginDto.OwnerName.Should().Be("Updated Owner");
+        reloginDto.Phone.Should().Be("09171234567");
+        reloginDto.Email.Should().Be("updated-owner@example.ph");
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenEmailTakenByAnotherUser_ReturnsConflict()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        // Register store 1
+        await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "store1@example.ph",
+            Password = "Password123!",
+            BusinessName = "Store One"
+        }, CancellationToken.None);
+
+        // Register store 2
+        var (authController, _, _) = await SetupAuthenticatedTestStoreAsync(
+            context,
+            email: "store2@example.ph",
+            businessName: "Store Two");
+
+        // Store 2 tries to update its email to store 1's email
+        var conflictResult = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "Store Two Updated",
+            Email = "store1@example.ph",
+            CurrentPassword = "Password123!"
+        }, CancellationToken.None);
+
+        conflictResult.Result.Should().BeOfType<ConflictObjectResult>();
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenStoreNameTooShort_ReturnsBadRequest()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var (authController, _, _) = await SetupAuthenticatedTestStoreAsync(context, email: "short@example.ph", businessName: "Valid Store");
+
+        var badResult = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "A" // too short (< 2)
+        }, CancellationToken.None);
+
+        badResult.Result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenChangingBusinessName_AsNonOwner_ReturnsForbidden()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var (authController, _, tenantId) = await SetupAuthenticatedTestStoreAsync(
+            context,
+            email: "staffuser@tindahan.ph",
+            role: "Staff",
+            businessName: "Original Store Name");
+
+        var result = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "Staff Changed Name",
+            OwnerName = "Staff Member"
+        }, CancellationToken.None);
+
+        var objResult = result.Result.Should().BeOfType<ObjectResult>().Subject;
+        objResult.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+
+        // Verify DB was NOT updated
+        var tenant = await context.Tenants.IgnoreQueryFilters().FirstAsync(t => t.Id == tenantId);
+        tenant.BusinessName.Should().Be("Original Store Name");
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenKeepingSameBusinessName_AsNonOwner_Succeeds()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var (authController, _, _) = await SetupAuthenticatedTestStoreAsync(
+            context,
+            email: "staffmember@tindahan.ph",
+            role: "Staff",
+            businessName: "Keep My Store Name",
+            ownerName: "Old Staff Name");
+
+        var result = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "Keep My Store Name",
+            OwnerName = "New Staff Name",
+            Phone = "09998887766"
+        }, CancellationToken.None);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = ok.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        dto.BusinessName.Should().Be("Keep My Store Name");
+        dto.OwnerName.Should().Be("New Staff Name");
+        dto.Phone.Should().Be("09998887766");
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenChangingEmail_WithoutPasswordOrPin_ReturnsBadRequest()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var (authController, _, _) = await SetupAuthenticatedTestStoreAsync(context, email: "oldemail@tindahan.ph", businessName: "My Store");
+
+        var result = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "My Store",
+            Email = "newemail@tindahan.ph"
+            // No password or PIN
+        }, CancellationToken.None);
+
+        result.Result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenChangingEmail_WithWrongPassword_ReturnsBadRequest()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var (authController, userId, _) = await SetupAuthenticatedTestStoreAsync(
+            context,
+            email: "oldpwd@tindahan.ph",
+            password: "CorrectPassword123!",
+            businessName: "My Store");
+
+        var result = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "My Store",
+            Email = "newpwd@tindahan.ph",
+            CurrentPassword = "WrongPassword999!"
+        }, CancellationToken.None);
+
+        result.Result.Should().BeOfType<BadRequestObjectResult>();
+
+        var dbUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
+        dbUser.FailedPasswordAttempts.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenChangingEmail_WithWrongPin_ReturnsBadRequest()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var (authController, userId, _) = await SetupAuthenticatedTestStoreAsync(
+            context,
+            email: "oldpin@tindahan.ph",
+            pin: "1357",
+            businessName: "Pin Store");
+
+        var result = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "Pin Store",
+            Email = "newpin@tindahan.ph",
+            Pin = "9999"
+        }, CancellationToken.None);
+
+        result.Result.Should().BeOfType<BadRequestObjectResult>();
+
+        var dbUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
+        dbUser.FailedPinAttempts.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenChangingEmail_WithCorrectPin_Succeeds()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var (authController, _, _) = await SetupAuthenticatedTestStoreAsync(
+            context,
+            email: "oldpin@tindahan.ph",
+            pin: "1357",
+            businessName: "Pin Store");
+
+        var result = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "Pin Store",
+            Email = "newpin@tindahan.ph",
+            Pin = "1357"
+        }, CancellationToken.None);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = ok.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        dto.Email.Should().Be("newpin@tindahan.ph");
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenChangingEmail_RevokesOtherRefreshTokensAndRetiresOldToken()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var (authController, userId, tenantId) = await SetupAuthenticatedTestStoreAsync(
+            context,
+            email: "multidevice@tindahan.ph",
+            businessName: "Multi Device Store");
+
+        var user = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
+
+        // Device A (current)
+        var (tokenA, _, tokenAHash, _) = AuthRefreshTokenHelper.IssueRefreshToken(
+            context, DefaultJwtService, user, tenantId, TimeProvider.System, "family-device-a");
+
+        // Device B (other)
+        var (_, _, _, _) = AuthRefreshTokenHelper.IssueRefreshToken(
+            context, DefaultJwtService, user, tenantId, TimeProvider.System, "family-device-b");
+
+        await context.SaveChangesAsync();
+
+        var updateResult = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "Multi Device Store",
+            Email = "newmultidevice@tindahan.ph",
+            CurrentPassword = "Password123!",
+            RefreshToken = tokenA
+        }, CancellationToken.None);
+
+        var ok = updateResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = ok.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        dto.RefreshToken.Should().NotBeNullOrWhiteSpace();
+
+        // Check tokens in DB
+        var tokensInDb = await context.UserRefreshTokens.IgnoreQueryFilters().Where(t => t.UserId == user.Id).ToListAsync();
+        var deviceBTokens = tokensInDb.Where(t => t.FamilyId == "family-device-b").ToList();
+        deviceBTokens.Should().NotBeEmpty();
+        deviceBTokens.Should().OnlyContain(t => t.IsRevoked);
+
+        // Check presented token on Device A was retired (marked replaced and grace expires set) without forking
+        var deviceATokens = tokensInDb.Where(t => t.FamilyId == "family-device-a").ToList();
+        deviceATokens.Should().HaveCount(2);
+        var oldTokenRecord = deviceATokens.First(t => t.TokenHash == tokenAHash);
+        oldTokenRecord.ReplacedByTokenHash.Should().NotBeNullOrWhiteSpace();
+        oldTokenRecord.GraceExpiresAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenRefreshTokenMissingInDatabase_DoesNotIssueNewRefreshToken()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var (authController, userId, tenantId) = await SetupAuthenticatedTestStoreAsync(
+            context,
+            email: "missingtoken@tindahan.ph",
+            businessName: "Missing Token Store");
+
+        var user = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
+
+        // Generate a valid JWT refresh token but DO NOT insert into UserRefreshTokens table
+        var (orphanedToken, _, _, _) = DefaultJwtService.GenerateRefreshToken(
+            user.Id, tenantId, tokenId: null, familyId: "orphaned-family");
+
+        var updateResult = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "Updated Missing Token Store",
+            RefreshToken = orphanedToken
+        }, CancellationToken.None);
+
+        var ok = updateResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = ok.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        dto.RefreshToken.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenRefreshTokenIsRevoked_DoesNotIssueNewRefreshToken()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var (authController, userId, tenantId) = await SetupAuthenticatedTestStoreAsync(
+            context,
+            email: "revokedtoken@tindahan.ph",
+            businessName: "Revoked Token Store");
+
+        var user = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
+
+        var (token, _, tokenHash, famId) = AuthRefreshTokenHelper.IssueRefreshToken(
+            context, DefaultJwtService, user, tenantId, TimeProvider.System, "revoked-family");
+        await context.SaveChangesAsync();
+        var tokenRow = await context.UserRefreshTokens.IgnoreQueryFilters().FirstAsync(t => t.TokenHash == tokenHash);
+        tokenRow.IsRevoked = true;
+        tokenRow.RevokedAt = DateTimeOffset.UtcNow;
+        await context.SaveChangesAsync();
+
+        var updateResult = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "Updated Revoked Store",
+            RefreshToken = token
+        }, CancellationToken.None);
+
+        var ok = updateResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = ok.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        dto.RefreshToken.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenRefreshTokenIsAlreadyReplaced_DoesNotIssueNewRefreshToken()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var (authController, userId, tenantId) = await SetupAuthenticatedTestStoreAsync(
+            context,
+            email: "replacedtoken@tindahan.ph",
+            businessName: "Replaced Token Store");
+
+        var user = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
+
+        var (token, _, tokenHash, famId) = AuthRefreshTokenHelper.IssueRefreshToken(
+            context, DefaultJwtService, user, tenantId, TimeProvider.System, "replaced-family");
+        await context.SaveChangesAsync();
+        var tokenRow = await context.UserRefreshTokens.IgnoreQueryFilters().FirstAsync(t => t.TokenHash == tokenHash);
+        tokenRow.ReplacedByTokenHash = "some-replacement-hash";
+        tokenRow.GraceExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-5); // expired grace
+        await context.SaveChangesAsync();
+
+        var updateResult = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "Updated Replaced Store",
+            RefreshToken = token
+        }, CancellationToken.None);
+
+        var ok = updateResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = ok.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        dto.RefreshToken.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenFieldsAreNull_KeepsExistingValuesUnchanged()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var (authController, userId, tenantId) = await SetupAuthenticatedTestStoreAsync(
+            context,
+            email: "nulltest@example.ph",
+            businessName: "Original Store Name",
+            ownerName: "Original Owner",
+            phone: "09181112233");
+
+        // Send all null fields
+        var result = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = null,
+            OwnerName = null,
+            Phone = null,
+            Email = null
+        }, CancellationToken.None);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = ok.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        // Existing values must remain completely unchanged
+        dto.BusinessName.Should().Be("Original Store Name");
+        dto.OwnerName.Should().Be("Original Owner");
+        dto.Phone.Should().Be("09181112233");
+        dto.Email.Should().Be("nulltest@example.ph");
+
+        var dbTenant = await context.Tenants.IgnoreQueryFilters().FirstAsync(t => t.Id == tenantId);
+        dbTenant.BusinessName.Should().Be("Original Store Name");
+
+        var dbUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
+        dbUser.OwnerName.Should().Be("Original Owner");
+        dbUser.Phone.Should().Be("09181112233");
+        dbUser.Email.Should().Be("nulltest@example.ph");
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenOwnerNameAndPhoneAreEmptyStrings_ClearsValues()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var (authController, userId, _) = await SetupAuthenticatedTestStoreAsync(
+            context,
+            email: "cleartest@example.ph",
+            businessName: "Original Store Name",
+            ownerName: "Original Owner",
+            phone: "09181112233");
+
+        // Explicit empty strings should clear OwnerName (to null) and Phone (to empty string)
+        var result = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = null,
+            OwnerName = "",
+            Phone = ""
+        }, CancellationToken.None);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = ok.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        dto.BusinessName.Should().Be("Original Store Name");
+        dto.OwnerName.Should().BeNull();
+        dto.Phone.Should().BeEmpty();
+
+        var dbUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
+        dbUser.OwnerName.Should().BeNull();
+        dbUser.Phone.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenStaffSendsNullBusinessName_SucceedsWithoutForbidden()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var (authController, userId, tenantId) = await SetupAuthenticatedTestStoreAsync(
+            context,
+            email: "staffnull@example.ph",
+            role: "Staff",
+            businessName: "Store Under Owner",
+            ownerName: "Owner Person",
+            phone: "09110001111");
+
+        // Staff does not send BusinessName (null), only updates their own name/phone
+        var result = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = null,
+            OwnerName = "Staff Juan",
+            Phone = "09995554433"
+        }, CancellationToken.None);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = ok.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        dto.BusinessName.Should().Be("Store Under Owner");
+        dto.OwnerName.Should().Be("Staff Juan");
+        dto.Phone.Should().Be("09995554433");
+
+        var dbTenant = await context.Tenants.IgnoreQueryFilters().FirstAsync(t => t.Id == tenantId);
+        dbTenant.BusinessName.Should().Be("Store Under Owner");
+
+        var dbUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
+        dbUser.OwnerName.Should().Be("Staff Juan");
+        dbUser.Phone.Should().Be("09995554433");
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenExplicitEmptyBusinessNameOrEmail_ReturnsBadRequest()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var (authController, _, _) = await SetupAuthenticatedTestStoreAsync(context, email: "emptytest@example.ph", businessName: "Original Store");
+
+        // Empty BusinessName
+        var badBusinessNameResult = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = ""
+        }, CancellationToken.None);
+        badBusinessNameResult.Result.Should().BeOfType<BadRequestObjectResult>();
+
+        // Whitespace BusinessName
+        var whitespaceBusinessNameResult = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "   "
+        }, CancellationToken.None);
+        whitespaceBusinessNameResult.Result.Should().BeOfType<BadRequestObjectResult>();
+
+        // Empty Email
+        var badEmailResult = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "Valid Name",
+            Email = ""
+        }, CancellationToken.None);
+        badEmailResult.Result.Should().BeOfType<BadRequestObjectResult>();
+    }
 }
+
 

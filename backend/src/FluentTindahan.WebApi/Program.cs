@@ -94,6 +94,8 @@ builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy(AuthorizationPolicies.TenantResolved, policy =>
         policy.AddRequirements(new TenantResolvedRequirement()));
+    options.AddPolicy(AuthorizationPolicies.Owner, policy =>
+        policy.RequireRole("Owner"));
 });
 builder.Services.AddRateLimiter(options =>
 {

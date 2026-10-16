@@ -40,7 +40,7 @@ html, body {
 @media print {
   @page {
     margin: 0;
-    size: 58mm auto;
+    size: auto;
   }
   body {
     background: #ffffff !important;

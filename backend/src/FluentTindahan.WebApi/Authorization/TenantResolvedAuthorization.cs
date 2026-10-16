@@ -6,6 +6,7 @@ namespace FluentTindahan.WebApi.Authorization;
 public static class AuthorizationPolicies
 {
     public const string TenantResolved = "TenantResolved";
+    public const string Owner = "Owner";
 }
 
 public sealed class TenantResolvedRequirement : IAuthorizationRequirement;

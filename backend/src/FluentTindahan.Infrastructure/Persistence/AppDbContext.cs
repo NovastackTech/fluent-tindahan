@@ -81,6 +81,7 @@ public class AppDbContext : DbContext, IApplicationDbContext
             builder.Property(u => u.PasswordLockoutEnd);
             builder.Property(u => u.LastLoginAt);
             builder.Property(u => u.Phone).IsRequired().HasMaxLength(30);
+            builder.Property(u => u.OwnerName).HasMaxLength(100);
             builder.Property(u => u.Role).IsRequired().HasMaxLength(50);
             builder.Property(u => u.FirebaseUid).HasMaxLength(128);
             builder.Property(u => u.RefreshTokenIdHash).HasMaxLength(128);

@@ -46,6 +46,15 @@ export const PwaUpdateToast: React.FC = () => {
   const { needRefresh, setNeedRefresh, otherTabsHaveCart, isSaleInProgress, hasActiveReceipt } = usePwaStore();
   const cartItemCount = useCartStore((s) => s.items.length);
   const [isUpdating, setIsUpdating] = React.useState(false);
+  const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  React.useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+    };
+  }, []);
 
   if (!needRefresh) {
     return null;
@@ -65,6 +74,12 @@ export const PwaUpdateToast: React.FC = () => {
     } catch {
       setIsUpdating(false);
     }
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+    }
+    timerRef.current = setTimeout(() => {
+      setIsUpdating(false);
+    }, 3000);
   };
 
   const handleDismiss = () => {
