@@ -32,6 +32,9 @@ import { usePwaStore } from '../state/pwaStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
 import { useDisclaimerStore } from '../state/disclaimerStore';
 import { SubscriptionModal } from './SubscriptionModal';
+import { HeaderAccountMenu } from './HeaderAccountMenu';
+import { SafeLogoutDialog } from './SafeLogoutDialog';
+import { useSafeLogout } from './useSafeLogout';
 
 const useStyles = makeStyles({
   header: {
@@ -76,11 +79,6 @@ const useStyles = makeStyles({
     alignItems: 'center',
     ...shorthands.gap(tokens.spacingHorizontalXS)
   },
-  storeName: {
-    fontSize: tokens.fontSizeBase200,
-    color: tokens.colorNeutralForeground3,
-    display: 'block'
-  },
   langButton: {
     fontWeight: 600,
     fontSize: tokens.fontSizeBase200
@@ -120,6 +118,13 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab }) => {
   const { isInstallable, isStandalone, isInstalled, promptInstall } = usePwaStore();
   const { tier, openUpgradeModal } = useSubscriptionStore();
   const openDisclaimer = useDisclaimerStore((s) => s.openDisclaimer);
+  const safeLogout = useSafeLogout({
+    onLoggedOut: () => {
+      if (onNavigate) {
+        onNavigate('login');
+      }
+    }
+  });
 
   const handleManualSync = () => {
     if (isOnline) {
@@ -175,8 +180,13 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab }) => {
                 </Button>
               )}
             </div>
-            {showStoreInfo && (
-              <span className={styles.storeName}>{businessName}</span>
+            {!isLoggedOut && (
+              <HeaderAccountMenu
+                businessName={showStoreInfo ? businessName ?? '' : ''}
+                onLogout={() => {
+                  void safeLogout.initiateLogout();
+                }}
+              />
             )}
           </div>
         </div>
@@ -375,6 +385,13 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab }) => {
         </div>
       </div>
       <SubscriptionModal />
+      <SafeLogoutDialog
+        open={safeLogout.isLogoutConfirmOpen}
+        unsyncedCount={safeLogout.logoutUnsyncedCount}
+        onDismiss={safeLogout.cancelLogout}
+        onSyncFirst={safeLogout.syncFirst}
+        onConfirmLogout={safeLogout.confirmLogout}
+      />
     </header>
   );
 };

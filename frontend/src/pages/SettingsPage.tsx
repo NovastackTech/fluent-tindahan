@@ -71,6 +71,8 @@ import {
 import { useAuthStore } from '../state/authStore';
 import { seedDexieDatabaseIfNeeded } from '../db/seedData';
 import { useTranslation } from '../state/languageStore';
+import { SafeLogoutDialog } from '../components/SafeLogoutDialog';
+import { useSafeLogout } from '../components/useSafeLogout';
 
 const useStyles = makeStyles({
   container: {
@@ -118,7 +120,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
     setLocalPinVerifier,
     setIsSessionLocked,
     openOnboarding,
-    logout,
     role
   } = useAuthStore();
   const { t, language, setLanguage } = useTranslation();
@@ -130,6 +131,21 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
   const [gcashFeeDrafts, setGcashFeeDrafts] = useState<Record<string, string>>({});
   const { isStandalone, isInstalled, isInstallable, isIos, promptInstall } = usePwaStore();
   const { tier, subscriptionEndDate, daysRemaining, openUpgradeModal } = useSubscriptionStore();
+  const {
+    isLogoutConfirmOpen,
+    logoutUnsyncedCount,
+    initiateLogout: handleInitiateLogout,
+    initiateSwitchAccount: handleInitiateSwitchAccount,
+    cancelLogout,
+    syncFirst,
+    confirmLogout
+  } = useSafeLogout({
+    onLoggedOut: () => {
+      if (onNavigate) {
+        onNavigate('login');
+      }
+    }
+  });
 
   const handleTestPrint = () => {
     const testData = {
@@ -169,9 +185,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
   const [pinDialogError, setPinDialogError] = useState('');
   const [pinDialogSuccess, setPinDialogSuccess] = useState('');
   const [isPinDialogSubmitting, setIsPinDialogSubmitting] = useState(false);
-
-  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
-  const [logoutUnsyncedCount, setLogoutUnsyncedCount] = useState(0);
 
   useEffect(() => {
     updateQueueCounts().catch(console.error);
@@ -277,35 +290,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
       setPinDialogError(err?.response?.data?.message || t.onboarding.loginFailed);
     } finally {
       setIsPinDialogSubmitting(false);
-    }
-  };
-
-  const handleInitiateLogout = async () => {
-    let pending = 0;
-    try {
-      pending = await db.syncQueue.count();
-    } catch (e) {
-      console.warn(e);
-    }
-    setLogoutUnsyncedCount(pending);
-    setIsLogoutConfirmOpen(true);
-  };
-
-  const handleInitiateSwitchAccount = async () => {
-    let pending = 0;
-    try {
-      pending = await db.syncQueue.count();
-    } catch (e) {
-      console.warn(e);
-    }
-    if (pending > 0) {
-      setLogoutUnsyncedCount(pending);
-      setIsLogoutConfirmOpen(true);
-    } else {
-      if (onNavigate) {
-        onNavigate('login');
-      }
-      await logout(true);
     }
   };
 
@@ -1154,66 +1138,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
         </DialogSurface>
       </Dialog>
 
-      {/* Safe Logout Dialog */}
-      <Dialog
+      <SafeLogoutDialog
         open={isLogoutConfirmOpen}
-        onOpenChange={(_, data) => !data.open && setIsLogoutConfirmOpen(false)}
-      >
-        <DialogSurface>
-          <DialogBody>
-            <DialogTitle>
-              {t.settings.logoutConfirmTitle}
-            </DialogTitle>
-            <DialogContent>
-              {logoutUnsyncedCount > 0 ? (
-                <div>
-                  <Text size={300} weight="semibold" style={{ color: tokens.colorPaletteRedForeground1, display: 'block', marginBottom: '8px' }}>
-                    {t.settings.logoutUnsyncedWarning.replace('{count}', String(logoutUnsyncedCount))}
-                  </Text>
-                  <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-                    {t.settings.logoutConfirmDesc}
-                  </Text>
-                </div>
-              ) : (
-                <Text size={300}>{t.settings.logoutConfirmDesc}</Text>
-              )}
-            </DialogContent>
-            <DialogActions>
-              <Button appearance="secondary" onClick={() => setIsLogoutConfirmOpen(false)}>
-                {t.common.cancel}
-              </Button>
-              {logoutUnsyncedCount > 0 && (
-                <Button
-                  appearance="primary"
-                  icon={<ArrowSyncRegular />}
-                  onClick={async () => {
-                    setIsLogoutConfirmOpen(false);
-                    await handleForceSync();
-                  }}
-                >
-                  {t.settings.syncFirstBtn}
-                </Button>
-              )}
-              <Button
-                appearance={logoutUnsyncedCount > 0 ? 'secondary' : 'primary'}
-                style={{
-                  color: tokens.colorPaletteRedForeground1,
-                  borderColor: tokens.colorPaletteRedBorder1
-                }}
-                onClick={async () => {
-                  setIsLogoutConfirmOpen(false);
-                  if (onNavigate) {
-                    onNavigate('login');
-                  }
-                  await logout(true);
-                }}
-              >
-                {logoutUnsyncedCount > 0 ? t.settings.forceLogoutBtn : t.settings.logoutBtn}
-              </Button>
-            </DialogActions>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
+        unsyncedCount={logoutUnsyncedCount}
+        onDismiss={cancelLogout}
+        onSyncFirst={syncFirst}
+        onConfirmLogout={confirmLogout}
+      />
     </div>
   );
 };
