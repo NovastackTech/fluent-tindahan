@@ -383,7 +383,7 @@ describe('SettingsPage', () => {
 
     const testPrintBtn = screen.getByRole('button', { name: /Subukang Mag-Print|Test Receipt/i });
     fireEvent.click(testPrintBtn);
-    expect(window.alert).toHaveBeenCalled();
+    expect(screen.getByText(/Naipadala ang test receipt sa printer!|Test receipt sent to printer!/i)).toBeInTheDocument();
 
     printSpy.mockRestore();
   });

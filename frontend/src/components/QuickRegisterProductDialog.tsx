@@ -12,7 +12,9 @@ import {
   Button,
   Text,
   Input,
-  Badge
+  Badge,
+  MessageBar,
+  MessageBarBody
 } from '@fluentui/react-components';
 import {
   AddRegular,
@@ -108,6 +110,7 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
   const [priceError, setPriceError] = useState('');
   const [stock, setStock] = useState<number | ''>(10);
   const [categories, setCategories] = useState<string[]>([]);
+  const [generalError, setGeneralError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -120,6 +123,7 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
       setPrice('');
       setPriceError('');
       setStock(10);
+      setGeneralError(null);
 
       // Load distinct categories for datalist
       db.products.where('tenantId').equals(tenantId).toArray().then((prods) => {
@@ -167,7 +171,7 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
     const currentCount = await db.products.where('tenantId').equals(tenantId).count();
     const { canAddProduct, openUpgradeModal } = useSubscriptionStore.getState();
     if (!canAddProduct(currentCount)) {
-      alert('Limit reached for Libre tier (50 products max). Please upgrade to Tindahan Pro or Negosyo Plus.');
+      setGeneralError('Limit reached for Libre tier (50 products max). Please upgrade to Tindahan Pro or Negosyo Plus.');
       openUpgradeModal();
       return;
     }
@@ -191,8 +195,9 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
 
       onProductRegistered(newProduct);
       onClose();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to register product:', err);
+      setGeneralError(err?.message || 'Failed to register product');
     }
   };
 
@@ -262,6 +267,7 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
           setNameError('');
           setCostError('');
           setPriceError('');
+          setGeneralError(null);
           onClose();
         }
       }}
@@ -282,6 +288,13 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
           </DialogTitle>
 
           <DialogContent style={{ marginTop: tokens.spacingVerticalM }}>
+            {generalError && (
+              <div role="alert" style={{ marginBottom: tokens.spacingVerticalM }}>
+                <MessageBar intent="warning" layout="multiline">
+                  <MessageBarBody>{generalError}</MessageBarBody>
+                </MessageBar>
+              </div>
+            )}
             <div className={styles.formGrid}>
               {/* Pre-filled Barcode */}
               <div style={{ gridColumn: '1 / -1' }}>

@@ -10,7 +10,9 @@ import {
   TabList,
   Tab,
   Badge,
-  Divider
+  Divider,
+  MessageBar,
+  MessageBarBody
 } from '@fluentui/react-components';
 import {
   ArrowUploadRegular,
@@ -82,7 +84,9 @@ export const GCashPage: React.FC = () => {
   const [customerPhoneError, setCustomerPhoneError] = useState('');
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [formErrorMessage, setFormErrorMessage] = useState<string | null>(null);
   const [resolutionRefDrafts, setResolutionRefDrafts] = useState<Record<string, string>>({});
+  const [resolutionErrors, setResolutionErrors] = useState<Record<string, string>>({});
   const [resolvingTxnId, setResolvingTxnId] = useState<string | null>(null);
   const savingRef = useRef(false);
 
@@ -183,6 +187,7 @@ export const GCashPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setCustomerPhoneError('');
+    setFormErrorMessage(null);
     setAmountTouched(true);
 
     if (!isAmountValid || Boolean(customFeeError)) {
@@ -196,7 +201,7 @@ export const GCashPage: React.FC = () => {
     }
 
     if (!canAddGCashTxn(currentMonthTxnCount)) {
-      alert(
+      setFormErrorMessage(
         language === 'tl'
           ? 'Naabot na ang limitasyon ng Libreng plano (30 GCash transactions kada buwan). Mag-upgrade sa Tindahan Pro o Negosyo Plus upang magtala pa.'
           : 'Limit reached for Libre plan (30 GCash transactions per month). Please upgrade to Tindahan Pro or Negosyo Plus to log more transactions.'
@@ -241,7 +246,7 @@ export const GCashPage: React.FC = () => {
       });
 
       if (!inserted) {
-        alert(
+        setFormErrorMessage(
           language === 'tl'
             ? `Ginamit na ang reference number na ${finalRef}. Hindi maaaring magtala ng doble.`
             : `Reference number ${finalRef} has already been used. Duplicate entries are not allowed.`
@@ -258,6 +263,7 @@ export const GCashPage: React.FC = () => {
       setRefNo('');
       setCustomerPhone('');
       setCustomerPhoneError('');
+      setFormErrorMessage(null);
       setNotes('');
     } finally {
       savingRef.current = false;
@@ -314,19 +320,30 @@ export const GCashPage: React.FC = () => {
       );
 
       if (resolved === 'duplicate') {
-        alert(language === 'tl'
-          ? 'Nagamit na ang reference number na ito sa tindahang ito.'
-          : 'That reference number is already used by this tenant.');
+        setResolutionErrors((prev) => ({
+          ...prev,
+          [txn.id]: language === 'tl'
+            ? 'Nagamit na ang reference number na ito sa tindahang ito.'
+            : 'That reference number is already used by this tenant.'
+        }));
         return;
       }
       if (resolved !== 'success') {
-        alert(language === 'tl'
-          ? 'Hindi na maaaring ayusin ang transaksyong ito.'
-          : 'This transaction can no longer be resolved.');
+        setResolutionErrors((prev) => ({
+          ...prev,
+          [txn.id]: language === 'tl'
+            ? 'Hindi na maaaring ayusin ang transaksyong ito.'
+            : 'This transaction can no longer be resolved.'
+        }));
         return;
       }
 
       setResolutionRefDrafts((drafts) => ({ ...drafts, [txn.id]: '' }));
+      setResolutionErrors((prev) => {
+        const next = { ...prev };
+        delete next[txn.id];
+        return next;
+      });
       await kickSync();
     } finally {
       setResolvingTxnId(null);
@@ -357,9 +374,18 @@ export const GCashPage: React.FC = () => {
         return true;
       });
       if (!resolved) {
-        alert(language === 'tl'
-          ? 'Hindi na maaaring ayusin ang transaksyong ito.'
-          : 'This transaction can no longer be resolved.');
+        setResolutionErrors((prev) => ({
+          ...prev,
+          [txn.id]: language === 'tl'
+            ? 'Hindi na maaaring ayusin ang transaksyong ito.'
+            : 'This transaction can no longer be resolved.'
+        }));
+      } else {
+        setResolutionErrors((prev) => {
+          const next = { ...prev };
+          delete next[txn.id];
+          return next;
+        });
       }
     } finally {
       setResolvingTxnId(null);
@@ -557,6 +583,14 @@ export const GCashPage: React.FC = () => {
             </div>
           )}
 
+          {formErrorMessage && (
+            <div role="alert" style={{ marginTop: '12px' }}>
+              <MessageBar intent="error" layout="multiline">
+                <MessageBarBody>{formErrorMessage}</MessageBarBody>
+              </MessageBar>
+            </div>
+          )}
+
           <Button
             type="submit"
             appearance="primary"
@@ -659,7 +693,16 @@ export const GCashPage: React.FC = () => {
                         <Input
                           aria-label={language === 'tl' ? `Bagong reference para sa ${txn.refNo}` : `Corrected reference for ${txn.refNo}`}
                           value={resolutionRefDrafts[txn.id] ?? ''}
-                          onChange={(_, data) => setResolutionRefDrafts((drafts) => ({ ...drafts, [txn.id]: data.value }))}
+                          onChange={(_, data) => {
+                            setResolutionRefDrafts((drafts) => ({ ...drafts, [txn.id]: data.value }));
+                            if (resolutionErrors[txn.id]) {
+                              setResolutionErrors((prev) => {
+                                const next = { ...prev };
+                                delete next[txn.id];
+                                return next;
+                              });
+                            }
+                          }}
                           placeholder={language === 'tl' ? 'Tamang GCash reference' : 'Correct GCash reference'}
                         />
                         <Button
@@ -676,6 +719,13 @@ export const GCashPage: React.FC = () => {
                         >
                           {language === 'tl' ? 'I-void' : 'Void'}
                         </Button>
+                        {resolutionErrors[txn.id] && (
+                          <div role="alert" style={{ width: '100%', marginTop: '4px' }}>
+                            <Text size={200} style={{ color: tokens.colorPaletteRedForeground1, fontWeight: 600 }}>
+                              ⚠️ {resolutionErrors[txn.id]}
+                            </Text>
+                          </div>
+                        )}
                         {!isToday && (
                           <Text
                             data-testid="gcash-correction-date-note"

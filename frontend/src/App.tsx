@@ -3,8 +3,14 @@ import {
   FluentProvider,
   makeStyles,
   tokens,
-  Spinner
+  Spinner,
+  MessageBar,
+  MessageBarBody,
+  MessageBarTitle,
+  MessageBarActions,
+  Button
 } from '@fluentui/react-components';
+import { DismissRegular } from '@fluentui/react-icons';
 import { sariSariLightTheme, sariSariDarkTheme } from './theme/theme';
 import { useThemeStore } from './state/themeStore';
 import { Header } from './components/Header';
@@ -79,6 +85,7 @@ export const App: React.FC = () => {
   const isOnboardingStatusReady = useAuthStore((s) => s.isOnboardingStatusReady);
   const isOnboardingOpen = useAuthStore((s) => s.isOnboardingOpen);
   const [activeTab, setActiveTab] = useState<NavTab>(getInitialNavTab);
+  const [billingSuccessMessage, setBillingSuccessMessage] = useState<string | null>(null);
   const storeServicesStarted = useRef(false);
 
   const handleTabChange = (newTab: NavTab) => {
@@ -197,7 +204,7 @@ export const App: React.FC = () => {
 
     useSubscriptionStore.getState().refreshSubscription().then(() => {
       if (isBillingSuccess) {
-        alert('Salamat sa iyong pag-upgrade! Matagumpay ang iyong subscription sa Fluent Tindahan.');
+        setBillingSuccessMessage('Salamat sa iyong pag-upgrade! Matagumpay ang iyong subscription sa Fluent Tindahan.');
         if (window.history && window.history.replaceState) {
           const url = new URL(window.location.href);
           url.searchParams.delete('billing');
@@ -214,6 +221,25 @@ export const App: React.FC = () => {
         <PwaUpdateToast />
         <PwaInstallBanner />
         <OfflineSyncBanner />
+        {billingSuccessMessage && (
+          <div style={{ padding: '0 16px 8px 16px', maxWidth: '1200px', margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+            <MessageBar intent="success" layout="multiline">
+              <MessageBarBody>
+                <MessageBarTitle>{billingSuccessMessage}</MessageBarTitle>
+              </MessageBarBody>
+              <MessageBarActions
+                containerAction={
+                  <Button
+                    appearance="subtle"
+                    aria-label="Dismiss"
+                    icon={<DismissRegular />}
+                    onClick={() => setBillingSuccessMessage(null)}
+                  />
+                }
+              />
+            </MessageBar>
+          </div>
+        )}
 
         <main className={styles.content}>
           <Suspense fallback={

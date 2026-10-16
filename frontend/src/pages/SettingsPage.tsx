@@ -145,9 +145,11 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
       changeGiven: 46
     };
     printThermalReceipt(testData, businessName || "Aling Nena's Tindahan", { paperWidth });
-    window.alert(t.settings.printerTestSuccess);
+    setPrinterMessage(t.settings.printerTestSuccess);
   };
 
+  const [printerMessage, setPrinterMessage] = useState<string | null>(null);
+  const [dataManagementMessage, setDataManagementMessage] = useState<string | null>(null);
   const [storageEstimate, setStorageEstimate] = useState<{ usage: number; quota: number } | null>(null);
   const [isPersisted, setIsPersisted] = useState<boolean | null>(null);
 
@@ -192,7 +194,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
 
   const handlePullCatalog = async () => {
     const count = await pullCatalogFromServer();
-    window.alert(`${t.settings.pullSuccessAlert} (${count})`);
+    setDataManagementMessage(`${t.settings.pullSuccessAlert} (${count})`);
   };
 
   const handleResetSeed = async () => {
@@ -231,7 +233,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
         }
       );
       await seedDexieDatabaseIfNeeded(true, tenantId, false, businessName);
-      window.alert(t.settings.resetSuccess);
+      setDataManagementMessage(t.settings.resetSuccess);
     }
   };
 
@@ -444,6 +446,20 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
         >
           {t.settings.printerTestBtn}
         </Button>
+        {printerMessage && (
+          <Text
+            role="status"
+            size={200}
+            style={{
+              color: tokens.colorPaletteGreenForeground1,
+              display: 'block',
+              marginTop: '8px',
+              fontWeight: 600
+            }}
+          >
+            ✓ {printerMessage}
+          </Text>
+        )}
       </Card>
 
       {/* GCash Transaction Fee Settings */}
@@ -980,6 +996,21 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
           >
             {t.settings.resetSeedBtn}
           </Button>
+
+          {dataManagementMessage && (
+            <Text
+              role="status"
+              size={200}
+              style={{
+                color: tokens.colorPaletteGreenForeground1,
+                display: 'block',
+                marginTop: '4px',
+                fontWeight: 600
+              }}
+            >
+              ✓ {dataManagementMessage}
+            </Text>
+          )}
 
           <Button
             appearance="subtle"
