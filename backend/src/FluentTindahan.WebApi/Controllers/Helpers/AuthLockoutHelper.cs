@@ -214,11 +214,11 @@ public static class AuthLockoutHelper
         };
     }
 
-    public static UnauthorizedObjectResult PinFailedResult(int remainingAttempts)
+    public static UnauthorizedObjectResult PinFailedResult(int remainingAttempts, string? message = null)
     {
         return new UnauthorizedObjectResult(new
         {
-            message = $"Maling email o PIN code. May natitira ka pang {remainingAttempts} pagsubok bago mag-lockout. / Invalid email or PIN code. {remainingAttempts} attempts remaining.",
+            message = message ?? $"Maling email o PIN code. May natitira ka pang {remainingAttempts} pagsubok bago mag-lockout. / Invalid email or PIN code. {remainingAttempts} attempts remaining.",
             remainingAttempts
         });
     }

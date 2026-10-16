@@ -41,10 +41,13 @@ export interface LoginPinRequestPayload {
 }
 
 export interface UpdateProfileRequestPayload {
-  businessName: string;
-  ownerName?: string;
-  phone?: string;
-  email?: string;
+  businessName?: string | null;
+  ownerName?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  currentPassword?: string;
+  pin?: string;
+  refreshToken?: string;
 }
 
 export interface UpdatePinRequestPayload {
@@ -177,7 +180,14 @@ export async function updatePin(payload: UpdatePinRequestPayload): Promise<{ mes
 }
 
 export async function updateProfile(payload: UpdateProfileRequestPayload): Promise<AuthResponseDto> {
-  const response = await apiClient.put<AuthResponseDto>('/auth/profile', payload);
+  const storedRefreshToken = typeof localStorage !== 'undefined'
+    ? localStorage.getItem('fluent_tindahan_refresh_token_v1')
+    : null;
+  const requestPayload: UpdateProfileRequestPayload = {
+    ...payload,
+    refreshToken: payload.refreshToken || storedRefreshToken || undefined
+  };
+  const response = await apiClient.put<AuthResponseDto>('/auth/profile', requestPayload);
   return response.data;
 }
 

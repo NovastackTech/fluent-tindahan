@@ -599,6 +599,13 @@ export interface Translations {
     loginUnsyncedWarning: string;
     loginUnsyncedNotice: string;
     forceLoginBtn: string;
+    currentPasswordLabel: string;
+    currentPasswordPlaceholder: string;
+    currentPasswordRequired: string;
+    currentPasswordHint: string;
+    ownerOnlyBusinessName: string;
+    savedLocallyNotice: string;
+    pendingProfileSync: string;
   };
   landing: {
     heroBadge: string;
@@ -1285,7 +1292,14 @@ export const translations: Record<Language, Translations> = {
       loginUnsyncedTitle: 'May Hindi Pa Nai-sync na Datos',
       loginUnsyncedWarning: 'May {count} transaksyon na hindi pa nai-sync sa cloud mula sa kasalukuyang tindahan! Kung magla-log in ka sa ibang account, mabubura ang mga ito.',
       loginUnsyncedNotice: 'Paalala: May {count} transaksyon na hindi pa nai-sync sa cloud sa device na ito.',
-      forceLoginBtn: 'I-wipe at Mag-login Pa Rin'
+      forceLoginBtn: 'I-wipe at Mag-login Pa Rin',
+      currentPasswordLabel: 'Kasalukuyang Password',
+      currentPasswordPlaceholder: 'Ipasok ang kasalukuyang password',
+      currentPasswordRequired: 'Kailangan ang kasalukuyang password o PIN upang palitan ang email address.',
+      currentPasswordHint: 'Kinakailangan upang kumpirmahin ang pagpapalit ng email address ng tindahan.',
+      ownerOnlyBusinessName: 'Ang may-ari lamang ang maaaring magpalit ng pangalan ng tindahan.',
+      savedLocallyNotice: 'Nai-save sa device. Isa-synchronize sa server pagbalik ng koneksyon.',
+      pendingProfileSync: 'May nakabinbing profile update na isa-synchronize sa server.'
     },
     subscription: {
       planSection: 'Plano at Subscription',
@@ -2022,7 +2036,14 @@ export const translations: Record<Language, Translations> = {
       loginUnsyncedTitle: 'Unsynced Data Detected',
       loginUnsyncedWarning: 'You have {count} unsynced transactions from the current store! Logging into another account will wipe this local data.',
       loginUnsyncedNotice: 'Notice: You have {count} unsynced transactions on this device.',
-      forceLoginBtn: 'Wipe & Log In Anyway'
+      forceLoginBtn: 'Wipe & Log In Anyway',
+      currentPasswordLabel: 'Current Password',
+      currentPasswordPlaceholder: 'Enter current password',
+      currentPasswordRequired: 'Current password or PIN is required to change email address.',
+      currentPasswordHint: 'Required to authorize changing the store email address.',
+      ownerOnlyBusinessName: 'Only the store owner can change the store name.',
+      savedLocallyNotice: 'Saved locally. Will sync to server when connection is restored.',
+      pendingProfileSync: 'Pending profile update will sync to server when connected.'
     },
     landing: {
       heroBadge: '🇵🇭 Built for Philippine Retail • 100% Offline-Ready',

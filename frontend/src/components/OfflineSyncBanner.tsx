@@ -13,6 +13,7 @@ import { ArrowSyncRegular, ArrowClockwiseRegular, DismissRegular } from '@fluent
 import { useSyncStore, processSyncQueue, retryDeadLetterItem } from '../sync/syncEngine';
 import { db } from '../db/db';
 import { useTranslation } from '../state/languageStore';
+import { hasPendingProfileUpdate } from '../services/profileSync';
 
 const useStyles = makeStyles({
   container: {
@@ -34,8 +35,9 @@ export const OfflineSyncBanner: React.FC = () => {
   const { t, language } = useTranslation();
 
   const [isRetrying, setIsRetrying] = React.useState(false);
+  const pendingProfile = hasPendingProfileUpdate();
 
-  if (isOnline && pendingCount === 0 && deadLetterCount === 0 && !lastErrorMessage) {
+  if (isOnline && pendingCount === 0 && deadLetterCount === 0 && !lastErrorMessage && !pendingProfile) {
     return null;
   }
 
@@ -80,7 +82,31 @@ export const OfflineSyncBanner: React.FC = () => {
         </MessageBar>
       )}
 
-      {isOnline && pendingCount > 0 && (
+      {pendingProfile && (
+        <MessageBar intent="info" layout="multiline">
+          <MessageBarBody>
+            <MessageBarTitle>{t.onboarding.pendingProfileSync}</MessageBarTitle>
+            {t.onboarding.savedLocallyNotice}
+          </MessageBarBody>
+          {isOnline && (
+            <MessageBarActions
+              containerAction={
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  icon={<ArrowSyncRegular />}
+                  disabled={isSyncing}
+                  onClick={() => processSyncQueue()}
+                >
+                  {isSyncing ? t.common.syncing : t.common.forceSync}
+                </Button>
+              }
+            />
+          )}
+        </MessageBar>
+      )}
+
+      {isOnline && pendingCount > 0 && !pendingProfile && (
         <MessageBar intent="info" layout="multiline">
           <MessageBarBody>
             <MessageBarTitle>{pendingCount} {t.common.queued}</MessageBarTitle>

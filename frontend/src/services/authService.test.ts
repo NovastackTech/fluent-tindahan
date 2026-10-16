@@ -91,4 +91,36 @@ describe('authService PIN cryptography', () => {
     });
     expect(result).toEqual(mockResponse);
   });
+
+  it('updateProfile includes currentPassword, pin, and stored refreshToken in request payload', async () => {
+    const { updateProfile } = await import('./authService');
+    const { apiClient } = await import('./apiClient');
+
+    localStorage.setItem('fluent_tindahan_refresh_token_v1', 'stored-refresh-token');
+
+    const putSpy = vi.spyOn(apiClient, 'put').mockResolvedValueOnce({
+      data: {
+        businessName: 'My Store',
+        email: 'new@tindahan.ph'
+      }
+    });
+
+    await updateProfile({
+      businessName: 'My Store',
+      email: 'new@tindahan.ph',
+      currentPassword: 'SecretPassword123!',
+      pin: '1234'
+    });
+
+    expect(putSpy).toHaveBeenCalledWith('/auth/profile', {
+      businessName: 'My Store',
+      email: 'new@tindahan.ph',
+      currentPassword: 'SecretPassword123!',
+      pin: '1234',
+      refreshToken: 'stored-refresh-token'
+    });
+
+    localStorage.removeItem('fluent_tindahan_refresh_token_v1');
+  });
 });
+

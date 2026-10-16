@@ -230,6 +230,37 @@ describe('authStore', () => {
     expect(localStorage.getItem('fluent_tindahan_user_phone_v1')).toBe('');
   });
 
+  it('treats null and undefined fields as unchanged when updating store profile', () => {
+    useAuthStore.setState({
+      businessName: 'Original Mart',
+      ownerName: 'Nanay Linda',
+      userPhone: '09181112233',
+      userEmail: 'linda@example.com'
+    });
+    localStorage.setItem('fluent_tindahan_store_name_v1', 'Original Mart');
+    localStorage.setItem('fluent_tindahan_owner_name_v1', 'Nanay Linda');
+    localStorage.setItem('fluent_tindahan_user_phone_v1', '09181112233');
+    localStorage.setItem('fluent_tindahan_user_email_v1', 'linda@example.com');
+
+    useAuthStore.getState().updateStoreProfile({
+      businessName: null,
+      ownerName: null,
+      userPhone: undefined,
+      userEmail: undefined
+    });
+
+    const state = useAuthStore.getState();
+    expect(state.businessName).toBe('Original Mart');
+    expect(state.ownerName).toBe('Nanay Linda');
+    expect(state.userPhone).toBe('09181112233');
+    expect(state.userEmail).toBe('linda@example.com');
+
+    expect(localStorage.getItem('fluent_tindahan_store_name_v1')).toBe('Original Mart');
+    expect(localStorage.getItem('fluent_tindahan_owner_name_v1')).toBe('Nanay Linda');
+    expect(localStorage.getItem('fluent_tindahan_user_phone_v1')).toBe('09181112233');
+    expect(localStorage.getItem('fluent_tindahan_user_email_v1')).toBe('linda@example.com');
+  });
+
   it('sets and persists user email and last login email', () => {
     useAuthStore.getState().setUserEmail('nanay.suki@gmail.com');
 

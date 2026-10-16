@@ -501,4 +501,179 @@ describe('OnboardingModal', () => {
       expect(useAuthStore.getState().businessName).toBe('Offline Store Update');
     });
   });
+
+  it('disables store name input for non-owner staff in edit mode and displays hint', async () => {
+    useAuthStore.setState({
+      isOnboarded: true,
+      isOnboardingOpen: true,
+      onboardingMode: 'edit',
+      role: 'Staff',
+      businessName: 'Owner Store',
+      userEmail: 'staff@tindahan.ph'
+    });
+
+    renderModal();
+    const storeInput = screen.getByPlaceholderText(/Hal. Tindahan ni Aling Maria|e.g. Maria's Sari-Sari Store/i);
+    expect(storeInput).toBeDisabled();
+    expect(
+      screen.getByText(/Ang may-ari lamang ang maaaring magpalit ng pangalan ng tindahan|Only the store owner can change the store name/i)
+    ).toBeInTheDocument();
+  });
+
+  it('requires current password or pin when changing email in edit mode', async () => {
+    useAuthStore.setState({
+      isOnboarded: true,
+      isOnboardingOpen: true,
+      onboardingMode: 'edit',
+      role: 'Owner',
+      businessName: 'My Store',
+      userEmail: 'oldemail@tindahan.ph'
+    });
+
+    renderModal();
+    const emailInput = screen.getByPlaceholderText(/Hal. nena.store@gmail.com|e.g. nena.store@gmail.com/i);
+    fireEvent.change(emailInput, { target: { value: 'newemail@tindahan.ph' } });
+
+    // Current password input should now appear
+    expect(
+      screen.getByPlaceholderText(/Ipasok ang kasalukuyang password|Enter current password/i)
+    ).toBeInTheDocument();
+
+    // Attempt to submit without entering password or pin
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Profile|Save Profile/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Kailangan ang kasalukuyang password o PIN|Current password or PIN is required/i)
+      ).toBeInTheDocument();
+    });
+    expect(authService.updateProfile).not.toHaveBeenCalled();
+  });
+
+  it('passes current password to updateProfile when changing email in edit mode', async () => {
+    useAuthStore.setState({
+      isOnboarded: true,
+      isOnboardingOpen: true,
+      onboardingMode: 'edit',
+      role: 'Owner',
+      businessName: 'My Store',
+      userEmail: 'oldemail@tindahan.ph'
+    });
+
+    renderModal();
+    const emailInput = screen.getByPlaceholderText(/Hal. nena.store@gmail.com|e.g. nena.store@gmail.com/i);
+    fireEvent.change(emailInput, { target: { value: 'newemail@tindahan.ph' } });
+
+    const pwdInput = screen.getByPlaceholderText(/Ipasok ang kasalukuyang password|Enter current password/i);
+    fireEvent.change(pwdInput, { target: { value: 'MySecretPassword123!' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Profile|Save Profile/i }));
+
+    await waitFor(() => {
+      expect(authService.updateProfile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          businessName: 'My Store',
+          email: 'newemail@tindahan.ph',
+          currentPassword: 'MySecretPassword123!'
+        })
+      );
+    });
+  });
+
+  it('passes pin to updateProfile when changing email in edit mode with pin configured', async () => {
+    useAuthStore.setState({
+      isOnboarded: true,
+      isOnboardingOpen: true,
+      onboardingMode: 'edit',
+      role: 'Owner',
+      hasPin: true,
+      businessName: 'My Store',
+      userEmail: 'oldemail@tindahan.ph'
+    });
+
+    renderModal();
+    const emailInput = screen.getByPlaceholderText(/Hal. nena.store@gmail.com|e.g. nena.store@gmail.com/i);
+    fireEvent.change(emailInput, { target: { value: 'newemail@tindahan.ph' } });
+
+    const pinInput = screen.getByPlaceholderText(/4 hanggang 6 na numero|4 to 6 digits/i);
+    fireEvent.change(pinInput, { target: { value: '1234' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Profile|Save Profile/i }));
+
+    await waitFor(() => {
+      expect(authService.updateProfile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          businessName: 'My Store',
+          email: 'newemail@tindahan.ph',
+          pin: '1234'
+        })
+      );
+    });
+  });
+
+  it('displays error when updateProfile returns 403 Forbidden for unauthorized store name change', async () => {
+    vi.mocked(authService.updateProfile).mockRejectedValueOnce({
+      response: {
+        status: 403,
+        data: { message: 'May-ari lamang ang maaaring magpalit ng pangalan ng tindahan.' }
+      }
+    });
+
+    useAuthStore.setState({
+      isOnboarded: true,
+      isOnboardingOpen: true,
+      onboardingMode: 'edit',
+      role: 'Owner',
+      businessName: 'Original Store',
+      userEmail: 'owner@tindahan.ph'
+    });
+
+    renderModal();
+    const storeInput = screen.getByPlaceholderText(/Hal. Tindahan ni Aling Maria|e.g. Maria's Sari-Sari Store/i);
+    fireEvent.change(storeInput, { target: { value: 'Forbidden Store Name' } });
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Profile|Save Profile/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/May-ari lamang ang maaaring magpalit ng pangalan ng tindahan/i)
+      ).toBeInTheDocument();
+    });
+    expect(useAuthStore.getState().isOnboardingOpen).toBe(true);
+  });
+
+  it('saves locally, queues pending profile update, and displays notice when updateProfile fails with network error', async () => {
+    vi.mocked(authService.updateProfile).mockRejectedValueOnce(new Error('Network offline'));
+
+    useAuthStore.setState({
+      isOnboarded: true,
+      isOnboardingOpen: true,
+      onboardingMode: 'edit',
+      role: 'Owner',
+      businessName: 'Original Store',
+      ownerName: 'Nanay Suki',
+      userPhone: '09181112233',
+      userEmail: 'owner@tindahan.ph'
+    });
+
+    renderModal();
+    const ownerInput = screen.getByPlaceholderText(/Hal. Maria Santos|e.g. Maria Santos/i);
+    fireEvent.change(ownerInput, { target: { value: 'Nanay Suki Updated' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Profile|Save Profile/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Nai-save sa device\. Isa-synchronize sa server pagbalik ng koneksyon\.|Saved locally\. Will sync to server when connection is restored\./i)
+      ).toBeInTheDocument();
+    });
+
+    expect(useAuthStore.getState().ownerName).toBe('Nanay Suki Updated');
+
+    const { getPendingProfileUpdate } = await import('../services/profileSync');
+    const pending = getPendingProfileUpdate();
+    expect(pending).not.toBeNull();
+    expect(pending?.payload.ownerName).toBe('Nanay Suki Updated');
+  });
 });
+
+

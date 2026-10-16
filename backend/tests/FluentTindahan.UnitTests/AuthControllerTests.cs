@@ -18,6 +18,7 @@ using FluentTindahan.Domain.Interfaces;
 using FluentTindahan.Infrastructure.Persistence;
 using FluentTindahan.Infrastructure.Services;
 using FluentTindahan.WebApi.Controllers;
+using FluentTindahan.WebApi.Controllers.Helpers;
 using Npgsql;
 using Xunit;
 
@@ -2608,7 +2609,8 @@ public class AuthControllerTests
             BusinessName = "Jonathan Solatorio #1",
             OwnerName = "Jonathan Solatorio",
             Phone = "09171234567",
-            Email = "jsolatorio310@gmail.com"
+            Email = "jsolatorio310@gmail.com",
+            CurrentPassword = "Password123!"
         }, CancellationToken.None);
 
         var ok = updateResult.Result.Should().BeOfType<OkObjectResult>().Subject;
@@ -2679,7 +2681,8 @@ public class AuthControllerTests
         var conflictResult = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
         {
             BusinessName = "Store Two Updated",
-            Email = "store1@example.ph"
+            Email = "store1@example.ph",
+            CurrentPassword = "Password123!"
         }, CancellationToken.None);
 
         conflictResult.Result.Should().BeOfType<ConflictObjectResult>();
@@ -2715,5 +2718,443 @@ public class AuthControllerTests
 
         badResult.Result.Should().BeOfType<BadRequestObjectResult>();
     }
+
+    [Fact]
+    public async Task UpdateProfile_WhenChangingBusinessName_AsNonOwner_ReturnsForbidden()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        var reg = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "staffuser@tindahan.ph",
+            Password = "Password123!",
+            BusinessName = "Original Store Name"
+        }, CancellationToken.None);
+
+        var regDto = ((OkObjectResult)reg.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        // Change user role to Staff in DB
+        var user = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == regDto.UserId);
+        user.Role = "Staff";
+        await context.SaveChangesAsync();
+
+        var mockCurrentUserService = new Mock<ICurrentUserService>();
+        mockCurrentUserService.Setup(s => s.UserId).Returns(regDto.UserId);
+        mockCurrentUserService.Setup(s => s.TenantId).Returns(regDto.TenantId);
+        mockCurrentUserService.Setup(s => s.IsAuthenticated).Returns(true);
+
+        var authController = CreateController(context, currentUserService: mockCurrentUserService.Object);
+        SetAuthenticatedUser(authController, regDto.UserId, regDto.TenantId, email: "staffuser@tindahan.ph", role: "Staff");
+
+        var result = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "Staff Changed Name",
+            OwnerName = "Staff Member"
+        }, CancellationToken.None);
+
+        var objResult = result.Result.Should().BeOfType<ObjectResult>().Subject;
+        objResult.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+
+        // Verify DB was NOT updated
+        var tenant = await context.Tenants.IgnoreQueryFilters().FirstAsync(t => t.Id == regDto.TenantId);
+        tenant.BusinessName.Should().Be("Original Store Name");
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenKeepingSameBusinessName_AsNonOwner_Succeeds()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        var reg = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "staffmember@tindahan.ph",
+            Password = "Password123!",
+            BusinessName = "Keep My Store Name",
+            OwnerName = "Old Staff Name"
+        }, CancellationToken.None);
+
+        var regDto = ((OkObjectResult)reg.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        var user = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == regDto.UserId);
+        user.Role = "Staff";
+        await context.SaveChangesAsync();
+
+        var mockCurrentUserService = new Mock<ICurrentUserService>();
+        mockCurrentUserService.Setup(s => s.UserId).Returns(regDto.UserId);
+        mockCurrentUserService.Setup(s => s.TenantId).Returns(regDto.TenantId);
+        mockCurrentUserService.Setup(s => s.IsAuthenticated).Returns(true);
+
+        var authController = CreateController(context, currentUserService: mockCurrentUserService.Object);
+        SetAuthenticatedUser(authController, regDto.UserId, regDto.TenantId, email: "staffmember@tindahan.ph", role: "Staff");
+
+        var result = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "Keep My Store Name",
+            OwnerName = "New Staff Name",
+            Phone = "09998887766"
+        }, CancellationToken.None);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = ok.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        dto.BusinessName.Should().Be("Keep My Store Name");
+        dto.OwnerName.Should().Be("New Staff Name");
+        dto.Phone.Should().Be("09998887766");
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenChangingEmail_WithoutPasswordOrPin_ReturnsBadRequest()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        var reg = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "oldemail@tindahan.ph",
+            Password = "Password123!",
+            BusinessName = "My Store"
+        }, CancellationToken.None);
+
+        var regDto = ((OkObjectResult)reg.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        var mockCurrentUserService = new Mock<ICurrentUserService>();
+        mockCurrentUserService.Setup(s => s.UserId).Returns(regDto.UserId);
+        mockCurrentUserService.Setup(s => s.TenantId).Returns(regDto.TenantId);
+        mockCurrentUserService.Setup(s => s.IsAuthenticated).Returns(true);
+
+        var authController = CreateController(context, currentUserService: mockCurrentUserService.Object);
+        SetAuthenticatedUser(authController, regDto.UserId, regDto.TenantId, email: "oldemail@tindahan.ph");
+
+        var result = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "My Store",
+            Email = "newemail@tindahan.ph"
+            // No password or PIN
+        }, CancellationToken.None);
+
+        result.Result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenChangingEmail_WithWrongPassword_ReturnsUnauthorized()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        var reg = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "oldpwd@tindahan.ph",
+            Password = "CorrectPassword123!",
+            BusinessName = "My Store"
+        }, CancellationToken.None);
+
+        var regDto = ((OkObjectResult)reg.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        var mockCurrentUserService = new Mock<ICurrentUserService>();
+        mockCurrentUserService.Setup(s => s.UserId).Returns(regDto.UserId);
+        mockCurrentUserService.Setup(s => s.TenantId).Returns(regDto.TenantId);
+        mockCurrentUserService.Setup(s => s.IsAuthenticated).Returns(true);
+
+        var authController = CreateController(context, currentUserService: mockCurrentUserService.Object);
+        SetAuthenticatedUser(authController, regDto.UserId, regDto.TenantId, email: "oldpwd@tindahan.ph");
+
+        var result = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "My Store",
+            Email = "newpwd@tindahan.ph",
+            CurrentPassword = "WrongPassword999!"
+        }, CancellationToken.None);
+
+        result.Result.Should().BeOfType<UnauthorizedObjectResult>();
+
+        var dbUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == regDto.UserId);
+        dbUser.FailedPasswordAttempts.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenChangingEmail_WithCorrectPin_Succeeds()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        var reg = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "oldpin@tindahan.ph",
+            Password = "Password123!",
+            Pin = "1357",
+            BusinessName = "Pin Store"
+        }, CancellationToken.None);
+
+        var regDto = ((OkObjectResult)reg.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        var mockCurrentUserService = new Mock<ICurrentUserService>();
+        mockCurrentUserService.Setup(s => s.UserId).Returns(regDto.UserId);
+        mockCurrentUserService.Setup(s => s.TenantId).Returns(regDto.TenantId);
+        mockCurrentUserService.Setup(s => s.IsAuthenticated).Returns(true);
+
+        var authController = CreateController(context, currentUserService: mockCurrentUserService.Object);
+        SetAuthenticatedUser(authController, regDto.UserId, regDto.TenantId, email: "oldpin@tindahan.ph");
+
+        var result = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "Pin Store",
+            Email = "newpin@tindahan.ph",
+            Pin = "1357"
+        }, CancellationToken.None);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = ok.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        dto.Email.Should().Be("newpin@tindahan.ph");
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenChangingEmail_RevokesOtherRefreshTokens()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        var reg = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "multidevice@tindahan.ph",
+            Password = "Password123!",
+            BusinessName = "Multi Device Store"
+        }, CancellationToken.None);
+
+        var regDto = ((OkObjectResult)reg.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        var user = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == regDto.UserId);
+
+        // Device A (current)
+        var (tokenA, _, _, famA) = AuthRefreshTokenHelper.IssueRefreshToken(
+            context, DefaultJwtService, user, regDto.TenantId, TimeProvider.System, "family-device-a");
+
+        // Device B (other)
+        var (tokenB, _, _, famB) = AuthRefreshTokenHelper.IssueRefreshToken(
+            context, DefaultJwtService, user, regDto.TenantId, TimeProvider.System, "family-device-b");
+
+        await context.SaveChangesAsync();
+
+        var mockCurrentUserService = new Mock<ICurrentUserService>();
+        mockCurrentUserService.Setup(s => s.UserId).Returns(regDto.UserId);
+        mockCurrentUserService.Setup(s => s.TenantId).Returns(regDto.TenantId);
+        mockCurrentUserService.Setup(s => s.IsAuthenticated).Returns(true);
+
+        var authController = CreateController(context, currentUserService: mockCurrentUserService.Object);
+        SetAuthenticatedUser(authController, regDto.UserId, regDto.TenantId, email: "multidevice@tindahan.ph");
+
+        var updateResult = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "Multi Device Store",
+            Email = "newmultidevice@tindahan.ph",
+            CurrentPassword = "Password123!",
+            RefreshToken = tokenA
+        }, CancellationToken.None);
+
+        var ok = updateResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = ok.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        dto.RefreshToken.Should().NotBeNullOrWhiteSpace();
+
+        // Check tokens in DB
+        var tokensInDb = await context.UserRefreshTokens.IgnoreQueryFilters().Where(t => t.UserId == user.Id).ToListAsync();
+        var deviceBTokens = tokensInDb.Where(t => t.FamilyId == "family-device-b").ToList();
+        deviceBTokens.Should().NotBeEmpty();
+        deviceBTokens.Should().OnlyContain(t => t.IsRevoked);
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenFieldsAreNull_KeepsExistingValuesUnchanged()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        var reg = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "nulltest@example.ph",
+            Password = "Password123!",
+            BusinessName = "Original Store Name",
+            OwnerName = "Original Owner",
+            Phone = "09181112233"
+        }, CancellationToken.None);
+
+        var regDto = ((OkObjectResult)reg.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        var mockCurrentUserService = new Mock<ICurrentUserService>();
+        mockCurrentUserService.Setup(s => s.UserId).Returns(regDto.UserId);
+        mockCurrentUserService.Setup(s => s.TenantId).Returns(regDto.TenantId);
+        mockCurrentUserService.Setup(s => s.IsAuthenticated).Returns(true);
+
+        var authController = CreateController(context, currentUserService: mockCurrentUserService.Object);
+        SetAuthenticatedUser(authController, regDto.UserId, regDto.TenantId, email: "nulltest@example.ph");
+
+        // Send all null fields
+        var result = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = null,
+            OwnerName = null,
+            Phone = null,
+            Email = null
+        }, CancellationToken.None);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = ok.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        // Existing values must remain completely unchanged
+        dto.BusinessName.Should().Be("Original Store Name");
+        dto.OwnerName.Should().Be("Original Owner");
+        dto.Phone.Should().Be("09181112233");
+        dto.Email.Should().Be("nulltest@example.ph");
+
+        var dbTenant = await context.Tenants.IgnoreQueryFilters().FirstAsync(t => t.Id == regDto.TenantId);
+        dbTenant.BusinessName.Should().Be("Original Store Name");
+
+        var dbUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == regDto.UserId);
+        dbUser.OwnerName.Should().Be("Original Owner");
+        dbUser.Phone.Should().Be("09181112233");
+        dbUser.Email.Should().Be("nulltest@example.ph");
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenOwnerNameAndPhoneAreEmptyStrings_ClearsValues()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        var reg = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "cleartest@example.ph",
+            Password = "Password123!",
+            BusinessName = "Original Store Name",
+            OwnerName = "Original Owner",
+            Phone = "09181112233"
+        }, CancellationToken.None);
+
+        var regDto = ((OkObjectResult)reg.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        var mockCurrentUserService = new Mock<ICurrentUserService>();
+        mockCurrentUserService.Setup(s => s.UserId).Returns(regDto.UserId);
+        mockCurrentUserService.Setup(s => s.TenantId).Returns(regDto.TenantId);
+        mockCurrentUserService.Setup(s => s.IsAuthenticated).Returns(true);
+
+        var authController = CreateController(context, currentUserService: mockCurrentUserService.Object);
+        SetAuthenticatedUser(authController, regDto.UserId, regDto.TenantId, email: "cleartest@example.ph");
+
+        // Explicit empty strings should clear OwnerName (to null) and Phone (to empty string)
+        var result = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = null,
+            OwnerName = "",
+            Phone = ""
+        }, CancellationToken.None);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = ok.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        dto.BusinessName.Should().Be("Original Store Name");
+        dto.OwnerName.Should().BeNull();
+        dto.Phone.Should().BeEmpty();
+
+        var dbUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == regDto.UserId);
+        dbUser.OwnerName.Should().BeNull();
+        dbUser.Phone.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenStaffSendsNullBusinessName_SucceedsWithoutForbidden()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        var reg = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "staffnull@example.ph",
+            Password = "Password123!",
+            BusinessName = "Store Under Owner",
+            OwnerName = "Owner Person",
+            Phone = "09110001111"
+        }, CancellationToken.None);
+
+        var regDto = ((OkObjectResult)reg.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        var user = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == regDto.UserId);
+        user.Role = "Staff";
+        await context.SaveChangesAsync();
+
+        var mockCurrentUserService = new Mock<ICurrentUserService>();
+        mockCurrentUserService.Setup(s => s.UserId).Returns(regDto.UserId);
+        mockCurrentUserService.Setup(s => s.TenantId).Returns(regDto.TenantId);
+        mockCurrentUserService.Setup(s => s.IsAuthenticated).Returns(true);
+
+        var authController = CreateController(context, currentUserService: mockCurrentUserService.Object);
+        SetAuthenticatedUser(authController, regDto.UserId, regDto.TenantId, email: "staffnull@example.ph", role: "Staff");
+
+        // Staff does not send BusinessName (null), only updates their own name/phone
+        var result = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = null,
+            OwnerName = "Staff Juan",
+            Phone = "09995554433"
+        }, CancellationToken.None);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = ok.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        dto.BusinessName.Should().Be("Store Under Owner");
+        dto.OwnerName.Should().Be("Staff Juan");
+        dto.Phone.Should().Be("09995554433");
+
+        var dbTenant = await context.Tenants.IgnoreQueryFilters().FirstAsync(t => t.Id == regDto.TenantId);
+        dbTenant.BusinessName.Should().Be("Store Under Owner");
+
+        var dbUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == regDto.UserId);
+        dbUser.OwnerName.Should().Be("Staff Juan");
+        dbUser.Phone.Should().Be("09995554433");
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenExplicitEmptyBusinessNameOrEmail_ReturnsBadRequest()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        var reg = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "emptytest@example.ph",
+            Password = "Password123!",
+            BusinessName = "Original Store"
+        }, CancellationToken.None);
+
+        var regDto = ((OkObjectResult)reg.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        var mockCurrentUserService = new Mock<ICurrentUserService>();
+        mockCurrentUserService.Setup(s => s.UserId).Returns(regDto.UserId);
+        mockCurrentUserService.Setup(s => s.TenantId).Returns(regDto.TenantId);
+        mockCurrentUserService.Setup(s => s.IsAuthenticated).Returns(true);
+
+        var authController = CreateController(context, currentUserService: mockCurrentUserService.Object);
+        SetAuthenticatedUser(authController, regDto.UserId, regDto.TenantId, email: "emptytest@example.ph");
+
+        // Empty BusinessName
+        var badBusinessNameResult = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = ""
+        }, CancellationToken.None);
+        badBusinessNameResult.Result.Should().BeOfType<BadRequestObjectResult>();
+
+        // Whitespace BusinessName
+        var whitespaceBusinessNameResult = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "   "
+        }, CancellationToken.None);
+        whitespaceBusinessNameResult.Result.Should().BeOfType<BadRequestObjectResult>();
+
+        // Empty Email
+        var badEmailResult = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "Valid Name",
+            Email = ""
+        }, CancellationToken.None);
+        badEmailResult.Result.Should().BeOfType<BadRequestObjectResult>();
+    }
 }
+
 

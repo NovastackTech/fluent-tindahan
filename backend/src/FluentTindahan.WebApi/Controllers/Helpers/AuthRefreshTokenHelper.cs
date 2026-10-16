@@ -121,6 +121,41 @@ public static class AuthRefreshTokenHelper
     }
 
     /// <summary>
+    /// Revokes all refresh tokens for a user across other device families, retaining only the caller's current family.
+    /// If currentFamilyId is null or empty, all refresh tokens for the user are revoked.
+    /// </summary>
+    public static async Task RevokeOtherSessionsForUserAsync(
+        IApplicationDbContext context,
+        User? user,
+        Guid userId,
+        string? currentFamilyId,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken)
+    {
+        var now = timeProvider.GetUtcNow();
+        var query = context.UserRefreshTokens.IgnoreQueryFilters()
+            .Where(r => r.UserId == userId && !r.IsRevoked);
+
+        if (!string.IsNullOrWhiteSpace(currentFamilyId))
+        {
+            query = query.Where(r => r.FamilyId != currentFamilyId);
+        }
+
+        var tokensToRevoke = await query.ToListAsync(cancellationToken);
+        foreach (var tok in tokensToRevoke)
+        {
+            tok.IsRevoked = true;
+            tok.RevokedAt = now;
+        }
+
+        if (string.IsNullOrWhiteSpace(currentFamilyId) && user != null)
+        {
+            user.RefreshTokenIdHash = null;
+            user.RefreshTokenExpiresAt = null;
+        }
+    }
+
+    /// <summary>
     /// Executes the full refresh token rotation pipeline: validates token, checks family status,
     /// rotates token with grace window, prunes expired grace records, and revokes family on reuse.
     /// </summary>

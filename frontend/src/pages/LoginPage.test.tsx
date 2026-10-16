@@ -268,7 +268,7 @@ describe('LoginPage Component', () => {
 
     fireEvent.change(emailInput, { target: { value: 'owner@tindahan.ph' } });
     fireEvent.change(passwordInput, { target: { value: 'password123' } });
-    fireEvent.submit(submitBtn.closest('form')!);
+    fireEvent.click(submitBtn);
 
     // Dialog should appear asking user first
     await waitFor(() => {
@@ -292,10 +292,10 @@ describe('LoginPage Component', () => {
     expect(useAuthStore.getState().isOnboarded).toBe(false);
 
     // Submitting again and choosing force login wipes and completes login
-    fireEvent.submit(submitBtn.closest('form')!);
+    fireEvent.click(submitBtn);
     await waitFor(() => {
       expect(screen.getByRole('dialog')).toBeInTheDocument();
-    });
+    }, { timeout: 3000 });
 
     const wipeBtn = within(screen.getByRole('dialog')).getByRole('button', { name: /I-wipe at Mag-login Pa Rin|Wipe & Log In Anyway/i });
     fireEvent.click(wipeBtn);

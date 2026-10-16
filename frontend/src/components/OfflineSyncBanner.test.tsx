@@ -7,6 +7,7 @@ import { useSyncStore } from '../sync/syncEngine';
 
 describe('OfflineSyncBanner', () => {
   beforeEach(() => {
+    localStorage.removeItem('fluent_tindahan_pending_profile_update_v1');
     useSyncStore.setState({
       isOnline: true,
       pendingCount: 0,
@@ -69,5 +70,22 @@ describe('OfflineSyncBanner', () => {
     expect(dismissBtn).toBeInTheDocument();
     dismissBtn.click();
     expect(useSyncStore.getState().lastErrorMessage).toBeNull();
+  });
+
+  it('renders pending profile update notice when a queued profile update exists', () => {
+    localStorage.setItem(
+      'fluent_tindahan_pending_profile_update_v1',
+      JSON.stringify({
+        tenantId: '00000000-0000-0000-0000-000000000001',
+        payload: { ownerName: 'Ate Linda' },
+        timestamp: new Date().toISOString(),
+        retryCount: 0
+      })
+    );
+
+    renderBanner();
+
+    expect(screen.getByText(/May nakabinbing profile update|Pending profile update/i)).toBeInTheDocument();
+    expect(screen.getByText(/Nai-save sa device\. Isa-synchronize sa server pagbalik ng koneksyon\.|Saved locally\. Will sync to server when connection is restored\./i)).toBeInTheDocument();
   });
 });
