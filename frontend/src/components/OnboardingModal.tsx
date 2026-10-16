@@ -298,6 +298,7 @@ export const OnboardingModal: React.FC = () => {
       onboardingIds.current = null;
     }
   }, [isOpen, isEditMode, isOnboarded, businessName, ownerName, userPhone, userEmail]);
+  /* oxlint-enable react/set-state-in-effect */
 
   if (!isOpen) {
     return null;

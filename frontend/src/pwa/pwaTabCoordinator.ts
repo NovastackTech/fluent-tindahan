@@ -23,13 +23,19 @@ export interface TabClosedMessage {
 export type PwaTabMessage = CartStatusMessage | QueryCartStatusMessage | TabClosedMessage;
 
 let tabId: string = '';
+let fallbackCounter = 0;
 let broadcastChannel: BroadcastChannel | null = null;
 const activeRemoteCartTabs = new Set<string>();
 let unsubscribeCartStore: (() => void) | null = null;
 
 export function getTabId(): string {
   if (!tabId) {
-    tabId = createClientUuid();
+    try {
+      tabId = createClientUuid();
+    } catch {
+      fallbackCounter += 1;
+      tabId = `tab-${Date.now()}-${fallbackCounter}`;
+    }
   }
   return tabId;
 }

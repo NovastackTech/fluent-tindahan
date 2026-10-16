@@ -100,9 +100,8 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (!isOnboardingStatusReady) return;
     if (!isOnboarded && activeTab !== 'landing' && activeTab !== 'login') {
-      queueMicrotask(() => {
-        handleTabChange('login');
-      });
+      // oxlint-disable-next-line react/set-state-in-effect - Route unauthenticated non-landing users to login when onboarding state is confirmed
+      handleTabChange('login');
     }
   }, [isOnboarded, isOnboardingStatusReady, activeTab]);
 

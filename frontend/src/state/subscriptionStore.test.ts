@@ -296,5 +296,28 @@ describe('subscriptionStore', () => {
       expect(useSubscriptionStore.getState().subscriptionEndDate).toBe(newEndDate);
       expect(localStorage.getItem('fluent_last_checkout_session_id')).toBeNull();
     });
+
+    it('returns true for paid tier even if db.tenants.update rejects', async () => {
+      localStorage.setItem('fluent_last_checkout_session_id', 'cs_test_888');
+      const newEndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+      vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
+        data: {
+          tierName: 'TindahanPro',
+          isActive: true,
+          subscriptionEndDate: newEndDate,
+          daysRemaining: 30
+        }
+      } as any);
+
+      const dbUpdateSpy = vi.spyOn(db.tenants, 'update').mockRejectedValueOnce(new Error('IndexedDB quota exceeded'));
+
+      const confirmed = await useSubscriptionStore.getState().confirmCheckoutSession();
+
+      expect(confirmed).toBe(true);
+      expect(useSubscriptionStore.getState().tier).toBe('TindahanPro');
+      expect(useSubscriptionStore.getState().isActive).toBe(true);
+      dbUpdateSpy.mockRestore();
+    });
   });
 });

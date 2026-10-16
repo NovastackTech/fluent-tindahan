@@ -113,12 +113,16 @@ async function persistAndApplySubscriptionState(
 
   const tenantId = useAuthStore.getState().tenantId;
   if (tenantId) {
-    await db.tenants.update(tenantId, {
-      businessName: data.businessName || useAuthStore.getState().businessName,
-      tier: effectiveTier,
-      subscriptionEndDate: endDate || undefined,
-      updatedAt: new Date().toISOString()
-    });
+    try {
+      await db.tenants.update(tenantId, {
+        businessName: data.businessName || useAuthStore.getState().businessName,
+        tier: effectiveTier,
+        subscriptionEndDate: endDate || undefined,
+        updatedAt: new Date().toISOString()
+      });
+    } catch (err) {
+      console.error('[Subscription] Failed to persist subscription state to local database:', err);
+    }
   }
 
   set({
@@ -226,7 +230,8 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
         }
 
         return effectiveTier !== 'Libre';
-      } catch {
+      } catch (err) {
+        console.error('[Subscription] Failed to confirm checkout session:', err);
         set({ isLoading: false });
         return false;
       }
