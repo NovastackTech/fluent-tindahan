@@ -2784,7 +2784,7 @@ public class AuthControllerTests
     }
 
     [Fact]
-    public async Task UpdateProfile_WhenChangingEmail_WithWrongPassword_ReturnsUnauthorized()
+    public async Task UpdateProfile_WhenChangingEmail_WithWrongPassword_ReturnsBadRequest()
     {
         var (context, _) = CreateInMemoryContext();
         var (authController, userId, _) = await SetupAuthenticatedTestStoreAsync(
@@ -2800,10 +2800,33 @@ public class AuthControllerTests
             CurrentPassword = "WrongPassword999!"
         }, CancellationToken.None);
 
-        result.Result.Should().BeOfType<UnauthorizedObjectResult>();
+        result.Result.Should().BeOfType<BadRequestObjectResult>();
 
         var dbUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
         dbUser.FailedPasswordAttempts.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenChangingEmail_WithWrongPin_ReturnsBadRequest()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var (authController, userId, _) = await SetupAuthenticatedTestStoreAsync(
+            context,
+            email: "oldpin@tindahan.ph",
+            pin: "1357",
+            businessName: "Pin Store");
+
+        var result = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "Pin Store",
+            Email = "newpin@tindahan.ph",
+            Pin = "9999"
+        }, CancellationToken.None);
+
+        result.Result.Should().BeOfType<BadRequestObjectResult>();
+
+        var dbUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
+        dbUser.FailedPinAttempts.Should().Be(1);
     }
 
     [Fact]
@@ -2829,7 +2852,7 @@ public class AuthControllerTests
     }
 
     [Fact]
-    public async Task UpdateProfile_WhenChangingEmail_RevokesOtherRefreshTokens()
+    public async Task UpdateProfile_WhenChangingEmail_RevokesOtherRefreshTokensAndRetiresOldToken()
     {
         var (context, _) = CreateInMemoryContext();
         var (authController, userId, tenantId) = await SetupAuthenticatedTestStoreAsync(
@@ -2840,7 +2863,7 @@ public class AuthControllerTests
         var user = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
 
         // Device A (current)
-        var (tokenA, _, _, _) = AuthRefreshTokenHelper.IssueRefreshToken(
+        var (tokenA, _, tokenAHash, _) = AuthRefreshTokenHelper.IssueRefreshToken(
             context, DefaultJwtService, user, tenantId, TimeProvider.System, "family-device-a");
 
         // Device B (other)
@@ -2866,6 +2889,13 @@ public class AuthControllerTests
         var deviceBTokens = tokensInDb.Where(t => t.FamilyId == "family-device-b").ToList();
         deviceBTokens.Should().NotBeEmpty();
         deviceBTokens.Should().OnlyContain(t => t.IsRevoked);
+
+        // Check presented token on Device A was retired (marked replaced and grace expires set) without forking
+        var deviceATokens = tokensInDb.Where(t => t.FamilyId == "family-device-a").ToList();
+        deviceATokens.Should().HaveCount(2);
+        var oldTokenRecord = deviceATokens.First(t => t.TokenHash == tokenAHash);
+        oldTokenRecord.ReplacedByTokenHash.Should().NotBeNullOrWhiteSpace();
+        oldTokenRecord.GraceExpiresAt.Should().NotBeNull();
     }
 
     [Fact]

@@ -521,4 +521,35 @@ describe('apiClient', () => {
 
     axiosPostSpy.mockRestore();
   });
+
+  it('response interceptor skips token refresh and does not retry when request url is /auth/profile', async () => {
+    const axios = (await import('axios')).default;
+    useAuthStore.setState({
+      firebaseToken: 'valid-token',
+      refreshToken: 'valid-refresh-token'
+    });
+
+    const axiosPostSpy = vi.spyOn(axios, 'post');
+
+    const interceptor = (apiClient.interceptors.response as any).handlers[0];
+    const originalRequest: any = {
+      headers: { Authorization: 'Bearer valid-token' },
+      url: '/auth/profile'
+    };
+
+    await expect(
+      interceptor.rejected({
+        response: { status: 401 },
+        config: originalRequest
+      })
+    ).rejects.toEqual(
+      expect.objectContaining({
+        response: expect.objectContaining({ status: 401 })
+      })
+    );
+
+    expect(axiosPostSpy).not.toHaveBeenCalled();
+    axiosPostSpy.mockRestore();
+  });
 });
+

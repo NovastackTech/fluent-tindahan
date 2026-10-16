@@ -285,7 +285,8 @@ apiClient.interceptors.response.use(
       error?.response?.status === 401 &&
       originalRequest &&
       !originalRequest._retry &&
-      !originalRequest.url?.includes('/auth/refresh')
+      !originalRequest.url?.includes('/auth/refresh') &&
+      !originalRequest.url?.includes('/auth/profile')
     ) {
       const { refreshToken, setFirebaseToken, setRefreshToken } = useAuthStore.getState();
       if (!refreshToken) {

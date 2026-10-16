@@ -80,9 +80,13 @@ export async function syncPendingProfileUpdate(): Promise<{
     return { success: true };
   } catch (err: any) {
     const status = err?.response?.status;
-    // If the server rejected it due to permanent client validation or forbidden role:
-    if (status === 400 || status === 401 || status === 403 || status === 409 || status === 429) {
-      console.error('[profileSync] Server rejected pending profile update, clearing queue:', err);
+    // Non-retryable permanent server rejections:
+    // 400 Bad Request (invalid data/format)
+    // 403 Forbidden (not store owner)
+    // 409 Conflict (email already registered to another user)
+    // 429 (rate-limited/lockout) and 401 (temporary auth issue) are transient and should be retried.
+    if (status === 400 || status === 403 || status === 409) {
+      console.error('[profileSync] Server permanently rejected pending profile update, clearing queue:', err);
       clearPendingProfileUpdate();
       return { success: false, error: err };
     }

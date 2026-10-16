@@ -64,6 +64,72 @@ public static class AuthRefreshTokenHelper
     }
 
     /// <summary>
+    /// Rotates the presented refresh token by marking the old token as replaced with a grace window
+    /// and issuing a new refresh token within the same device family.
+    /// Returns nulls if the presented token is already revoked or reused outside the grace window.
+    /// </summary>
+    public static async Task<(string? RefreshToken, DateTimeOffset? ExpiresAt, string? TokenHash, string? FamilyId)> RotatePresentedRefreshTokenAsync(
+        IApplicationDbContext context,
+        IJwtTokenService jwtTokenService,
+        User user,
+        Guid tenantId,
+        TimeProvider timeProvider,
+        string tokenId,
+        string familyId,
+        CancellationToken cancellationToken = default)
+    {
+        var now = timeProvider.GetUtcNow();
+        var presentedTokenHash = jwtTokenService.HashTokenId(tokenId);
+
+        var matchingToken = await context.UserRefreshTokens.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(r => r.UserId == user.Id && r.FamilyId == familyId && r.TokenHash == presentedTokenHash, cancellationToken);
+
+        if (matchingToken != null)
+        {
+            if (matchingToken.IsRevoked)
+            {
+                return (null, null, null, null);
+            }
+
+            if (matchingToken.ReplacedByTokenHash != null &&
+                (!matchingToken.GraceExpiresAt.HasValue || now > matchingToken.GraceExpiresAt.Value))
+            {
+                return (null, null, null, null);
+            }
+        }
+
+        var (newRefToken, newExpires, newTokenId, famId) = jwtTokenService.GenerateRefreshToken(
+            user.Id,
+            tenantId,
+            tokenId: null,
+            familyId: familyId);
+
+        var newTokenHash = jwtTokenService.HashTokenId(newTokenId);
+
+        if (matchingToken != null)
+        {
+            matchingToken.ReplacedByTokenHash = newTokenHash;
+            matchingToken.GraceExpiresAt = now.AddSeconds(DefaultGraceWindowSeconds);
+        }
+
+        user.RefreshTokenIdHash = newTokenHash;
+        user.RefreshTokenExpiresAt = newExpires;
+
+        context.UserRefreshTokens.Add(new UserRefreshToken
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            TenantId = tenantId,
+            FamilyId = famId,
+            TokenHash = newTokenHash,
+            ExpiresAt = newExpires,
+            CreatedAt = now
+        });
+
+        return (newRefToken, newExpires, newTokenHash, famId);
+    }
+
+    /// <summary>
     /// Revokes only the specified token family (e.g. for a single device logout or reuse detection).
     /// </summary>
     public static async Task RevokeFamilyAsync(

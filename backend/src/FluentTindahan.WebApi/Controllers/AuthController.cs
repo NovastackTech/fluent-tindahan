@@ -1015,9 +1015,11 @@ public class AuthController : ControllerBase
                             {
                                 return AuthLockoutHelper.PasswordLockedOutResult(lockMinutes, isInitial: true);
                             }
-                            return AuthLockoutHelper.PasswordFailedResult(
-                                remainingAttempts,
-                                $"Maling kasalukuyang password. May natitira ka pang {remainingAttempts} pagsubok bago mag-lockout. / Invalid current password. {remainingAttempts} attempts remaining.");
+                            return BadRequest(new
+                            {
+                                message = $"Maling kasalukuyang password. May natitira ka pang {remainingAttempts} pagsubok bago mag-lockout. / Invalid current password. {remainingAttempts} attempts remaining.",
+                                remainingAttempts
+                            });
                         }
 
                         if (pwdVerify == PasswordVerificationResult.SuccessRehashNeeded)
@@ -1052,9 +1054,11 @@ public class AuthController : ControllerBase
                             {
                                 return AuthLockoutHelper.PinLockedOutResult(pinLockMinutes, isInitial: true);
                             }
-                            return AuthLockoutHelper.PinFailedResult(
-                                remainingPinAttempts,
-                                $"Maling PIN. May natitira ka pang {remainingPinAttempts} pagsubok bago mag-lockout. / Invalid PIN. {remainingPinAttempts} attempts remaining.");
+                            return BadRequest(new
+                            {
+                                message = $"Maling PIN. May natitira ka pang {remainingPinAttempts} pagsubok bago mag-lockout. / Invalid PIN. {remainingPinAttempts} attempts remaining.",
+                                remainingAttempts = remainingPinAttempts
+                            });
                         }
                         AuthLockoutHelper.ResetPinLockout(user);
                         verified = true;
@@ -1082,29 +1086,31 @@ public class AuthController : ControllerBase
 
             // Revoke other refresh tokens on email change
             string? currentFamilyId = null;
+            string? currentTokenId = null;
             if (!string.IsNullOrWhiteSpace(request.RefreshToken) &&
-                _jwtTokenService.ValidateRefreshToken(request.RefreshToken, out var refUid, out _, out _, out var famId) &&
+                _jwtTokenService.ValidateRefreshToken(request.RefreshToken, out var refUid, out _, out var tokenId, out var famId) &&
                 refUid == user.Id)
             {
                 currentFamilyId = famId;
+                currentTokenId = tokenId;
             }
 
             await AuthRefreshTokenHelper.RevokeOtherSessionsForUserAsync(
                 _context, user, user.Id, currentFamilyId, _timeProvider, cancellationToken);
 
-            if (currentFamilyId != null)
+            if (currentFamilyId != null && currentTokenId != null)
             {
-                var (rToken, _, _, _) = AuthRefreshTokenHelper.IssueRefreshToken(
-                    _context, _jwtTokenService, user, tenant.Id, _timeProvider, currentFamilyId);
+                var (rToken, _, _, _) = await AuthRefreshTokenHelper.RotatePresentedRefreshTokenAsync(
+                    _context, _jwtTokenService, user, tenant.Id, _timeProvider, currentTokenId, currentFamilyId, cancellationToken);
                 responseRefreshToken = rToken;
             }
         }
         else if (!string.IsNullOrWhiteSpace(request.RefreshToken) &&
-            _jwtTokenService.ValidateRefreshToken(request.RefreshToken, out var refUid, out _, out _, out var famId) &&
+            _jwtTokenService.ValidateRefreshToken(request.RefreshToken, out var refUid, out _, out var tokenId, out var famId) &&
             refUid == user.Id)
         {
-            var (rToken, _, _, _) = AuthRefreshTokenHelper.IssueRefreshToken(
-                _context, _jwtTokenService, user, tenant.Id, _timeProvider, famId);
+            var (rToken, _, _, _) = await AuthRefreshTokenHelper.RotatePresentedRefreshTokenAsync(
+                _context, _jwtTokenService, user, tenant.Id, _timeProvider, tokenId, famId, cancellationToken);
             responseRefreshToken = rToken;
         }
 

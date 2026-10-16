@@ -160,4 +160,56 @@ describe('profileSync service', () => {
       Object.defineProperty(navigator, 'onLine', { value: originalOnLine, configurable: true });
     }
   });
+
+  it('retains queued update and increments retryCount on transient 429 rate limit error', async () => {
+    queuePendingProfileUpdate(mockPayload, mockTenantId);
+
+    vi.mocked(authService.updateProfile).mockRejectedValueOnce({
+      response: {
+        status: 429,
+        data: { message: 'Too many requests, please retry later.' }
+      }
+    });
+
+    const originalOnLine = navigator.onLine;
+    try {
+      Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
+
+      const res = await syncPendingProfileUpdate();
+      expect(res.success).toBe(false);
+      expect(res.deferred).toBe(true);
+      expect(hasPendingProfileUpdate()).toBe(true);
+
+      const pending = getPendingProfileUpdate();
+      expect(pending?.retryCount).toBe(1);
+    } finally {
+      Object.defineProperty(navigator, 'onLine', { value: originalOnLine, configurable: true });
+    }
+  });
+
+  it('retains queued update on transient 401 error', async () => {
+    queuePendingProfileUpdate(mockPayload, mockTenantId);
+
+    vi.mocked(authService.updateProfile).mockRejectedValueOnce({
+      response: {
+        status: 401,
+        data: { message: 'Unauthorized session refresh pending' }
+      }
+    });
+
+    const originalOnLine = navigator.onLine;
+    try {
+      Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
+
+      const res = await syncPendingProfileUpdate();
+      expect(res.success).toBe(false);
+      expect(res.deferred).toBe(true);
+      expect(hasPendingProfileUpdate()).toBe(true);
+
+      const pending = getPendingProfileUpdate();
+      expect(pending?.retryCount).toBe(1);
+    } finally {
+      Object.defineProperty(navigator, 'onLine', { value: originalOnLine, configurable: true });
+    }
+  });
 });
