@@ -19,6 +19,7 @@ interface GCashFeeState {
   feesByTenant: Record<string, number[]>;
   setFeeForTenant: (tenantId: string, tierIndex: number, fee: number) => void;
   migrateTenantFees: (sourceTenantId: string, destinationTenantId: string) => void;
+  resetFeeStore: () => void;
 }
 
 function readSavedFees(): Record<string, number[]> {
@@ -91,5 +92,10 @@ export const useGCashFeeStore = create<GCashFeeState>((set) => ({
       localStorage.setItem(GCASH_FEE_STORAGE_KEY, JSON.stringify(feesByTenant));
       return { feesByTenant };
     });
+  },
+  resetFeeStore: () => {
+    localStorage.removeItem(GCASH_FEE_STORAGE_KEY);
+    localStorage.removeItem(LEGACY_GCASH_FEE_STORAGE_KEY);
+    set({ feesByTenant: {} });
   }
 }));

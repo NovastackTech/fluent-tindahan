@@ -36,6 +36,7 @@ import {
   ChevronRightRegular,
   PersonAddRegular,
   DismissRegular,
+  DismissCircleRegular,
   CheckmarkRegular,
   BoxRegular
 } from '@fluentui/react-icons';
@@ -214,6 +215,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
   const [pendingReceiptData, setPendingReceiptData] = useState<ReceiptData | null>(null);
   const checkoutDialogRef = React.useRef<HTMLDivElement>(null);
@@ -876,8 +878,9 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
       setNewDebtorPhone('');
       setNewDebtorError(null);
       setNewDebtorPhoneError(null);
+      setCheckoutError(null);
     } catch (err: any) {
-      alert(err?.message || (language === 'tl' ? 'Nagkaroon ng aberya sa pagtatala ng benta.' : 'Error completing sale.'));
+      setCheckoutError(err?.message || (language === 'tl' ? 'Nagkaroon ng aberya sa pagtatala ng benta.' : 'Error completing sale.'));
     } finally {
       usePwaStore.getState().setIsSaleInProgress(false);
     }
@@ -1251,6 +1254,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
             setNewDebtorPhone('');
             setNewDebtorError(null);
             setNewDebtorPhoneError(null);
+            setCheckoutError(null);
             if (receiptData || pendingReceiptData) {
               setReceiptData(null);
               setPendingReceiptData(null);
@@ -1274,6 +1278,26 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
           <DialogBody>
             <DialogTitle>{t.pos.checkoutConfirm}</DialogTitle>
             <DialogContent>
+              {/* Checkout Error */}
+              {checkoutError && (
+                <div
+                  role="alert"
+                  style={{
+                    marginBottom: '16px',
+                    padding: '12px',
+                    borderRadius: tokens.borderRadiusMedium,
+                    backgroundColor: tokens.colorPaletteRedBackground1,
+                    border: `1px solid ${tokens.colorPaletteRedBorder2}`,
+                    color: tokens.colorPaletteRedForeground1
+                  }}
+                >
+                  <Text weight="semibold" size={300} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <DismissCircleRegular />
+                    {checkoutError}
+                  </Text>
+                </div>
+              )}
+
               {/* Insufficient Stock Warning in Checkout */}
               {!isStockValid && (
                 <div

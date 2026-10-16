@@ -31,6 +31,7 @@ public static class DependencyInjection
         services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<AppDbContext>());
 
         services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<IJwtTokenService, JwtTokenService>();
         services.AddHttpClient<IPaymentGatewayService, PayMongoPaymentGatewayService>();
         services.AddHostedService<SubscriptionMonitorService>();
 

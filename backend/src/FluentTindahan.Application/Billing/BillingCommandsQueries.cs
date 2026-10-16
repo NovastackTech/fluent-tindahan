@@ -100,13 +100,16 @@ public class CreateCheckoutSessionCommandHandler : IRequestHandler<CreateCheckou
 {
     private readonly IPaymentGatewayService _gatewayService;
     private readonly ICurrentUserService _currentUserService;
+    private readonly IApplicationDbContext? _context;
 
     public CreateCheckoutSessionCommandHandler(
         IPaymentGatewayService gatewayService,
-        ICurrentUserService currentUserService)
+        ICurrentUserService currentUserService,
+        IApplicationDbContext? context = null)
     {
         _gatewayService = gatewayService;
         _currentUserService = currentUserService;
+        _context = context;
     }
 
     public async Task<CheckoutSessionResponseDto> Handle(CreateCheckoutSessionCommand request, CancellationToken cancellationToken)
@@ -127,6 +130,19 @@ public class CreateCheckoutSessionCommandHandler : IRequestHandler<CreateCheckou
             request.TargetTier,
             request.Cycle,
             cancellationToken);
+
+        if (_context != null)
+        {
+            var tenant = await _context.Tenants
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
+
+            if (tenant != null)
+            {
+                tenant.CheckoutSessionId = sessionResult.SessionId;
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+        }
 
         return new CheckoutSessionResponseDto(
             sessionResult.CheckoutUrl,
@@ -337,6 +353,115 @@ public class ResetTenantSubscriptionCommandHandler : IRequestHandler<ResetTenant
     }
 }
 
+public record ConfirmCheckoutSessionCommand(Guid TenantId, string? SessionId = null) : IRequest<TenantSubscriptionDto>;
+
+public class ConfirmCheckoutSessionCommandHandler : IRequestHandler<ConfirmCheckoutSessionCommand, TenantSubscriptionDto>
+{
+    private readonly IApplicationDbContext _context;
+    private readonly IPaymentGatewayService _gatewayService;
+    private readonly ISender _sender;
+    private readonly ILogger<ConfirmCheckoutSessionCommandHandler> _logger;
+
+    public ConfirmCheckoutSessionCommandHandler(
+        IApplicationDbContext context,
+        IPaymentGatewayService gatewayService,
+        ISender sender,
+        ILogger<ConfirmCheckoutSessionCommandHandler> logger)
+    {
+        _context = context;
+        _gatewayService = gatewayService;
+        _sender = sender;
+        _logger = logger;
+    }
+
+    public async Task<TenantSubscriptionDto> Handle(ConfirmCheckoutSessionCommand request, CancellationToken cancellationToken)
+    {
+        var tenant = await _context.Tenants
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == request.TenantId, cancellationToken);
+
+        if (tenant == null)
+        {
+            throw new InvalidOperationException($"Tenant {request.TenantId} not found.");
+        }
+
+        // Security invariant: Client-supplied SessionId is strictly ignored; use only the CheckoutSessionId saved on the tenant.
+        var sessionId = tenant.CheckoutSessionId;
+
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            _logger.LogInformation("ConfirmCheckoutSession: No checkout session ID found for tenant {TenantId}.", request.TenantId);
+            return await _sender.Send(new GetTenantSubscriptionQuery(), cancellationToken);
+        }
+
+        _logger.LogInformation("ConfirmCheckoutSession: Verifying session {SessionId} for tenant {TenantId}...", sessionId, request.TenantId);
+
+        try
+        {
+            var sessionDetails = await _gatewayService.RetrieveCheckoutSessionAsync(sessionId, cancellationToken);
+            if (sessionDetails == null)
+            {
+                _logger.LogWarning("ConfirmCheckoutSession: Session {SessionId} could not be retrieved from gateway.", sessionId);
+                return await _sender.Send(new GetTenantSubscriptionQuery(), cancellationToken);
+            }
+
+            if (!sessionDetails.IsPaid)
+            {
+                _logger.LogInformation("ConfirmCheckoutSession: Session {SessionId} is not in paid status ({Status}).", sessionId, sessionDetails.Status);
+                return await _sender.Send(new GetTenantSubscriptionQuery(), cancellationToken);
+            }
+
+            // Security invariant: Require session's tenant metadata to be present and equal to the caller's tenant.
+            if (sessionDetails.TenantId == Guid.Empty || sessionDetails.TenantId != request.TenantId)
+            {
+                _logger.LogWarning(
+                    "ConfirmCheckoutSession: Session tenant metadata missing or mismatched ({SessionTenant} != {RequestTenant}).",
+                    sessionDetails.TenantId,
+                    request.TenantId);
+                return await _sender.Send(new GetTenantSubscriptionQuery(), cancellationToken);
+            }
+
+            if (sessionDetails.Tier == PlanTier.Libre)
+            {
+                _logger.LogWarning("ConfirmCheckoutSession: Session has Libre tier; cannot upgrade.");
+                return await _sender.Send(new GetTenantSubscriptionQuery(), cancellationToken);
+            }
+
+            // Security invariant: Ensure the paid amount matches the canonical plan price.
+            if (!TierPricing.TryGetPriceCentavos(sessionDetails.Tier, sessionDetails.Cycle, out var expectedCentavos) ||
+                sessionDetails.AmountCentavos != expectedCentavos)
+            {
+                _logger.LogError(
+                    "ConfirmCheckoutSession: Paid amount mismatch for tenant {TenantId}. Paid {Paid} centavos, expected {Expected} for {Tier}/{Cycle}.",
+                    request.TenantId,
+                    sessionDetails.AmountCentavos,
+                    expectedCentavos,
+                    sessionDetails.Tier,
+                    sessionDetails.Cycle);
+                return await _sender.Send(new GetTenantSubscriptionQuery(), cancellationToken);
+            }
+
+            var applyCommand = new ApplySubscriptionPaymentCommand(
+                request.TenantId,
+                sessionDetails.Tier,
+                sessionDetails.Cycle,
+                sessionDetails.AmountCentavos,
+                sessionDetails.PaymentId,
+                sessionDetails.PaymentMethod
+            );
+
+            var result = await _sender.Send(applyCommand, cancellationToken);
+            _logger.LogInformation("ConfirmCheckoutSession: Payment applied with outcome {Outcome} for tenant {TenantId}.", result.Outcome, request.TenantId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "ConfirmCheckoutSession: Error verifying session {SessionId} for tenant {TenantId}.", sessionId, request.TenantId);
+        }
+
+        return await _sender.Send(new GetTenantSubscriptionQuery(), cancellationToken);
+    }
+}
+
 public record ProcessPaymentWebhookCommand(
     string JsonPayload,
     string? SignatureHeader
@@ -392,7 +517,7 @@ public class ProcessPaymentWebhookCommandHandler : IRequestHandler<ProcessPaymen
     /// Strictly parses a PayMongo event envelope:
     /// <c>data.attributes.type</c> → event type, <c>data.attributes.data</c> → checkout_session resource.
     /// </summary>
-    internal static bool TryParsePaidCheckoutEvent(
+    public static bool TryParsePaidCheckoutEvent(
         string json,
         out string? eventType,
         out ApplySubscriptionPaymentCommand? payment,
@@ -471,29 +596,40 @@ public class ProcessPaymentWebhookCommandHandler : IRequestHandler<ProcessPaymen
                 return false;
             }
 
-            var firstPayment = payments[0];
-            var paymentId = TryGetString(firstPayment, "id");
-            if (string.IsNullOrWhiteSpace(paymentId) || !TryGetObject(firstPayment, "attributes", out var payAttr))
+            JsonElement? paidPayment = null;
+            JsonElement paidAttr = default;
+            string? paidPaymentId = null;
+
+            foreach (var p in payments.EnumerateArray())
             {
-                error = "Missing payment id.";
+                var pid = TryGetString(p, "id");
+                if (string.IsNullOrWhiteSpace(pid) || !TryGetObject(p, "attributes", out var pAttr))
+                    continue;
+
+                var pStatus = TryGetString(pAttr, "status");
+                if (string.Equals(pStatus, "paid", StringComparison.OrdinalIgnoreCase))
+                {
+                    paidPayment = p;
+                    paidAttr = pAttr;
+                    paidPaymentId = pid;
+                    break;
+                }
+            }
+
+            if (paidPayment == null || string.IsNullOrWhiteSpace(paidPaymentId))
+            {
+                error = "No payment in paid status found in checkout session.";
                 return false;
             }
 
-            var status = TryGetString(payAttr, "status");
-            if (!string.Equals(status, "paid", StringComparison.OrdinalIgnoreCase))
-            {
-                error = "Payment is not in paid status.";
-                return false;
-            }
-
-            var currency = TryGetString(payAttr, "currency");
+            var currency = TryGetString(paidAttr, "currency");
             if (currency != null && !string.Equals(currency, "PHP", StringComparison.OrdinalIgnoreCase))
             {
                 error = "Unsupported currency.";
                 return false;
             }
 
-            if (!payAttr.TryGetProperty("amount", out var amountElem) ||
+            if (!paidAttr.TryGetProperty("amount", out var amountElem) ||
                 amountElem.ValueKind != JsonValueKind.Number ||
                 !amountElem.TryGetInt64(out var amountCentavos))
             {
@@ -502,12 +638,12 @@ public class ProcessPaymentWebhookCommandHandler : IRequestHandler<ProcessPaymen
             }
 
             var method = "paymongo";
-            if (TryGetObject(payAttr, "source", out var source))
+            if (TryGetObject(paidAttr, "source", out var source))
             {
                 method = TryGetString(source, "type") ?? method;
             }
 
-            payment = new ApplySubscriptionPaymentCommand(tenantId, tier, cycle, amountCentavos, paymentId, method);
+            payment = new ApplySubscriptionPaymentCommand(tenantId, tier, cycle, amountCentavos, paidPaymentId, method);
             error = string.Empty;
             return true;
         }

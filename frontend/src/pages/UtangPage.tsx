@@ -14,14 +14,18 @@ import {
   DialogBody,
   DialogActions,
   DialogContent,
-  Divider
+  Divider,
+  MessageBar,
+  MessageBarBody,
+  MessageBarActions
 } from '@fluentui/react-components';
 import {
   SearchRegular,
   PersonAddRegular,
   PaymentRegular,
   AddRegular,
-  CheckmarkRegular
+  CheckmarkRegular,
+  DismissRegular
 } from '@fluentui/react-icons';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type CustomerRecord, type UtangLedgerRecord } from '../db/db';
@@ -115,6 +119,8 @@ export const UtangPage: React.FC = () => {
   const [newCustPhoneError, setNewCustPhoneError] = useState('');
   const [newCustInitialUtang, setNewCustInitialUtang] = useState('');
   const [newCustInitialUtangError, setNewCustInitialUtangError] = useState('');
+  const [pageBannerMessage, setPageBannerMessage] = useState<string | null>(null);
+  const [newCustLimitError, setNewCustLimitError] = useState<string | null>(null);
 
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentAmountError, setPaymentAmountError] = useState('');
@@ -185,7 +191,7 @@ export const UtangPage: React.FC = () => {
     }
 
     if (!canAddCustomer(customers.length)) {
-      alert(
+      setNewCustLimitError(
         language === 'tl'
           ? 'Naabot na ang limitasyon ng Libreng plano (30 may utang). Mag-upgrade sa Tindahan Pro o Negosyo Plus upang magtala pa.'
           : 'Limit reached for Libre plan (30 debtors maximum). Please upgrade to Tindahan Pro or Negosyo Plus to add more debtors.'
@@ -193,6 +199,7 @@ export const UtangPage: React.FC = () => {
       openUpgradeModal();
       return;
     }
+    setNewCustLimitError(null);
 
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -386,7 +393,7 @@ export const UtangPage: React.FC = () => {
           icon={<PersonAddRegular />}
           onClick={() => {
             if (!canAddCustomer(customers.length)) {
-              alert(
+              setPageBannerMessage(
                 language === 'tl'
                   ? 'Naabot na ang limitasyon ng Libreng plano (30 may utang). Mag-upgrade sa Tindahan Pro o Negosyo Plus upang magtala pa.'
                   : 'Limit reached for Libre plan (30 debtors maximum). Please upgrade to Tindahan Pro or Negosyo Plus to add more debtors.'
@@ -394,12 +401,33 @@ export const UtangPage: React.FC = () => {
               openUpgradeModal();
               return;
             }
+            setPageBannerMessage(null);
+            setNewCustLimitError(null);
             setIsNewCustomerOpen(true);
           }}
         >
           {t.utang.addNewCustomer}
         </Button>
       </div>
+
+      {/* Limit Warning Banner */}
+      {pageBannerMessage && (
+        <div role="alert" style={{ marginBottom: tokens.spacingVerticalM }}>
+          <MessageBar intent="warning" layout="multiline">
+            <MessageBarBody>{pageBannerMessage}</MessageBarBody>
+            <MessageBarActions
+              containerAction={
+                <Button
+                  appearance="subtle"
+                  aria-label="Dismiss"
+                  icon={<DismissRegular />}
+                  onClick={() => setPageBannerMessage(null)}
+                />
+              }
+            />
+          </MessageBar>
+        </div>
+      )}
 
       {/* Search Bar */}
       <div style={{ marginBottom: tokens.spacingVerticalM }}>
@@ -705,12 +733,20 @@ export const UtangPage: React.FC = () => {
           setNewCustNameError('');
           setNewCustPhoneError('');
           setNewCustInitialUtangError('');
+          setNewCustLimitError(null);
         }
       }}>
         <DialogSurface>
           <DialogBody>
             <DialogTitle>{t.utang.addNewCustomer}</DialogTitle>
             <DialogContent>
+              {newCustLimitError && (
+                <div role="alert" style={{ marginBottom: tokens.spacingVerticalS }}>
+                  <MessageBar intent="warning" layout="multiline">
+                    <MessageBarBody>{newCustLimitError}</MessageBarBody>
+                  </MessageBar>
+                </div>
+              )}
               <div style={{ margin: '8px 0' }}>
                 <Text size={200} weight="semibold">{t.utang.customerNameLabel}</Text>
                 <Input

@@ -184,7 +184,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ open, onClose, data,
   const handlePrintBluetooth = async () => {
     if (!data) return;
     if (!isBluetoothPrintSupported()) {
-      alert(t.receipt.bluetoothNotSupported);
+      setStatusMsg(t.receipt.bluetoothNotSupported);
       return;
     }
     setIsPrinting(true);

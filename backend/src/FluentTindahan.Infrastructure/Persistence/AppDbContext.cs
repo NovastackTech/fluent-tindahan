@@ -26,6 +26,7 @@ public class AppDbContext : DbContext, IApplicationDbContext
     public DbSet<SaleItem> SaleItems => Set<SaleItem>();
     public DbSet<GCashTxn> GCashTransactions => Set<GCashTxn>();
     public DbSet<PaymentHistory> PaymentHistories => Set<PaymentHistory>();
+    public DbSet<UserRefreshToken> UserRefreshTokens => Set<UserRefreshToken>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -60,6 +61,7 @@ public class AppDbContext : DbContext, IApplicationDbContext
             builder.Property(t => t.Tier).HasConversion<int>().IsRequired();
             builder.Property(t => t.SubscriptionEndDate);
             builder.Property(t => t.ExternalCustomerId).HasMaxLength(128);
+            builder.Property(t => t.CheckoutSessionId).HasMaxLength(128);
             builder.UseXminAsConcurrencyToken();
         });
 
@@ -69,12 +71,27 @@ public class AppDbContext : DbContext, IApplicationDbContext
             builder.ToTable("Users");
             builder.HasKey(u => u.Id);
             builder.Property(u => u.Id).HasDefaultValueSql("gen_random_uuid()");
+            builder.Property(u => u.Email).IsRequired().HasMaxLength(256).HasDefaultValue("");
+            builder.Property(u => u.NormalizedEmail).IsRequired().HasMaxLength(256).HasDefaultValue("");
+            builder.Property(u => u.PasswordHash).IsRequired().HasMaxLength(512).HasDefaultValue("");
+            builder.Property(u => u.PinHash).HasMaxLength(512);
+            builder.Property(u => u.FailedPinAttempts).HasDefaultValue(0);
+            builder.Property(u => u.PinLockoutEnd);
+            builder.Property(u => u.FailedPasswordAttempts).HasDefaultValue(0);
+            builder.Property(u => u.PasswordLockoutEnd);
+            builder.Property(u => u.LastLoginAt);
             builder.Property(u => u.Phone).IsRequired().HasMaxLength(30);
             builder.Property(u => u.Role).IsRequired().HasMaxLength(50);
             builder.Property(u => u.FirebaseUid).HasMaxLength(128);
+            builder.Property(u => u.RefreshTokenIdHash).HasMaxLength(128);
+            builder.Property(u => u.RefreshTokenExpiresAt);
 
             builder.HasIndex(u => u.TenantId);
             builder.HasIndex(u => u.FirebaseUid);
+            builder.HasIndex(u => u.NormalizedEmail)
+                .HasDatabaseName(User.NormalizedEmailUniqueIndexName)
+                .IsUnique()
+                .HasFilter("\"NormalizedEmail\" <> ''");
 
             builder.HasOne(u => u.Tenant)
                 .WithMany(t => t.Users)
@@ -261,6 +278,34 @@ public class AppDbContext : DbContext, IApplicationDbContext
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
+        // UserRefreshToken
+        modelBuilder.Entity<UserRefreshToken>(builder =>
+        {
+            builder.ToTable("UserRefreshTokens");
+            builder.HasKey(r => r.Id);
+            builder.Property(r => r.Id).HasDefaultValueSql("gen_random_uuid()");
+            builder.Property(r => r.FamilyId).IsRequired().HasMaxLength(128);
+            builder.Property(r => r.TokenHash).IsRequired().HasMaxLength(128);
+            builder.Property(r => r.ReplacedByTokenHash).HasMaxLength(128);
+
+            builder.HasIndex(r => r.TenantId);
+            builder.HasIndex(r => r.UserId);
+            builder.HasIndex(r => r.FamilyId);
+            builder.HasIndex(r => r.TokenHash);
+            builder.HasIndex(r => new { r.UserId, r.FamilyId });
+            builder.HasIndex(r => new { r.TenantId, r.UserId });
+
+            builder.HasOne(r => r.User)
+                .WithMany()
+                .HasForeignKey(r => r.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            builder.HasOne(r => r.Tenant)
+                .WithMany()
+                .HasForeignKey(r => r.TenantId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
         // Global Query Filters for multi-tenancy isolation and soft delete
         ConfigureTenantFilter<User>(modelBuilder);
         modelBuilder.Entity<Product>().HasQueryFilter(p => p.TenantId == _currentUserService.TenantId && !p.IsDeleted);
@@ -270,6 +315,7 @@ public class AppDbContext : DbContext, IApplicationDbContext
         ConfigureTenantFilter<SaleItem>(modelBuilder);
         ConfigureTenantFilter<GCashTxn>(modelBuilder);
         ConfigureTenantFilter<PaymentHistory>(modelBuilder);
+        ConfigureTenantFilter<UserRefreshToken>(modelBuilder);
     }
 
     private void ConfigureTenantFilter<TEntity>(ModelBuilder modelBuilder) where TEntity : class, IMustHaveTenant

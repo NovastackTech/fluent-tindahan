@@ -15,7 +15,10 @@ import {
   DialogActions,
   DialogContent,
   Select,
-  Divider
+  Divider,
+  MessageBar,
+  MessageBarBody,
+  MessageBarActions
 } from '@fluentui/react-components';
 import {
   SearchRegular,
@@ -384,6 +387,8 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
 
   // Toast feedback
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [limitBanner, setLimitBanner] = useState<string | null>(null);
+  const [modalGeneralError, setModalGeneralError] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -532,7 +537,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
   // Open Add Product Modal
   const openAddModal = () => {
     if (!canAddProduct(products.length)) {
-      alert(
+      setLimitBanner(
         language === 'tl'
           ? 'Naabot na ang limitasyon ng Libreng plano (50 produkto). Mag-upgrade sa Tindahan Pro o Negosyo Plus upang magdagdag pa.'
           : 'Limit reached for Libre plan (50 products maximum). Please upgrade to Tindahan Pro or Negosyo Plus to add more products.'
@@ -540,6 +545,8 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
       openUpgradeModal();
       return;
     }
+    setLimitBanner(null);
+    setModalGeneralError(null);
     setModalMode('add');
     setEditingProduct(null);
     setFormName('');
@@ -622,7 +629,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
     try {
       if (modalMode === 'add') {
         if (!canAddProduct(products.length)) {
-          alert(
+          setModalGeneralError(
             language === 'tl'
               ? 'Naabot na ang limitasyon ng Libreng plano (50 produkto). Mag-upgrade sa Tindahan Pro o Negosyo Plus upang magdagdag pa.'
               : 'Limit reached for Libre plan (50 products maximum). Please upgrade to Tindahan Pro or Negosyo Plus to add more products.'
@@ -630,6 +637,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
           openUpgradeModal();
           return;
         }
+        setModalGeneralError(null);
         const newProduct: ProductRecord = {
           id: crypto.randomUUID(),
           tenantId,
@@ -703,6 +711,25 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
           <Text weight="semibold" size={300}>
             {toastMessage}
           </Text>
+        </div>
+      )}
+
+      {/* Limit Warning Banner */}
+      {limitBanner && (
+        <div role="alert" style={{ marginBottom: tokens.spacingVerticalM }}>
+          <MessageBar intent="warning" layout="multiline">
+            <MessageBarBody>{limitBanner}</MessageBarBody>
+            <MessageBarActions
+              containerAction={
+                <Button
+                  appearance="subtle"
+                  aria-label="Dismiss"
+                  icon={<DismissRegular />}
+                  onClick={() => setLimitBanner(null)}
+                />
+              }
+            />
+          </MessageBar>
         </div>
       )}
 
@@ -1245,6 +1272,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
             setFormNameError('');
             setFormCostError('');
             setFormPriceError('');
+            setModalGeneralError(null);
           }
         }}
       >
@@ -1254,6 +1282,13 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
               {modalMode === 'add' ? t.inventory.addModalTitle : t.inventory.editModalTitle}
             </DialogTitle>
             <DialogContent style={{ marginTop: tokens.spacingVerticalM }}>
+              {modalGeneralError && (
+                <div role="alert" style={{ marginBottom: tokens.spacingVerticalM }}>
+                  <MessageBar intent="warning" layout="multiline">
+                    <MessageBarBody>{modalGeneralError}</MessageBarBody>
+                  </MessageBar>
+                </div>
+              )}
               <div className={styles.formGrid}>
                 {/* Product Name */}
                 <div style={{ gridColumn: '1 / -1' }}>

@@ -804,13 +804,13 @@ describe('POSPage', () => {
     fireEvent.click(overrideBtn);
 
     // Confirmation dialog is displayed
-    await waitFor(() => {
-      expect(screen.getByText(/Kumpirmahin ang Pag-override sa Stock|Confirm Stock Override/i)).toBeInTheDocument();
-      expect(screen.getAllByText('QA Biscuit Override').length).toBeGreaterThanOrEqual(1);
-    });
-
-    // Confirm override
-    const confirmBtn = screen.getByRole('button', { name: /I-override at Ituloy ang Benta|Override & Proceed to Checkout/i });
+    const confirmBtn = await screen.findByRole(
+      'button',
+      { name: /I-override at Ituloy ang Benta|Override & Proceed to Checkout/i },
+      { timeout: 4000 }
+    );
+    expect(screen.getByText(/Kumpirmahin ang Pag-override sa Stock|Confirm Stock Override/i)).toBeInTheDocument();
+    expect(screen.getAllByText('QA Biscuit Override').length).toBeGreaterThanOrEqual(1);
     fireEvent.click(confirmBtn);
 
     // Now checkout button in cart drawer is enabled!

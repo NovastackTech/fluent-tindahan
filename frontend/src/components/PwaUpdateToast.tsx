@@ -45,6 +45,7 @@ export const PwaUpdateToast: React.FC = () => {
   const { t } = useTranslation();
   const { needRefresh, setNeedRefresh, otherTabsHaveCart, isSaleInProgress, hasActiveReceipt } = usePwaStore();
   const cartItemCount = useCartStore((s) => s.items.length);
+  const [isUpdating, setIsUpdating] = React.useState(false);
 
   if (!needRefresh) {
     return null;
@@ -52,13 +53,18 @@ export const PwaUpdateToast: React.FC = () => {
 
   const hasLocalItems = cartItemCount > 0;
   const hasActiveSale = isSaleInProgress || hasActiveReceipt;
-  const isBlocked = hasLocalItems || otherTabsHaveCart || hasActiveSale;
+  const isBlocked = hasLocalItems || otherTabsHaveCart || hasActiveSale || isUpdating;
 
   const handleUpdate = async () => {
     if (isBlocked) {
       return;
     }
-    await reloadAppForUpdate();
+    setIsUpdating(true);
+    try {
+      await reloadAppForUpdate();
+    } catch {
+      setIsUpdating(false);
+    }
   };
 
   const handleDismiss = () => {

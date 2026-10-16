@@ -503,7 +503,6 @@ describe('GCashPage', () => {
   });
 
   it('rejects a corrected reference already used in the same tenant', async () => {
-    const alertMock = vi.spyOn(window, 'alert').mockImplementation(() => {});
     await db.gcashTxns.bulkAdd([
       {
         id: 'g-needs-correction',
@@ -526,11 +525,10 @@ describe('GCashPage', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /Correct & sync|Ayusin at i-sync/i }));
 
-    await waitFor(() => expect(alertMock).toHaveBeenCalledWith(expect.stringMatching(/already used|Nagamit na/i)));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/already used|Nagamit na/i);
     expect(await db.gcashTxnResolutions.get('g-needs-correction')).toBeUndefined();
     expect(await db.syncQueue.count()).toBe(0);
     expect(await db.gcashTxns.count()).toBe(2);
-    alertMock.mockRestore();
   });
 
   it('voids a rejected row without deleting it or enqueueing it', async () => {

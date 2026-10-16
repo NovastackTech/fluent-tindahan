@@ -111,6 +111,7 @@ POSTGRES_PASSWORD=$(random_secret 24)
 FIREBASE_PROJECT_ID=fluent-tindahan-dev
 DEMO_MODE=false
 ALLOW_DEMO_MODE_IN_PRODUCTION=false
+JWT_SECRET_KEY=$(random_secret 48)
 PAYMONGO_SECRET_KEY=
 PAYMONGO_WEBHOOK_SECRET=
 PAYMONGO_FRONTEND_ORIGIN=https://${DOMAIN}
@@ -130,11 +131,18 @@ set_env_value APP_URL "https://${DOMAIN}"
 [[ -n "$(env_value PAYMONGO_FRONTEND_ORIGIN "${ENV_FILE}")" ]] || set_env_value PAYMONGO_FRONTEND_ORIGIN "https://${DOMAIN}"
 [[ -n "$(env_value DEMO_MODE "${ENV_FILE}")" ]] || set_env_value DEMO_MODE "false"
 
+# Ensure a unique JWT_SECRET_KEY exists; generate a new secret if missing or set to the burned repo key
+current_jwt="$(env_value JWT_SECRET_KEY "${ENV_FILE}")"
+if [[ -z "${current_jwt}" || "${current_jwt}" == "FluentTindahan_SuperSecretSigningKey_Minimum32Chars_DevKey!" ]]; then
+  set_env_value JWT_SECRET_KEY "$(random_secret 48)"
+  log "Generated new unique JWT_SECRET_KEY (committed repo key was burned)"
+fi
+
 # Optional secrets pushed from the developer machine (deploy/alibaba-sas/secrets.env, gitignored).
 # POSTGRES_PASSWORD is deliberately not accepted: changing it would lock the API out of the existing database.
 if [[ -f "${SECRETS_FILE}" ]]; then
   sed -i 's/\r$//' "${SECRETS_FILE}"
-  for key in PAYMONGO_SECRET_KEY PAYMONGO_WEBHOOK_SECRET PAYMONGO_FRONTEND_ORIGIN FIREBASE_PROJECT_ID ASPNETCORE_ENVIRONMENT DEMO_MODE DemoMode ALLOW_DEMO_MODE_IN_PRODUCTION AllowDemoModeInProduction; do
+  for key in JWT_SECRET_KEY PAYMONGO_SECRET_KEY PAYMONGO_WEBHOOK_SECRET PAYMONGO_FRONTEND_ORIGIN FIREBASE_PROJECT_ID ASPNETCORE_ENVIRONMENT DEMO_MODE DemoMode ALLOW_DEMO_MODE_IN_PRODUCTION AllowDemoModeInProduction; do
     value="$(env_value "${key}" "${SECRETS_FILE}")"
     if [[ -n "${value}" ]]; then
       set_env_value "${key}" "${value}"

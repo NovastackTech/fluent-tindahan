@@ -28,7 +28,7 @@ import { useCartStore } from '../state/cartStore';
 import { useAuthStore } from '../state/authStore';
 import { useTranslation } from '../state/languageStore';
 
-export type NavTab = 'dashboard' | 'pos' | 'inventory' | 'utang' | 'gcash' | 'import' | 'settings';
+export type NavTab = 'dashboard' | 'pos' | 'inventory' | 'utang' | 'gcash' | 'import' | 'settings' | 'landing' | 'login';
 
 interface NavigationProps {
   activeTab: NavTab;

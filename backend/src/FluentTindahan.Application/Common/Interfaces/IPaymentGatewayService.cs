@@ -22,6 +22,18 @@ public class PaymentGatewayException : Exception
     public PaymentGatewayException(string safeMessage, Exception innerException) : base(safeMessage, innerException) { }
 }
 
+public record CheckoutSessionDetails(
+    string SessionId,
+    string Status,
+    bool IsPaid,
+    Guid TenantId,
+    PlanTier Tier,
+    BillingCycle Cycle,
+    long AmountCentavos,
+    string PaymentId,
+    string PaymentMethod
+);
+
 public interface IPaymentGatewayService
 {
     /// <summary>
@@ -32,6 +44,14 @@ public interface IPaymentGatewayService
         Guid tenantId,
         PlanTier tier,
         BillingCycle cycle,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Retrieves a hosted checkout session directly from the gateway to confirm payment status,
+    /// providing a resilient fallback when webhooks are delayed, unreachable, or unregistered.
+    /// </summary>
+    Task<CheckoutSessionDetails?> RetrieveCheckoutSessionAsync(
+        string sessionId,
         CancellationToken cancellationToken = default);
 
     bool VerifyWebhookSignature(string jsonPayload, string signatureHeader);

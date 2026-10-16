@@ -3,8 +3,14 @@ import {
   FluentProvider,
   makeStyles,
   tokens,
-  Spinner
+  Spinner,
+  MessageBar,
+  MessageBarBody,
+  MessageBarTitle,
+  MessageBarActions,
+  Button
 } from '@fluentui/react-components';
+import { DismissRegular } from '@fluentui/react-icons';
 import { sariSariLightTheme, sariSariDarkTheme } from './theme/theme';
 import { useThemeStore } from './state/themeStore';
 import { Header } from './components/Header';
@@ -14,6 +20,7 @@ import { PwaInstallBanner } from './components/PwaInstallBanner';
 import { PwaUpdateToast } from './components/PwaUpdateToast';
 import { PrivacyConsentDialog } from './components/PrivacyConsentDialog';
 import { OnboardingModal } from './components/OnboardingModal';
+import { SessionLockModal } from './components/SessionLockModal';
 import { DisclaimerModal } from './components/DisclaimerModal';
 import { TermsModal } from './components/TermsModal';
 import { initSyncEngine } from './sync/syncEngine';
@@ -35,12 +42,14 @@ const UtangPage = lazy(() => import('./pages/UtangPage').then(m => ({ default: m
 const GCashPage = lazy(() => import('./pages/GCashPage').then(m => ({ default: m.GCashPage })));
 const ImportPage = lazy(() => import('./pages/ImportPage').then(m => ({ default: m.ImportPage })));
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
+const LandingPage = lazy(() => import('./pages/LandingPage').then(m => ({ default: m.LandingPage })));
+const LoginPage = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })));
 
 export function getInitialNavTab(): NavTab {
   if (typeof window === 'undefined') return 'dashboard';
   const params = new URLSearchParams(window.location.search);
   const tabParam = params.get('tab') as NavTab | null;
-  const validTabs: NavTab[] = ['dashboard', 'pos', 'inventory', 'utang', 'gcash', 'import', 'settings'];
+  const validTabs: NavTab[] = ['dashboard', 'pos', 'inventory', 'utang', 'gcash', 'import', 'settings', 'landing', 'login'];
   if (tabParam && validTabs.includes(tabParam)) {
     return tabParam;
   }
@@ -74,7 +83,9 @@ export const App: React.FC = () => {
   const isDarkMode = useThemeStore((s) => s.isDarkMode);
   const isOnboarded = useAuthStore((s) => s.isOnboarded);
   const isOnboardingStatusReady = useAuthStore((s) => s.isOnboardingStatusReady);
+  const isOnboardingOpen = useAuthStore((s) => s.isOnboardingOpen);
   const [activeTab, setActiveTab] = useState<NavTab>(getInitialNavTab);
+  const [billingSuccessMessage, setBillingSuccessMessage] = useState<string | null>(null);
   const storeServicesStarted = useRef(false);
 
   const handleTabChange = (newTab: NavTab) => {
@@ -85,6 +96,13 @@ export const App: React.FC = () => {
       window.history.replaceState(null, '', url.pathname + url.search);
     }
   };
+
+  useEffect(() => {
+    if (!isOnboardingStatusReady) return;
+    if (!isOnboarded && activeTab !== 'landing' && activeTab !== 'login') {
+      handleTabChange('login');
+    }
+  }, [isOnboarded, isOnboardingStatusReady, activeTab]);
 
   useEffect(() => {
     // Graceful recovery if Vite dynamic import chunk fails due to cache update
@@ -184,25 +202,57 @@ export const App: React.FC = () => {
     const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
     const isBillingSuccess = searchParams?.get('billing') === 'success';
 
-    useSubscriptionStore.getState().refreshSubscription().then(() => {
+    const handleBillingReturn = async () => {
+      const hasStoredCheckoutSession = typeof window !== 'undefined' && !!localStorage.getItem('fluent_last_checkout_session_id');
+
+      if (isBillingSuccess || hasStoredCheckoutSession) {
+        await useSubscriptionStore.getState().confirmCheckoutSession();
+      }
+
+      await useSubscriptionStore.getState().refreshSubscription();
+
       if (isBillingSuccess) {
-        alert('Salamat sa iyong pag-upgrade! Matagumpay ang iyong subscription sa Fluent Tindahan.');
+        setBillingSuccessMessage('Salamat sa iyong pag-upgrade! Matagumpay ang iyong subscription sa Fluent Tindahan.');
         if (window.history && window.history.replaceState) {
           const url = new URL(window.location.href);
           url.searchParams.delete('billing');
+          url.searchParams.delete('mock_paid');
+          url.searchParams.delete('ref');
+          url.searchParams.delete('tier');
           window.history.replaceState(null, '', url.pathname + url.search);
         }
       }
-    }).catch(console.error);
+    };
+
+    handleBillingReturn().catch(console.error);
   }, [isOnboarded, isOnboardingStatusReady]);
 
   return (
     <FluentProvider theme={isDarkMode ? sariSariDarkTheme : sariSariLightTheme}>
       <div className={styles.appContainer}>
-        <Header />
+        <Header onNavigate={handleTabChange} activeTab={activeTab} />
         <PwaUpdateToast />
         <PwaInstallBanner />
         <OfflineSyncBanner />
+        {billingSuccessMessage && (
+          <div style={{ padding: '0 16px 8px 16px', maxWidth: '1200px', margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+            <MessageBar intent="success" layout="multiline">
+              <MessageBarBody>
+                <MessageBarTitle>{billingSuccessMessage}</MessageBarTitle>
+              </MessageBarBody>
+              <MessageBarActions
+                containerAction={
+                  <Button
+                    appearance="subtle"
+                    aria-label="Dismiss"
+                    icon={<DismissRegular />}
+                    onClick={() => setBillingSuccessMessage(null)}
+                  />
+                }
+              />
+            </MessageBar>
+          </div>
+        )}
 
         <main className={styles.content}>
           <Suspense fallback={
@@ -216,13 +266,16 @@ export const App: React.FC = () => {
             {activeTab === 'utang' && <UtangPage />}
             {activeTab === 'gcash' && <GCashPage />}
             {activeTab === 'import' && <ImportPage />}
-            {activeTab === 'settings' && <SettingsPage />}
+            {activeTab === 'settings' && <SettingsPage onNavigate={handleTabChange} />}
+            {activeTab === 'landing' && <LandingPage onNavigate={handleTabChange} />}
+            {activeTab === 'login' && <LoginPage onNavigate={handleTabChange} />}
           </Suspense>
         </main>
 
-        <Navigation activeTab={activeTab} onTabChange={handleTabChange} />
+        {activeTab !== 'landing' && activeTab !== 'login' && <Navigation activeTab={activeTab} onTabChange={handleTabChange} />}
         <PrivacyConsentDialog />
-        <OnboardingModal />
+        {isOnboardingOpen && <OnboardingModal />}
+        <SessionLockModal />
         <DisclaimerModal />
         <TermsModal />
       </div>

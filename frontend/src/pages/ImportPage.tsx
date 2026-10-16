@@ -10,13 +10,15 @@ import {
   Divider,
   MessageBar,
   MessageBarTitle,
-  MessageBarBody
+  MessageBarBody,
+  MessageBarActions
 } from '@fluentui/react-components';
 import {
   ArrowUploadRegular,
   DocumentTableRegular,
   CheckmarkCircleRegular,
-  DismissCircleRegular
+  DismissCircleRegular,
+  DismissRegular
 } from '@fluentui/react-icons';
 import { parseProductsCsv, importProductsToDexieAndSync, type ParsedProductPreview } from '../services/csvImporter';
 import { useTranslation } from '../state/languageStore';
@@ -96,18 +98,21 @@ export const ImportPage: React.FC = () => {
   const [previews, setPreviews] = useState<ParsedProductPreview[]>([]);
   const [isImporting, setIsImporting] = useState(false);
   const [importResult, setImportResult] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleFileUpload = async (file: File) => {
     try {
+      setErrorMessage(null);
       const parsed = await parseProductsCsv(file);
       setPreviews(parsed);
       setImportResult(null);
     } catch (err: any) {
-      alert(`Error reading file: ${err.message}`);
+      setErrorMessage(`Error reading file: ${err.message}`);
     }
   };
 
   const handleLoadSample = async () => {
+    setErrorMessage(null);
     const parsed = await parseProductsCsv(SAMPLE_CSV);
     setPreviews(parsed);
     setImportResult(null);
@@ -117,10 +122,11 @@ export const ImportPage: React.FC = () => {
   const errorCount = previews.filter((p) => !p.isValid).length;
 
   const handleImport = async () => {
+    setErrorMessage(null);
     if (validCount === 0) return;
     if (isCsvLocked) {
       openUpgradeModal();
-      alert(
+      setErrorMessage(
         language === 'tl'
           ? 'Kailangan ng Tindahan Pro o Negosyo Plus para ma-import ang mga produkto gamit ang CSV.'
           : 'Tindahan Pro or Negosyo Plus is required to import products via CSV.'
@@ -138,7 +144,7 @@ export const ImportPage: React.FC = () => {
       );
       setPreviews([]);
     } catch (err: any) {
-      alert(`Import failed: ${err.message}`);
+      setErrorMessage(`Import failed: ${err.message}`);
     } finally {
       setIsImporting(false);
     }
@@ -171,6 +177,27 @@ export const ImportPage: React.FC = () => {
             </div>
           </MessageBarBody>
         </MessageBar>
+      )}
+
+      {errorMessage && (
+        <div role="alert" style={{ marginBottom: '16px' }}>
+          <MessageBar intent="error" layout="multiline">
+            <MessageBarBody>
+              <MessageBarTitle>{language === 'tl' ? 'May Problema sa Pag-import' : 'Import Error'}</MessageBarTitle>
+              {errorMessage}
+            </MessageBarBody>
+            <MessageBarActions
+              containerAction={
+                <Button
+                  appearance="subtle"
+                  aria-label="Dismiss"
+                  icon={<DismissRegular />}
+                  onClick={() => setErrorMessage(null)}
+                />
+              }
+            />
+          </MessageBar>
+        </div>
       )}
 
       {importResult && (

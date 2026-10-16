@@ -144,6 +144,7 @@ export const SubscriptionModal: React.FC = () => {
     isUpgradeModalOpen,
     closeUpgradeModal,
     refreshSubscription,
+    confirmCheckoutSession,
     createCheckoutSession,
     simulateMockPayment,
     isLoading,
@@ -226,6 +227,26 @@ export const SubscriptionModal: React.FC = () => {
                   </Button>
                 )}
               </MessageBar>
+            )}
+
+            {currentTier === 'Libre' && (
+              <div style={{ marginBottom: tokens.spacingVerticalM, display: 'flex', justifyContent: 'flex-end' }}>
+                <Button
+                  appearance="subtle"
+                  size="small"
+                  disabled={isLoading}
+                  onClick={async () => {
+                    const upgraded = await confirmCheckoutSession();
+                    if (upgraded) {
+                      closeUpgradeModal();
+                    } else {
+                      await refreshSubscription();
+                    }
+                  }}
+                >
+                  {isTagalog ? 'Nakatapos na ng bayad? I-verify ang status' : 'Already paid? Verify subscription'}
+                </Button>
+              </div>
             )}
 
             {/* Cycle Toggle */}

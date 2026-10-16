@@ -18,8 +18,12 @@ import {
   ArrowSyncRegular,
   GlobeRegular,
   ArrowDownloadRegular,
-  InfoRegular
+  InfoRegular,
+  SparkleRegular,
+  ShoppingBagRegular,
+  KeyRegular
 } from '@fluentui/react-icons';
+import type { NavTab } from './Navigation';
 import { useThemeStore } from '../state/themeStore';
 import { useSyncStore, processSyncQueue } from '../sync/syncEngine';
 import { useAuthStore } from '../state/authStore';
@@ -89,14 +93,29 @@ const useStyles = makeStyles({
     '@media (max-width: 480px)': {
       display: 'none'
     }
+  },
+  landingToggleBtn: {
+    fontWeight: 600,
+    fontSize: tokens.fontSizeBase200
+  },
+  landingToggleLabel: {
+    '@media (max-width: 600px)': {
+      display: 'none'
+    }
   }
 });
 
-export const Header: React.FC = () => {
+export interface HeaderProps {
+  onNavigate?: (tab: NavTab) => void;
+  activeTab?: NavTab;
+}
+
+export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab }) => {
   const styles = useStyles();
   const { themeMode, cycleThemeMode } = useThemeStore();
   const { isOnline, isSyncing, pendingCount, deadLetterCount } = useSyncStore();
   const businessName = useAuthStore((s) => s.businessName);
+  const isOnboarded = useAuthStore((s) => s.isOnboarded);
   const { t, language, toggleLanguage } = useTranslation();
   const { isInstallable, isStandalone, isInstalled, promptInstall } = usePwaStore();
   const { tier, openUpgradeModal } = useSubscriptionStore();
@@ -108,94 +127,125 @@ export const Header: React.FC = () => {
     }
   };
 
+  const isLoggedOut = !isOnboarded || activeTab === 'login';
+  const showStoreInfo = !isLoggedOut && Boolean(businessName);
+  const showSyncIndicators = !isLoggedOut;
+
   return (
     <header className={styles.header}>
       <div className={styles.headerInner}>
-        <div className={styles.titleGroup}>
+        <div
+          className={styles.titleGroup}
+          onClick={() => {
+            if (onNavigate) {
+              if (activeTab === 'landing') {
+                onNavigate(isOnboarded ? 'pos' : 'login');
+              } else if (activeTab === 'login') {
+                onNavigate('landing');
+              } else {
+                onNavigate('landing');
+              }
+            }
+          }}
+          style={{ cursor: onNavigate ? 'pointer' : 'default' }}
+          title={activeTab === 'landing' ? (isOnboarded ? t.nav.dashboard : t.landing.tabLogin) : t.landing.exploreTitle}
+        >
           <div className={styles.logoIcon}>FT</div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <Text weight="bold" size={400}>{t.common.appTitle}</Text>
-              <Button
-                appearance="subtle"
-                size="small"
-                onClick={openUpgradeModal}
-                style={{ padding: '0px 4px', height: '22px', minWidth: 'auto' }}
-                title="View Subscription Plans"
-              >
-                <Badge
-                  color={tier === 'NegosyoPlus' ? 'important' : tier === 'TindahanPro' ? 'warning' : 'informative'}
-                  appearance="filled"
+              {!isLoggedOut && (
+                <Button
+                  appearance="subtle"
                   size="small"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openUpgradeModal();
+                  }}
+                  style={{ padding: '0px 4px', height: '22px', minWidth: 'auto' }}
+                  title="View Subscription Plans"
                 >
-                  {tier === 'NegosyoPlus' ? 'NEGOSYO+' : tier === 'TindahanPro' ? 'PRO' : 'LIBRE'}
-                </Badge>
-              </Button>
+                  <Badge
+                    color={tier === 'NegosyoPlus' ? 'important' : tier === 'TindahanPro' ? 'warning' : 'informative'}
+                    appearance="filled"
+                    size="small"
+                  >
+                    {tier === 'NegosyoPlus' ? 'NEGOSYO+' : tier === 'TindahanPro' ? 'PRO' : 'LIBRE'}
+                  </Badge>
+                </Button>
+              )}
             </div>
-            <span className={styles.storeName}>{businessName || t.common.storeSub}</span>
+            {showStoreInfo && (
+              <span className={styles.storeName}>{businessName}</span>
+            )}
           </div>
         </div>
 
         <div className={styles.actionsGroup}>
           {/* Connectivity & Sync Status Badge */}
-          {isOnline ? (
-            <Tooltip
-              content={
-                isSyncing
-                  ? t.common.syncing
-                  : pendingCount > 0
-                  ? `${pendingCount} ${t.common.queued}`
-                  : t.common.allSynced
-              }
-              relationship="label"
-            >
-              <Button
-                appearance="subtle"
-                size="small"
-                onClick={handleManualSync}
-                icon={
-                  isSyncing ? (
-                    <Spinner size="extra-tiny" />
-                  ) : (
-                    <CloudCheckmarkRegular primaryFill={tokens.colorPaletteGreenForeground1} />
-                  )
-                }
-              >
-                <Badge
-                  appearance="filled"
-                  color={pendingCount > 0 ? 'warning' : 'success'}
-                  size="small"
+          {showSyncIndicators && (
+            <>
+              {isOnline ? (
+                <Tooltip
+                  content={
+                    isSyncing
+                      ? t.common.syncing
+                      : pendingCount > 0
+                      ? `${pendingCount} ${t.common.queued}`
+                      : t.common.allSynced
+                  }
+                  relationship="label"
                 >
-                  {isSyncing ? t.common.syncing : pendingCount > 0 ? `${pendingCount} ${t.common.queued}` : t.common.online}
-                </Badge>
-              </Button>
-            </Tooltip>
-          ) : (
-            <Tooltip content={t.banner.offlineDesc} relationship="label">
-              <Badge appearance="filled" color="danger" icon={<CloudDismissRegular />} size="small">
-                {t.common.offline} ({pendingCount})
-              </Badge>
-            </Tooltip>
-          )}
+                  <Button
+                    appearance="subtle"
+                    size="small"
+                    onClick={handleManualSync}
+                    icon={
+                      isSyncing ? (
+                        <Spinner size="extra-tiny" />
+                      ) : (
+                        <CloudCheckmarkRegular primaryFill={tokens.colorPaletteGreenForeground1} />
+                      )
+                    }
+                  >
+                    <Badge
+                      appearance="filled"
+                      color={pendingCount > 0 ? 'warning' : 'success'}
+                      size="small"
+                    >
+                      {isSyncing ? t.common.syncing : pendingCount > 0 ? `${pendingCount} ${t.common.queued}` : t.common.online}
+                    </Badge>
+                  </Button>
+                </Tooltip>
+              ) : (
+                <Tooltip content={t.banner.offlineDesc} relationship="label">
+                  <Badge appearance="filled" color="danger" icon={<CloudDismissRegular />} size="small">
+                    {t.common.offline} ({pendingCount})
+                  </Badge>
+                </Tooltip>
+              )}
 
-          {deadLetterCount > 0 && (
-            <Tooltip content={`${deadLetterCount} ${t.common.dlqWarning}`} relationship="label">
-              <Badge appearance="filled" color="danger" size="small">
-                DLQ: {deadLetterCount}
-              </Badge>
-            </Tooltip>
-          )}
+              {deadLetterCount > 0 && (
+                <Tooltip content={`${deadLetterCount} ${t.common.dlqWarning}`} relationship="label">
+                  <Badge appearance="filled" color="danger" size="small">
+                    DLQ: {deadLetterCount}
+                  </Badge>
+                </Tooltip>
+              )}
 
-          {/* Sync Trigger button */}
-          {isOnline && !isSyncing && (
-            <Tooltip content={t.common.forceSync} relationship="label">
-              <Button
-                appearance="subtle"
-                size="small"
-                icon={<ArrowSyncRegular />}
-                onClick={handleManualSync}
-              />
-            </Tooltip>
+              {/* Sync Trigger button */}
+              {isOnline && !isSyncing && (
+                <Tooltip content={t.common.forceSync} relationship="label">
+                  <Button
+                    appearance="subtle"
+                    size="small"
+                    icon={<ArrowSyncRegular />}
+                    onClick={handleManualSync}
+                    aria-label={t.common.forceSync}
+                  />
+                </Tooltip>
+              )}
+            </>
           )}
 
           {/* Language switcher button */}
@@ -244,6 +294,50 @@ export const Header: React.FC = () => {
               <span className={styles.disclaimerLabel}>{t.disclaimer.buttonLabel}</span>
             </Button>
           </Tooltip>
+
+          {/* Landing / Login / App toggle shortcut button */}
+          {onNavigate && (
+            <Tooltip
+              content={
+                activeTab === 'landing'
+                  ? (isOnboarded ? t.landing.openPosBtn : t.landing.tabLogin)
+                  : t.landing.exploreTooltip
+              }
+              relationship="label"
+            >
+              <Button
+                appearance="subtle"
+                size="small"
+                className={styles.landingToggleBtn}
+                icon={
+                  activeTab === 'landing'
+                    ? (isOnboarded ? <ShoppingBagRegular /> : <KeyRegular />)
+                    : <SparkleRegular />
+                }
+                onClick={() => {
+                  if (activeTab === 'landing') {
+                    onNavigate(isOnboarded ? 'pos' : 'login');
+                  } else if (activeTab === 'login') {
+                    onNavigate('landing');
+                  } else {
+                    onNavigate('landing');
+                  }
+                }}
+                data-testid="header-landing-toggle-btn"
+                aria-label={
+                  activeTab === 'landing'
+                    ? (isOnboarded ? t.landing.openPosBtn : t.landing.tabLogin)
+                    : t.landing.exploreTitle
+                }
+              >
+                <span className={styles.landingToggleLabel}>
+                  {activeTab === 'landing'
+                    ? (isOnboarded ? t.landing.openPosBtn : t.landing.tabLogin)
+                    : t.landing.exploreNavBtn}
+                </span>
+              </Button>
+            </Tooltip>
+          )}
 
           {/* Theme mode cycle: Light -> Dark -> System -> Light */}
           <Tooltip

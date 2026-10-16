@@ -20,6 +20,7 @@ public class Tenant
     /// </summary>
     public DateTimeOffset? SubscriptionEndDate { get; set; }
     public string? ExternalCustomerId { get; set; }
+    public string? CheckoutSessionId { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
     public ICollection<User> Users { get; set; } = new List<User>();

@@ -279,7 +279,15 @@ describe('registerServiceWorker', () => {
     });
   });
 
-  it('calls updateSW(true) when reloadAppForUpdate is executed', async () => {
+  it('calls updateSW(true) and reloads page when reloadAppForUpdate is executed', async () => {
+    const originalLocation = window.location;
+    const reloadMock = vi.fn();
+    Object.defineProperty(window, 'location', {
+      value: { ...originalLocation, reload: reloadMock },
+      configurable: true,
+      writable: true
+    });
+
     const mockUpdate = vi.fn().mockResolvedValue(undefined);
     vi.mocked(registerSW).mockReturnValue(mockUpdate);
 
@@ -294,6 +302,50 @@ describe('registerServiceWorker', () => {
     await reloadAppForUpdate();
 
     expect(mockUpdate).toHaveBeenCalledWith(true);
+    expect(reloadMock).toHaveBeenCalledTimes(1);
+
+    Object.defineProperty(window, 'location', {
+      value: originalLocation,
+      configurable: true,
+      writable: true
+    });
+  });
+
+  it('posts SKIP_WAITING to registration.waiting when waiting worker exists', async () => {
+    const originalLocation = window.location;
+    const reloadMock = vi.fn();
+    Object.defineProperty(window, 'location', {
+      value: { ...originalLocation, reload: reloadMock },
+      configurable: true,
+      writable: true
+    });
+
+    const postMessageMock = vi.fn();
+    const mockRegistration = {
+      waiting: {
+        postMessage: postMessageMock
+      }
+    };
+
+    Object.defineProperty(navigator, 'serviceWorker', {
+      value: {
+        register: vi.fn(),
+        getRegistration: vi.fn().mockResolvedValue(mockRegistration)
+      },
+      configurable: true,
+      writable: true
+    });
+
+    await reloadAppForUpdate();
+
+    expect(postMessageMock).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
+    expect(reloadMock).toHaveBeenCalledTimes(1);
+
+    Object.defineProperty(window, 'location', {
+      value: originalLocation,
+      configurable: true,
+      writable: true
+    });
   });
 
   it('falls back to window.location.reload when the service worker update rejects', async () => {

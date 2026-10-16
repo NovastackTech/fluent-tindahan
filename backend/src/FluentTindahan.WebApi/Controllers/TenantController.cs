@@ -18,13 +18,16 @@ public class TenantController : ControllerBase
 {
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUserService;
+    private readonly IJwtTokenService? _jwtTokenService;
 
     public TenantController(
         IApplicationDbContext context,
-        ICurrentUserService currentUserService)
+        ICurrentUserService currentUserService,
+        IJwtTokenService? jwtTokenService = null)
     {
         _context = context;
         _currentUserService = currentUserService;
+        _jwtTokenService = jwtTokenService;
     }
 
     public record TenantProfileDto(
@@ -50,7 +53,12 @@ public class TenantController : ControllerBase
     }
 
     /// <summary>Confirms the current tenant and owner user are ready for sync.</summary>
-    public sealed record ProvisionTenantResponse(Guid TenantId, Guid UserId, PlanTier Tier);
+    public sealed record ProvisionTenantResponse(
+        Guid TenantId,
+        Guid UserId,
+        PlanTier Tier,
+        string? Token = null,
+        string? RefreshToken = null);
 
     /// <summary>
     /// Retrieves the current tenant's profile, including active PlanTier and SubscriptionEndDate.
@@ -122,6 +130,7 @@ public class TenantController : ControllerBase
         }
 
         Guid ownerId;
+        var isCallerAuthenticatedAsOwner = false;
         if (_currentUserService.IsAuthenticated)
         {
             var authenticatedUserId = _currentUserService.UserId;
@@ -135,6 +144,7 @@ public class TenantController : ControllerBase
             }
 
             ownerId = authenticatedUserId.Value;
+            isCallerAuthenticatedAsOwner = true;
         }
         else
         {
@@ -169,6 +179,7 @@ public class TenantController : ControllerBase
 
         var tenantHasUsers = await _context.Users.IgnoreQueryFilters()
             .AnyAsync(candidate => candidate.TenantId == tenantId, cancellationToken);
+        var isNewUser = user == null;
         if (user == null)
         {
             if (!createsTenant && tenantHasUsers)
@@ -176,18 +187,59 @@ public class TenantController : ControllerBase
                 return Forbid();
             }
 
-            _context.Users.Add(new User
+            user = new User
             {
                 Id = ownerId,
                 TenantId = tenantId,
                 Phone = request.Phone?.Trim() ?? string.Empty,
                 Role = "Owner",
                 CreatedAt = DateTimeOffset.UtcNow
-            });
+            };
+            _context.Users.Add(user);
         }
         else if (string.IsNullOrWhiteSpace(user.Phone) && !string.IsNullOrWhiteSpace(request.Phone))
         {
             user.Phone = request.Phone.Trim();
+        }
+
+        string? token = null;
+        string? refreshToken = null;
+
+        var isNewUserWithoutCredentials = isNewUser
+            && string.IsNullOrWhiteSpace(user.Email)
+            && string.IsNullOrWhiteSpace(user.PasswordHash);
+
+        var shouldIssueTokens = isCallerAuthenticatedAsOwner || isNewUserWithoutCredentials;
+
+        if (shouldIssueTokens && _jwtTokenService != null)
+        {
+            var (accToken, _) = _jwtTokenService.GenerateAccessToken(
+                ownerId,
+                tenantId,
+                email: user.Email,
+                role: user.Role);
+            token = accToken;
+
+            // Security invariant: Only issue a refresh token and persist its hash for newly created users
+            // without existing credentials. Never overwrite the refresh hash of an existing user.
+            if (isNewUser)
+            {
+                var (refToken, refExpiresAt, tokenId, familyId) = _jwtTokenService.GenerateRefreshToken(ownerId, tenantId, null, null);
+                user.RefreshTokenIdHash = _jwtTokenService.HashTokenId(tokenId);
+                user.RefreshTokenExpiresAt = refExpiresAt;
+                refreshToken = refToken;
+
+                _context.UserRefreshTokens.Add(new UserRefreshToken
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = ownerId,
+                    TenantId = tenantId,
+                    FamilyId = familyId,
+                    TokenHash = user.RefreshTokenIdHash,
+                    ExpiresAt = refExpiresAt,
+                    CreatedAt = DateTimeOffset.UtcNow
+                });
+            }
         }
 
         try
@@ -199,14 +251,24 @@ public class TenantController : ControllerBase
             _context.ChangeTracker.Clear();
 
             var existingTenant = await _context.Tenants.IgnoreQueryFilters()
-                .AsNoTracking()
                 .FirstOrDefaultAsync(candidate => candidate.Id == tenantId, cancellationToken);
             var existingOwner = await _context.Users.IgnoreQueryFilters()
-                .AsNoTracking()
                 .FirstOrDefaultAsync(candidate => candidate.Id == ownerId, cancellationToken);
 
             if (existingTenant != null && existingOwner?.TenantId == tenantId)
             {
+                // Never overwrite the refresh hash of an existing user.
+                // Only issue an access token if the caller is already authenticated as request.UserId.
+                if (isCallerAuthenticatedAsOwner && _jwtTokenService != null)
+                {
+                    var (accToken, _) = _jwtTokenService.GenerateAccessToken(
+                        ownerId,
+                        tenantId,
+                        email: existingOwner.Email,
+                        role: existingOwner.Role);
+                    return Ok(new ProvisionTenantResponse(tenantId, ownerId, existingTenant.Tier, accToken, null));
+                }
+
                 return Ok(new ProvisionTenantResponse(tenantId, ownerId, existingTenant.Tier));
             }
 
@@ -224,7 +286,7 @@ public class TenantController : ControllerBase
             throw;
         }
 
-        return Ok(new ProvisionTenantResponse(tenantId, ownerId, tenant.Tier));
+        return Ok(new ProvisionTenantResponse(tenantId, ownerId, tenant.Tier, token, refreshToken));
     }
 
     private static bool IsUniqueConstraintViolation(DbUpdateException exception)

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useAuthStore } from './authStore';
 import { DEFAULT_TENANT_ID, DEFAULT_USER_ID } from '../db/seedData';
 import { DEMO_BUSINESS_NAME, DEMO_OWNER, DEMO_PHONE } from '../constants/demoProfile';
+import type { AuthResponseDto } from '../services/authService';
 
 describe('authStore', () => {
   beforeEach(() => {
@@ -125,12 +126,16 @@ describe('authStore', () => {
     expect(localStorage.getItem('fluent_tindahan_user_id_v1')).toBeNull();
   });
 
-  it('sets firebase token and clears it on logout', () => {
+  it('sets firebase token and clears it on logout', async () => {
     useAuthStore.getState().setFirebaseToken('sample-jwt-token');
     expect(useAuthStore.getState().firebaseToken).toBe('sample-jwt-token');
 
-    useAuthStore.getState().logout();
+    await useAuthStore.getState().logout(true);
     expect(useAuthStore.getState().firebaseToken).toBeNull();
+    expect(useAuthStore.getState().businessName).toBe('');
+    expect(useAuthStore.getState().ownerName).toBe('');
+    expect(useAuthStore.getState().userPhone).toBe('');
+    expect(useAuthStore.getState().isOnboarded).toBe(false);
   });
 
   it('resets subscription state when onboarding creates a new tenant', () => {
@@ -224,4 +229,250 @@ describe('authStore', () => {
     expect(localStorage.getItem('fluent_tindahan_owner_name_v1')).toBe('');
     expect(localStorage.getItem('fluent_tindahan_user_phone_v1')).toBe('');
   });
+
+  it('sets and persists user email and last login email', () => {
+    useAuthStore.getState().setUserEmail('nanay.suki@gmail.com');
+
+    expect(useAuthStore.getState().userEmail).toBe('nanay.suki@gmail.com');
+    expect(localStorage.getItem('fluent_tindahan_user_email_v1')).toBe('nanay.suki@gmail.com');
+    expect(localStorage.getItem('fluent_tindahan_last_email_v1')).toBe('nanay.suki@gmail.com');
+  });
+
+  it('manages PIN status and local verifier', () => {
+    useAuthStore.getState().setHasPin(true);
+    useAuthStore.getState().setLocalPinVerifier('mock-sha256-hash');
+    useAuthStore.getState().setIsSessionLocked(true);
+
+    expect(useAuthStore.getState().hasPin).toBe(true);
+    expect(useAuthStore.getState().localPinVerifier).toBe('mock-sha256-hash');
+    expect(useAuthStore.getState().isSessionLocked).toBe(true);
+
+    useAuthStore.getState().setHasPin(false);
+    expect(useAuthStore.getState().hasPin).toBe(false);
+    expect(useAuthStore.getState().localPinVerifier).toBeNull();
+    expect(useAuthStore.getState().isSessionLocked).toBe(false);
+  });
+
+  it('logs in with auth payload, updating identity and token', async () => {
+    const authPayload = {
+      tenantId: '11111111-1111-1111-1111-111111111111',
+      userId: '22222222-2222-2222-2222-222222222222',
+      email: 'owner@tindahan.ph',
+      businessName: 'Cloud Tindahan',
+      ownerName: 'Nanay Nena',
+      phone: '09171234567',
+      role: 'Owner' as const,
+      tier: 'TindahanPro' as const,
+      planTier: 'TindahanPro',
+      subscriptionEndDate: '2028-12-31T23:59:59Z',
+      hasPin: true,
+      token: 'jwt-auth-token-123',
+      expiresAt: '2027-10-15T00:00:00Z',
+      refreshToken: 'jwt-refresh-token-456'
+    };
+
+    await useAuthStore.getState().loginWithAuthPayload(authPayload, '1234');
+
+    const state = useAuthStore.getState();
+    expect(state.tenantId).toBe(authPayload.tenantId);
+    expect(state.userId).toBe(authPayload.userId);
+    expect(state.userEmail).toBe('owner@tindahan.ph');
+    expect(state.businessName).toBe('Cloud Tindahan');
+    expect(state.hasPin).toBe(true);
+    expect(state.firebaseToken).toBe('jwt-auth-token-123');
+    expect(state.refreshToken).toBe('jwt-refresh-token-456');
+    expect(state.localPinVerifier).not.toBeNull();
+    expect(state.localPinVerifier).toMatch(/^pbkdf2:v1:100000:[0-9a-f]{32}:[0-9a-f]{64}$/);
+    expect(state.tier).toBe('TindahanPro');
+    expect(localStorage.getItem('fluent_tindahan_tenant_id_v1')).toBe(authPayload.tenantId);
+    expect(localStorage.getItem('fluent_tindahan_refresh_token_v1')).toBe('jwt-refresh-token-456');
+  });
+
+  it('tracks offline PIN failures and locks out after 5 consecutive failed attempts', () => {
+    const store = useAuthStore.getState();
+
+    expect(store.isOfflinePinLockedOut()).toBe(false);
+    expect(store.offlineFailedPinAttempts).toBe(0);
+
+    // Fail 4 times
+    for (let i = 1; i <= 4; i++) {
+      const res = store.recordOfflinePinFailure();
+      expect(res.attempts).toBe(i);
+      expect(res.isLockedOut).toBe(false);
+      expect(store.isOfflinePinLockedOut()).toBe(false);
+    }
+
+    // 5th failure triggers lockout
+    const fifth = store.recordOfflinePinFailure();
+    expect(fifth.attempts).toBe(5);
+    expect(fifth.isLockedOut).toBe(true);
+    expect(fifth.lockoutMinutes).toBe(15);
+    expect(store.isOfflinePinLockedOut()).toBe(true);
+    expect(store.getOfflinePinLockoutMinutesRemaining()).toBeGreaterThanOrEqual(14);
+
+    // Persisted in localStorage
+    expect(localStorage.getItem('fluent_tindahan_offline_pin_failures_v1')).toBe('5');
+    expect(localStorage.getItem('fluent_tindahan_offline_pin_lockout_end_v1')).not.toBeNull();
+
+    // Resetting failures clears lockout
+    store.resetOfflinePinFailures();
+    expect(store.isOfflinePinLockedOut()).toBe(false);
+    expect(store.offlineFailedPinAttempts).toBe(0);
+    expect(localStorage.getItem('fluent_tindahan_offline_pin_failures_v1')).toBeNull();
+    expect(localStorage.getItem('fluent_tindahan_offline_pin_lockout_end_v1')).toBeNull();
+  });
+
+  it('resets offline failed PIN attempts to 0 before counting new failure when lockoutEnd is in the past', () => {
+    const pastLockout = new Date(Date.now() - 60000).toISOString();
+    localStorage.setItem('fluent_tindahan_offline_pin_failures_v1', '5');
+    localStorage.setItem('fluent_tindahan_offline_pin_lockout_end_v1', pastLockout);
+    useAuthStore.setState({
+      offlineFailedPinAttempts: 5,
+      offlinePinLockoutEnd: pastLockout
+    });
+
+    const result = useAuthStore.getState().recordOfflinePinFailure();
+
+    expect(result.attempts).toBe(1);
+    expect(result.isLockedOut).toBe(false);
+    expect(useAuthStore.getState().offlineFailedPinAttempts).toBe(1);
+    expect(useAuthStore.getState().offlinePinLockoutEnd).toBeNull();
+  });
+
+  it('setRefreshToken updates state and localStorage', () => {
+    useAuthStore.getState().setRefreshToken('new-refresh-token');
+    expect(useAuthStore.getState().refreshToken).toBe('new-refresh-token');
+    expect(localStorage.getItem('fluent_tindahan_refresh_token_v1')).toBe('new-refresh-token');
+
+    useAuthStore.getState().setRefreshToken(null);
+    expect(useAuthStore.getState().refreshToken).toBeNull();
+    expect(localStorage.getItem('fluent_tindahan_refresh_token_v1')).toBeNull();
+  });
+
+  it('guards against logout when unsynced items exist in syncQueue unless forceWipe is true', async () => {
+    const { db } = await import('../db/db');
+    await db.syncQueue.add({
+      id: 'pending-sale-uuid',
+      entity: 'Sale',
+      action: 'Insert',
+      timestamp: new Date().toISOString(),
+      payload: { id: 's1', total: 100 },
+      status: 'Pending',
+      retryCount: 0
+    });
+
+    const gentleResult = await useAuthStore.getState().logout(false);
+    expect(gentleResult.success).toBe(false);
+    expect(gentleResult.unsyncedCount).toBe(1);
+    expect(useAuthStore.getState().isOnboarded).toBe(true); // still logged in
+
+    const forceResult = await useAuthStore.getState().logout(true);
+    expect(forceResult.success).toBe(true);
+    expect(forceResult.unsyncedCount).toBe(0);
+    expect(useAuthStore.getState().isOnboarded).toBe(false);
+    expect(useAuthStore.getState().refreshToken).toBeNull();
+    expect(localStorage.getItem('fluent_tindahan_refresh_token_v1')).toBeNull();
+    expect(localStorage.getItem('fluent_tindahan_auth_token_v1')).toBeNull();
+    expect(localStorage.getItem('fluent_tindahan_firebase_token_v1')).toBeNull();
+    expect(await db.syncQueue.count()).toBe(0);
+  });
+
+  it('guards against login when unsynced items exist on new tenant unless forceWipe is true', async () => {
+    const { db } = await import('../db/db');
+    useAuthStore.setState({ tenantId: 'original-tenant-id' });
+    await db.syncQueue.add({
+      id: 'pending-sale-uuid-login',
+      entity: 'Sale',
+      action: 'Insert',
+      timestamp: new Date().toISOString(),
+      payload: { id: 's2', total: 200 },
+      status: 'Pending',
+      retryCount: 0
+    });
+
+    const newTenantPayload: AuthResponseDto = {
+      tenantId: 'different-tenant-id',
+      userId: 'diff-user-id',
+      email: 'diff@tindahan.ph',
+      businessName: 'Different Store',
+      ownerName: 'Diff Owner',
+      phone: '09123456789',
+      role: 'Owner',
+      tier: 'Libre' as const,
+      planTier: 'Libre' as const,
+      subscriptionEndDate: null,
+      hasPin: false,
+      token: 'jwt-diff-token',
+      expiresAt: '2028-01-01'
+    };
+
+    // Attempt gentle login without forceWipe
+    const gentleResult = await useAuthStore.getState().loginWithAuthPayload(newTenantPayload, undefined, false);
+    expect(gentleResult.success).toBe(false);
+    expect(gentleResult.unsyncedCount).toBe(1);
+    expect(useAuthStore.getState().tenantId).toBe('original-tenant-id'); // preserved!
+    expect(await db.syncQueue.count()).toBe(1); // queue NOT wiped!
+
+    // Attempt login to SAME tenant
+    const sameTenantPayload = {
+      ...newTenantPayload,
+      tenantId: 'original-tenant-id'
+    };
+    const sameResult = await useAuthStore.getState().loginWithAuthPayload(sameTenantPayload, undefined, false);
+    expect(sameResult.success).toBe(true);
+    expect(sameResult.unsyncedCount).toBe(0);
+    expect(await db.syncQueue.count()).toBe(1); // queue still preserved!
+
+    // Force wipe login to new tenant
+    const forceResult = await useAuthStore.getState().loginWithAuthPayload(newTenantPayload, undefined, true);
+    expect(forceResult.success).toBe(true);
+    expect(forceResult.unsyncedCount).toBe(0);
+    expect(useAuthStore.getState().tenantId).toBe('different-tenant-id');
+    expect(await db.syncQueue.count()).toBe(0); // cleared for new tenant!
+  });
+
+  it('migrates legacy firebase token storage key to native backend auth token key', async () => {
+    // Simulate existing user session storing token under legacy key
+    localStorage.clear();
+    localStorage.setItem('fluent_tindahan_firebase_token_v1', 'legacy-firebase-compat-jwt');
+    vi.resetModules();
+
+    const { useAuthStore: reloadedStore, STORAGE_KEY_TOKEN, LEGACY_STORAGE_KEY_FIREBASE_TOKEN } = await import('./authStore');
+
+    // 1. Initial state picks up legacy token as fallback
+    expect(reloadedStore.getState().firebaseToken).toBe('legacy-firebase-compat-jwt');
+
+    // 2. Setting a new token saves to the new key and removes the legacy key
+    reloadedStore.getState().setFirebaseToken('new-backend-signed-jwt');
+    expect(reloadedStore.getState().firebaseToken).toBe('new-backend-signed-jwt');
+    expect(localStorage.getItem(STORAGE_KEY_TOKEN)).toBe('new-backend-signed-jwt');
+    expect(localStorage.getItem(LEGACY_STORAGE_KEY_FIREBASE_TOKEN)).toBeNull();
+
+    // 3. Setting token to null removes both keys
+    reloadedStore.getState().setFirebaseToken(null);
+    expect(reloadedStore.getState().firebaseToken).toBeNull();
+    expect(localStorage.getItem(STORAGE_KEY_TOKEN)).toBeNull();
+    expect(localStorage.getItem(LEGACY_STORAGE_KEY_FIREBASE_TOKEN)).toBeNull();
+  });
+
+  it('notifies backend logout with refreshToken without failing local logout on network error', async () => {
+    const { apiClient } = await import('../services/apiClient');
+    const { useAuthStore: currentAuthStore } = await import('./authStore');
+    const postSpy = vi.spyOn(apiClient, 'post').mockRejectedValueOnce(new Error('Network offline'));
+
+    currentAuthStore.setState({
+      isOnboarded: true,
+      refreshToken: 'current-active-refresh-token'
+    });
+
+    const result = await currentAuthStore.getState().logout(true);
+    expect(result.success).toBe(true);
+    expect(postSpy).toHaveBeenCalledWith('/auth/logout', { refreshToken: 'current-active-refresh-token' });
+    expect(currentAuthStore.getState().refreshToken).toBeNull();
+    expect(currentAuthStore.getState().isOnboarded).toBe(false);
+
+    postSpy.mockRestore();
+  });
 });
+
+

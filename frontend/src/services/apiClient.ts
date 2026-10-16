@@ -58,6 +58,7 @@ export async function ensureTenantProvisioned(): Promise<void> {
     firebaseToken,
     businessName,
     userPhone,
+    userEmail,
     isOnboarded,
     isOnboardingStatusReady,
     locallyCreatedTenantId,
@@ -103,6 +104,7 @@ export async function ensureTenantProvisioned(): Promise<void> {
     firebaseToken,
     businessName,
     userPhone,
+    userEmail,
     locallyCreatedTenantId,
     normalizedTenantId,
     confirmedTenantId,
@@ -125,6 +127,7 @@ async function provisionTenantSession({
   firebaseToken,
   businessName,
   userPhone,
+  userEmail,
   locallyCreatedTenantId,
   normalizedTenantId,
   confirmedTenantId,
@@ -136,6 +139,7 @@ async function provisionTenantSession({
   firebaseToken: string | null;
   businessName: string;
   userPhone: string;
+  userEmail: string;
   locallyCreatedTenantId: string | null;
   normalizedTenantId: string;
   confirmedTenantId: string | undefined;
@@ -146,7 +150,8 @@ async function provisionTenantSession({
     response = await apiClient.put('/tenant/provision', {
       userId: requestedUserId,
       businessName,
-      phone: userPhone
+      phone: userPhone,
+      email: userEmail || undefined
     });
   } catch (err) {
     const status = (err as { response?: { status?: unknown } })?.response?.status;
@@ -162,6 +167,13 @@ async function provisionTenantSession({
   const provisionedUserId = response.data?.userId || requestedUserId;
   if (typeof provisionedUserId !== 'string' || !GUID_PATTERN.test(provisionedUserId)) {
     throw new TenantProvisioningError(409);
+  }
+
+  if (response.data?.token) {
+    useAuthStore.getState().setFirebaseToken(response.data.token);
+  }
+  if (response.data?.refreshToken) {
+    useAuthStore.getState().setRefreshToken(response.data.refreshToken);
   }
 
   const normalizedProvisionedTenantId = provisionedTenantId.toLowerCase();
@@ -247,3 +259,88 @@ apiClient.interceptors.request.use((config) => {
 
   return config;
 });
+
+let isRefreshing = false;
+let failedQueue: Array<{
+  resolve: (value: unknown) => void;
+  reject: (reason?: unknown) => void;
+}> = [];
+
+const processQueue = (error: unknown, token: string | null = null) => {
+  failedQueue.forEach((prom) => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(token);
+    }
+  });
+  failedQueue = [];
+};
+
+apiClient.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error?.config;
+    if (
+      error?.response?.status === 401 &&
+      originalRequest &&
+      !originalRequest._retry &&
+      !originalRequest.url?.includes('/auth/refresh')
+    ) {
+      const { refreshToken, setFirebaseToken, setRefreshToken } = useAuthStore.getState();
+      if (!refreshToken) {
+        return Promise.reject(error);
+      }
+
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        })
+          .then((newToken) => {
+            originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
+            return apiClient.request(originalRequest);
+          })
+          .catch((err) => Promise.reject(err));
+      }
+
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      try {
+        const refreshResponse = await axios.post<{
+          token: string;
+          refreshToken?: string;
+        }>('/api/auth/refresh', { refreshToken }, {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 15000
+        });
+
+        const newToken = refreshResponse.data.token;
+        const newRefreshToken = refreshResponse.data.refreshToken ?? refreshToken;
+
+        setFirebaseToken(newToken);
+        if (newRefreshToken) {
+          setRefreshToken(newRefreshToken);
+        }
+
+        processQueue(null, newToken);
+        originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
+        return apiClient.request(originalRequest);
+      } catch (refreshErr: any) {
+        processQueue(refreshErr, null);
+        const refreshStatus = refreshErr?.response?.status;
+        if (refreshStatus === 401 || refreshStatus === 403) {
+          setFirebaseToken(null);
+          setRefreshToken(null);
+        } else {
+          delete originalRequest._retry;
+        }
+        return Promise.reject(refreshErr);
+      } finally {
+        isRefreshing = false;
+      }
+    }
+
+    return Promise.reject(error);
+  }
+);

@@ -73,12 +73,14 @@ export const ConfirmStockOverrideDialog: React.FC<ConfirmStockOverrideDialogProp
   const styles = useStyles();
   const { t, language } = useTranslation();
 
+  if (!isOpen) return null;
+
   return (
     <Dialog
       modalType="alert"
       open={isOpen}
       onOpenChange={(_, data) => {
-        if (!data.open) onClose();
+        if (!data.open && data.type === 'escapeKeyDown') onClose();
       }}
     >
       <DialogSurface className={styles.surface}>
