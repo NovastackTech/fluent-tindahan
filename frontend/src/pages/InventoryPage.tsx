@@ -438,7 +438,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
         set.add(p.category.trim());
       }
     });
-    return Array.from(set).sort();
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [products]);
 
   // Overall Inventory KPI Metrics

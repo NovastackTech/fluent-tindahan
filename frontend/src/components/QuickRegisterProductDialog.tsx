@@ -136,7 +136,7 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
       db.products.where('tenantId').equals(tenantId).toArray().then((prods) => {
         const unique = Array.from(
           new Set(prods.map((p) => p.category?.trim()).filter(Boolean) as string[])
-        ).sort();
+        ).sort((a, b) => a.localeCompare(b));
         setCategories(unique);
       });
     }
