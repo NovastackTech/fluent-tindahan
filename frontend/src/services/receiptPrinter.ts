@@ -38,7 +38,7 @@ export function generateThermalReceiptHtml(
   <style>
     @page {
       margin: 0;
-      size: ${widthMm} auto;
+      size: auto;
     }
     html, body {
       margin: 0;
