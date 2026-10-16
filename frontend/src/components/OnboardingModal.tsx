@@ -492,11 +492,8 @@ export const OnboardingModal: React.FC = () => {
             businessName: trimmedBusinessName,
             ownerName: trimmedOwnerName,
             phone: normalizedPhone,
-            email: trimmedEmail,
-            ...(isEmailChanged ? {
-              currentPassword: formCurrentPassword.trim() || undefined,
-              pin: formCurrentPin.trim() || undefined
-            } : {})
+            // email change requires re-verification online; never persist credentials
+            ...(isEmailChanged ? {} : { email: trimmedEmail })
           }, tenantId);
 
           setOfflineNotice(t.onboarding.savedLocallyNotice);
