@@ -4,8 +4,7 @@ import {
   getPendingProfileUpdate,
   clearPendingProfileUpdate,
   hasPendingProfileUpdate,
-  syncPendingProfileUpdate,
-  STORAGE_KEY_PENDING_PROFILE_UPDATE
+  syncPendingProfileUpdate
 } from './profileSync';
 import * as authService from './authService';
 import { useAuthStore } from '../state/authStore';
