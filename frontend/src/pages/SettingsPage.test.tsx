@@ -675,7 +675,9 @@ describe('SettingsPage', () => {
     renderSettings();
 
     const logoutBtn = screen.getByRole('button', { name: /Mag-log Out|Log Out/i });
-    fireEvent.click(logoutBtn);
+    await act(async () => {
+      fireEvent.click(logoutBtn);
+    });
 
     await waitFor(() => {
       expect(screen.getByText(/May 1 transaksyon na hindi pa nai-sync sa cloud|You have 1 unsynced transactions/i)).toBeInTheDocument();

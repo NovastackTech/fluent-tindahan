@@ -133,12 +133,16 @@ const useStyles = makeStyles({
     ...shorthands.border('1px', 'solid', tokens.colorNeutralStroke1),
     backgroundColor: tokens.colorNeutralBackground1
   },
-  photoBannerImg: {
+  photoBannerGraphic: {
     width: '100%',
-    height: 'auto',
-    maxHeight: '460px',
-    objectFit: 'cover',
-    display: 'block'
+    minHeight: '180px',
+    background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #064e3b 100%)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    overflow: 'hidden',
+    ...shorthands.padding(tokens.spacingVerticalM, tokens.spacingHorizontalM)
   },
   photoBannerCaption: {
     ...shorthands.padding(tokens.spacingVerticalM, tokens.spacingHorizontalL),
@@ -945,12 +949,59 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
 
       {/* 2. Photo Banner & Real Sari-Sari Context */}
       <section className={styles.photoBannerCard}>
-        <img
-          src="/sari_sari_hero.jpg"
-          alt="Balay ni Maria Sari-Sari Store with Modern POS Counter"
-          className={styles.photoBannerImg}
-          loading="lazy"
-        />
+        <div className={styles.photoBannerGraphic}>
+          <svg
+            viewBox="0 0 800 240"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            style={{ width: '100%', maxHeight: '200px' }}
+            aria-label="Balay ni Maria Sari-Sari Store with Modern POS Counter"
+            role="img"
+          >
+            <rect x="180" y="50" width="440" height="150" rx="12" fill="#1e293b" stroke="#334155" strokeWidth="2" />
+            
+            {/* Awning stripes */}
+            <path d="M160 50 L180 20 L620 20 L640 50 Z" fill="#b91c1c" />
+            <path d="M190 20 L220 20 L210 50 L180 50 Z" fill="#ffffff" />
+            <path d="M250 20 L280 20 L270 50 L240 50 Z" fill="#ffffff" />
+            <path d="M310 20 L340 20 L330 50 L300 50 Z" fill="#ffffff" />
+            <path d="M370 20 L400 20 L390 50 L360 50 Z" fill="#ffffff" />
+            <path d="M430 20 L460 20 L450 50 L420 50 Z" fill="#ffffff" />
+            <path d="M490 20 L520 20 L510 50 L480 50 Z" fill="#ffffff" />
+            <path d="M550 20 L580 20 L570 50 L540 50 Z" fill="#ffffff" />
+            <path d="M610 20 L620 20 L640 50 L630 50 Z" fill="#ffffff" />
+
+            {/* Store counter & tablet */}
+            <rect x="220" y="140" width="360" height="50" rx="6" fill="#334155" />
+            <rect x="360" y="95" width="80" height="55" rx="6" fill="#0f172a" stroke="#38bdf8" strokeWidth="2" />
+            <rect x="368" y="103" width="64" height="36" rx="3" fill="#0284c7" />
+            <path d="M390 150 L410 150 L405 160 L395 160 Z" fill="#64748b" />
+            
+            {/* Shelves & FMCG products */}
+            <rect x="220" y="70" width="120" height="8" rx="2" fill="#475569" />
+            <rect x="460" y="70" width="120" height="8" rx="2" fill="#475569" />
+            <rect x="230" y="56" width="14" height="14" rx="2" fill="#f59e0b" />
+            <rect x="250" y="54" width="16" height="16" rx="2" fill="#ef4444" />
+            <rect x="272" y="57" width="12" height="13" rx="2" fill="#10b981" />
+            <rect x="290" y="55" width="15" height="15" rx="2" fill="#3b82f6" />
+            
+            <rect x="470" y="55" width="16" height="15" rx="2" fill="#ec4899" />
+            <rect x="492" y="53" width="18" height="17" rx="2" fill="#8b5cf6" />
+            <rect x="516" y="56" width="14" height="14" rx="2" fill="#f97316" />
+            <rect x="536" y="54" width="15" height="16" rx="2" fill="#14b8a6" />
+
+            {/* Feature badges */}
+            <g transform="translate(140, 95)">
+              <rect width="110" height="32" rx="16" fill="rgba(16, 185, 129, 0.2)" stroke="#10b981" strokeWidth="1" />
+              <text x="55" y="20" fill="#34d399" fontSize="11" fontWeight="bold" textAnchor="middle">⚡ Zero Latency POS</text>
+            </g>
+
+            <g transform="translate(550, 95)">
+              <rect width="110" height="32" rx="16" fill="rgba(56, 189, 248, 0.2)" stroke="#38bdf8" strokeWidth="1" />
+              <text x="55" y="20" fill="#7dd3fc" fontSize="11" fontWeight="bold" textAnchor="middle">📶 100% Offline-Ready</text>
+            </g>
+          </svg>
+        </div>
         <div className={styles.photoBannerCaption}>
           <div>
             <Text weight="bold" size={300}>Balay ni Maria Sari-Sari Store • Maynila</Text>
