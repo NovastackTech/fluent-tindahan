@@ -1,5 +1,6 @@
 import { useCartStore } from '../state/cartStore';
 import { usePwaStore } from '../state/pwaStore';
+import { createClientUuid } from '../utils/uuid';
 
 export const PWA_CART_CHANNEL_NAME = 'fluent_tindahan_cart_coordination';
 
@@ -28,9 +29,7 @@ let unsubscribeCartStore: (() => void) | null = null;
 
 export function getTabId(): string {
   if (!tabId) {
-    tabId = typeof crypto !== 'undefined' && crypto.randomUUID
-      ? crypto.randomUUID()
-      : Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
+    tabId = createClientUuid();
   }
   return tabId;
 }

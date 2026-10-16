@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { initPwaTabCoordinator, _resetPwaTabCoordinatorForTest, PWA_CART_CHANNEL_NAME } from './pwaTabCoordinator';
+import { initPwaTabCoordinator, getTabId, _resetPwaTabCoordinatorForTest, PWA_CART_CHANNEL_NAME } from './pwaTabCoordinator';
 import { useCartStore } from '../state/cartStore';
 import { usePwaStore } from '../state/pwaStore';
 
@@ -12,6 +12,18 @@ describe('pwaTabCoordinator', () => {
 
   afterEach(() => {
     _resetPwaTabCoordinatorForTest();
+  });
+
+  it('generates a stable RFC 4122 v4 UUID tabId', () => {
+    const id1 = getTabId();
+    const id2 = getTabId();
+    expect(id1).toBe(id2);
+    expect(id1).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+
+    _resetPwaTabCoordinatorForTest();
+    const id3 = getTabId();
+    expect(id3).not.toBe(id1);
+    expect(id3).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
   });
 
   it('broadcasts cart status when items are added and updates otherTabsHaveCart across tabs', () => {
