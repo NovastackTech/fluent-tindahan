@@ -135,6 +135,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
 
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
   const isScanningRef = useRef(false);
+  const runIdRef = useRef(0);
 
   const onScanRef = useRef(onScan);
   const onCloseRef = useRef(onClose);
@@ -169,9 +170,14 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   }, [stopScanner]);
 
   const startScanner = useCallback(async () => {
+    const runId = runIdRef.current;
     try {
       if (html5QrCodeRef.current) {
         await stopScanner();
+      }
+
+      if (runId !== runIdRef.current) {
+        return;
       }
 
       const qrCode = new Html5Qrcode(SCANNER_ELEMENT_ID);
@@ -204,9 +210,24 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         }
       );
 
+      if (runId !== runIdRef.current) {
+        try {
+          await qrCode.stop();
+          qrCode.clear();
+        } catch {
+          // Stop error can be safely ignored on teardown
+        }
+        html5QrCodeRef.current = null;
+        isScanningRef.current = false;
+        return;
+      }
+
       isScanningRef.current = true;
       setIsLoading(false);
     } catch (err: any) {
+      if (runId !== runIdRef.current) {
+        return;
+      }
       console.warn('Failed to start camera barcode scanner:', err);
       setIsLoading(false);
       setErrorMessage(
@@ -242,6 +263,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     }, 300);
 
     return () => {
+      runIdRef.current += 1;
       isMounted = false;
       clearTimeout(timer);
       void stopScanner();

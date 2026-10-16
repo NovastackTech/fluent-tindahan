@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import {
   makeStyles,
   tokens,
@@ -27,6 +27,7 @@ import type { NavTab } from '../components/Navigation';
 import { useTranslation } from '../state/languageStore';
 import { formatPeso } from '../utils/currency';
 import { toLocalDateKey } from '../utils/date';
+import { useTodayKey } from '../hooks/useTodayKey';
 
 interface DashboardPageProps {
   onNavigate: (tab: NavTab) => void;
@@ -122,13 +123,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   const lowStockProducts = products.filter((p) => (p.stockQty ?? 0) <= 5);
 
   // Today's boundaries
-  const [todayStr, setTodayStr] = useState(() => toLocalDateKey(new Date()));
-  useEffect(() => {
-    const now = new Date();
-    const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime() - now.getTime();
-    const id = window.setTimeout(() => setTodayStr(toLocalDateKey(new Date())), next + 1000);
-    return () => window.clearTimeout(id);
-  }, [todayStr]);
+  const todayStr = useTodayKey();
 
   const todaySales = (sales || []).filter((s) => toLocalDateKey(s.date) === todayStr);
   const totalSalesAmount = todaySales.reduce((sum, s) => sum + s.totalAmount, 0);

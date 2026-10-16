@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   makeStyles,
   tokens,
@@ -29,6 +29,7 @@ import { useSubscriptionStore } from '../state/subscriptionStore';
 import { calculateGCashFee, DEFAULT_GCASH_FEE_TIERS, useGCashFeeStore } from '../state/gcashFeeStore';
 import { formatPeso } from '../utils/currency';
 import { toLocalDateKey } from '../utils/date';
+import { useTodayKey } from '../hooks/useTodayKey';
 import { normalizePhilippineMobile } from '../utils/philippineMobile';
 
 
@@ -150,13 +151,7 @@ export const GCashPage: React.FC = () => {
     () => db.gcashTxnResolutions.where('tenantId').equals(tenantId).toArray(),
     [tenantId]
   );
-  const [todayStr, setTodayStr] = useState(() => toLocalDateKey(new Date()));
-  useEffect(() => {
-    const now = new Date();
-    const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime() - now.getTime();
-    const id = window.setTimeout(() => setTodayStr(toLocalDateKey(new Date())), next + 1000);
-    return () => window.clearTimeout(id);
-  }, [todayStr]);
+  const todayStr = useTodayKey();
   const currentMonthPrefix = useMemo(() => todayStr.slice(0, 7), [todayStr]);
   const resolutionsByTxnId = useMemo(
     () => new Map((resolutions || []).map((resolution) => [resolution.gcashTxnId, resolution])),

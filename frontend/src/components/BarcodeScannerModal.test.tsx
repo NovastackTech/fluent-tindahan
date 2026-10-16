@@ -117,5 +117,38 @@ describe('BarcodeScannerModal', () => {
       expect(screen.getByText(/Kailangan ng pahintulot|permission/i)).toBeInTheDocument();
     }, { timeout: 1500 });
   });
+
+  it('stops and clears scanner when modal closes while start() is pending', async () => {
+    let resolveStart: () => void = () => {};
+    mockStart.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveStart = resolve;
+        })
+    );
+
+    const { rerender } = render(
+      <FluentProvider theme={sariSariLightTheme}>
+        <BarcodeScannerModal isOpen={true} onClose={vi.fn()} onScan={vi.fn()} />
+      </FluentProvider>
+    );
+
+    await waitFor(() => {
+      expect(mockStart).toHaveBeenCalled();
+    }, { timeout: 1500 });
+
+    rerender(
+      <FluentProvider theme={sariSariLightTheme}>
+        <BarcodeScannerModal isOpen={false} onClose={vi.fn()} onScan={vi.fn()} />
+      </FluentProvider>
+    );
+
+    resolveStart();
+
+    await waitFor(() => {
+      expect(mockStop).toHaveBeenCalled();
+      expect(mockClear).toHaveBeenCalled();
+    });
+  });
 });
 
