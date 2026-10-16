@@ -69,9 +69,23 @@ export async function reloadAppForUpdate(): Promise<void> {
   if (updateSWFunction) {
     try {
       await updateSWFunction(true);
-      return;
     } catch (error) {
       console.error('[PWA] Service worker update failed, falling back to browser reload:', error);
+    }
+  }
+
+  if (
+    typeof navigator !== 'undefined' &&
+    'serviceWorker' in navigator &&
+    typeof navigator.serviceWorker.getRegistration === 'function'
+  ) {
+    try {
+      const registration = await navigator.serviceWorker.getRegistration();
+      if (registration?.waiting) {
+        registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+      }
+    } catch (error) {
+      console.error('[PWA] Failed to message waiting service worker:', error);
     }
   }
 
