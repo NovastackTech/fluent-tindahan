@@ -88,7 +88,7 @@ if url_ok "http://127.0.0.1:5173"; then
 else
   if [[ ! -d "$FRONTEND_DIR/node_modules" ]]; then
     echo "[INFO] Installing frontend dependencies (npm ci)..."
-    (cd "$FRONTEND_DIR" && npm ci)
+    (cd "$FRONTEND_DIR" && npm ci --ignore-scripts)
   fi
   echo "[INFO] Starting Frontend Dev Server on http://localhost:5173..."
   (
