@@ -661,7 +661,7 @@ describe('SettingsPage', () => {
     });
   });
 
-  it('shows safe logout warning when pending mutations exist in syncQueue', async () => {
+  it('shows safe logout warning when pending mutations exist in syncQueue and allows cancelling', async () => {
     await db.syncQueue.add({
       id: 'sync-1',
       entity: 'Sale',
@@ -685,7 +685,7 @@ describe('SettingsPage', () => {
       expect(screen.getByRole('button', { name: /I-sync Muna Bago Mag-logout|Sync First/i })).toBeInTheDocument();
     });
 
-    // Clicking cancel should keep user logged in
+    // Clicking cancel should keep user logged in and dismiss dialog
     const cancelBtn = screen.getByRole('button', { name: /Kanselahin|Cancel/i });
     fireEvent.click(cancelBtn);
     expect(useAuthStore.getState().tenantId).toBe('settings-test-tenant');
@@ -693,13 +693,31 @@ describe('SettingsPage', () => {
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
+  });
 
-    // Click logout again and force logout
-    const logoutAgainBtn = screen.getByRole('button', { name: /Mag-log Out|Log Out/i });
-    await act(async () => {
-      fireEvent.click(logoutAgainBtn);
+  it('allows force logout when pending mutations exist in syncQueue', async () => {
+    await db.syncQueue.add({
+      id: 'sync-1',
+      entity: 'Sale',
+      action: 'Insert',
+      timestamp: new Date().toISOString(),
+      payload: { id: 'sale-1', total: 100 },
+      status: 'Pending',
+      retryCount: 0
     });
-    const forceLogoutBtn = await screen.findByRole('button', { name: /I-log Out Pa Rin|Force Log Out/i });
+
+    renderSettings();
+
+    const logoutBtn = screen.getByRole('button', { name: /Mag-log Out|Log Out/i });
+    await act(async () => {
+      fireEvent.click(logoutBtn);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /I-log Out Pa Rin|Force Log Out/i })).toBeInTheDocument();
+    });
+
+    const forceLogoutBtn = screen.getByRole('button', { name: /I-log Out Pa Rin|Force Log Out/i });
     await act(async () => {
       fireEvent.click(forceLogoutBtn);
     });
