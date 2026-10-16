@@ -271,18 +271,16 @@ describe('LoginPage Component', () => {
     fireEvent.click(submitBtn);
 
     // Dialog should appear asking user first
-    await waitFor(() => {
-      const dialog = screen.getByRole('dialog');
-      expect(within(dialog).getByText(/May Hindi Pa Nai-sync na Datos|Unsynced Data Detected/i)).toBeInTheDocument();
-      expect(within(dialog).getByText(/1 transaksyon na hindi pa nai-sync/i)).toBeInTheDocument();
-    });
+    const firstDialog = await screen.findByRole('dialog', {}, { timeout: 5000 });
+    expect(within(firstDialog).getByText(/May Hindi Pa Nai-sync na Datos|Unsynced Data Detected/i)).toBeInTheDocument();
+    expect(within(firstDialog).getByText(/1 transaksyon na hindi pa nai-sync/i)).toBeInTheDocument();
 
     // Should NOT have completed login yet
     expect(onNavigate).not.toHaveBeenCalled();
     expect(useAuthStore.getState().isOnboarded).toBe(false);
 
     // Clicking cancel closes dialog and preserves unsynced records
-    const cancelBtn = within(screen.getByRole('dialog')).getByRole('button', { name: /Kanselahin|Cancel/i });
+    const cancelBtn = within(firstDialog).getByRole('button', { name: /Kanselahin|Cancel/i });
     fireEvent.click(cancelBtn);
 
     await waitFor(() => {
@@ -292,12 +290,18 @@ describe('LoginPage Component', () => {
     expect(useAuthStore.getState().isOnboarded).toBe(false);
 
     // Submitting again and choosing force login wipes and completes login
-    fireEvent.click(submitBtn);
     await waitFor(() => {
-      expect(screen.getByRole('dialog')).toBeInTheDocument();
-    }, { timeout: 3000 });
+      expect(submitBtn).not.toBeDisabled();
+    });
+    const loginForm = submitBtn.closest('form');
+    if (loginForm) {
+      fireEvent.submit(loginForm);
+    } else {
+      fireEvent.click(submitBtn);
+    }
 
-    const wipeBtn = within(screen.getByRole('dialog')).getByRole('button', { name: /I-wipe at Mag-login Pa Rin|Wipe & Log In Anyway/i });
+    const secondDialog = await screen.findByRole('dialog', {}, { timeout: 5000 });
+    const wipeBtn = await within(secondDialog).findByRole('button', { name: /I-wipe at Mag-login Pa Rin|Wipe & Log In Anyway/i }, { timeout: 5000 });
     fireEvent.click(wipeBtn);
 
     await waitFor(() => {
