@@ -24,6 +24,7 @@ import {
   KeyRegular
 } from '@fluentui/react-icons';
 import type { NavTab } from './Navigation';
+import { resolveHeaderLogoDestination } from './headerLogoDestination';
 import { useThemeStore } from '../state/themeStore';
 import { useSyncStore, processSyncQueue } from '../sync/syncEngine';
 import { useAuthStore } from '../state/authStore';
@@ -108,24 +109,6 @@ const useStyles = makeStyles({
 export interface HeaderProps {
   onNavigate?: (tab: NavTab) => void;
   activeTab?: NavTab;
-}
-
-/**
- * Home target for the header wordmark.
- * Signed-in stores go to the dashboard from every page, including the public landing page.
- * Visitors who are not signed in keep the public shortcut: landing, or login when already there.
- */
-export function resolveHeaderLogoDestination(
-  activeTab: NavTab | undefined,
-  isOnboarded: boolean
-): NavTab {
-  if (isOnboarded) {
-    return 'dashboard';
-  }
-  if (activeTab === 'landing') {
-    return 'login';
-  }
-  return 'landing';
 }
 
 export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab }) => {

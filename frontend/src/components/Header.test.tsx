@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { FluentProvider } from '@fluentui/react-components';
-import { Header, resolveHeaderLogoDestination } from './Header';
+import { Header } from './Header';
+import { resolveHeaderLogoDestination } from './headerLogoDestination';
 import { sariSariLightTheme } from '../theme/theme';
 import { useAuthStore } from '../state/authStore';
 import { useThemeStore } from '../state/themeStore';
