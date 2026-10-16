@@ -110,6 +110,24 @@ export interface HeaderProps {
   activeTab?: NavTab;
 }
 
+/**
+ * Home target for the header wordmark.
+ * Signed-in stores go to the dashboard from every page, including the public landing page.
+ * Visitors who are not signed in keep the public shortcut: landing, or login when already there.
+ */
+export function resolveHeaderLogoDestination(
+  activeTab: NavTab | undefined,
+  isOnboarded: boolean
+): NavTab {
+  if (isOnboarded) {
+    return 'dashboard';
+  }
+  if (activeTab === 'landing') {
+    return 'login';
+  }
+  return 'landing';
+}
+
 export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab }) => {
   const styles = useStyles();
   const { themeMode, cycleThemeMode } = useThemeStore();
@@ -130,25 +148,29 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab }) => {
   const isLoggedOut = !isOnboarded || activeTab === 'login';
   const showStoreInfo = !isLoggedOut && Boolean(businessName);
   const showSyncIndicators = !isLoggedOut;
+  const logoDestination = resolveHeaderLogoDestination(activeTab, isOnboarded);
+  const logoTitle =
+    logoDestination === 'dashboard'
+      ? t.nav.dashboard
+      : logoDestination === 'login'
+        ? t.landing.tabLogin
+        : t.landing.exploreTitle;
+
+  const handleLogoClick = () => {
+    if (onNavigate) {
+      onNavigate(logoDestination);
+    }
+  };
 
   return (
     <header className={styles.header}>
       <div className={styles.headerInner}>
         <div
           className={styles.titleGroup}
-          onClick={() => {
-            if (onNavigate) {
-              if (activeTab === 'landing') {
-                onNavigate(isOnboarded ? 'pos' : 'login');
-              } else if (activeTab === 'login') {
-                onNavigate('landing');
-              } else {
-                onNavigate('landing');
-              }
-            }
-          }}
+          onClick={handleLogoClick}
           style={{ cursor: onNavigate ? 'pointer' : 'default' }}
-          title={activeTab === 'landing' ? (isOnboarded ? t.nav.dashboard : t.landing.tabLogin) : t.landing.exploreTitle}
+          title={logoTitle}
+          data-testid="header-logo"
         >
           <div className={styles.logoIcon}>FT</div>
           <div>

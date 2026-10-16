@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { FluentProvider } from '@fluentui/react-components';
-import { Header } from './Header';
+import { Header, resolveHeaderLogoDestination } from './Header';
 import { sariSariLightTheme } from '../theme/theme';
 import { useAuthStore } from '../state/authStore';
 import { useThemeStore } from '../state/themeStore';
@@ -138,6 +138,61 @@ describe('Header', () => {
     expect(screen.queryByText(/Aling Nena's/i)).not.toBeInTheDocument();
     expect(screen.queryByTitle('View Subscription Plans')).not.toBeInTheDocument();
     expect(screen.queryByText(/Naka-online|Online/i)).not.toBeInTheDocument();
+  });
+
+  it('sends authenticated users to the dashboard when the logo is clicked', () => {
+    const onNavigate = vi.fn();
+    const inAppTabs = ['dashboard', 'pos', 'inventory', 'utang', 'gcash', 'import', 'settings', 'landing', 'login'] as const;
+
+    for (const activeTab of inAppTabs) {
+      onNavigate.mockClear();
+      const { unmount } = renderHeader({ onNavigate, activeTab });
+
+      fireEvent.click(screen.getByTestId('header-logo'));
+
+      expect(onNavigate).toHaveBeenCalledTimes(1);
+      expect(onNavigate).toHaveBeenCalledWith('dashboard');
+      expect(screen.getByTestId('header-logo')).toHaveAttribute('title', 'Dashboard');
+      unmount();
+    }
+  });
+
+  it('sends unauthenticated visitors on public pages to the landing page', () => {
+    useAuthStore.setState({ businessName: '', isOnboarded: false });
+    const onNavigate = vi.fn();
+    const { unmount } = renderHeader({ onNavigate, activeTab: 'login' });
+
+    fireEvent.click(screen.getByTestId('header-logo'));
+
+    expect(onNavigate).toHaveBeenCalledTimes(1);
+    expect(onNavigate).toHaveBeenCalledWith('landing');
+    unmount();
+
+    onNavigate.mockClear();
+    renderHeader({ onNavigate, activeTab: 'landing' });
+
+    // Already on the landing page, the public logo shortcut continues to login.
+    fireEvent.click(screen.getByTestId('header-logo'));
+    expect(onNavigate).toHaveBeenCalledWith('login');
+  });
+
+  it('keeps the explore shortcut pointed at the landing page for signed-in users', () => {
+    const onNavigate = vi.fn();
+    renderHeader({ onNavigate, activeTab: 'utang' });
+
+    fireEvent.click(screen.getByTestId('header-landing-toggle-btn'));
+
+    expect(onNavigate).toHaveBeenCalledTimes(1);
+    expect(onNavigate).toHaveBeenCalledWith('landing');
+  });
+
+  it('resolves the logo destination from auth state and the current page', () => {
+    expect(resolveHeaderLogoDestination('utang', true)).toBe('dashboard');
+    expect(resolveHeaderLogoDestination('dashboard', true)).toBe('dashboard');
+    expect(resolveHeaderLogoDestination('landing', true)).toBe('dashboard');
+    expect(resolveHeaderLogoDestination('login', false)).toBe('landing');
+    expect(resolveHeaderLogoDestination('landing', false)).toBe('login');
+    expect(resolveHeaderLogoDestination(undefined, false)).toBe('landing');
   });
 
   it('translates landing shortcut button to Tuklasin in TL and Explore in EN', () => {
