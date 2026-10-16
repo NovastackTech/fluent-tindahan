@@ -115,16 +115,21 @@ public class AuthController : ControllerBase
     private readonly IJwtTokenService _jwtTokenService;
     private readonly ICurrentUserService _currentUserService;
     private readonly PasswordHasher<User> _passwordHasher;
+    private readonly TimeProvider _timeProvider;
+
+    public const int DefaultGraceWindowSeconds = 30;
 
     public AuthController(
         IApplicationDbContext context,
         IJwtTokenService jwtTokenService,
-        ICurrentUserService? currentUserService = null)
+        ICurrentUserService? currentUserService = null,
+        TimeProvider? timeProvider = null)
     {
         _context = context;
         _jwtTokenService = jwtTokenService;
         _currentUserService = currentUserService!;
         _passwordHasher = new PasswordHasher<User>();
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public sealed record RegisterRequest
@@ -149,7 +154,6 @@ public class AuthController : ControllerBase
 
         public Guid? TenantId { get; init; }
         public Guid? UserId { get; init; }
-        public string? DeviceSessionToken { get; init; }
         public string? RefreshToken { get; init; }
     }
 
@@ -340,9 +344,7 @@ public class AuthController : ControllerBase
 
                 var isSameDeviceSession = false;
 
-                var candidateSessionToken = request.DeviceSessionToken
-                    ?? request.RefreshToken
-                    ?? (Request?.Headers.TryGetValue("X-Device-Session", out var dsHeader) == true ? dsHeader.ToString() : null)
+                var candidateSessionToken = request.RefreshToken
                     ?? (Request?.Headers.TryGetValue("X-Refresh-Token", out var rtHeader) == true ? rtHeader.ToString() : null);
 
                 if (!string.IsNullOrWhiteSpace(candidateSessionToken))
@@ -351,9 +353,16 @@ public class AuthController : ControllerBase
                     {
                         if (sessionUserId == placeholderUser.Id && sessionTenantId == tenantId)
                         {
-                            if (!string.IsNullOrEmpty(placeholderUser.RefreshTokenIdHash))
+                            var incomingTokenIdHash = _jwtTokenService.HashTokenId(sessionTokenId);
+                            var matchesTable = await _context.UserRefreshTokens.IgnoreQueryFilters()
+                                .AnyAsync(r => r.UserId == placeholderUser.Id && r.TokenHash == incomingTokenIdHash && !r.IsRevoked, cancellationToken);
+
+                            if (matchesTable)
                             {
-                                var incomingTokenIdHash = _jwtTokenService.HashTokenId(sessionTokenId);
+                                isSameDeviceSession = true;
+                            }
+                            else if (!string.IsNullOrEmpty(placeholderUser.RefreshTokenIdHash))
+                            {
                                 isSameDeviceSession = CryptographicOperations.FixedTimeEquals(
                                     Encoding.UTF8.GetBytes(placeholderUser.RefreshTokenIdHash),
                                     Encoding.UTF8.GetBytes(incomingTokenIdHash));
@@ -482,9 +491,20 @@ public class AuthController : ControllerBase
         }
 
         var (token, expiresAt) = _jwtTokenService.GenerateAccessToken(user.Id, tenant.Id, email: user.Email, role: user.Role);
-        var (refreshToken, refreshExpiresAt, tokenId) = _jwtTokenService.GenerateRefreshToken(user.Id, tenant.Id);
+        var (refreshToken, refreshExpiresAt, tokenId, familyId) = _jwtTokenService.GenerateRefreshToken(user.Id, tenant.Id, null, null);
         user.RefreshTokenIdHash = _jwtTokenService.HashTokenId(tokenId);
         user.RefreshTokenExpiresAt = refreshExpiresAt;
+
+        _context.UserRefreshTokens.Add(new UserRefreshToken
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            TenantId = tenant.Id,
+            FamilyId = familyId,
+            TokenHash = user.RefreshTokenIdHash,
+            ExpiresAt = refreshExpiresAt,
+            CreatedAt = _timeProvider.GetUtcNow()
+        });
 
         try
         {
@@ -607,12 +627,23 @@ public class AuthController : ControllerBase
         user.PasswordLockoutEnd = null;
         user.FailedPinAttempts = 0;
         user.PinLockoutEnd = null;
-        user.LastLoginAt = DateTimeOffset.UtcNow;
+        user.LastLoginAt = _timeProvider.GetUtcNow();
 
         var (token, expiresAt) = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId, email: user.Email, role: user.Role);
-        var (refreshToken, refreshExpiresAt, tokenId) = _jwtTokenService.GenerateRefreshToken(user.Id, user.TenantId);
+        var (refreshToken, refreshExpiresAt, tokenId, familyId) = _jwtTokenService.GenerateRefreshToken(user.Id, user.TenantId, null, null);
         user.RefreshTokenIdHash = _jwtTokenService.HashTokenId(tokenId);
         user.RefreshTokenExpiresAt = refreshExpiresAt;
+
+        _context.UserRefreshTokens.Add(new UserRefreshToken
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            TenantId = user.TenantId,
+            FamilyId = familyId,
+            TokenHash = user.RefreshTokenIdHash,
+            ExpiresAt = refreshExpiresAt,
+            CreatedAt = _timeProvider.GetUtcNow()
+        });
 
         await _context.SaveChangesAsync(cancellationToken);
         ResetIpPinThrottle(GetClientIpAddress());
@@ -832,12 +863,23 @@ public class AuthController : ControllerBase
             ResetIpPinThrottle(clientIp);
 
             var (token, expiresAt) = _jwtTokenService.GenerateAccessToken(freshUser.Id, freshUser.TenantId, email: freshUser.Email, role: freshUser.Role);
-            var (refreshToken, refreshExpiresAt, tokenId) = _jwtTokenService.GenerateRefreshToken(freshUser.Id, freshUser.TenantId);
+            var (refreshToken, refreshExpiresAt, tokenId, familyId) = _jwtTokenService.GenerateRefreshToken(freshUser.Id, freshUser.TenantId, null, null);
             var tokenHash = _jwtTokenService.HashTokenId(tokenId);
+            var now = _timeProvider.GetUtcNow();
+
+            _context.UserRefreshTokens.Add(new UserRefreshToken
+            {
+                Id = Guid.NewGuid(),
+                UserId = freshUser.Id,
+                TenantId = freshUser.TenantId,
+                FamilyId = familyId,
+                TokenHash = tokenHash,
+                ExpiresAt = refreshExpiresAt,
+                CreatedAt = now
+            });
 
             if (_context.Database.IsNpgsql())
             {
-                var now = DateTimeOffset.UtcNow;
                 await _context.Users.IgnoreQueryFilters()
                     .Where(u => u.Id == freshUser.Id)
                     .ExecuteUpdateAsync(s => s
@@ -847,12 +889,13 @@ public class AuthController : ControllerBase
                         .SetProperty(u => u.RefreshTokenIdHash, tokenHash)
                         .SetProperty(u => u.RefreshTokenExpiresAt, refreshExpiresAt),
                         cancellationToken);
+                await _context.SaveChangesAsync(cancellationToken);
             }
             else
             {
                 freshUser.FailedPinAttempts = 0;
                 freshUser.PinLockoutEnd = null;
-                freshUser.LastLoginAt = DateTimeOffset.UtcNow;
+                freshUser.LastLoginAt = now;
                 freshUser.RefreshTokenIdHash = tokenHash;
                 freshUser.RefreshTokenExpiresAt = refreshExpiresAt;
                 await _context.SaveChangesAsync(cancellationToken);
@@ -994,6 +1037,14 @@ public class AuthController : ControllerBase
         user.PinLockoutEnd = null;
 
         // Invalidate existing refresh tokens upon PIN change/removal
+        var allTokens = await _context.UserRefreshTokens.IgnoreQueryFilters()
+            .Where(r => r.UserId == user.Id)
+            .ToListAsync(cancellationToken);
+        foreach (var tok in allTokens)
+        {
+            tok.IsRevoked = true;
+            tok.RevokedAt = _timeProvider.GetUtcNow();
+        }
         user.RefreshTokenIdHash = null;
         user.RefreshTokenExpiresAt = null;
 
@@ -1011,9 +1062,10 @@ public class AuthController : ControllerBase
 
     /// <summary>
     /// Renews an expired or expiring access token using a valid signed refresh token.
-    /// Validates HMAC-SHA256 signature, expiry, user existence, and verifies the hashed token ID in DB.
-    /// Implements single-use token rotation: rotates refresh token on every successful use and immediately
-    /// revokes the entire session if refresh token reuse is detected.
+    /// Tracks refresh token families per device in UserRefreshTokens table.
+    /// Implements single-use token rotation: rotates refresh token on every successful use,
+    /// allows a short grace window for the previous token (transient network glitch), and
+    /// revokes only the affected family on reuse.
     /// </summary>
     [HttpPost("refresh")]
     [EnableRateLimiting("AuthSensitive")]
@@ -1025,7 +1077,7 @@ public class AuthController : ControllerBase
     {
         if (request == null ||
             string.IsNullOrWhiteSpace(request.RefreshToken) ||
-            !_jwtTokenService.ValidateRefreshToken(request.RefreshToken, out var userId, out var tenantId, out var tokenId))
+            !_jwtTokenService.ValidateRefreshToken(request.RefreshToken, out var userId, out var tenantId, out var tokenId, out var familyId))
         {
             return Unauthorized(new { message = "Di-wasto o paso na ang session. Pakiusap mag-login muli. / Invalid or expired refresh token." });
         }
@@ -1039,42 +1091,201 @@ public class AuthController : ControllerBase
             return Unauthorized(new { message = "Hindi natagpuan ang account. / Account not found." });
         }
 
-        if (string.IsNullOrEmpty(user.RefreshTokenIdHash))
+        var now = _timeProvider.GetUtcNow();
+        var incomingTokenHash = _jwtTokenService.HashTokenId(tokenId);
+
+        // Retrieve tokens for this family
+        var familyTokens = await _context.UserRefreshTokens.IgnoreQueryFilters()
+            .Where(r => r.UserId == user.Id && r.FamilyId == familyId)
+            .OrderByDescending(r => r.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        // Fallback for tokens issued before UserRefreshToken table was introduced
+        if (familyTokens.Count == 0)
+        {
+            if (!string.IsNullOrEmpty(user.RefreshTokenIdHash) &&
+                CryptographicOperations.FixedTimeEquals(
+                    Encoding.UTF8.GetBytes(user.RefreshTokenIdHash),
+                    Encoding.UTF8.GetBytes(incomingTokenHash)))
+            {
+                if (user.RefreshTokenExpiresAt.HasValue && user.RefreshTokenExpiresAt.Value < now)
+                {
+                    user.RefreshTokenIdHash = null;
+                    user.RefreshTokenExpiresAt = null;
+                    await _context.SaveChangesAsync(cancellationToken);
+                    return Unauthorized(new { message = "Paso na ang session. Pakiusap mag-login muli. / Refresh token expired." });
+                }
+
+                var initialToken = new UserRefreshToken
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = user.Id,
+                    TenantId = user.TenantId,
+                    FamilyId = !string.IsNullOrWhiteSpace(familyId) ? familyId : Guid.NewGuid().ToString("N"),
+                    TokenHash = incomingTokenHash,
+                    ExpiresAt = user.RefreshTokenExpiresAt ?? now.AddDays(30),
+                    CreatedAt = now
+                };
+                _context.UserRefreshTokens.Add(initialToken);
+                familyTokens.Add(initialToken);
+            }
+            else
+            {
+                return Unauthorized(new { message = "Paso na o binawi ang session. Pakiusap mag-login muli. / Session revoked. Please log in again." });
+            }
+        }
+
+        // Check if this family is revoked
+        if (familyTokens.Any(r => r.IsRevoked))
         {
             return Unauthorized(new { message = "Paso na o binawi ang session. Pakiusap mag-login muli. / Session revoked. Please log in again." });
         }
 
-        if (user.RefreshTokenExpiresAt.HasValue && user.RefreshTokenExpiresAt.Value < DateTimeOffset.UtcNow)
+        var matchingToken = familyTokens.FirstOrDefault(r =>
+            CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(r.TokenHash),
+                Encoding.UTF8.GetBytes(incomingTokenHash)));
+
+        string newRefreshToken;
+        DateTimeOffset newRefreshExpiresAt;
+
+        if (matchingToken != null && matchingToken.ReplacedByTokenHash == null)
         {
-            user.RefreshTokenIdHash = null;
-            user.RefreshTokenExpiresAt = null;
+            // Case 1: Active token in the family being rotated
+            if (matchingToken.ExpiresAt < now)
+            {
+                matchingToken.IsRevoked = true;
+                matchingToken.RevokedAt = now;
+                await _context.SaveChangesAsync(cancellationToken);
+                return Unauthorized(new { message = "Paso na ang session. Pakiusap mag-login muli. / Refresh token expired." });
+            }
+
+            var (newRefToken, newExpires, newTokenId, _) = _jwtTokenService.GenerateRefreshToken(
+                user.Id,
+                user.TenantId,
+                tokenId: null,
+                familyId: matchingToken.FamilyId);
+
+            var newTokenHash = _jwtTokenService.HashTokenId(newTokenId);
+
+            // Rotate: mark previous token replaced and grant short grace window
+            matchingToken.ReplacedByTokenHash = newTokenHash;
+            matchingToken.GraceExpiresAt = now.AddSeconds(DefaultGraceWindowSeconds);
+
+            var newRecord = new UserRefreshToken
+            {
+                Id = Guid.NewGuid(),
+                UserId = user.Id,
+                TenantId = user.TenantId,
+                FamilyId = matchingToken.FamilyId,
+                TokenHash = newTokenHash,
+                ExpiresAt = newExpires,
+                CreatedAt = now
+            };
+            _context.UserRefreshTokens.Add(newRecord);
+
+            // Prune older tokens in this family that are outside grace window to keep table small
+            var prunedTokens = familyTokens.Where(r =>
+                r.Id != matchingToken.Id &&
+                r.ReplacedByTokenHash != null &&
+                r.GraceExpiresAt.HasValue &&
+                r.GraceExpiresAt.Value < now).ToList();
+            if (prunedTokens.Count > 0)
+            {
+                _context.UserRefreshTokens.RemoveRange(prunedTokens);
+            }
+
+            user.RefreshTokenIdHash = newTokenHash;
+            user.RefreshTokenExpiresAt = newExpires;
+            user.LastLoginAt = now;
             await _context.SaveChangesAsync(cancellationToken);
-            return Unauthorized(new { message = "Paso na ang session. Pakiusap mag-login muli. / Refresh token expired." });
+
+            newRefreshToken = newRefToken;
+            newRefreshExpiresAt = newExpires;
         }
-
-        var incomingTokenIdHash = _jwtTokenService.HashTokenId(tokenId);
-        var matches = CryptographicOperations.FixedTimeEquals(
-            Encoding.UTF8.GetBytes(user.RefreshTokenIdHash),
-            Encoding.UTF8.GetBytes(incomingTokenIdHash));
-
-        if (!matches)
+        else if (matchingToken != null && matchingToken.ReplacedByTokenHash != null)
         {
-            // Token reuse detected! Revoke the entire refresh chain immediately to protect the real user
-            user.RefreshTokenIdHash = null;
-            user.RefreshTokenExpiresAt = null;
-            await _context.SaveChangesAsync(cancellationToken);
+            // Case 2: Token was previously rotated; check grace window
+            var isWithinGrace = matchingToken.GraceExpiresAt.HasValue && now <= matchingToken.GraceExpiresAt.Value;
+            if (isWithinGrace)
+            {
+                // Grace window: allow the previous token to obtain refreshed tokens without revoking the family
+                var (graceRefToken, graceExpires, graceTokenId, _) = _jwtTokenService.GenerateRefreshToken(
+                    user.Id,
+                    user.TenantId,
+                    tokenId: null,
+                    familyId: matchingToken.FamilyId);
 
+                var graceTokenHash = _jwtTokenService.HashTokenId(graceTokenId);
+                var activeToken = familyTokens.FirstOrDefault(r => r.ReplacedByTokenHash == null && !r.IsRevoked);
+                if (activeToken != null)
+                {
+                    activeToken.ReplacedByTokenHash = graceTokenHash;
+                    activeToken.GraceExpiresAt = now.AddSeconds(DefaultGraceWindowSeconds);
+                }
+
+                var newGraceRecord = new UserRefreshToken
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = user.Id,
+                    TenantId = user.TenantId,
+                    FamilyId = matchingToken.FamilyId,
+                    TokenHash = graceTokenHash,
+                    ExpiresAt = graceExpires,
+                    CreatedAt = now
+                };
+                _context.UserRefreshTokens.Add(newGraceRecord);
+
+                user.RefreshTokenIdHash = graceTokenHash;
+                user.RefreshTokenExpiresAt = graceExpires;
+                user.LastLoginAt = now;
+                await _context.SaveChangesAsync(cancellationToken);
+
+                newRefreshToken = graceRefToken;
+                newRefreshExpiresAt = graceExpires;
+            }
+            else
+            {
+                // Reuse detected outside grace window! Revoke only the affected family
+                foreach (var famToken in familyTokens)
+                {
+                    famToken.IsRevoked = true;
+                    famToken.RevokedAt = now;
+                }
+
+                if (user.RefreshTokenIdHash != null &&
+                    familyTokens.Any(r => r.TokenHash == user.RefreshTokenIdHash))
+                {
+                    user.RefreshTokenIdHash = null;
+                    user.RefreshTokenExpiresAt = null;
+                }
+
+                await _context.SaveChangesAsync(cancellationToken);
+                return Unauthorized(new { message = "Di-wasto o nagamit na ang refresh token. Pakiusap mag-login muli. / Invalid or already used refresh token." });
+            }
+        }
+        else
+        {
+            // Case 3: Token not found in active records for this family, but family exists -> reuse outside grace window!
+            // Revoke only the affected family
+            foreach (var famToken in familyTokens)
+            {
+                famToken.IsRevoked = true;
+                famToken.RevokedAt = now;
+            }
+
+            if (user.RefreshTokenIdHash != null &&
+                familyTokens.Any(r => r.TokenHash == user.RefreshTokenIdHash))
+            {
+                user.RefreshTokenIdHash = null;
+                user.RefreshTokenExpiresAt = null;
+            }
+
+            await _context.SaveChangesAsync(cancellationToken);
             return Unauthorized(new { message = "Di-wasto o nagamit na ang refresh token. Pakiusap mag-login muli. / Invalid or already used refresh token." });
         }
 
-        // Rotate on use: issue new access token and new refresh token with a new token ID
         var (token, expiresAt) = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId, email: user.Email, role: user.Role);
-        var (newRefreshToken, newRefreshExpiresAt, newTokenId) = _jwtTokenService.GenerateRefreshToken(user.Id, user.TenantId);
-
-        user.RefreshTokenIdHash = _jwtTokenService.HashTokenId(newTokenId);
-        user.RefreshTokenExpiresAt = newRefreshExpiresAt;
-        user.LastLoginAt = DateTimeOffset.UtcNow;
-        await _context.SaveChangesAsync(cancellationToken);
 
         return Ok(new AuthResponseDto(
             user.TenantId,
@@ -1095,7 +1306,7 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// Revokes the current session by clearing the user's stored refresh token ID hash.
+    /// Revokes the session by marking refresh token family (or all user sessions) revoked.
     /// Accepts an authenticated session (Bearer token) or an explicit RefreshToken in the request body.
     /// </summary>
     [HttpPost("logout")]
@@ -1120,11 +1331,13 @@ public class AuthController : ControllerBase
             }
         }
 
-        if ((!userId.HasValue || userId == Guid.Empty) && !string.IsNullOrWhiteSpace(request?.RefreshToken))
+        string? targetFamilyId = null;
+        if (!string.IsNullOrWhiteSpace(request?.RefreshToken))
         {
-            if (_jwtTokenService.ValidateRefreshToken(request.RefreshToken, out var parsedUser, out _, out _))
+            if (_jwtTokenService.ValidateRefreshToken(request.RefreshToken, out var parsedUser, out _, out _, out var parsedFamilyId))
             {
                 userId = parsedUser;
+                targetFamilyId = parsedFamilyId;
             }
         }
 
@@ -1135,8 +1348,38 @@ public class AuthController : ControllerBase
 
             if (user != null)
             {
-                user.RefreshTokenIdHash = null;
-                user.RefreshTokenExpiresAt = null;
+                var now = _timeProvider.GetUtcNow();
+                if (!string.IsNullOrWhiteSpace(targetFamilyId))
+                {
+                    // Revoke only the affected family for this device session
+                    var familyTokens = await _context.UserRefreshTokens.IgnoreQueryFilters()
+                        .Where(r => r.UserId == userId.Value && r.FamilyId == targetFamilyId)
+                        .ToListAsync(cancellationToken);
+                    foreach (var tok in familyTokens)
+                    {
+                        tok.IsRevoked = true;
+                        tok.RevokedAt = now;
+                    }
+                    if (user.RefreshTokenIdHash != null && familyTokens.Any(r => r.TokenHash == user.RefreshTokenIdHash))
+                    {
+                        user.RefreshTokenIdHash = null;
+                        user.RefreshTokenExpiresAt = null;
+                    }
+                }
+                else
+                {
+                    // Full user logout: revoke all refresh tokens for this user
+                    var allTokens = await _context.UserRefreshTokens.IgnoreQueryFilters()
+                        .Where(r => r.UserId == userId.Value)
+                        .ToListAsync(cancellationToken);
+                    foreach (var tok in allTokens)
+                    {
+                        tok.IsRevoked = true;
+                        tok.RevokedAt = now;
+                    }
+                    user.RefreshTokenIdHash = null;
+                    user.RefreshTokenExpiresAt = null;
+                }
                 await _context.SaveChangesAsync(cancellationToken);
             }
         }
@@ -1243,6 +1486,14 @@ public class AuthController : ControllerBase
         user.PasswordLockoutEnd = null;
 
         // Revoke all existing refresh tokens
+        var allTokens = await _context.UserRefreshTokens.IgnoreQueryFilters()
+            .Where(r => r.UserId == user.Id)
+            .ToListAsync(cancellationToken);
+        foreach (var tok in allTokens)
+        {
+            tok.IsRevoked = true;
+            tok.RevokedAt = _timeProvider.GetUtcNow();
+        }
         user.RefreshTokenIdHash = null;
         user.RefreshTokenExpiresAt = null;
 

@@ -139,7 +139,7 @@ public class CreateCheckoutSessionCommandHandler : IRequestHandler<CreateCheckou
 
             if (tenant != null)
             {
-                tenant.ExternalCustomerId = sessionResult.SessionId;
+                tenant.CheckoutSessionId = sessionResult.SessionId;
                 await _context.SaveChangesAsync(cancellationToken);
             }
         }
@@ -385,9 +385,8 @@ public class ConfirmCheckoutSessionCommandHandler : IRequestHandler<ConfirmCheck
             throw new InvalidOperationException($"Tenant {request.TenantId} not found.");
         }
 
-        var sessionId = !string.IsNullOrWhiteSpace(request.SessionId)
-            ? request.SessionId
-            : tenant.ExternalCustomerId;
+        // Security invariant: Client-supplied SessionId is strictly ignored; use only the CheckoutSessionId saved on the tenant.
+        var sessionId = tenant.CheckoutSessionId;
 
         if (string.IsNullOrWhiteSpace(sessionId))
         {
@@ -412,11 +411,13 @@ public class ConfirmCheckoutSessionCommandHandler : IRequestHandler<ConfirmCheck
                 return await _sender.Send(new GetTenantSubscriptionQuery(), cancellationToken);
             }
 
-            // Verify tenant matches if metadata exists
-            var targetTenantId = sessionDetails.TenantId != Guid.Empty ? sessionDetails.TenantId : request.TenantId;
-            if (targetTenantId != request.TenantId)
+            // Security invariant: Require session's tenant metadata to be present and equal to the caller's tenant.
+            if (sessionDetails.TenantId == Guid.Empty || sessionDetails.TenantId != request.TenantId)
             {
-                _logger.LogWarning("ConfirmCheckoutSession: Session tenant mismatch ({SessionTenant} != {RequestTenant}).", sessionDetails.TenantId, request.TenantId);
+                _logger.LogWarning(
+                    "ConfirmCheckoutSession: Session tenant metadata missing or mismatched ({SessionTenant} != {RequestTenant}).",
+                    sessionDetails.TenantId,
+                    request.TenantId);
                 return await _sender.Send(new GetTenantSubscriptionQuery(), cancellationToken);
             }
 
@@ -426,8 +427,22 @@ public class ConfirmCheckoutSessionCommandHandler : IRequestHandler<ConfirmCheck
                 return await _sender.Send(new GetTenantSubscriptionQuery(), cancellationToken);
             }
 
+            // Security invariant: Ensure the paid amount matches the canonical plan price.
+            if (!TierPricing.TryGetPriceCentavos(sessionDetails.Tier, sessionDetails.Cycle, out var expectedCentavos) ||
+                sessionDetails.AmountCentavos != expectedCentavos)
+            {
+                _logger.LogError(
+                    "ConfirmCheckoutSession: Paid amount mismatch for tenant {TenantId}. Paid {Paid} centavos, expected {Expected} for {Tier}/{Cycle}.",
+                    request.TenantId,
+                    sessionDetails.AmountCentavos,
+                    expectedCentavos,
+                    sessionDetails.Tier,
+                    sessionDetails.Cycle);
+                return await _sender.Send(new GetTenantSubscriptionQuery(), cancellationToken);
+            }
+
             var applyCommand = new ApplySubscriptionPaymentCommand(
-                targetTenantId,
+                request.TenantId,
                 sessionDetails.Tier,
                 sessionDetails.Cycle,
                 sessionDetails.AmountCentavos,

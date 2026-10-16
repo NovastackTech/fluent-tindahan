@@ -13,6 +13,8 @@ using FluentTindahan.Domain.Enums;
 using FluentTindahan.Infrastructure.Persistence;
 using FluentTindahan.Application.Sync.Commands;
 using FluentTindahan.Application.Sync.DTOs;
+using FluentTindahan.Application.Common.Interfaces;
+using FluentTindahan.Domain.Entities;
 using FluentTindahan.Domain.Interfaces;
 using FluentTindahan.WebApi.Authorization;
 using FluentTindahan.WebApi.Controllers;
@@ -530,6 +532,259 @@ public class SyncControllerTests
             .BusinessName.Should().Be("Committed Store");
     }
 
+    [Fact]
+    public async Task Provision_WhenUserJustCreatedWithoutCredentials_IssuesTokensAndSetsRefreshHash()
+    {
+        var tenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var contextOptions = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.Setup(service => service.TenantId).Returns(tenantId);
+        currentUser.Setup(service => service.UserId).Returns(userId);
+        currentUser.Setup(service => service.IsAuthenticated).Returns(false);
+        await using var context = new AppDbContext(contextOptions, currentUser.Object);
+        var jwtService = AuthControllerTests.CreateJwtTokenService();
+        var controller = new TenantController(context, currentUser.Object, jwtService);
+
+        var result = await controller.Provision(new TenantController.ProvisionTenantRequest
+        {
+            UserId = userId,
+            BusinessName = "Brand New Anonymous Store"
+        }, CancellationToken.None);
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = okResult.Value.Should().BeOfType<TenantController.ProvisionTenantResponse>().Subject;
+        response.Token.Should().NotBeNullOrWhiteSpace();
+        response.RefreshToken.Should().NotBeNullOrWhiteSpace();
+
+        var createdUser = await context.Users.IgnoreQueryFilters().SingleAsync(u => u.Id == userId);
+        createdUser.RefreshTokenIdHash.Should().NotBeNullOrWhiteSpace();
+        jwtService.ValidateRefreshToken(response.RefreshToken!, out var sessionUserId, out var sessionTenantId, out var tokenId)
+            .Should().BeTrue();
+        sessionUserId.Should().Be(userId);
+        sessionTenantId.Should().Be(tenantId);
+        createdUser.RefreshTokenIdHash.Should().Be(jwtService.HashTokenId(tokenId));
+    }
+
+    [Fact]
+    public async Task Provision_WhenExistingUserAndCallerIsAnonymous_DoesNotIssueTokensAndDoesNotOverwriteRefreshHash()
+    {
+        var tenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var contextOptions = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.Setup(service => service.TenantId).Returns(tenantId);
+        currentUser.Setup(service => service.UserId).Returns(userId);
+        currentUser.Setup(service => service.IsAuthenticated).Returns(false);
+        await using var context = new AppDbContext(contextOptions, currentUser.Object);
+
+        const string existingHash = "existing-unbroken-refresh-hash";
+        context.Tenants.Add(new Tenant
+        {
+            Id = tenantId,
+            BusinessName = "Existing Store",
+            Tier = PlanTier.Libre
+        });
+        context.Users.Add(new User
+        {
+            Id = userId,
+            TenantId = tenantId,
+            Phone = "09171234567",
+            Role = "Owner",
+            RefreshTokenIdHash = existingHash
+        });
+        await context.SaveChangesAsync();
+
+        var jwtService = AuthControllerTests.CreateJwtTokenService();
+        var controller = new TenantController(context, currentUser.Object, jwtService);
+
+        var result = await controller.Provision(new TenantController.ProvisionTenantRequest
+        {
+            UserId = userId,
+            BusinessName = "Existing Store"
+        }, CancellationToken.None);
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = okResult.Value.Should().BeOfType<TenantController.ProvisionTenantResponse>().Subject;
+        response.Token.Should().BeNull();
+        response.RefreshToken.Should().BeNull();
+
+        var userInDb = await context.Users.IgnoreQueryFilters().SingleAsync(u => u.Id == userId);
+        userInDb.RefreshTokenIdHash.Should().Be(existingHash);
+    }
+
+    [Fact]
+    public async Task Provision_WhenExistingUserAndCallerIsAuthenticatedAsOwner_IssuesAccessTokenOnlyAndDoesNotOverwriteRefreshHash()
+    {
+        var tenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var contextOptions = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.Setup(service => service.TenantId).Returns(tenantId);
+        currentUser.Setup(service => service.UserId).Returns(userId);
+        currentUser.Setup(service => service.IsAuthenticated).Returns(true);
+        await using var context = new AppDbContext(contextOptions, currentUser.Object);
+
+        const string existingHash = "authenticated-existing-refresh-hash";
+        context.Tenants.Add(new Tenant
+        {
+            Id = tenantId,
+            BusinessName = "Authenticated Store",
+            Tier = PlanTier.Libre
+        });
+        context.Users.Add(new User
+        {
+            Id = userId,
+            TenantId = tenantId,
+            Email = "owner@store.ph",
+            NormalizedEmail = "owner@store.ph",
+            PasswordHash = "ExistingHashedPassword",
+            Phone = "09171234567",
+            Role = "Owner",
+            RefreshTokenIdHash = existingHash
+        });
+        await context.SaveChangesAsync();
+
+        var jwtService = AuthControllerTests.CreateJwtTokenService();
+        var controller = new TenantController(context, currentUser.Object, jwtService);
+
+        var result = await controller.Provision(new TenantController.ProvisionTenantRequest
+        {
+            UserId = userId,
+            BusinessName = "Authenticated Store"
+        }, CancellationToken.None);
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = okResult.Value.Should().BeOfType<TenantController.ProvisionTenantResponse>().Subject;
+        response.Token.Should().NotBeNullOrWhiteSpace();
+        response.RefreshToken.Should().BeNull();
+
+        var userInDb = await context.Users.IgnoreQueryFilters().SingleAsync(u => u.Id == userId);
+        userInDb.RefreshTokenIdHash.Should().Be(existingHash);
+    }
+
+    [Fact]
+    public async Task Provision_WhenExistingUserHasCredentials_CallerIsAnonymous_DoesNotIssueTokens()
+    {
+        var tenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var contextOptions = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.Setup(service => service.TenantId).Returns(tenantId);
+        currentUser.Setup(service => service.UserId).Returns(userId);
+        currentUser.Setup(service => service.IsAuthenticated).Returns(false);
+        await using var context = new AppDbContext(contextOptions, currentUser.Object);
+
+        context.Tenants.Add(new Tenant
+        {
+            Id = tenantId,
+            BusinessName = "Credentialed Store",
+            Tier = PlanTier.Libre
+        });
+        context.Users.Add(new User
+        {
+            Id = userId,
+            TenantId = tenantId,
+            Email = "registered@store.ph",
+            NormalizedEmail = "registered@store.ph",
+            PasswordHash = "SecretPasswordHash123",
+            Role = "Owner",
+            RefreshTokenIdHash = "valid-refresh-hash"
+        });
+        await context.SaveChangesAsync();
+
+        var jwtService = AuthControllerTests.CreateJwtTokenService();
+        var controller = new TenantController(context, currentUser.Object, jwtService);
+
+        var result = await controller.Provision(new TenantController.ProvisionTenantRequest
+        {
+            UserId = userId,
+            BusinessName = "Credentialed Store"
+        }, CancellationToken.None);
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = okResult.Value.Should().BeOfType<TenantController.ProvisionTenantResponse>().Subject;
+        response.Token.Should().BeNull();
+        response.RefreshToken.Should().BeNull();
+
+        var userInDb = await context.Users.IgnoreQueryFilters().SingleAsync(u => u.Id == userId);
+        userInDb.RefreshTokenIdHash.Should().Be("valid-refresh-hash");
+    }
+
+    [Fact]
+    public async Task Provision_ConcurrentRace_WhenExistingUserAndCallerIsAnonymous_DoesNotIssueTokensAndDoesNotOverwriteRefreshHash()
+    {
+        var tenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var contextOptions = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.Setup(service => service.TenantId).Returns(tenantId);
+        currentUser.Setup(service => service.UserId).Returns(userId);
+        currentUser.Setup(service => service.IsAuthenticated).Returns(false);
+        await using var context = new ProvisionRaceDbContext(contextOptions, currentUser.Object, tenantId, userId);
+        var jwtService = AuthControllerTests.CreateJwtTokenService();
+        var controller = new TenantController(context, currentUser.Object, jwtService);
+
+        var result = await controller.Provision(new TenantController.ProvisionTenantRequest
+        {
+            UserId = userId,
+            BusinessName = "Stale Local Name"
+        }, CancellationToken.None);
+
+        var response = result.Result.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<TenantController.ProvisionTenantResponse>().Subject;
+        response.TenantId.Should().Be(tenantId);
+        response.UserId.Should().Be(userId);
+        response.Token.Should().BeNull();
+        response.RefreshToken.Should().BeNull();
+
+        var userInDb = await context.Users.IgnoreQueryFilters().SingleAsync(candidate => candidate.Id == userId);
+        userInDb.RefreshTokenIdHash.Should().Be("concurrent-winner-refresh-hash");
+    }
+
+    [Fact]
+    public async Task Provision_ConcurrentRace_WhenExistingUserAndCallerIsAuthenticated_IssuesAccessTokenOnlyAndDoesNotOverwriteRefreshHash()
+    {
+        var tenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var contextOptions = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.Setup(service => service.TenantId).Returns(tenantId);
+        currentUser.Setup(service => service.UserId).Returns(userId);
+        currentUser.Setup(service => service.IsAuthenticated).Returns(true);
+        await using var context = new ProvisionRaceDbContext(contextOptions, currentUser.Object, tenantId, userId);
+        var jwtService = AuthControllerTests.CreateJwtTokenService();
+        var controller = new TenantController(context, currentUser.Object, jwtService);
+
+        var result = await controller.Provision(new TenantController.ProvisionTenantRequest
+        {
+            UserId = userId,
+            BusinessName = "Stale Local Name"
+        }, CancellationToken.None);
+
+        var response = result.Result.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<TenantController.ProvisionTenantResponse>().Subject;
+        response.TenantId.Should().Be(tenantId);
+        response.UserId.Should().Be(userId);
+        response.Token.Should().NotBeNullOrWhiteSpace();
+        response.RefreshToken.Should().BeNull();
+
+        var userInDb = await context.Users.IgnoreQueryFilters().SingleAsync(candidate => candidate.Id == userId);
+        userInDb.RefreshTokenIdHash.Should().Be("concurrent-winner-refresh-hash");
+    }
+
     private sealed class ProvisionRaceDbContext : AppDbContext
     {
         private readonly DbContextOptions<AppDbContext> _options;
@@ -571,7 +826,8 @@ public class SyncControllerTests
                     Id = _userId,
                     TenantId = _tenantId,
                     Phone = "09171234567",
-                    Role = "Owner"
+                    Role = "Owner",
+                    RefreshTokenIdHash = "concurrent-winner-refresh-hash"
                 });
                 await competingContext.SaveChangesAsync(cancellationToken);
             }

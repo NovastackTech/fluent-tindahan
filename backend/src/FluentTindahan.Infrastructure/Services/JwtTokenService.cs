@@ -104,14 +104,26 @@ public class JwtTokenService : IJwtTokenService
         Guid tenantId,
         string? tokenId = null)
     {
+        var result = GenerateRefreshToken(userId, tenantId, tokenId, familyId: null);
+        return (result.RefreshToken, result.ExpiresAt, result.TokenId);
+    }
+
+    public (string RefreshToken, DateTimeOffset ExpiresAt, string TokenId, string FamilyId) GenerateRefreshToken(
+        Guid userId,
+        Guid tenantId,
+        string? tokenId,
+        string? familyId)
+    {
         var now = _timeProvider.GetUtcNow();
         var expiresAt = now.AddDays(_refreshExpiryDays);
         var resolvedTokenId = string.IsNullOrWhiteSpace(tokenId) ? Guid.NewGuid().ToString("N") : tokenId.Trim();
+        var resolvedFamilyId = string.IsNullOrWhiteSpace(familyId) ? Guid.NewGuid().ToString("N") : familyId.Trim();
 
         var claims = new List<Claim>
         {
             new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),
             new Claim(JwtRegisteredClaimNames.Jti, resolvedTokenId),
+            new Claim("family_id", resolvedFamilyId),
             new Claim("user_id", userId.ToString()),
             new Claim("tenant_id", tenantId.ToString()),
             new Claim("aud", _audience),
@@ -132,14 +144,15 @@ public class JwtTokenService : IJwtTokenService
 
         var tokenHandler = new JwtSecurityTokenHandler();
         var token = tokenHandler.CreateToken(tokenDescriptor);
-        return (tokenHandler.WriteToken(token), expiresAt, resolvedTokenId);
+        return (tokenHandler.WriteToken(token), expiresAt, resolvedTokenId, resolvedFamilyId);
     }
 
-    public bool ValidateRefreshToken(string refreshToken, out Guid userId, out Guid tenantId, out string tokenId)
+    public bool ValidateRefreshToken(string refreshToken, out Guid userId, out Guid tenantId, out string tokenId, out string familyId)
     {
         userId = Guid.Empty;
         tenantId = Guid.Empty;
         tokenId = string.Empty;
+        familyId = string.Empty;
 
         if (string.IsNullOrWhiteSpace(refreshToken))
         {
@@ -185,6 +198,8 @@ public class JwtTokenService : IJwtTokenService
             var tenantStr = principal.FindFirst("tenant_id")?.Value;
             var jti = principal.FindFirst(JwtRegisteredClaimNames.Jti)?.Value
                 ?? principal.FindFirst("jti")?.Value;
+            var fid = principal.FindFirst("family_id")?.Value
+                ?? principal.FindFirst("familyId")?.Value;
 
             if (Guid.TryParse(sub, out var parsedUser) &&
                 Guid.TryParse(tenantStr, out var parsedTenant) &&
@@ -193,6 +208,7 @@ public class JwtTokenService : IJwtTokenService
                 userId = parsedUser;
                 tenantId = parsedTenant;
                 tokenId = jti;
+                familyId = !string.IsNullOrWhiteSpace(fid) ? fid : string.Empty;
                 return true;
             }
 
@@ -204,9 +220,14 @@ public class JwtTokenService : IJwtTokenService
         }
     }
 
+    public bool ValidateRefreshToken(string refreshToken, out Guid userId, out Guid tenantId, out string tokenId)
+    {
+        return ValidateRefreshToken(refreshToken, out userId, out tenantId, out tokenId, out _);
+    }
+
     public bool ValidateRefreshToken(string refreshToken, out Guid userId, out Guid tenantId)
     {
-        return ValidateRefreshToken(refreshToken, out userId, out tenantId, out _);
+        return ValidateRefreshToken(refreshToken, out userId, out tenantId, out _, out _);
     }
 
     public string HashTokenId(string tokenId)

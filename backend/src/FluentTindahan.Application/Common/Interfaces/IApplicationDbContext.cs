@@ -14,6 +14,7 @@ public interface IApplicationDbContext
     DbSet<SaleItem> SaleItems { get; }
     DbSet<GCashTxn> GCashTransactions { get; }
     DbSet<PaymentHistory> PaymentHistories { get; }
+    DbSet<UserRefreshToken> UserRefreshTokens { get; }
 
     Microsoft.EntityFrameworkCore.ChangeTracking.ChangeTracker ChangeTracker { get; }
     Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<TEntity> Entry<TEntity>(TEntity entity) where TEntity : class;

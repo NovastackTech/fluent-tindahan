@@ -28,7 +28,6 @@ export interface RegisterRequestPayload {
   ownerName?: string;
   phone?: string;
   refreshToken?: string;
-  deviceSessionToken?: string;
 }
 
 export interface LoginRequestPayload {

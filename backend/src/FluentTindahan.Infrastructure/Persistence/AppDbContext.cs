@@ -26,6 +26,7 @@ public class AppDbContext : DbContext, IApplicationDbContext
     public DbSet<SaleItem> SaleItems => Set<SaleItem>();
     public DbSet<GCashTxn> GCashTransactions => Set<GCashTxn>();
     public DbSet<PaymentHistory> PaymentHistories => Set<PaymentHistory>();
+    public DbSet<UserRefreshToken> UserRefreshTokens => Set<UserRefreshToken>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -60,6 +61,7 @@ public class AppDbContext : DbContext, IApplicationDbContext
             builder.Property(t => t.Tier).HasConversion<int>().IsRequired();
             builder.Property(t => t.SubscriptionEndDate);
             builder.Property(t => t.ExternalCustomerId).HasMaxLength(128);
+            builder.Property(t => t.CheckoutSessionId).HasMaxLength(128);
             builder.UseXminAsConcurrencyToken();
         });
 
@@ -276,6 +278,34 @@ public class AppDbContext : DbContext, IApplicationDbContext
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
+        // UserRefreshToken
+        modelBuilder.Entity<UserRefreshToken>(builder =>
+        {
+            builder.ToTable("UserRefreshTokens");
+            builder.HasKey(r => r.Id);
+            builder.Property(r => r.Id).HasDefaultValueSql("gen_random_uuid()");
+            builder.Property(r => r.FamilyId).IsRequired().HasMaxLength(128);
+            builder.Property(r => r.TokenHash).IsRequired().HasMaxLength(128);
+            builder.Property(r => r.ReplacedByTokenHash).HasMaxLength(128);
+
+            builder.HasIndex(r => r.TenantId);
+            builder.HasIndex(r => r.UserId);
+            builder.HasIndex(r => r.FamilyId);
+            builder.HasIndex(r => r.TokenHash);
+            builder.HasIndex(r => new { r.UserId, r.FamilyId });
+            builder.HasIndex(r => new { r.TenantId, r.UserId });
+
+            builder.HasOne(r => r.User)
+                .WithMany()
+                .HasForeignKey(r => r.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            builder.HasOne(r => r.Tenant)
+                .WithMany()
+                .HasForeignKey(r => r.TenantId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
         // Global Query Filters for multi-tenancy isolation and soft delete
         ConfigureTenantFilter<User>(modelBuilder);
         modelBuilder.Entity<Product>().HasQueryFilter(p => p.TenantId == _currentUserService.TenantId && !p.IsDeleted);
@@ -285,6 +315,7 @@ public class AppDbContext : DbContext, IApplicationDbContext
         ConfigureTenantFilter<SaleItem>(modelBuilder);
         ConfigureTenantFilter<GCashTxn>(modelBuilder);
         ConfigureTenantFilter<PaymentHistory>(modelBuilder);
+        ConfigureTenantFilter<UserRefreshToken>(modelBuilder);
     }
 
     private void ConfigureTenantFilter<TEntity>(ModelBuilder modelBuilder) where TEntity : class, IMustHaveTenant

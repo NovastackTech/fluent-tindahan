@@ -36,7 +36,8 @@ public class AuthControllerTests
         string? issuer = TestIssuer,
         string? audience = TestAudience,
         int expiryMinutes = 60,
-        int refreshExpiryDays = 30)
+        int refreshExpiryDays = 30,
+        TimeProvider? timeProvider = null)
     {
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -52,7 +53,16 @@ public class AuthControllerTests
         var envMock = new Mock<IHostEnvironment>();
         envMock.Setup(e => e.EnvironmentName).Returns(Environments.Development);
 
-        return new JwtTokenService(config, envMock.Object);
+        return new JwtTokenService(config, envMock.Object, timeProvider);
+    }
+
+    public sealed class MutableTimeProvider : TimeProvider
+    {
+        private DateTimeOffset _utcNow;
+        public MutableTimeProvider(DateTimeOffset utcNow) => _utcNow = utcNow;
+        public override DateTimeOffset GetUtcNow() => _utcNow;
+        public void SetUtcNow(DateTimeOffset utcNow) => _utcNow = utcNow;
+        public void Advance(TimeSpan duration) => _utcNow = _utcNow.Add(duration);
     }
 
     private (AppDbContext Context, Mock<ICurrentUserService> UserMock) CreateInMemoryContext()
@@ -72,9 +82,10 @@ public class AuthControllerTests
     private static AuthController CreateController(
         AppDbContext context,
         IJwtTokenService? jwtService = null,
-        ICurrentUserService? currentUserService = null)
+        ICurrentUserService? currentUserService = null,
+        TimeProvider? timeProvider = null)
     {
-        return new AuthController(context, jwtService ?? DefaultJwtService, currentUserService);
+        return new AuthController(context, jwtService ?? DefaultJwtService, currentUserService, timeProvider);
     }
 
     private static void SetAuthenticatedUser(
@@ -285,7 +296,7 @@ public class AuthControllerTests
     }
 
     [Fact]
-    public async Task Register_AnonymouslyProvisionedTenant_WithValidDeviceSessionToken_UpgradesPlaceholderUserSuccessfully()
+    public async Task Register_AnonymouslyProvisionedTenant_WithValidRefreshToken_UpgradesPlaceholderUserSuccessfully()
     {
         var (context, _) = CreateInMemoryContext();
         var jwtService = DefaultJwtService;
@@ -1481,8 +1492,11 @@ public class AuthControllerTests
     [Fact]
     public async Task RefreshToken_RotatesOnUse_And_ReusedOldTokenIsRejectedAndRevokesSession()
     {
+        var startTime = DateTimeOffset.UtcNow;
+        var timeProvider = new MutableTimeProvider(startTime);
         var (context, _) = CreateInMemoryContext();
-        var controller = CreateController(context);
+        var jwtService = CreateJwtTokenService(timeProvider: timeProvider);
+        var controller = CreateController(context, jwtService, timeProvider: timeProvider);
 
         // 1. Register a user
         var regResult = await controller.Register(new AuthController.RegisterRequest
@@ -1496,9 +1510,9 @@ public class AuthControllerTests
 
         var user = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == regDto.UserId);
         user.RefreshTokenIdHash.Should().NotBeNullOrWhiteSpace();
-        var originalHash = user.RefreshTokenIdHash;
 
         // 2. First refresh with token1 succeeds and rotates to token2
+        timeProvider.Advance(TimeSpan.FromSeconds(5));
         var refreshResult1 = await controller.Refresh(new AuthController.RefreshTokenRequest
         {
             RefreshToken = token1
@@ -1508,26 +1522,217 @@ public class AuthControllerTests
         var token2 = refreshDto1.RefreshToken!;
         token2.Should().NotBe(token1);
 
-        user = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == regDto.UserId);
-        user.RefreshTokenIdHash.Should().NotBe(originalHash);
+        // 3. Client re-sends token1 within the 30-second grace window (e.g. 5 seconds after rotation) -> SUCCEEDS!
+        timeProvider.Advance(TimeSpan.FromSeconds(5));
+        var graceResult = await controller.Refresh(new AuthController.RefreshTokenRequest
+        {
+            RefreshToken = token1
+        }, CancellationToken.None);
+        graceResult.Result.Should().BeOfType<OkObjectResult>("Previous token must be accepted within the short grace window");
+        var graceDto = ((OkObjectResult)graceResult.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        graceDto.Token.Should().NotBeNullOrWhiteSpace();
 
-        // 3. Attacker replays token1 (reuse attempt)
+        // 4. Advance time past the grace window (35 seconds later)
+        timeProvider.Advance(TimeSpan.FromSeconds(35));
+
+        // 5. Attacker replays token1 outside the grace window -> REUSE DETECTED!
         var replayResult = await controller.Refresh(new AuthController.RefreshTokenRequest
         {
             RefreshToken = token1
         }, CancellationToken.None);
         replayResult.Result.Should().BeOfType<UnauthorizedObjectResult>();
 
-        // 4. Reuse detection immediately revokes the session in the database
-        user = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == regDto.UserId);
-        user.RefreshTokenIdHash.Should().BeNull();
+        // 6. Reuse detection immediately revokes the family in the database
+        var familyTokens = await context.UserRefreshTokens.IgnoreQueryFilters()
+            .Where(r => r.UserId == regDto.UserId)
+            .ToListAsync();
+        familyTokens.Should().NotBeEmpty();
+        familyTokens.All(r => r.IsRevoked).Should().BeTrue("The entire affected token family must be revoked on reuse");
 
-        // 5. Subsequent refresh with token2 is now ALSO rejected because the compromised session was revoked
+        // 7. Subsequent refresh with token2 is now ALSO rejected because the compromised family was revoked
         var refreshResult2 = await controller.Refresh(new AuthController.RefreshTokenRequest
         {
             RefreshToken = token2
         }, CancellationToken.None);
         refreshResult2.Result.Should().BeOfType<UnauthorizedObjectResult>();
+    }
+
+    [Fact]
+    public async Task RefreshToken_MultipleDevices_RevokingOneFamilyOnReuse_DoesNotAffectOtherDevices()
+    {
+        var startTime = DateTimeOffset.UtcNow;
+        var timeProvider = new MutableTimeProvider(startTime);
+        var (context, _) = CreateInMemoryContext();
+        var jwtService = CreateJwtTokenService(timeProvider: timeProvider);
+        var controller = CreateController(context, jwtService, timeProvider: timeProvider);
+
+        // 1. Register user on Device 1 (phone)
+        var regResult = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "multidevice@tindahan.ph",
+            Password = "Password123!",
+            BusinessName = "Multi Device Store"
+        }, CancellationToken.None);
+        var regDto = ((OkObjectResult)regResult.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        var deviceAToken1 = regDto.RefreshToken!;
+
+        // 2. User logs in on Device 2 (tablet) with same credentials
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        var loginResult = await controller.Login(new AuthController.LoginRequest
+        {
+            Email = "multidevice@tindahan.ph",
+            Password = "Password123!"
+        }, CancellationToken.None);
+        var loginDto = ((OkObjectResult)loginResult.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        var deviceBToken1 = loginDto.RefreshToken!;
+
+        deviceAToken1.Should().NotBe(deviceBToken1);
+
+        // Verify two separate token families exist in UserRefreshTokens
+        var distinctFamilies = await context.UserRefreshTokens.IgnoreQueryFilters()
+            .Where(r => r.UserId == regDto.UserId && !r.IsRevoked)
+            .Select(r => r.FamilyId)
+            .Distinct()
+            .ToListAsync();
+        distinctFamilies.Should().HaveCount(2, "Each device session must have its own distinct FamilyId");
+
+        // 3. Device A rotates its token: deviceAToken1 -> deviceAToken2
+        timeProvider.Advance(TimeSpan.FromSeconds(5));
+        var refreshResultA1 = await controller.Refresh(new AuthController.RefreshTokenRequest
+        {
+            RefreshToken = deviceAToken1
+        }, CancellationToken.None);
+        refreshResultA1.Result.Should().BeOfType<OkObjectResult>();
+
+        // 4. Advance time past the grace window (35 seconds)
+        timeProvider.Advance(TimeSpan.FromSeconds(35));
+
+        // 5. Attacker replays deviceAToken1 outside grace window -> reuse detected on Device A's family
+        var replayResultA = await controller.Refresh(new AuthController.RefreshTokenRequest
+        {
+            RefreshToken = deviceAToken1
+        }, CancellationToken.None);
+        replayResultA.Result.Should().BeOfType<UnauthorizedObjectResult>();
+
+        // 6. Device B refreshes its token deviceBToken1 -> MUST SUCCEED because Device B's family is unaffected!
+        var refreshResultB = await controller.Refresh(new AuthController.RefreshTokenRequest
+        {
+            RefreshToken = deviceBToken1
+        }, CancellationToken.None);
+        refreshResultB.Result.Should().BeOfType<OkObjectResult>("Device B's family must not be revoked when Device A suffers token reuse");
+        var refreshDtoB = ((OkObjectResult)refreshResultB.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        refreshDtoB.RefreshToken.Should().NotBeNullOrWhiteSpace();
+        refreshDtoB.RefreshToken.Should().NotBe(deviceBToken1);
+    }
+
+    [Fact]
+    public async Task Logout_WithRefreshToken_RevokesOnlyTargetDeviceFamily_LeavingOtherDevicesActive()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        // 1. Device A registers
+        var regResult = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "multidevice.logout@tindahan.ph",
+            Password = "Password123!",
+            BusinessName = "Multi Device Store"
+        }, CancellationToken.None);
+        var regDto = ((OkObjectResult)regResult.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        var deviceAToken = regDto.RefreshToken!;
+
+        // 2. Device B logs in
+        var loginResult = await controller.Login(new AuthController.LoginRequest
+        {
+            Email = "multidevice.logout@tindahan.ph",
+            Password = "Password123!"
+        }, CancellationToken.None);
+        var loginDto = ((OkObjectResult)loginResult.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        var deviceBToken = loginDto.RefreshToken!;
+
+        // 3. Logout specifying Device A's refresh token
+        var logoutResult = await controller.Logout(new AuthController.LogoutRequest
+        {
+            RefreshToken = deviceAToken
+        }, CancellationToken.None);
+        logoutResult.Should().BeOfType<OkObjectResult>();
+
+        // 4. Device A refresh is rejected (family revoked)
+        var refreshResultA = await controller.Refresh(new AuthController.RefreshTokenRequest
+        {
+            RefreshToken = deviceAToken
+        }, CancellationToken.None);
+        refreshResultA.Result.Should().BeOfType<UnauthorizedObjectResult>();
+
+        // 5. Device B refresh succeeds (family intact)
+        var refreshResultB = await controller.Refresh(new AuthController.RefreshTokenRequest
+        {
+            RefreshToken = deviceBToken
+        }, CancellationToken.None);
+        refreshResultB.Result.Should().BeOfType<OkObjectResult>();
+        var refreshDtoB = ((OkObjectResult)refreshResultB.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        refreshDtoB.RefreshToken.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task RefreshToken_PrunesReplacedTokensPastGraceWindow_KeepingTableSmallPerDevice()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var timeProvider = new MutableTimeProvider(DateTimeOffset.UtcNow);
+        var controller = CreateController(context, timeProvider: timeProvider);
+
+        // 1. Register -> creates token T1 in new family
+        var regResult = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "tablepruning@tindahan.ph",
+            Password = "Password123!",
+            BusinessName = "Pruning Store"
+        }, CancellationToken.None);
+        var regDto = ((OkObjectResult)regResult.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        var t1 = regDto.RefreshToken!;
+
+        var initialTokens = await context.UserRefreshTokens.IgnoreQueryFilters()
+            .Where(r => r.UserId == regDto.UserId)
+            .ToListAsync();
+        initialTokens.Should().HaveCount(1);
+        var familyId = initialTokens[0].FamilyId;
+
+        // 2. Advance 5 seconds and refresh T1 -> T2
+        timeProvider.Advance(TimeSpan.FromSeconds(5));
+        var refreshResult1 = await controller.Refresh(new AuthController.RefreshTokenRequest { RefreshToken = t1 }, CancellationToken.None);
+        refreshResult1.Result.Should().BeOfType<OkObjectResult>();
+        var t2 = ((OkObjectResult)refreshResult1.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject.RefreshToken!;
+
+        var tokensAfterFirstRefresh = await context.UserRefreshTokens.IgnoreQueryFilters()
+            .Where(r => r.UserId == regDto.UserId && r.FamilyId == familyId)
+            .ToListAsync();
+        tokensAfterFirstRefresh.Should().HaveCount(2); // T1 (replaced, in grace window) and T2 (active)
+
+        // 3. Advance 35 seconds (past T1's 30-second grace window) and refresh T2 -> T3
+        timeProvider.Advance(TimeSpan.FromSeconds(35));
+        var refreshResult2 = await controller.Refresh(new AuthController.RefreshTokenRequest { RefreshToken = t2 }, CancellationToken.None);
+        refreshResult2.Result.Should().BeOfType<OkObjectResult>();
+        var t3 = ((OkObjectResult)refreshResult2.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject.RefreshToken!;
+
+        var tokensAfterSecondRefresh = await context.UserRefreshTokens.IgnoreQueryFilters()
+            .Where(r => r.UserId == regDto.UserId && r.FamilyId == familyId)
+            .ToListAsync();
+        DefaultJwtService.ValidateRefreshToken(t1, out _, out _, out var t1Jti, out _);
+        var t1Hash = DefaultJwtService.HashTokenId(t1Jti);
+        // T1 must have been pruned because it is replaced and its grace window expired!
+        tokensAfterSecondRefresh.Should().HaveCount(2); // T2 (replaced, in grace window) and T3 (active)
+        tokensAfterSecondRefresh.Should().NotContain(r => r.TokenHash == t1Hash);
+
+        // 4. Advance 35 seconds again and refresh T3 -> T4
+        timeProvider.Advance(TimeSpan.FromSeconds(35));
+        var refreshResult3 = await controller.Refresh(new AuthController.RefreshTokenRequest { RefreshToken = t3 }, CancellationToken.None);
+        refreshResult3.Result.Should().BeOfType<OkObjectResult>();
+
+        var tokensAfterThirdRefresh = await context.UserRefreshTokens.IgnoreQueryFilters()
+            .Where(r => r.UserId == regDto.UserId && r.FamilyId == familyId)
+            .ToListAsync();
+        // T2 pruned, only T3 and T4 remain
+        tokensAfterThirdRefresh.Should().HaveCount(2);
     }
 
     [Fact]

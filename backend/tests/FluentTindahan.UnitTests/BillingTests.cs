@@ -2308,7 +2308,7 @@ public class BillingTests
     {
         using var context = CreateInMemoryDbContext();
         var tenant = await context.Tenants.FirstAsync(t => t.Id == _testTenantId);
-        tenant.ExternalCustomerId = "cs_live_session_123";
+        tenant.CheckoutSessionId = "cs_live_session_123";
         await context.SaveChangesAsync();
 
         var gatewayMock = new Mock<IPaymentGatewayService>();
@@ -2355,6 +2355,212 @@ public class BillingTests
     }
 
     [Fact]
+    public async Task ConfirmCheckoutSessionCommandHandler_IgnoresClientSuppliedSessionId_UsesOnlyOneSavedOnTenant()
+    {
+        using var context = CreateInMemoryDbContext();
+        var tenant = await context.Tenants.FirstAsync(t => t.Id == _testTenantId);
+        tenant.CheckoutSessionId = "cs_saved_on_tenant";
+        await context.SaveChangesAsync();
+
+        var gatewayMock = new Mock<IPaymentGatewayService>();
+        gatewayMock.Setup(g => g.RetrieveCheckoutSessionAsync("cs_saved_on_tenant", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CheckoutSessionDetails(
+                SessionId: "cs_saved_on_tenant",
+                Status: "paid",
+                IsPaid: true,
+                TenantId: _testTenantId,
+                Tier: PlanTier.TindahanPro,
+                Cycle: BillingCycle.Monthly,
+                AmountCentavos: 12900L,
+                PaymentId: "pay_saved_001",
+                PaymentMethod: "gcash"
+            ));
+
+        var senderMock = new Mock<ISender>();
+        var applyHandler = new ApplySubscriptionPaymentCommandHandler(context, NullLogger<ApplySubscriptionPaymentCommandHandler>.Instance);
+        var getSubHandler = new GetTenantSubscriptionQueryHandler(context, _currentUserServiceMock.Object);
+
+        senderMock.Setup(s => s.Send(It.IsAny<ApplySubscriptionPaymentCommand>(), It.IsAny<CancellationToken>()))
+            .Returns((IRequest<WebhookProcessResultDto> cmd, CancellationToken ct) => applyHandler.Handle((ApplySubscriptionPaymentCommand)cmd, ct));
+
+        senderMock.Setup(s => s.Send(It.IsAny<GetTenantSubscriptionQuery>(), It.IsAny<CancellationToken>()))
+            .Returns((IRequest<TenantSubscriptionDto> query, CancellationToken ct) => getSubHandler.Handle((GetTenantSubscriptionQuery)query, ct));
+
+        var handler = new ConfirmCheckoutSessionCommandHandler(
+            context,
+            gatewayMock.Object,
+            senderMock.Object,
+            NullLogger<ConfirmCheckoutSessionCommandHandler>.Instance);
+
+        // Client supplies an arbitrary/attacker session ID
+        var result = await handler.Handle(
+            new ConfirmCheckoutSessionCommand(_testTenantId, SessionId: "cs_attacker_fake_session"),
+            CancellationToken.None);
+
+        // The gateway should have been called with the tenant's saved session ID, NOT the client's
+        gatewayMock.Verify(g => g.RetrieveCheckoutSessionAsync("cs_saved_on_tenant", It.IsAny<CancellationToken>()), Times.Once);
+        gatewayMock.Verify(g => g.RetrieveCheckoutSessionAsync("cs_attacker_fake_session", It.IsAny<CancellationToken>()), Times.Never);
+
+        result.Tier.Should().Be(PlanTier.TindahanPro);
+    }
+
+    [Fact]
+    public async Task ConfirmCheckoutSessionCommandHandler_WhenTenantCheckoutSessionIdIsNull_IgnoresClientSessionIdAndDoesNotUpgrade()
+    {
+        using var context = CreateInMemoryDbContext();
+        var tenant = await context.Tenants.FirstAsync(t => t.Id == _testTenantId);
+        tenant.CheckoutSessionId = null;
+        await context.SaveChangesAsync();
+
+        var gatewayMock = new Mock<IPaymentGatewayService>();
+        var senderMock = new Mock<ISender>();
+        var getSubHandler = new GetTenantSubscriptionQueryHandler(context, _currentUserServiceMock.Object);
+        senderMock.Setup(s => s.Send(It.IsAny<GetTenantSubscriptionQuery>(), It.IsAny<CancellationToken>()))
+            .Returns((IRequest<TenantSubscriptionDto> query, CancellationToken ct) => getSubHandler.Handle((GetTenantSubscriptionQuery)query, ct));
+
+        var handler = new ConfirmCheckoutSessionCommandHandler(
+            context,
+            gatewayMock.Object,
+            senderMock.Object,
+            NullLogger<ConfirmCheckoutSessionCommandHandler>.Instance);
+
+        var result = await handler.Handle(
+            new ConfirmCheckoutSessionCommand(_testTenantId, SessionId: "cs_client_supplied_but_tenant_has_none"),
+            CancellationToken.None);
+
+        gatewayMock.Verify(g => g.RetrieveCheckoutSessionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        senderMock.Verify(s => s.Send(It.IsAny<ApplySubscriptionPaymentCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+        result.Tier.Should().Be(PlanTier.Libre);
+    }
+
+    [Fact]
+    public async Task ConfirmCheckoutSessionCommandHandler_WhenSessionTenantMetadataIsMissing_DoesNotUpgrade()
+    {
+        using var context = CreateInMemoryDbContext();
+        var tenant = await context.Tenants.FirstAsync(t => t.Id == _testTenantId);
+        tenant.CheckoutSessionId = "cs_missing_tenant_meta";
+        await context.SaveChangesAsync();
+
+        var gatewayMock = new Mock<IPaymentGatewayService>();
+        gatewayMock.Setup(g => g.RetrieveCheckoutSessionAsync("cs_missing_tenant_meta", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CheckoutSessionDetails(
+                SessionId: "cs_missing_tenant_meta",
+                Status: "paid",
+                IsPaid: true,
+                TenantId: Guid.Empty, // Missing tenant metadata
+                Tier: PlanTier.TindahanPro,
+                Cycle: BillingCycle.Monthly,
+                AmountCentavos: 12900L,
+                PaymentId: "pay_missing_meta",
+                PaymentMethod: "gcash"
+            ));
+
+        var senderMock = new Mock<ISender>();
+        var getSubHandler = new GetTenantSubscriptionQueryHandler(context, _currentUserServiceMock.Object);
+        senderMock.Setup(s => s.Send(It.IsAny<GetTenantSubscriptionQuery>(), It.IsAny<CancellationToken>()))
+            .Returns((IRequest<TenantSubscriptionDto> query, CancellationToken ct) => getSubHandler.Handle((GetTenantSubscriptionQuery)query, ct));
+
+        var handler = new ConfirmCheckoutSessionCommandHandler(
+            context,
+            gatewayMock.Object,
+            senderMock.Object,
+            NullLogger<ConfirmCheckoutSessionCommandHandler>.Instance);
+
+        var result = await handler.Handle(new ConfirmCheckoutSessionCommand(_testTenantId), CancellationToken.None);
+
+        senderMock.Verify(s => s.Send(It.IsAny<ApplySubscriptionPaymentCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+        result.Tier.Should().Be(PlanTier.Libre);
+
+        var dbTenant = await context.Tenants.FirstAsync(t => t.Id == _testTenantId);
+        dbTenant.Tier.Should().Be(PlanTier.Libre);
+    }
+
+    [Fact]
+    public async Task ConfirmCheckoutSessionCommandHandler_WhenSessionTenantMetadataMismatchesCaller_DoesNotUpgrade()
+    {
+        using var context = CreateInMemoryDbContext();
+        var tenant = await context.Tenants.FirstAsync(t => t.Id == _testTenantId);
+        tenant.CheckoutSessionId = "cs_mismatched_tenant";
+        await context.SaveChangesAsync();
+
+        var differentTenantId = Guid.NewGuid();
+        var gatewayMock = new Mock<IPaymentGatewayService>();
+        gatewayMock.Setup(g => g.RetrieveCheckoutSessionAsync("cs_mismatched_tenant", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CheckoutSessionDetails(
+                SessionId: "cs_mismatched_tenant",
+                Status: "paid",
+                IsPaid: true,
+                TenantId: differentTenantId, // Mismatched tenant metadata
+                Tier: PlanTier.TindahanPro,
+                Cycle: BillingCycle.Monthly,
+                AmountCentavos: 12900L,
+                PaymentId: "pay_mismatched_meta",
+                PaymentMethod: "gcash"
+            ));
+
+        var senderMock = new Mock<ISender>();
+        var getSubHandler = new GetTenantSubscriptionQueryHandler(context, _currentUserServiceMock.Object);
+        senderMock.Setup(s => s.Send(It.IsAny<GetTenantSubscriptionQuery>(), It.IsAny<CancellationToken>()))
+            .Returns((IRequest<TenantSubscriptionDto> query, CancellationToken ct) => getSubHandler.Handle((GetTenantSubscriptionQuery)query, ct));
+
+        var handler = new ConfirmCheckoutSessionCommandHandler(
+            context,
+            gatewayMock.Object,
+            senderMock.Object,
+            NullLogger<ConfirmCheckoutSessionCommandHandler>.Instance);
+
+        var result = await handler.Handle(new ConfirmCheckoutSessionCommand(_testTenantId), CancellationToken.None);
+
+        senderMock.Verify(s => s.Send(It.IsAny<ApplySubscriptionPaymentCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+        result.Tier.Should().Be(PlanTier.Libre);
+
+        var dbTenant = await context.Tenants.FirstAsync(t => t.Id == _testTenantId);
+        dbTenant.Tier.Should().Be(PlanTier.Libre);
+    }
+
+    [Fact]
+    public async Task ConfirmCheckoutSessionCommandHandler_WhenPaidAmountDoesNotMatchPlanPrice_DoesNotUpgrade()
+    {
+        using var context = CreateInMemoryDbContext();
+        var tenant = await context.Tenants.FirstAsync(t => t.Id == _testTenantId);
+        tenant.CheckoutSessionId = "cs_underpaid";
+        await context.SaveChangesAsync();
+
+        var gatewayMock = new Mock<IPaymentGatewayService>();
+        gatewayMock.Setup(g => g.RetrieveCheckoutSessionAsync("cs_underpaid", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CheckoutSessionDetails(
+                SessionId: "cs_underpaid",
+                Status: "paid",
+                IsPaid: true,
+                TenantId: _testTenantId,
+                Tier: PlanTier.TindahanPro,
+                Cycle: BillingCycle.Monthly,
+                AmountCentavos: 1000L, // Expected 12900L for TindahanPro Monthly
+                PaymentId: "pay_underpaid_001",
+                PaymentMethod: "gcash"
+            ));
+
+        var senderMock = new Mock<ISender>();
+        var getSubHandler = new GetTenantSubscriptionQueryHandler(context, _currentUserServiceMock.Object);
+        senderMock.Setup(s => s.Send(It.IsAny<GetTenantSubscriptionQuery>(), It.IsAny<CancellationToken>()))
+            .Returns((IRequest<TenantSubscriptionDto> query, CancellationToken ct) => getSubHandler.Handle((GetTenantSubscriptionQuery)query, ct));
+
+        var handler = new ConfirmCheckoutSessionCommandHandler(
+            context,
+            gatewayMock.Object,
+            senderMock.Object,
+            NullLogger<ConfirmCheckoutSessionCommandHandler>.Instance);
+
+        var result = await handler.Handle(new ConfirmCheckoutSessionCommand(_testTenantId), CancellationToken.None);
+
+        senderMock.Verify(s => s.Send(It.IsAny<ApplySubscriptionPaymentCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+        result.Tier.Should().Be(PlanTier.Libre);
+
+        var dbTenant = await context.Tenants.FirstAsync(t => t.Id == _testTenantId);
+        dbTenant.Tier.Should().Be(PlanTier.Libre);
+    }
+
+    [Fact]
     public async Task CreateCheckoutSessionCommandHandler_WithContext_PersistsSessionIdOnTenant()
     {
         using var context = CreateInMemoryDbContext();
@@ -2384,7 +2590,7 @@ public class BillingTests
         result.SessionId.Should().Be("cs_session_456");
 
         var tenant = await context.Tenants.FirstAsync(t => t.Id == _testTenantId);
-        tenant.ExternalCustomerId.Should().Be("cs_session_456");
+        tenant.CheckoutSessionId.Should().Be("cs_session_456");
     }
 
     [Fact]
