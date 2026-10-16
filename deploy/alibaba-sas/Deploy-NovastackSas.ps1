@@ -54,7 +54,13 @@ function Write-Step([string]$Message) {
 }
 
 function Get-SshArgs {
-    $sshArgs = @('-o', 'StrictHostKeyChecking=accept-new')
+    $sshArgs = @(
+        '-o', 'StrictHostKeyChecking=accept-new',
+        '-o', 'ServerAliveInterval=15',
+        '-o', 'ServerAliveCountMax=60',
+        '-o', 'TCPKeepAlive=yes',
+        '-o', 'ConnectTimeout=30'
+    )
     if ($SshKeyPath -and (Test-Path $SshKeyPath)) { $sshArgs += @('-i', $SshKeyPath) }
     return $sshArgs + @("${SshUser}@${ServerIp}")
 }
