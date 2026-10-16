@@ -136,6 +136,15 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
   const isScanningRef = useRef(false);
 
+  const onScanRef = useRef(onScan);
+  const onCloseRef = useRef(onClose);
+  const tRef = useRef(t);
+  useEffect(() => {
+    onScanRef.current = onScan;
+    onCloseRef.current = onClose;
+    tRef.current = t;
+  });
+
   const stopScanner = useCallback(async () => {
     if (html5QrCodeRef.current && isScanningRef.current) {
       try {
@@ -155,9 +164,9 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
 
     playScanBeep();
     stopScanner();
-    onScan(cleanCode);
-    onClose();
-  }, [onClose, onScan, stopScanner]);
+    onScanRef.current(cleanCode);
+    onCloseRef.current();
+  }, [stopScanner]);
 
   const startScanner = useCallback(async () => {
     try {
@@ -202,11 +211,11 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       setIsLoading(false);
       setErrorMessage(
         err?.name === 'NotAllowedError'
-          ? t.barcode.cameraPermissionDenied
-          : t.barcode.cameraError
+          ? tRef.current.barcode.cameraPermissionDenied
+          : tRef.current.barcode.cameraError
       );
     }
-  }, [facingMode, handleBarcodeDetected, stopScanner, t.barcode.cameraError, t.barcode.cameraPermissionDenied]);
+  }, [facingMode, handleBarcodeDetected, stopScanner]);
 
   useEffect(() => {
     if (!isOpen) {

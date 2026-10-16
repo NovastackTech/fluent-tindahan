@@ -231,11 +231,15 @@ export const TermsModal: React.FC = () => {
   const targetLanguage = globalLanguage === 'tl' ? 'tl' : 'en';
   const [modalLanguage, setModalLanguage] = useState<'tl' | 'en'>(targetLanguage);
   const [prevLanguage, setPrevLanguage] = useState(globalLanguage);
+  const [prevOpen, setPrevOpen] = useState(isTermsOpen);
 
-  // Sync with global language changes when reopened
-  if (globalLanguage !== prevLanguage) {
+  // Sync with global language changes or when modal transitions from closed to open
+  if (globalLanguage !== prevLanguage || (isTermsOpen && !prevOpen)) {
     setPrevLanguage(globalLanguage);
     setModalLanguage(targetLanguage);
+  }
+  if (isTermsOpen !== prevOpen) {
+    setPrevOpen(isTermsOpen);
   }
 
   const doc: TermsDocument = modalLanguage === 'tl' ? termsTL : termsEN;
