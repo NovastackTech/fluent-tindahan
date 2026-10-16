@@ -17,7 +17,8 @@ import {
   TabList,
   Tab,
   Select,
-  Divider
+  Divider,
+  ToggleButton
 } from '@fluentui/react-components';
 import {
   SearchRegular,
@@ -43,7 +44,7 @@ import {
 import { type NavTab } from '../components/Navigation';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type ProductRecord, type CustomerRecord } from '../db/db';
-import { useCartStore } from '../state/cartStore';
+import { toCentavos, useCartStore } from '../state/cartStore';
 import { useAuthStore } from '../state/authStore';
 import { usePwaStore } from '../state/pwaStore';
 import { formatPeso } from '../utils/currency';
@@ -187,6 +188,12 @@ const useStyles = makeStyles({
     ...shorthands.gap(tokens.spacingHorizontalS),
     marginTop: tokens.spacingVerticalS
   },
+  exactAmountButton: {
+    width: '100%',
+    marginTop: tokens.spacingVerticalS,
+    justifyContent: 'center',
+    fontWeight: tokens.fontWeightSemibold
+  },
   cartList: {
     display: 'flex',
     flexDirection: 'column',
@@ -215,6 +222,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [exactCashSelected, setExactCashSelected] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
   const [pendingReceiptData, setPendingReceiptData] = useState<ReceiptData | null>(null);
@@ -575,13 +583,52 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
     showToast(`${newProduct.name} - ${t.barcode.registeredSuccess}`, 'success');
   };
 
+  const cashMatchesTotal = (amount: number) => toCentavos(amount) === toCentavos(totalAmount);
+
+  const applyExactCash = () => {
+    setCashReceived(totalAmount);
+    setExactCashSelected(true);
+  };
+
+  const openCheckout = () => {
+    applyExactCash();
+    setIsCartOpen(false);
+    setIsCheckoutOpen(true);
+  };
+
   const handleQuickBillClick = (billAmount: number) => {
+    setExactCashSelected(false);
     setCashReceived(billAmount);
   };
 
   const handleExactCashClick = () => {
-    setCashReceived(totalAmount);
+    applyExactCash();
   };
+
+  const handleCashReceivedChange = (raw: string) => {
+    const trimmed = raw.trim();
+    if (trimmed === '' || trimmed === '-' || trimmed === '.' || trimmed === '-.') {
+      setCashReceived(0);
+      setExactCashSelected(false);
+      return;
+    }
+    const next = parseFloat(trimmed);
+    if (!Number.isFinite(next)) {
+      setCashReceived(0);
+      setExactCashSelected(false);
+      return;
+    }
+    setCashReceived(next);
+    setExactCashSelected(cashMatchesTotal(next));
+  };
+
+  // Keep a selected exact tender aligned with the cart total (tab switches, qty edits).
+  React.useEffect(() => {
+    if (!isCheckoutOpen || !exactCashSelected) return;
+    if (toCentavos(useCartStore.getState().cashReceived) !== toCentavos(totalAmount)) {
+      setCashReceived(totalAmount);
+    }
+  }, [isCheckoutOpen, exactCashSelected, totalAmount, setCashReceived]);
 
   const changeAmount = useMemo(() => {
     if (paymentMethod === 'Cash') {
@@ -1074,7 +1121,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
                   showToast(stockError, 'warning');
                   return;
                 }
-                setIsCheckoutOpen(true);
+                openCheckout();
               }}
             >
               {t.pos.pay}
@@ -1231,8 +1278,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
                     showToast(stockError, 'warning');
                     return;
                   }
-                  setIsCartOpen(false);
-                  setIsCheckoutOpen(true);
+                  openCheckout();
                 }}
               >
                 {t.pos.checkoutBtn} ({formatPeso(totalAmount)})
@@ -1376,8 +1422,8 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
                     id="pos-cash-received"
                     type="number"
                     aria-label={language === 'tl' ? 'Tinanggap na pera (Cash received)' : 'Cash received (Tinanggap)'}
-                    value={cashReceived === 0 ? '' : cashReceived.toString()}
-                    onChange={(_, data) => setCashReceived(parseFloat(data.value) || 0)}
+                    value={cashReceived === 0 && !exactCashSelected ? '' : cashReceived.toString()}
+                    onChange={(_, data) => handleCashReceivedChange(data.value)}
                     placeholder="0.00"
                     style={{ width: '100%', marginTop: '4px' }}
                     contentBefore="₱"
@@ -1397,14 +1443,17 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
                     ))}
                   </div>
 
-                  <Button
+                  <ToggleButton
                     size="small"
-                    appearance="subtle"
-                    style={{ width: '100%', marginTop: '8px' }}
+                    appearance="secondary"
+                    checked={exactCashSelected}
+                    isAccessible
+                    className={styles.exactAmountButton}
+                    icon={exactCashSelected ? <CheckmarkRegular /> : undefined}
                     onClick={handleExactCashClick}
                   >
                     {t.pos.exactAmount} ({formatPeso(totalAmount)})
-                  </Button>
+                  </ToggleButton>
 
                   <div style={{ marginTop: '16px', padding: '12px', background: tokens.colorNeutralBackground2, borderRadius: '6px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
