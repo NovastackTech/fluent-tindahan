@@ -163,7 +163,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     if (!cleanCode) return;
 
     playScanBeep();
-    stopScanner();
+    void stopScanner();
     onScanRef.current(cleanCode);
     onCloseRef.current();
   }, [stopScanner]);
@@ -219,7 +219,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
 
   useEffect(() => {
     if (!isOpen) {
-      stopScanner();
+      void stopScanner();
       return;
     }
 
@@ -238,13 +238,13 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         return;
       }
 
-      startScanner();
+      void startScanner();
     }, 300);
 
     return () => {
       isMounted = false;
       clearTimeout(timer);
-      stopScanner();
+      void stopScanner();
     };
   }, [isOpen, facingMode, startScanner, stopScanner]);
 
