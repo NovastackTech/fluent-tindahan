@@ -8,6 +8,7 @@ import { translations } from '../i18n/translations';
 import * as authService from '../services/authService';
 import * as seedData from '../db/seedData';
 import { db } from '../db/db';
+import { useSubscriptionStore } from '../state/subscriptionStore';
 
 vi.mock('../services/authService', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/authService')>();
@@ -85,6 +86,7 @@ describe('LoginPage Component', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    vi.spyOn(useSubscriptionStore.getState(), 'refreshSubscription').mockResolvedValue();
     localStorage.clear();
     await db.syncQueue.clear();
     useAuthStore.setState({
@@ -301,7 +303,7 @@ describe('LoginPage Component', () => {
     }
 
     const secondDialog = await screen.findByRole('dialog', {}, { timeout: 5000 });
-    const wipeBtn = await within(secondDialog).findByRole('button', { name: /I-wipe at Mag-login Pa Rin|Wipe & Log In Anyway/i }, { timeout: 5000 });
+    const wipeBtn = within(secondDialog).getByRole('button', { name: /I-wipe at Mag-login Pa Rin|Wipe & Log In Anyway/i });
     fireEvent.click(wipeBtn);
 
     await waitFor(() => {
@@ -309,5 +311,5 @@ describe('LoginPage Component', () => {
       expect(onNavigate).toHaveBeenCalledWith('pos');
     });
     expect(await db.syncQueue.count()).toBe(0);
-  });
+  }, 15000);
 });

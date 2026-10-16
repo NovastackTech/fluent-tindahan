@@ -73,6 +73,8 @@ export const ConfirmUnsyncedLoginDialog: React.FC<ConfirmUnsyncedLoginDialogProp
   const styles = useStyles();
   const { t } = useTranslation();
 
+  if (!isOpen) return null;
+
   return (
     <Dialog open={isOpen} onOpenChange={(_, data) => !data.open && onClose()}>
       <DialogSurface className={styles.surface}>
@@ -92,7 +94,7 @@ export const ConfirmUnsyncedLoginDialog: React.FC<ConfirmUnsyncedLoginDialogProp
             </div>
           </DialogContent>
           <DialogActions>
-            <Button appearance="secondary" onClick={onClose}>
+            <Button appearance="secondary" onClick={onClose} data-testid="unsynced-dialog-cancel-btn">
               {t.common.cancel}
             </Button>
             {onSyncFirst && (
@@ -101,6 +103,7 @@ export const ConfirmUnsyncedLoginDialog: React.FC<ConfirmUnsyncedLoginDialogProp
                 icon={isSyncing ? <Spinner size="tiny" /> : <ArrowSyncRegular />}
                 disabled={isSyncing}
                 onClick={onSyncFirst}
+                data-testid="unsynced-dialog-sync-btn"
               >
                 {t.settings.syncFirstBtn}
               </Button>
@@ -113,6 +116,7 @@ export const ConfirmUnsyncedLoginDialog: React.FC<ConfirmUnsyncedLoginDialogProp
               }}
               disabled={isSyncing}
               onClick={onConfirmWipeAndLogin}
+              data-testid="unsynced-dialog-wipe-btn"
             >
               {t.onboarding.forceLoginBtn}
             </Button>
