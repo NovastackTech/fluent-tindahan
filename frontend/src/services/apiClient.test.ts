@@ -522,34 +522,46 @@ describe('apiClient', () => {
     axiosPostSpy.mockRestore();
   });
 
-  it('response interceptor skips token refresh and does not retry when request url is /auth/profile', async () => {
+  it('response interceptor refreshes token and retries on 401 when request url is /auth/profile', async () => {
     const axios = (await import('axios')).default;
     useAuthStore.setState({
-      firebaseToken: 'valid-token',
+      firebaseToken: 'expired-access-token',
       refreshToken: 'valid-refresh-token'
     });
 
-    const axiosPostSpy = vi.spyOn(axios, 'post');
+    const axiosPostSpy = vi.spyOn(axios, 'post').mockResolvedValueOnce({
+      data: {
+        token: 'new-refreshed-token',
+        refreshToken: 'rotated-refresh-token'
+      }
+    });
 
     const interceptor = (apiClient.interceptors.response as any).handlers[0];
     const originalRequest: any = {
-      headers: { Authorization: 'Bearer valid-token' },
+      headers: { Authorization: 'Bearer expired-access-token' },
       url: '/auth/profile'
     };
 
-    await expect(
-      interceptor.rejected({
-        response: { status: 401 },
-        config: originalRequest
-      })
-    ).rejects.toEqual(
-      expect.objectContaining({
-        response: expect.objectContaining({ status: 401 })
-      })
-    );
+    const apiClientSpy = vi.spyOn(apiClient, 'request').mockResolvedValueOnce({
+      status: 200,
+      data: { success: true }
+    } as any);
 
-    expect(axiosPostSpy).not.toHaveBeenCalled();
+    await interceptor.rejected({
+      response: { status: 401 },
+      config: originalRequest
+    });
+
+    expect(axiosPostSpy).toHaveBeenCalledWith(
+      '/api/auth/refresh',
+      { refreshToken: 'valid-refresh-token' },
+      expect.any(Object)
+    );
+    expect(useAuthStore.getState().firebaseToken).toBe('new-refreshed-token');
+    expect(useAuthStore.getState().refreshToken).toBe('rotated-refresh-token');
+
     axiosPostSpy.mockRestore();
+    apiClientSpy.mockRestore();
   });
 });
 

@@ -502,6 +502,46 @@ describe('OnboardingModal', () => {
     });
   });
 
+  it('preserves existing userEmail locally and omits email from offline queue when email change fails offline', async () => {
+    vi.mocked(authService.updateProfile).mockRejectedValueOnce(new Error('Network offline'));
+
+    const tenantId = crypto.randomUUID();
+    useAuthStore.setState({
+      tenantId,
+      isOnboarded: true,
+      isOnboardingOpen: true,
+      onboardingMode: 'edit',
+      role: 'Owner',
+      businessName: 'Original Store',
+      ownerName: 'Owner Name',
+      userEmail: 'original@tindahan.ph'
+    });
+
+    renderModal();
+    const storeInput = screen.getByPlaceholderText(/Hal. Tindahan ni Aling Maria|e.g. Maria's Sari-Sari Store/i);
+    const emailInput = screen.getByPlaceholderText(/Hal. nena.store@gmail.com|e.g. nena.store@gmail.com/i);
+    fireEvent.change(storeInput, { target: { value: 'New Store Name' } });
+    fireEvent.change(emailInput, { target: { value: 'newemail@tindahan.ph' } });
+
+    const passwordInput = screen.getByPlaceholderText(/Ipasok ang kasalukuyang password|Enter current password/i);
+    fireEvent.change(passwordInput, { target: { value: 'CurrentPassword123!' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Profile|Save Profile/i }));
+
+    await waitFor(() => {
+      expect(useAuthStore.getState().isOnboardingOpen).toBe(false);
+      expect(useAuthStore.getState().businessName).toBe('New Store Name');
+      // Must preserve the original email locally, NOT the new one
+      expect(useAuthStore.getState().userEmail).toBe('original@tindahan.ph');
+    });
+
+    const { getPendingProfileUpdate } = await import('../services/profileSync');
+    const pending = getPendingProfileUpdate();
+    expect(pending).not.toBeNull();
+    expect(pending?.payload.businessName).toBe('New Store Name');
+    expect(pending?.payload.email).toBeUndefined();
+  });
+
   it('disables store name input for non-owner staff in edit mode and displays hint', async () => {
     useAuthStore.setState({
       isOnboarded: true,

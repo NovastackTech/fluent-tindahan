@@ -485,7 +485,7 @@ export const OnboardingModal: React.FC = () => {
             businessName: trimmedBusinessName,
             ownerName: trimmedOwnerName,
             userPhone: normalizedPhone,
-            userEmail: trimmedEmail
+            userEmail: isEmailChanged ? (userEmail || '') : trimmedEmail
           });
 
           queuePendingProfileUpdate({
