@@ -144,7 +144,9 @@ export const GCashPage: React.FC = () => {
       : Promise.resolve(undefined),
     [tenantId, enteredRefNorm]
   );
-  const hasDuplicateRef = Boolean(duplicateRefTxn);
+  // Ignore a stale live-query hit after the field is cleared. Otherwise the row
+  // just saved disables the button until the empty-reference query catches up.
+  const hasDuplicateRef = Boolean(enteredRefNorm) && Boolean(duplicateRefTxn);
 
   const isAmountValid = numAmount > 0 && numAmount <= MAX_GCASH_AMOUNT && !amountError;
   // A blank amount after reload is not a stuck save. Keep the button clickable so
