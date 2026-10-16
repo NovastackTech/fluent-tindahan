@@ -189,6 +189,7 @@ export interface Translations {
     feeCannotBeNegative: string;
     duplicateRefWarning: string;
     phoneInvalid: string;
+    saveFailed: string;
   };
   dashboard: {
     title: string;
@@ -461,6 +462,7 @@ export interface Translations {
   banner: {
     offlineTitle: string;
     offlineDesc: string;
+    queuedBody: string;
   };
   privacy: {
     title: string;
@@ -908,7 +910,8 @@ export const translations: Record<Language, Translations> = {
       feeExceedsAmount: 'Ang service fee ay hindi maaaring mas mataas sa halaga ng transaksyon.',
       feeCannotBeNegative: 'Ang service fee ay hindi maaaring negatibo.',
       duplicateRefWarning: 'Ginamit na ang reference number. Hindi maaaring magtala ng doble.',
-      phoneInvalid: 'Dapat ay wastong 11-digit Philippine mobile number (09XXXXXXXXX).'
+      phoneInvalid: 'Dapat ay wastong 11-digit Philippine mobile number (09XXXXXXXXX).',
+      saveFailed: 'Hindi na-save ang transaksyon sa device. Subukan muli.'
     },
     dashboard: {
       title: 'Pangkalahatang Dashboard ng Tindahan',
@@ -1180,7 +1183,8 @@ export const translations: Record<Language, Translations> = {
     },
     banner: {
       offlineTitle: 'Naka-offline Ka Ngayon',
-      offlineDesc: 'Lahat ng benta, utang, at GCash log ay ligtas na nakatago sa iyong device at kusang magsi-sync pag nagka-signal.'
+      offlineDesc: 'Lahat ng benta, utang, at GCash log ay ligtas na nakatago sa iyong device at kusang magsi-sync pag nagka-signal.',
+      queuedBody: 'Naka-save na sa device. Ang sync ay tumatakbo sa background at hindi nito hinaharangan ang pag-save.'
     },
     privacy: {
       title: 'Paunawa sa Pagkapribado ng Datos (RA 10173)',
@@ -1626,7 +1630,8 @@ export const translations: Record<Language, Translations> = {
       feeExceedsAmount: 'Service fee cannot exceed transaction amount.',
       feeCannotBeNegative: 'Service fee cannot be negative.',
       duplicateRefWarning: 'This reference number has already been used. Duplicate entries are not allowed.',
-      phoneInvalid: 'Must be a valid 11-digit Philippine mobile number (09XXXXXXXXX).'
+      phoneInvalid: 'Must be a valid 11-digit Philippine mobile number (09XXXXXXXXX).',
+      saveFailed: 'Could not save the transaction on this device. Please try again.'
     },
     dashboard: {
       title: 'Store Performance Dashboard',
@@ -1898,7 +1903,8 @@ export const translations: Record<Language, Translations> = {
     },
     banner: {
       offlineTitle: 'You are Currently Offline',
-      offlineDesc: 'All sales, utang, and GCash logs are stored securely on your device and will sync automatically once reconnected.'
+      offlineDesc: 'All sales, utang, and GCash logs are stored securely on your device and will sync automatically once reconnected.',
+      queuedBody: 'Saved on this device. Sync runs in the background and does not block saving.'
     },
     privacy: {
       title: 'Data Privacy Notice (RA 10173)',

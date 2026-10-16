@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react';
+import Dexie from 'dexie';
 import {
   makeStyles,
   tokens,
@@ -85,6 +86,7 @@ export const GCashPage: React.FC = () => {
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [formErrorMessage, setFormErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [resolutionRefDrafts, setResolutionRefDrafts] = useState<Record<string, string>>({});
   const [resolutionErrors, setResolutionErrors] = useState<Record<string, string>>({});
   const [resolvingTxnId, setResolvingTxnId] = useState<string | null>(null);
@@ -145,7 +147,10 @@ export const GCashPage: React.FC = () => {
   const hasDuplicateRef = Boolean(duplicateRefTxn);
 
   const isAmountValid = numAmount > 0 && numAmount <= MAX_GCASH_AMOUNT && !amountError;
-  const isSaveDisabled = isSaving || hasDuplicateRef || !isAmountValid || Boolean(customerPhoneError) || Boolean(customFeeError);
+  // A blank amount after reload is not a stuck save. Keep the button clickable so
+  // the validation message can explain it. Disable only for a real block: a local
+  // write in progress, a stored duplicate reference, or an error already on screen.
+  const isSaveDisabled = isSaving || hasDuplicateRef || Boolean(amountError) || Boolean(customerPhoneError) || Boolean(customFeeError);
   const resolutions = useLiveQuery(
     () => db.gcashTxnResolutions.where('tenantId').equals(tenantId).toArray(),
     [tenantId]
@@ -188,6 +193,7 @@ export const GCashPage: React.FC = () => {
     e.preventDefault();
     setCustomerPhoneError('');
     setFormErrorMessage(null);
+    setSuccessMessage(null);
     setAmountTouched(true);
 
     if (!isAmountValid || Boolean(customFeeError)) {
@@ -213,6 +219,7 @@ export const GCashPage: React.FC = () => {
     if (savingRef.current) return;
     savingRef.current = true;
     setIsSaving(true);
+    let saved = false;
 
     try {
       const trimmedRef = refNo.trim();
@@ -254,9 +261,8 @@ export const GCashPage: React.FC = () => {
         return;
       }
 
-      await kickSync();
-
-      // Reset form
+      // The ledger row is already committed. Clear the form before any sync work
+      // so a stalled queue cannot leave this button disabled.
       setAmount('');
       setAmountTouched(false);
       setCustomFee(null);
@@ -265,10 +271,25 @@ export const GCashPage: React.FC = () => {
       setCustomerPhoneError('');
       setFormErrorMessage(null);
       setNotes('');
+      setSuccessMessage(t.gcash.transactionSuccess);
+      saved = true;
+    } catch (err) {
+      console.error('GCash local save failed:', err);
+      setFormErrorMessage(t.gcash.saveFailed);
     } finally {
       savingRef.current = false;
       setIsSaving(false);
     }
+
+    if (!saved) return;
+
+    // kickSync reads IndexedDB. Awaiting it in this continuation can stay inside
+    // the save transaction's Dexie zone and never resolve, which leaves the button
+    // disabled. Run it outside that zone, after the form has already been reset.
+    // Return the promise so Dexie keeps kickSync in the transless zone for its awaits.
+    void Dexie.ignoreTransaction(() =>
+      kickSync().catch((err) => console.warn('Background sync trigger failed:', err))
+    );
   };
 
   const handleCorrectReference = async (txn: GCashTxnRecord) => {
@@ -344,7 +365,9 @@ export const GCashPage: React.FC = () => {
         delete next[txn.id];
         return next;
       });
-      await kickSync();
+      void Dexie.ignoreTransaction(() =>
+        kickSync().catch((err) => console.warn('Background sync trigger failed:', err))
+      );
     } finally {
       setResolvingTxnId(null);
     }
@@ -587,6 +610,14 @@ export const GCashPage: React.FC = () => {
             <div role="alert" style={{ marginTop: '12px' }}>
               <MessageBar intent="error" layout="multiline">
                 <MessageBarBody>{formErrorMessage}</MessageBarBody>
+              </MessageBar>
+            </div>
+          )}
+
+          {successMessage && (
+            <div role="status" data-testid="gcash-save-success" style={{ marginTop: '12px' }}>
+              <MessageBar intent="success" layout="multiline">
+                <MessageBarBody>{successMessage}</MessageBarBody>
               </MessageBar>
             </div>
           )}

@@ -110,7 +110,7 @@ export const OfflineSyncBanner: React.FC = () => {
         <MessageBar intent="info" layout="multiline">
           <MessageBarBody>
             <MessageBarTitle>{pendingCount} {t.common.queued}</MessageBarTitle>
-            {t.common.syncing}
+            {isSyncing ? t.common.syncing : t.banner.queuedBody}
           </MessageBarBody>
           <MessageBarActions
             containerAction={

@@ -855,6 +855,59 @@ describe('syncEngine', () => {
     expect(useSyncStore.getState().lastErrorMessage).toBe('1 GCash transaction conflict detected.');
   });
 
+  it('requeues a stale InFlight GCash operation so a reload can sync it', async () => {
+    await db.syncQueue.add({
+      id: 'stale-inflight',
+      entity: 'GCashTxn',
+      action: 'Insert',
+      timestamp: new Date().toISOString(),
+      payload: { id: 'g-stale' },
+      status: 'InFlight',
+      retryCount: 0,
+      inFlightAt: new Date(Date.now() - 60_000).toISOString()
+    });
+    (apiClient.post as any).mockResolvedValueOnce({
+      data: { results: [{ syncId: 'stale-inflight', status: 'Success' }] }
+    });
+
+    const result = await processSyncQueue();
+
+    expect(result.processed).toBe(1);
+    expect(await db.syncQueue.get('stale-inflight')).toBeUndefined();
+    expect(useSyncStore.getState().isSyncing).toBe(false);
+  });
+
+  it('leaves a fresh InFlight batch alone so a second tab does not send it again', async () => {
+    await db.syncQueue.add({
+      id: 'fresh-inflight',
+      entity: 'GCashTxn',
+      action: 'Insert',
+      timestamp: new Date().toISOString(),
+      payload: { id: 'g-fresh' },
+      status: 'InFlight',
+      retryCount: 0,
+      inFlightAt: new Date().toISOString()
+    });
+
+    const result = await processSyncQueue();
+
+    expect(result).toEqual({ processed: 0, conflicts: 0, errors: 0 });
+    expect(apiClient.post).not.toHaveBeenCalled();
+    expect(await db.syncQueue.get('fresh-inflight')).toMatchObject({ status: 'InFlight' });
+  });
+
+  it('returns the current batch to Pending when the request fails so the queue is not stuck InFlight', async () => {
+    const syncId = await enqueueSync('GCashTxn', 'Insert', { id: 'g-net', amount: 100 });
+    (apiClient.post as any).mockRejectedValueOnce({
+      message: 'Network Error'
+    });
+
+    await processSyncQueue();
+
+    expect(await db.syncQueue.get(syncId)).toMatchObject({ status: 'Pending' });
+    expect(useSyncStore.getState().isSyncing).toBe(false);
+  });
+
   it('initSyncEngine attaches online and offline event handlers', () => {
     expect(() => initSyncEngine()).not.toThrow();
 
