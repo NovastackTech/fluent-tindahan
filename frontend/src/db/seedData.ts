@@ -1,4 +1,4 @@
-import { db, normalizeRef, type ProductRecord, type CustomerRecord, type UtangLedgerRecord, type GCashTxnRecord } from './db';
+import { db, normalizeRef, type ProductRecord, type CustomerRecord, type UtangLedgerRecord, type GCashTxnRecord, type SyncQueueRecord } from './db';
 import { DEMO_BUSINESS_NAME } from '../constants/demoProfile';
 import { createClientUuid } from '../utils/uuid';
 
@@ -687,7 +687,7 @@ export async function seedDexieDatabaseIfNeeded(
       tenantId: targetTenantId
     }));
 
-    await db.transaction('rw', db.tenants, db.products, async () => {
+    await db.transaction('rw', db.tenants, db.products, db.syncQueue, async () => {
       const existingTenant = await db.tenants.get(targetTenantId);
       if (!existingTenant) {
         await db.tenants.add({
@@ -704,6 +704,20 @@ export async function seedDexieDatabaseIfNeeded(
       }
 
       await db.products.bulkPut(tenantProducts);
+
+      const baseQueueOrder = Date.now() * 1000;
+      const syncRecords: SyncQueueRecord[] = tenantProducts.map((p, idx) => ({
+        id: createClientUuid(),
+        entity: 'Product',
+        action: 'Insert',
+        timestamp: now,
+        payload: p,
+        status: 'Pending',
+        retryCount: 0,
+        queueOrder: baseQueueOrder + idx
+      }));
+
+      await db.syncQueue.bulkPut(syncRecords);
     });
     return;
   }

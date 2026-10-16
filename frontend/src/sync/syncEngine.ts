@@ -20,6 +20,7 @@ import { createClientUuid } from '../utils/uuid';
 import { create } from 'zustand';
 import { hasPendingProfileUpdate, syncPendingProfileUpdate } from '../services/profileSync';
 
+import { DEFAULT_TENANT_ID } from '../db/seedData';
 import { STORAGE_KEY_LAST_SYNCED, getSyncStorageKey } from '../constants/sync';
 export { STORAGE_KEY_LAST_SYNCED, getSyncStorageKey };
 
@@ -386,6 +387,19 @@ export async function processSyncQueue(): Promise<{ processed: number; conflicts
       store.setLastErrorMessage(conflictMessages.join(' '));
     }
     await updateQueueCounts();
+
+    if (successCount > 0) {
+      const remaining = await db.syncQueue
+        .where('status')
+        .anyOf('Pending', 'Failed')
+        .count();
+      if (remaining > 0) {
+        setTimeout(() => {
+          processSyncQueue().catch(console.error);
+        }, 100);
+      }
+    }
+
     return { processed: successCount, conflicts: conflictCount, errors: failCount };
   } catch (err: any) {
     console.error('Batch sync network/server failure:', err);
@@ -648,19 +662,18 @@ export async function pullCatalogFromServer(): Promise<number> {
     const response = await apiClient.get('/products');
     const products = response.data;
     if (Array.isArray(products) && products.length > 0) {
-      for (const p of products) {
-        await db.products.put({
-          id: p.id,
-          tenantId: p.tenantId,
-          name: p.name,
-          price: p.price,
-          cost: p.cost,
-          barcode: p.barcode,
-          category: p.category,
-          stockQty: p.stockQty,
-          updatedAt: p.updatedAt
-        });
-      }
+      const formattedProducts: ProductRecord[] = products.map((p: any) => ({
+        id: p.id,
+        tenantId: p.tenantId,
+        name: p.name,
+        price: Number(p.price),
+        cost: Number(p.cost),
+        barcode: p.barcode || undefined,
+        category: p.category || undefined,
+        stockQty: Number(p.stockQty),
+        updatedAt: p.updatedAt || new Date().toISOString()
+      }));
+      await db.products.bulkPut(formattedProducts);
       return products.length;
     }
     return 0;
@@ -670,8 +683,15 @@ export async function pullCatalogFromServer(): Promise<number> {
   }
 }
 
+let isSyncEngineInitialized = false;
+
 // Setup network & sync listeners
 export function initSyncEngine() {
+  if (isSyncEngineInitialized) {
+    updateQueueCounts().catch(console.error);
+    return;
+  }
+  isSyncEngineInitialized = true;
   const store = useSyncStore.getState();
 
   window.addEventListener('online', () => {
@@ -680,6 +700,15 @@ export function initSyncEngine() {
       .then(() => updateQueueCounts())
       .catch(console.error);
     processSyncQueue().catch(console.error);
+
+    const activeTenant = useAuthStore.getState().tenantId;
+    if (activeTenant && activeTenant !== DEFAULT_TENANT_ID) {
+      db.products.where('tenantId').equals(activeTenant).count().then((count) => {
+        if (count === 0) {
+          pullCatalogFromServer().then(() => updateQueueCounts()).catch(console.error);
+        }
+      }).catch(console.error);
+    }
   });
 
   window.addEventListener('offline', () => {

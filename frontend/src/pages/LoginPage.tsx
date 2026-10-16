@@ -30,7 +30,7 @@ import {
 import type { NavTab } from '../components/Navigation';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
-import { processSyncQueue } from '../sync/syncEngine';
+import { processSyncQueue, kickSync, updateQueueCounts, pullCatalogFromServer } from '../sync/syncEngine';
 import { ConfirmUnsyncedLoginDialog } from '../components/ConfirmUnsyncedLoginDialog';
 import { useTranslation } from '../state/languageStore';
 import { useAuthStore } from '../state/authStore';
@@ -139,6 +139,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   const [regPassword, setRegPassword] = useState('');
   const [regPin, setRegPin] = useState('');
   const [regOfferGcash, setRegOfferGcash] = useState(true);
+  const [regIncludeStarterProducts, setRegIncludeStarterProducts] = useState(true);
 
   // Unsynced queue protection
   const [isUnsyncedDialogOpen, setIsUnsyncedDialogOpen] = useState(false);
@@ -161,6 +162,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
         true
       );
       void useSubscriptionStore.getState().refreshSubscription();
+      const productCount = await db.products.where('tenantId').equals(pendingAuthPayload.payload.tenantId).count();
+      if (productCount === 0) {
+        void pullCatalogFromServer().then(() => updateQueueCounts()).catch(console.error);
+      }
+      void processSyncQueue().catch(console.error);
       onNavigate('pos');
     } finally {
       setIsSubmitting(false);
@@ -182,6 +188,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
           false
         );
         void useSubscriptionStore.getState().refreshSubscription();
+        const productCount = await db.products.where('tenantId').equals(pendingAuthPayload.payload.tenantId).count();
+        if (productCount === 0) {
+          void pullCatalogFromServer().then(() => updateQueueCounts()).catch(console.error);
+        }
+        void processSyncQueue().catch(console.error);
         onNavigate('pos');
       }
     } catch (e) {
@@ -245,6 +256,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
       }
 
       void useSubscriptionStore.getState().refreshSubscription();
+      const productCount = await db.products.where('tenantId').equals(authResult.tenantId).count();
+      if (productCount === 0) {
+        void pullCatalogFromServer().then(() => updateQueueCounts()).catch(console.error);
+      }
+      void processSyncQueue().catch(console.error);
       onNavigate('pos');
     } catch (err: any) {
       const msg = err?.response?.data?.message || t.onboarding.loginFailed;
@@ -285,7 +301,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
       const newUserId = createClientUuid();
 
       // 1. Seed local Dexie (Zero Network Block Guarantee)
-      await seedDexieDatabaseIfNeeded(false, newTenantId, false, trimmedStore);
+      await seedDexieDatabaseIfNeeded(
+        false,
+        newTenantId,
+        !regIncludeStarterProducts,
+        trimmedStore
+      );
 
       // 2. Set GCash fees
       try {
@@ -338,6 +359,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
       });
 
       void useSubscriptionStore.getState().refreshSubscription();
+      await updateQueueCounts();
+      void kickSync();
       onNavigate('pos');
     } catch (err: any) {
       setAuthError(err?.message || t.onboarding.submitError);
@@ -589,7 +612,24 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
               checked={regOfferGcash}
               onChange={(_, d) => setRegOfferGcash(Boolean(d.checked))}
               label={t.landing.offerGcashLabel}
+              style={{ marginBottom: tokens.spacingVerticalS }}
+            />
+
+            <Checkbox
+              checked={regIncludeStarterProducts}
+              onChange={(_, d) => setRegIncludeStarterProducts(Boolean(d.checked))}
+              label={
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <Text weight="semibold" size={200}>
+                    {t.landing.starterProductsLabel}
+                  </Text>
+                  <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>
+                    {t.landing.starterProductsDesc}
+                  </Text>
+                </div>
+              }
               style={{ marginBottom: tokens.spacingVerticalM }}
+              data-testid="login-reg-starter-products"
             />
 
             <Button

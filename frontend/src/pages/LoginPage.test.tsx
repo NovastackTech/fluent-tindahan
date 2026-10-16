@@ -62,6 +62,18 @@ vi.mock('../services/authService', async (importOriginal) => {
   };
 });
 
+import * as syncEngine from '../sync/syncEngine';
+
+vi.mock('../sync/syncEngine', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../sync/syncEngine')>();
+  return {
+    ...actual,
+    processSyncQueue: vi.fn().mockResolvedValue({ processed: 0, conflicts: 0, errors: 0 }),
+    kickSync: vi.fn().mockResolvedValue(undefined),
+    pullCatalogFromServer: vi.fn().mockResolvedValue(0)
+  };
+});
+
 vi.mock('../db/seedData', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../db/seedData')>();
   return {
@@ -132,6 +144,7 @@ describe('LoginPage Component', () => {
       });
       expect(useAuthStore.getState().isOnboarded).toBe(true);
       expect(useAuthStore.getState().userEmail).toBe('owner@tindahan.ph');
+      expect(syncEngine.pullCatalogFromServer).toHaveBeenCalled();
       expect(onNavigate).toHaveBeenCalledWith('pos');
     });
   });
@@ -183,12 +196,18 @@ describe('LoginPage Component', () => {
     });
   });
 
-  it('allows registering a new store and navigating to pos', async () => {
+  it('allows registering a new store and navigating to pos with starter products enabled by default', async () => {
     const { onNavigate } = renderLoginPage();
 
     // Switch to Register tab
     const registerTab = screen.getByTestId('login-tab-register');
     fireEvent.click(registerTab);
+
+    // Starter products checkbox should be present and checked by default
+    const starterCheckbox = screen.getByTestId('login-reg-starter-products');
+    expect(starterCheckbox).toBeInTheDocument();
+    const checkboxInput = starterCheckbox.querySelector('input') || starterCheckbox;
+    expect(checkboxInput).toBeChecked();
 
     fireEvent.change(screen.getByPlaceholderText(t.landing.storeNamePlaceholder), { target: { value: 'Tindahan ni Nanay' } });
     fireEvent.change(screen.getByPlaceholderText(t.landing.emailPlaceholder), { target: { value: 'nanay@tindahan.ph' } });
@@ -198,6 +217,12 @@ describe('LoginPage Component', () => {
     fireEvent.click(submitBtn);
 
     await waitFor(() => {
+      expect(seedData.seedDexieDatabaseIfNeeded).toHaveBeenCalledWith(
+        false,
+        expect.any(String),
+        false,
+        'Tindahan ni Nanay'
+      );
       expect(authService.registerStore).toHaveBeenCalledWith(
         expect.objectContaining({
           email: 'nanay@tindahan.ph',
@@ -206,6 +231,46 @@ describe('LoginPage Component', () => {
         })
       );
       expect(useAuthStore.getState().isOnboarded).toBe(true);
+      expect(syncEngine.kickSync).toHaveBeenCalled();
+      expect(onNavigate).toHaveBeenCalledWith('pos');
+    });
+  });
+
+  it('allows opting out of starter products when registering a new store', async () => {
+    const { onNavigate } = renderLoginPage();
+
+    const registerTab = screen.getByTestId('login-tab-register');
+    fireEvent.click(registerTab);
+
+    // Uncheck starter products checkbox
+    const starterCheckbox = screen.getByTestId('login-reg-starter-products');
+    const checkboxInput = starterCheckbox.querySelector('input') || starterCheckbox;
+    fireEvent.click(checkboxInput);
+    expect(checkboxInput).not.toBeChecked();
+
+    fireEvent.change(screen.getByPlaceholderText(t.landing.storeNamePlaceholder), { target: { value: 'Malinis na Tindahan' } });
+    fireEvent.change(screen.getByPlaceholderText(t.landing.emailPlaceholder), { target: { value: 'clean@tindahan.ph' } });
+    fireEvent.change(screen.getByPlaceholderText(t.landing.passwordPlaceholder), { target: { value: 'clean123' } });
+
+    const submitBtn = screen.getByTestId('login-register-submit-btn');
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(seedData.seedDexieDatabaseIfNeeded).toHaveBeenCalledWith(
+        false,
+        expect.any(String),
+        true,
+        'Malinis na Tindahan'
+      );
+      expect(authService.registerStore).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: 'clean@tindahan.ph',
+          password: 'clean123',
+          businessName: 'Malinis na Tindahan'
+        })
+      );
+      expect(useAuthStore.getState().isOnboarded).toBe(true);
+      expect(syncEngine.kickSync).toHaveBeenCalled();
       expect(onNavigate).toHaveBeenCalledWith('pos');
     });
   });

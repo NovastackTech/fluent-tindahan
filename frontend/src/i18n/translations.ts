@@ -637,6 +637,8 @@ export interface Translations {
     phoneLabel: string;
     phonePlaceholder: string;
     offerGcashLabel: string;
+    starterProductsLabel: string;
+    starterProductsDesc: string;
     demoStorePrompt: string;
     exploreDemoBtn: string;
     loggedInStatus: string;
@@ -1383,6 +1385,8 @@ export const translations: Record<Language, Translations> = {
       phoneLabel: 'Mobile Number (GCash)',
       phonePlaceholder: '09171234567',
       offerGcashLabel: 'Nag-aalok ng GCash Cash-In / Cash-Out services',
+      starterProductsLabel: 'I-load ang 50 karaniwang paninda (starter products)',
+      starterProductsDesc: 'Maglagay ng panimulang FMCG catalog (Pancit Canton, Kopiko, de-lata, shampoo sachet, atbp.) sa imbentaryo.',
       demoStorePrompt: 'Nais mo bang subukan muna nang walang account?',
       exploreDemoBtn: 'Subukan gamit ang Demo Data',
       loggedInStatus: 'Kasalukuyang naka-log in bilang',
@@ -2086,6 +2090,8 @@ export const translations: Record<Language, Translations> = {
       phoneLabel: 'Mobile Number (GCash)',
       phonePlaceholder: '09171234567',
       offerGcashLabel: 'Offers GCash Cash-In / Cash-Out services',
+      starterProductsLabel: 'Pre-load 50 popular starter products',
+      starterProductsDesc: 'Seed initial catalog (Pancit Canton, Kopiko, canned goods, shampoo sachets, etc.) into inventory.',
       demoStorePrompt: 'Want to test drive first without an account?',
       exploreDemoBtn: 'Explore with Sample Demo Data',
       loggedInStatus: 'Currently logged in as',

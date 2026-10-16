@@ -8,6 +8,7 @@ describe('seedData', () => {
     await db.customers.clear();
     await db.utangLedger.clear();
     await db.tenants.clear();
+    await db.syncQueue.clear();
   });
 
   it('exports default constant IDs', () => {
@@ -55,6 +56,17 @@ describe('seedData', () => {
     expect(await db.utangLedger.where('tenantId').equals(newTenantId).count()).toBe(0);
     expect(await db.gcashTxns.where('tenantId').equals(newTenantId).count()).toBe(0);
     expect((await db.tenants.get(newTenantId))?.businessName).toBe('New Store');
+    expect(await db.syncQueue.count()).toBe(50);
+    const queuedItems = await db.syncQueue.toArray();
+    expect(queuedItems.every((item) => item.entity === 'Product' && item.action === 'Insert' && item.payload.tenantId === newTenantId)).toBe(true);
+  });
+
+  it('creates empty catalog for custom tenant when emptyCatalog is true without enqueuing sync items', async () => {
+    const emptyTenantId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    await seedDexieDatabaseIfNeeded(false, emptyTenantId, true, 'Clean Store');
+    expect(await db.products.where('tenantId').equals(emptyTenantId).count()).toBe(0);
+    expect(await db.syncQueue.count()).toBe(0);
+    expect((await db.tenants.get(emptyTenantId))?.businessName).toBe('Clean Store');
   });
 
   it('keeps a custom tenant catalog at 50 when two non-forced seeds race', async () => {

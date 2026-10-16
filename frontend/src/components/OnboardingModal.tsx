@@ -49,7 +49,7 @@ import { createClientUuid, seedDexieDatabaseIfNeeded } from '../db/seedData';
 import { db } from '../db/db';
 import { normalizePhilippineMobile } from '../utils/philippineMobile';
 import { DEFAULT_GCASH_FEE_TIERS, useGCashFeeStore } from '../state/gcashFeeStore';
-import { processSyncQueue, updateQueueCounts } from '../sync/syncEngine';
+import { processSyncQueue, updateQueueCounts, kickSync, pullCatalogFromServer } from '../sync/syncEngine';
 import { ConfirmUnsyncedLoginDialog } from './ConfirmUnsyncedLoginDialog';
 import { registerStore, loginStore, loginPin, updateProfile, type AuthResponseDto } from '../services/authService';
 import { queuePendingProfileUpdate, clearPendingProfileUpdate } from '../services/profileSync';
@@ -227,6 +227,11 @@ export const OnboardingModal: React.FC = () => {
         isActive: pendingAuthPayload.payload.tier !== 'Libre'
       });
       void useSubscriptionStore.getState().refreshSubscription();
+      const productCount = await db.products.where('tenantId').equals(pendingAuthPayload.payload.tenantId).count();
+      if (productCount === 0) {
+        void pullCatalogFromServer().then(() => updateQueueCounts()).catch(console.error);
+      }
+      void processSyncQueue().catch(console.error);
       closeOnboarding();
     } finally {
       setIsSubmitting(false);
@@ -253,6 +258,11 @@ export const OnboardingModal: React.FC = () => {
           isActive: pendingAuthPayload.payload.tier !== 'Libre'
         });
         void useSubscriptionStore.getState().refreshSubscription();
+        const productCount = await db.products.where('tenantId').equals(pendingAuthPayload.payload.tenantId).count();
+        if (productCount === 0) {
+          void pullCatalogFromServer().then(() => updateQueueCounts()).catch(console.error);
+        }
+        void processSyncQueue().catch(console.error);
         closeOnboarding();
       }
     } catch (e) {
@@ -591,6 +601,8 @@ export const OnboardingModal: React.FC = () => {
       });
 
       void useSubscriptionStore.getState().refreshSubscription();
+      await updateQueueCounts();
+      void kickSync();
       closeOnboarding();
     } catch (err) {
       console.error('[OnboardingModal] Failed to complete registration:', err);
@@ -649,6 +661,11 @@ export const OnboardingModal: React.FC = () => {
         isActive: authResult.tier !== 'Libre'
       });
       void useSubscriptionStore.getState().refreshSubscription();
+      const productCount = await db.products.where('tenantId').equals(authResult.tenantId).count();
+      if (productCount === 0) {
+        void pullCatalogFromServer().then(() => updateQueueCounts()).catch(console.error);
+      }
+      void processSyncQueue().catch(console.error);
       closeOnboarding();
     } catch (apiErr: any) {
       const status = apiErr?.response?.status;

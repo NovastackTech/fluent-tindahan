@@ -23,7 +23,7 @@ import { OnboardingModal } from './components/OnboardingModal';
 import { SessionLockModal } from './components/SessionLockModal';
 import { DisclaimerModal } from './components/DisclaimerModal';
 import { TermsModal } from './components/TermsModal';
-import { initSyncEngine } from './sync/syncEngine';
+import { initSyncEngine, pullCatalogFromServer, updateQueueCounts } from './sync/syncEngine';
 import { usePwaStore, initPwaListeners } from './state/pwaStore';
 import { initServiceWorker } from './pwa/registerServiceWorker';
 import { initPwaTabCoordinator } from './pwa/pwaTabCoordinator';
@@ -195,10 +195,26 @@ export const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!isOnboardingStatusReady || !isOnboarded || storeServicesStarted.current) return;
+    if (!isOnboarded) {
+      storeServicesStarted.current = false;
+      return;
+    }
+    if (!isOnboardingStatusReady || storeServicesStarted.current) return;
     storeServicesStarted.current = true;
 
     initSyncEngine();
+
+    const checkAndPullCatalog = async () => {
+      const activeTenantId = useAuthStore.getState().tenantId;
+      if (activeTenantId && activeTenantId !== DEFAULT_TENANT_ID) {
+        const productCount = await db.products.where('tenantId').equals(activeTenantId).count();
+        if (productCount === 0) {
+          await pullCatalogFromServer();
+          await updateQueueCounts();
+        }
+      }
+    };
+    checkAndPullCatalog().catch(console.error);
 
     const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
     const isBillingSuccess = searchParams?.get('billing') === 'success';
