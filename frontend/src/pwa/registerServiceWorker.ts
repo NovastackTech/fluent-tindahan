@@ -11,7 +11,11 @@ function executeReload(): void {
   try {
     window.location.reload();
   } catch {
-    window.location.href = window.location.href;
+    if (typeof window.location?.assign === 'function') {
+      window.location.assign(window.location.href);
+    } else if (typeof window.location?.replace === 'function') {
+      window.location.replace(window.location.href);
+    }
   }
 }
 
@@ -153,7 +157,17 @@ export async function reloadAppForUpdate(): Promise<void> {
   // 6. Hard navigation fallback
   setTimeout(() => {
     if (typeof window !== 'undefined') {
-      window.location.href = window.location.href;
+      try {
+        if (typeof window.location?.assign === 'function') {
+          window.location.assign(window.location.href);
+        } else if (typeof window.location?.replace === 'function') {
+          window.location.replace(window.location.href);
+        }
+      } catch {
+        // ignore
+      } finally {
+        isReloading = false;
+      }
     }
   }, 1200);
 }

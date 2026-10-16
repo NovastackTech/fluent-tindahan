@@ -2606,43 +2606,43 @@ public class AuthControllerTests
 
         var updateResult = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
         {
-            BusinessName = "Jonathan Solatorio #1",
-            OwnerName = "Jonathan Solatorio",
+            BusinessName = "Updated Tindahan Store",
+            OwnerName = "Updated Owner",
             Phone = "09171234567",
-            Email = "jsolatorio310@gmail.com",
+            Email = "updated-owner@example.ph",
             CurrentPassword = "Password123!"
         }, CancellationToken.None);
 
         var ok = updateResult.Result.Should().BeOfType<OkObjectResult>().Subject;
         var dto = ok.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
 
-        dto.BusinessName.Should().Be("Jonathan Solatorio #1");
-        dto.OwnerName.Should().Be("Jonathan Solatorio");
+        dto.BusinessName.Should().Be("Updated Tindahan Store");
+        dto.OwnerName.Should().Be("Updated Owner");
         dto.Phone.Should().Be("09171234567");
-        dto.Email.Should().Be("jsolatorio310@gmail.com");
+        dto.Email.Should().Be("updated-owner@example.ph");
 
         // Verify database persistence across logout/re-login
         var dbTenant = await context.Tenants.IgnoreQueryFilters().FirstAsync(t => t.Id == tenantId);
-        dbTenant.BusinessName.Should().Be("Jonathan Solatorio #1");
+        dbTenant.BusinessName.Should().Be("Updated Tindahan Store");
 
         var dbUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
-        dbUser.OwnerName.Should().Be("Jonathan Solatorio");
+        dbUser.OwnerName.Should().Be("Updated Owner");
         dbUser.Phone.Should().Be("09171234567");
-        dbUser.Email.Should().Be("jsolatorio310@gmail.com");
-        dbUser.NormalizedEmail.Should().Be("jsolatorio310@gmail.com");
+        dbUser.Email.Should().Be("updated-owner@example.ph");
+        dbUser.NormalizedEmail.Should().Be("updated-owner@example.ph");
 
         // Re-login after "logout" retrieves the updated persisted data
         var reloginResult = await controller.Login(new AuthController.LoginRequest
         {
-            Email = "jsolatorio310@gmail.com",
+            Email = "updated-owner@example.ph",
             Password = "Password123!"
         }, CancellationToken.None);
 
         var reloginDto = ((OkObjectResult)reloginResult.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
-        reloginDto.BusinessName.Should().Be("Jonathan Solatorio #1");
-        reloginDto.OwnerName.Should().Be("Jonathan Solatorio");
+        reloginDto.BusinessName.Should().Be("Updated Tindahan Store");
+        reloginDto.OwnerName.Should().Be("Updated Owner");
         reloginDto.Phone.Should().Be("09171234567");
-        reloginDto.Email.Should().Be("jsolatorio310@gmail.com");
+        reloginDto.Email.Should().Be("updated-owner@example.ph");
     }
 
     [Fact]
