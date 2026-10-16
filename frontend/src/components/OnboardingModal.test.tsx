@@ -641,6 +641,60 @@ describe('OnboardingModal', () => {
     expect(useAuthStore.getState().isOnboardingOpen).toBe(true);
   });
 
+  it('validates email as required in edit mode, reusing Register validation', async () => {
+    useAuthStore.setState({
+      isOnboarded: true,
+      isOnboardingOpen: true,
+      onboardingMode: 'edit',
+      role: 'Owner',
+      businessName: 'Original Store',
+      userEmail: 'owner@tindahan.ph'
+    });
+
+    renderModal();
+    const emailInput = screen.getByPlaceholderText(/Hal. nena.store@gmail.com|e.g. nena.store@gmail.com/i);
+    fireEvent.change(emailInput, { target: { value: '' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Profile|Save Profile/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Kailangan ang wastong email address|Valid email address is required/i)
+      ).toBeInTheDocument();
+    });
+    expect(authService.updateProfile).not.toHaveBeenCalled();
+    expect(useAuthStore.getState().isOnboardingOpen).toBe(true);
+  });
+
+  it('validates current pin format in edit mode when changing email', async () => {
+    useAuthStore.setState({
+      isOnboarded: true,
+      isOnboardingOpen: true,
+      onboardingMode: 'edit',
+      role: 'Owner',
+      hasPin: true,
+      businessName: 'My Store',
+      userEmail: 'oldemail@tindahan.ph'
+    });
+
+    renderModal();
+    const emailInput = screen.getByPlaceholderText(/Hal. nena.store@gmail.com|e.g. nena.store@gmail.com/i);
+    fireEvent.change(emailInput, { target: { value: 'newemail@tindahan.ph' } });
+
+    const pinInput = screen.getByPlaceholderText(/4 hanggang 6 na numero|4 to 6 digits/i);
+    fireEvent.change(pinInput, { target: { value: '12' } }); // invalid: only 2 digits
+
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Profile|Save Profile/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Ang PIN ay dapat 4 hanggang 6 na digit|PIN must be between 4 and 6 numeric digits/i)
+      ).toBeInTheDocument();
+    });
+    expect(authService.updateProfile).not.toHaveBeenCalled();
+    expect(useAuthStore.getState().isOnboardingOpen).toBe(true);
+  });
+
   it('saves locally, queues pending profile update, and displays notice when updateProfile fails with network error', async () => {
     vi.mocked(authService.updateProfile).mockRejectedValueOnce(new Error('Network offline'));
 

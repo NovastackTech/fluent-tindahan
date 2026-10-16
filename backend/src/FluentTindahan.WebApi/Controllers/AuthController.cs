@@ -143,7 +143,7 @@ public class AuthController : ControllerBase
         [StringLength(128)]
         public string? CurrentPassword { get; init; }
 
-        [StringLength(6, MinimumLength = 4)]
+        [RegularExpression(@"^\d{4,6}$", ErrorMessage = "PIN must be between 4 and 6 digits.")]
         public string? Pin { get; init; }
 
         public string? RefreshToken { get; init; }
@@ -887,7 +887,6 @@ public class AuthController : ControllerBase
     /// </summary>
     [Authorize(Policy = AuthorizationPolicies.TenantResolved)]
     [HttpPut("profile")]
-    [HttpPut("/api/tenant/profile")]
     [ProducesResponseType(typeof(AuthResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

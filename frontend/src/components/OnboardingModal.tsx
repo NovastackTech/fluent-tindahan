@@ -313,14 +313,17 @@ export const OnboardingModal: React.FC = () => {
     }
 
     const trimmedEmail = formEmail.trim();
-    if (isEditMode) {
-      if (trimmedEmail && !EMAIL_REGEX.test(trimmedEmail)) {
-        setEmailError(t.onboarding.emailInvalid);
-        isValid = false;
-      } else {
-        setEmailError('');
-      }
+    if (!trimmedEmail) {
+      setEmailError(t.onboarding.emailRequired);
+      isValid = false;
+    } else if (!EMAIL_REGEX.test(trimmedEmail)) {
+      setEmailError(t.onboarding.emailInvalid);
+      isValid = false;
+    } else {
+      setEmailError('');
+    }
 
+    if (isEditMode) {
       if (isEmailChanged) {
         if (!formCurrentPassword.trim() && !formCurrentPin.trim()) {
           setCurrentPasswordError(t.onboarding.currentPasswordRequired);
@@ -328,18 +331,16 @@ export const OnboardingModal: React.FC = () => {
         } else {
           setCurrentPasswordError('');
         }
+
+        if (formCurrentPin.trim() && !PIN_REGEX.test(formCurrentPin.trim())) {
+          setPinError(t.onboarding.pinInvalid);
+          isValid = false;
+        } else {
+          setPinError('');
+        }
       } else {
         setCurrentPasswordError('');
-      }
-    } else {
-      if (!trimmedEmail) {
-        setEmailError(t.onboarding.emailRequired);
-        isValid = false;
-      } else if (!EMAIL_REGEX.test(trimmedEmail)) {
-        setEmailError(t.onboarding.emailInvalid);
-        isValid = false;
-      } else {
-        setEmailError('');
+        setPinError('');
       }
     }
 
@@ -824,6 +825,8 @@ export const OnboardingModal: React.FC = () => {
                         <Field
                           label={t.onboarding.pinLabel}
                           hint={t.onboarding.pinHint}
+                          validationState={pinError ? 'error' : 'none'}
+                          validationMessage={pinError}
                         >
                           <Input
                             type="password"
@@ -834,6 +837,7 @@ export const OnboardingModal: React.FC = () => {
                             onChange={(_, data) => {
                               const cleaned = data.value.replace(/\D/g, '').slice(0, 6);
                               setFormCurrentPin(cleaned);
+                              if (pinError) setPinError('');
                               if (currentPasswordError) setCurrentPasswordError('');
                             }}
                             placeholder={t.onboarding.pinPlaceholder}
