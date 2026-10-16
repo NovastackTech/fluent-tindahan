@@ -84,18 +84,17 @@ public static class AuthRefreshTokenHelper
         var matchingToken = await context.UserRefreshTokens.IgnoreQueryFilters()
             .FirstOrDefaultAsync(r => r.UserId == user.Id && r.FamilyId == familyId && r.TokenHash == presentedTokenHash, cancellationToken);
 
-        if (matchingToken != null)
+        // Refuse to issue a new token when the row is missing, revoked, or already replaced
+        if (matchingToken == null || matchingToken.IsRevoked || matchingToken.ReplacedByTokenHash != null)
         {
-            if (matchingToken.IsRevoked)
-            {
-                return (null, null, null, null);
-            }
+            return (null, null, null, null);
+        }
 
-            if (matchingToken.ReplacedByTokenHash != null &&
-                (!matchingToken.GraceExpiresAt.HasValue || now > matchingToken.GraceExpiresAt.Value))
-            {
-                return (null, null, null, null);
-            }
+        if (matchingToken.ExpiresAt < now)
+        {
+            matchingToken.IsRevoked = true;
+            matchingToken.RevokedAt = now;
+            return (null, null, null, null);
         }
 
         var (newRefToken, newExpires, newTokenId, famId) = jwtTokenService.GenerateRefreshToken(

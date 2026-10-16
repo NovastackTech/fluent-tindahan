@@ -2899,6 +2899,92 @@ public class AuthControllerTests
     }
 
     [Fact]
+    public async Task UpdateProfile_WhenRefreshTokenMissingInDatabase_DoesNotIssueNewRefreshToken()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var (authController, userId, tenantId) = await SetupAuthenticatedTestStoreAsync(
+            context,
+            email: "missingtoken@tindahan.ph",
+            businessName: "Missing Token Store");
+
+        var user = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
+
+        // Generate a valid JWT refresh token but DO NOT insert into UserRefreshTokens table
+        var (orphanedToken, _, _, _) = DefaultJwtService.GenerateRefreshToken(
+            user.Id, tenantId, tokenId: null, familyId: "orphaned-family");
+
+        var updateResult = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "Updated Missing Token Store",
+            RefreshToken = orphanedToken
+        }, CancellationToken.None);
+
+        var ok = updateResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = ok.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        dto.RefreshToken.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenRefreshTokenIsRevoked_DoesNotIssueNewRefreshToken()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var (authController, userId, tenantId) = await SetupAuthenticatedTestStoreAsync(
+            context,
+            email: "revokedtoken@tindahan.ph",
+            businessName: "Revoked Token Store");
+
+        var user = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
+
+        var (token, _, tokenHash, famId) = AuthRefreshTokenHelper.IssueRefreshToken(
+            context, DefaultJwtService, user, tenantId, TimeProvider.System, "revoked-family");
+        await context.SaveChangesAsync();
+        var tokenRow = await context.UserRefreshTokens.IgnoreQueryFilters().FirstAsync(t => t.TokenHash == tokenHash);
+        tokenRow.IsRevoked = true;
+        tokenRow.RevokedAt = DateTimeOffset.UtcNow;
+        await context.SaveChangesAsync();
+
+        var updateResult = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "Updated Revoked Store",
+            RefreshToken = token
+        }, CancellationToken.None);
+
+        var ok = updateResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = ok.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        dto.RefreshToken.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenRefreshTokenIsAlreadyReplaced_DoesNotIssueNewRefreshToken()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var (authController, userId, tenantId) = await SetupAuthenticatedTestStoreAsync(
+            context,
+            email: "replacedtoken@tindahan.ph",
+            businessName: "Replaced Token Store");
+
+        var user = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
+
+        var (token, _, tokenHash, famId) = AuthRefreshTokenHelper.IssueRefreshToken(
+            context, DefaultJwtService, user, tenantId, TimeProvider.System, "replaced-family");
+        await context.SaveChangesAsync();
+        var tokenRow = await context.UserRefreshTokens.IgnoreQueryFilters().FirstAsync(t => t.TokenHash == tokenHash);
+        tokenRow.ReplacedByTokenHash = "some-replacement-hash";
+        tokenRow.GraceExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-5); // expired grace
+        await context.SaveChangesAsync();
+
+        var updateResult = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "Updated Replaced Store",
+            RefreshToken = token
+        }, CancellationToken.None);
+
+        var ok = updateResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = ok.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        dto.RefreshToken.Should().BeNull();
+    }
+
+    [Fact]
     public async Task UpdateProfile_WhenFieldsAreNull_KeepsExistingValuesUnchanged()
     {
         var (context, _) = CreateInMemoryContext();
