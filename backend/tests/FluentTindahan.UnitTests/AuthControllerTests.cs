@@ -2445,5 +2445,89 @@ public class AuthControllerTests
         userAfter.FailedPasswordAttempts.Should().Be(1);
         userAfter.PasswordLockoutEnd.Should().BeNull();
     }
+
+    [Fact]
+    public void JwtTokenService_InProduction_WhenSecretIsBurnedKey_ThrowsInvalidOperationException()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Jwt:SecretKey"] = JwtTokenService.BurnedSecretKey
+            })
+            .Build();
+
+        var prodEnv = new Mock<IHostEnvironment>();
+        prodEnv.Setup(e => e.EnvironmentName).Returns(Environments.Production);
+
+        var act = () => new JwtTokenService(config, prodEnv.Object);
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*burned*");
+    }
+
+    [Fact]
+    public void JwtTokenService_InProduction_WhenSecretIsDefaultDevKey_ThrowsInvalidOperationException()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["JWT_SECRET_KEY"] = JwtTokenService.DefaultDevSecretKey
+            })
+            .Build();
+
+        var prodEnv = new Mock<IHostEnvironment>();
+        prodEnv.Setup(e => e.EnvironmentName).Returns(Environments.Production);
+
+        var act = () => new JwtTokenService(config, prodEnv.Object);
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*burned*");
+    }
+
+    [Fact]
+    public void JwtTokenService_InProduction_WhenSecretMissingOrShort_ThrowsInvalidOperationException()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>())
+            .Build();
+
+        var prodEnv = new Mock<IHostEnvironment>();
+        prodEnv.Setup(e => e.EnvironmentName).Returns(Environments.Production);
+
+        var act = () => new JwtTokenService(config, prodEnv.Object);
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*32 characters*");
+    }
+
+    [Fact]
+    public void JwtTokenService_InProduction_WhenSecretIsUniqueAndValid_InitializesSuccessfully()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["JWT_SECRET_KEY"] = "Production_UniqueRandomSecretKey_LongerThan32Chars!"
+            })
+            .Build();
+
+        var prodEnv = new Mock<IHostEnvironment>();
+        prodEnv.Setup(e => e.EnvironmentName).Returns(Environments.Production);
+
+        var service = new JwtTokenService(config, prodEnv.Object);
+        var (token, _) = service.GenerateAccessToken(Guid.NewGuid(), Guid.NewGuid());
+        token.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public void JwtTokenService_InDevelopment_WhenSecretMissing_UsesDefaultDevKey()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>())
+            .Build();
+
+        var devEnv = new Mock<IHostEnvironment>();
+        devEnv.Setup(e => e.EnvironmentName).Returns(Environments.Development);
+
+        var service = new JwtTokenService(config, devEnv.Object);
+        var (token, _) = service.GenerateAccessToken(Guid.NewGuid(), Guid.NewGuid());
+        token.Should().NotBeNullOrWhiteSpace();
+    }
 }
 

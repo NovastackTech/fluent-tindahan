@@ -58,6 +58,13 @@ if (string.IsNullOrWhiteSpace(jwtSecret) || jwtSecret.Length < 32)
     jwtSecret = JwtTokenService.DefaultDevSecretKey;
 }
 
+if (!builder.Environment.IsDevelopment() &&
+    (string.Equals(jwtSecret, JwtTokenService.BurnedSecretKey, StringComparison.Ordinal) ||
+     string.Equals(jwtSecret, JwtTokenService.DefaultDevSecretKey, StringComparison.Ordinal)))
+{
+    throw new InvalidOperationException("The committed JWT secret key has been burned and cannot be used in production. A new unique JWT_SECRET_KEY must be generated and configured per real deployment.");
+}
+
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? JwtTokenService.DefaultIssuer;
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? JwtTokenService.DefaultAudience;
 var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret));

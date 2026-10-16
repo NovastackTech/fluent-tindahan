@@ -55,6 +55,7 @@ POSTGRES_USER="$(env_value POSTGRES_USER)"
 POSTGRES_PASSWORD="$(env_value POSTGRES_PASSWORD)"
 PAYMONGO_SECRET_KEY="$(env_value PAYMONGO_SECRET_KEY)"
 PAYMONGO_WEBHOOK_SECRET="$(env_value PAYMONGO_WEBHOOK_SECRET)"
+JWT_SECRET_KEY="$(env_value JWT_SECRET_KEY)"
 
 compose() {
   docker compose -p "${PROJECT}" --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" -f "${SAS_COMPOSE_FILE}" "$@"
@@ -69,6 +70,13 @@ if [[ "${ASPNETCORE_ENVIRONMENT:-Production}" != "Development" ]]; then
   missing=()
   is_missing_or_mock "${PAYMONGO_SECRET_KEY:-}" && missing+=(PAYMONGO_SECRET_KEY)
   is_missing_or_mock "${PAYMONGO_WEBHOOK_SECRET:-}" && missing+=(PAYMONGO_WEBHOOK_SECRET)
+  if [[ -z "${JWT_SECRET_KEY:-}" ]]; then
+    missing+=(JWT_SECRET_KEY)
+  elif [[ "${JWT_SECRET_KEY}" == "FluentTindahan_SuperSecretSigningKey_Minimum32Chars_DevKey!" ]]; then
+    fail "The committed repository JWT_SECRET_KEY has been burned. Set a new unique JWT_SECRET_KEY in deploy/alibaba-sas/secrets.env or ${ENV_FILE}."
+  elif (( ${#JWT_SECRET_KEY} < 32 )); then
+    fail "JWT_SECRET_KEY must be at least 32 characters (256 bits)."
+  fi
   if (( ${#missing[@]} )); then
     fail "The API refuses to start in ${ASPNETCORE_ENVIRONMENT:-Production} without ${missing[*]}. Set them in deploy/alibaba-sas/secrets.env on your machine and redeploy, or edit ${ENV_FILE} on the server."
   fi

@@ -11,7 +11,8 @@ namespace FluentTindahan.Infrastructure.Services;
 
 public class JwtTokenService : IJwtTokenService
 {
-    public const string DefaultDevSecretKey = "FluentTindahan_SuperSecretSigningKey_Minimum32Chars_DevKey!";
+    public const string BurnedSecretKey = "FluentTindahan_SuperSecretSigningKey_Minimum32Chars_DevKey!";
+    public const string DefaultDevSecretKey = "FluentTindahan_LocalDevOnly_Key_DoNotUseInProduction32Chars!";
     public const string DefaultIssuer = "FluentTindahan";
     public const string DefaultAudience = "FluentTindahanClient";
     public const int DefaultExpiryMinutes = 60;
@@ -41,6 +42,14 @@ public class JwtTokenService : IJwtTokenService
                     "Jwt:SecretKey or JWT_SECRET_KEY must be configured with at least 32 characters (256 bits) in production.");
             }
             secret = DefaultDevSecretKey;
+        }
+
+        if (!environment.IsDevelopment() &&
+            (string.Equals(secret, BurnedSecretKey, StringComparison.Ordinal) ||
+             string.Equals(secret, DefaultDevSecretKey, StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException(
+                "The committed JWT secret key has been burned and cannot be used in production. A new unique key must be generated per real deployment.");
         }
 
         _signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
