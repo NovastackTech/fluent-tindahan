@@ -93,6 +93,45 @@ export const getTierLimits = (tier: PlanTier): TierLimits => {
   }
 };
 
+interface SubscriptionSyncPayload {
+  tierName?: PlanTier;
+  tier?: number;
+  subscriptionEndDate?: string | null;
+  businessName?: string;
+  isActive?: boolean;
+  daysRemaining?: number | null;
+}
+
+async function persistAndApplySubscriptionState(
+  data: SubscriptionSyncPayload,
+  set: (state: Partial<SubscriptionState>) => void
+): Promise<PlanTier> {
+  const effectiveTier: PlanTier = data.tierName || (data.tier === 1 ? 'TindahanPro' : data.tier === 2 ? 'NegosyoPlus' : 'Libre');
+  const endDate = data.subscriptionEndDate || null;
+
+  useAuthStore.getState().setSubscription(effectiveTier, endDate);
+
+  const tenantId = useAuthStore.getState().tenantId;
+  if (tenantId) {
+    await db.tenants.update(tenantId, {
+      businessName: data.businessName || useAuthStore.getState().businessName,
+      tier: effectiveTier,
+      subscriptionEndDate: endDate || undefined,
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  set({
+    tier: effectiveTier,
+    subscriptionEndDate: endDate,
+    isActive: data.isActive,
+    daysRemaining: data.daysRemaining,
+    isLoading: false
+  });
+
+  return effectiveTier;
+}
+
 export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
   const currentTier = useAuthStore.getState().tier || 'Libre';
   const currentEndDate = useAuthStore.getState().subscriptionEndDate;
@@ -134,32 +173,7 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
       try {
         await ensureTenantProvisioned();
         const response = await apiClient.get('/billing/subscription');
-        const data = response.data;
-
-        const effectiveTier: PlanTier = data.tierName || (data.tier === 1 ? 'TindahanPro' : data.tier === 2 ? 'NegosyoPlus' : 'Libre');
-        const endDate = data.subscriptionEndDate || null;
-
-        // Update authStore & localStorage
-        useAuthStore.getState().setSubscription(effectiveTier, endDate);
-
-        // Update Dexie tenant table
-        const tenantId = useAuthStore.getState().tenantId;
-        if (tenantId) {
-          await db.tenants.update(tenantId, {
-            businessName: data.businessName || useAuthStore.getState().businessName,
-            tier: effectiveTier,
-            subscriptionEndDate: endDate || undefined,
-            updatedAt: new Date().toISOString()
-          });
-        }
-
-        set({
-          tier: effectiveTier,
-          subscriptionEndDate: endDate,
-          isActive: data.isActive,
-          daysRemaining: data.daysRemaining,
-          isLoading: false
-        });
+        await persistAndApplySubscriptionState(response.data, set);
       } catch (err) {
         if (err instanceof TenantAccountMismatchError || err instanceof TenantProvisioningError) {
           set({
@@ -201,9 +215,7 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
           sessionId: storedSessionId || undefined
         });
 
-        const data = response.data;
-        const effectiveTier: PlanTier = data.tierName || (data.tier === 1 ? 'TindahanPro' : data.tier === 2 ? 'NegosyoPlus' : 'Libre');
-        const endDate = data.subscriptionEndDate || null;
+        const effectiveTier = await persistAndApplySubscriptionState(response.data, set);
 
         if (effectiveTier !== 'Libre' && typeof window !== 'undefined') {
           try {
@@ -213,28 +225,8 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
           }
         }
 
-        useAuthStore.getState().setSubscription(effectiveTier, endDate);
-
-        const tenantId = useAuthStore.getState().tenantId;
-        if (tenantId) {
-          await db.tenants.update(tenantId, {
-            businessName: data.businessName || useAuthStore.getState().businessName,
-            tier: effectiveTier,
-            subscriptionEndDate: endDate || undefined,
-            updatedAt: new Date().toISOString()
-          });
-        }
-
-        set({
-          tier: effectiveTier,
-          subscriptionEndDate: endDate,
-          isActive: data.isActive,
-          daysRemaining: data.daysRemaining,
-          isLoading: false
-        });
-
         return effectiveTier !== 'Libre';
-      } catch (err: any) {
+      } catch {
         set({ isLoading: false });
         return false;
       }

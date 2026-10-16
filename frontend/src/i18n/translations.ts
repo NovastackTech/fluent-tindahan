@@ -719,6 +719,47 @@ export interface Translations {
   };
 }
 
+type SharedProductFormTranslations = Pick<
+  Translations['inventory'],
+  | 'productNameLabel'
+  | 'productNameRequired'
+  | 'categoryLabel'
+  | 'costLabel'
+  | 'costCannotBeNegative'
+  | 'costExceedsMax'
+  | 'priceLabel'
+  | 'priceMustBePositive'
+  | 'priceExceedsMax'
+  | 'stockExceedsMax'
+>;
+
+const sharedProductFormTranslations: Record<Language, SharedProductFormTranslations> = {
+  tl: {
+    productNameLabel: 'Pangalan ng Produkto:*',
+    productNameRequired: 'Ilagay ang pangalan ng produkto.',
+    categoryLabel: 'Kategorya:*',
+    costLabel: 'Puhunan (Cost Price ₱):*',
+    costCannotBeNegative: 'Hindi maaaring negatibo ang puhunan.',
+    costExceedsMax: 'Hindi maaaring lumampas sa ₱999,999.99 ang puhunan.',
+    priceLabel: 'Presyo ng Tinda (SRP ₱):*',
+    priceMustBePositive: 'Dapat mas mataas sa ₱0 ang presyo ng tinda.',
+    priceExceedsMax: 'Hindi maaaring lumampas sa ₱999,999.99 ang presyo.',
+    stockExceedsMax: 'Hindi maaaring lumampas sa 999,999 ang dami ng stock.'
+  },
+  en: {
+    productNameLabel: 'Product Name:*',
+    productNameRequired: 'Enter a product name.',
+    categoryLabel: 'Category:*',
+    costLabel: 'Cost Price (₱):*',
+    costCannotBeNegative: 'Cost price cannot be negative.',
+    costExceedsMax: 'Cost price cannot exceed ₱999,999.99.',
+    priceLabel: 'Retail Price (SRP ₱):*',
+    priceMustBePositive: 'Retail price must be greater than ₱0.',
+    priceExceedsMax: 'Retail price cannot exceed ₱999,999.99.',
+    stockExceedsMax: 'Stock quantity cannot exceed 999,999.'
+  }
+};
+
 export const translations: Record<Language, Translations> = {
   tl: {
     common: {
@@ -965,6 +1006,7 @@ export const translations: Record<Language, Translations> = {
       unnamed: '(Walang Pangalan)'
     },
     inventory: {
+      ...sharedProductFormTranslations.tl,
       title: 'Talaan ng Imbentaryo at Stocks',
       subtitle: 'Subaybayan ang dami ng paninda, baguhin ang presyo, suriin ang kita at margin, at mag-restock.',
       totalProducts: 'Kabuuang Paninda',
@@ -1004,18 +1046,8 @@ export const translations: Record<Language, Translations> = {
       saveSuccess: 'Matagumpay na nai-save ang produkto!',
       addModalTitle: 'Magdagdag ng Bagong Produkto',
       editModalTitle: 'Baguhin ang Detalye ng Produkto',
-      productNameLabel: 'Pangalan ng Produkto:*',
-      productNameRequired: 'Ilagay ang pangalan ng produkto.',
-      categoryLabel: 'Kategorya:*',
       barcodeLabel: 'Barcode (Opsyonal):',
-      costLabel: 'Puhunan (Cost Price ₱):*',
-      costCannotBeNegative: 'Hindi maaaring negatibo ang puhunan.',
-      costExceedsMax: 'Hindi maaaring lumampas sa ₱999,999.99 ang puhunan.',
-      priceLabel: 'Presyo ng Tinda (SRP ₱):*',
-      priceMustBePositive: 'Dapat mas mataas sa ₱0 ang presyo ng tinda.',
-      priceExceedsMax: 'Hindi maaaring lumampas sa ₱999,999.99 ang presyo.',
       stockLabel: 'Kasalukuyang Stock:*',
-      stockExceedsMax: 'Hindi maaaring lumampas sa 999,999 ang dami ng stock.',
       profitPreview: 'Tinatayang Kita bawat piraso:',
       marginPreview: 'Profit Margin:',
       noProductsFound: 'Walang natagpuang produkto na tumutugma sa filter.',
@@ -1025,6 +1057,7 @@ export const translations: Record<Language, Translations> = {
       customRestock: 'Magdagdag ng Stock'
     },
     barcode: {
+      ...sharedProductFormTranslations.tl,
       scannerTitle: 'Kamera Barcode Scanner',
       scannerDesc: 'Itapat ang barcode ng paninda sa loob ng kahon upang awtomatikong ma-scan.',
       openCamera: 'Buksan ang Scanner',
@@ -1040,17 +1073,7 @@ export const translations: Record<Language, Translations> = {
       registerModalTitle: 'Mabilisang Pagrehistro ng Produkto',
       registeredSuccess: 'Matagumpay na narehistro ang bagong produkto!',
       barcodeLabel: 'Nai-scan na Barcode:',
-      productNameLabel: 'Pangalan ng Produkto:*',
-      productNameRequired: 'Ilagay ang pangalan ng produkto.',
-      categoryLabel: 'Kategorya:*',
-      costLabel: 'Puhunan (Cost Price ₱):*',
-      costCannotBeNegative: 'Hindi maaaring negatibo ang puhunan.',
-      costExceedsMax: 'Hindi maaaring lumampas sa ₱999,999.99 ang puhunan.',
-      priceLabel: 'Presyo ng Tinda (SRP ₱):*',
-      priceMustBePositive: 'Dapat mas mataas sa ₱0 ang presyo ng tinda.',
-      priceExceedsMax: 'Hindi maaaring lumampas sa ₱999,999.99 ang presyo.',
       stockLabel: 'Panimulang Stock:*',
-      stockExceedsMax: 'Hindi maaaring lumampas sa 999,999 ang dami ng stock.',
       saveAndAddToCart: 'I-save at Idagdag sa Cart',
       saveProduct: 'I-save ang Produkto',
       addedToCart: 'Naidagdag na sa Cart!'
@@ -1683,6 +1706,7 @@ export const translations: Record<Language, Translations> = {
       unnamed: '(Unnamed)'
     },
     inventory: {
+      ...sharedProductFormTranslations.en,
       title: 'Inventory & Stock Management',
       subtitle: 'Monitor stock levels, edit prices, inspect profit margins, and restock supplies.',
       totalProducts: 'Total Products',
@@ -1722,18 +1746,8 @@ export const translations: Record<Language, Translations> = {
       saveSuccess: 'Product saved successfully!',
       addModalTitle: 'Add New Product',
       editModalTitle: 'Edit Product Details',
-      productNameLabel: 'Product Name:*',
-      productNameRequired: 'Enter a product name.',
-      categoryLabel: 'Category:*',
       barcodeLabel: 'Barcode (Optional):',
-      costLabel: 'Cost Price (₱):*',
-      costCannotBeNegative: 'Cost price cannot be negative.',
-      costExceedsMax: 'Cost price cannot exceed ₱999,999.99.',
-      priceLabel: 'Retail Price (SRP ₱):*',
-      priceMustBePositive: 'Retail price must be greater than ₱0.',
-      priceExceedsMax: 'Retail price cannot exceed ₱999,999.99.',
       stockLabel: 'Current Stock Qty:*',
-      stockExceedsMax: 'Stock quantity cannot exceed 999,999.',
       profitPreview: 'Estimated Profit per unit:',
       marginPreview: 'Profit Margin:',
       noProductsFound: 'No products found matching the criteria.',
@@ -1743,6 +1757,7 @@ export const translations: Record<Language, Translations> = {
       customRestock: 'Add Stock'
     },
     barcode: {
+      ...sharedProductFormTranslations.en,
       scannerTitle: 'Camera Barcode Scanner',
       scannerDesc: 'Point the product barcode inside the viewfinder box to scan automatically.',
       openCamera: 'Open Scanner',
@@ -1758,17 +1773,7 @@ export const translations: Record<Language, Translations> = {
       registerModalTitle: 'Quick Product Registration',
       registeredSuccess: 'Product successfully registered!',
       barcodeLabel: 'Scanned Barcode:',
-      productNameLabel: 'Product Name:*',
-      productNameRequired: 'Enter a product name.',
-      categoryLabel: 'Category:*',
-      costLabel: 'Cost Price (₱):*',
-      costCannotBeNegative: 'Cost price cannot be negative.',
-      costExceedsMax: 'Cost price cannot exceed ₱999,999.99.',
-      priceLabel: 'Retail Price (SRP ₱):*',
-      priceMustBePositive: 'Retail price must be greater than ₱0.',
-      priceExceedsMax: 'Retail price cannot exceed ₱999,999.99.',
       stockLabel: 'Initial Stock:*',
-      stockExceedsMax: 'Stock quantity cannot exceed 999,999.',
       saveAndAddToCart: 'Save & Add to Cart',
       saveProduct: 'Save Product',
       addedToCart: 'Added to Cart!'

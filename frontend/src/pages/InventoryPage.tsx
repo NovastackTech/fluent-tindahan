@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   makeStyles,
   tokens,
@@ -341,6 +341,8 @@ const useStyles = makeStyles({
   }
 });
 
+const EMPTY_PRODUCTS: ProductRecord[] = [];
+
 export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
   const styles = useStyles();
   const { t, language } = useTranslation();
@@ -348,10 +350,11 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
   const { tier, canAddProduct, openUpgradeModal } = useSubscriptionStore();
 
   // Live Query from local Dexie database
-  const products = useLiveQuery(
+  const productsResult = useLiveQuery(
     () => db.products.where('tenantId').equals(tenantId).toArray(),
     [tenantId]
-  ) || [];
+  );
+  const products = productsResult || EMPTY_PRODUCTS;
 
   // Filtering states
   const [searchQuery, setSearchQuery] = useState('');
@@ -513,7 +516,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
   }, [products, searchQuery, selectedCategory, stockFilter]);
 
   // Quick Restock Handler (+6, +12, +24)
-  const handleQuickRestock = async (product: ProductRecord, increment: number) => {
+  const handleQuickRestock = useCallback(async (product: ProductRecord, increment: number) => {
     try {
       const newStock = Math.max(0, (product.stockQty || 0) + increment);
       const nowIso = new Date().toISOString();
@@ -532,7 +535,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
     } catch (err) {
       console.error('Failed to quick restock:', err);
     }
-  };
+  }, [t.inventory.restockSuccess]);
 
   // Open Add Product Modal
   const openAddModal = () => {

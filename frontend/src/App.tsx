@@ -45,7 +45,7 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ defa
 const LandingPage = lazy(() => import('./pages/LandingPage').then(m => ({ default: m.LandingPage })));
 const LoginPage = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })));
 
-export function getInitialNavTab(): NavTab {
+function getInitialNavTab(): NavTab {
   if (typeof window === 'undefined') return 'dashboard';
   const params = new URLSearchParams(window.location.search);
   const tabParam = params.get('tab') as NavTab | null;
@@ -100,7 +100,9 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (!isOnboardingStatusReady) return;
     if (!isOnboarded && activeTab !== 'landing' && activeTab !== 'login') {
-      handleTabChange('login');
+      queueMicrotask(() => {
+        handleTabChange('login');
+      });
     }
   }, [isOnboarded, isOnboardingStatusReady, activeTab]);
 

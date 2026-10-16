@@ -98,6 +98,27 @@ const useStyles = makeStyles({
   }
 });
 
+const EMPTY_CUSTOMERS: CustomerRecord[] = [];
+
+function createUtangLedgerRecord(
+  tenantId: string,
+  customerId: string,
+  amount: number,
+  type: 'Payment' | 'Credit',
+  date: string,
+  notes: string
+): UtangLedgerRecord {
+  return {
+    id: crypto.randomUUID(),
+    tenantId,
+    customerId,
+    amount,
+    type,
+    date,
+    notes
+  };
+}
+
 export const UtangPage: React.FC = () => {
   const styles = useStyles();
   const { t, language } = useTranslation();
@@ -133,10 +154,11 @@ export const UtangPage: React.FC = () => {
   const tenantId = useAuthStore((s) => s.tenantId);
 
   // Live queries
-  const customers = useLiveQuery(
+  const customerResults = useLiveQuery(
     () => db.customers.where('tenantId').equals(tenantId).toArray(),
     [tenantId]
-  ) || [];
+  );
+  const customers = customerResults || EMPTY_CUSTOMERS;
   const selectedCustomerId = selectedCustomer?.id;
 
   const ledgerEntries = useLiveQuery(
@@ -264,15 +286,14 @@ export const UtangPage: React.FC = () => {
     setIsSaving(true);
     try {
       const now = new Date().toISOString();
-      const ledgerRecord: UtangLedgerRecord = {
-        id: crypto.randomUUID(),
+      const ledgerRecord = createUtangLedgerRecord(
         tenantId,
-        customerId: selectedCustomer.id,
+        selectedCustomer.id,
         amount,
-        type: 'Payment',
-        date: now,
-        notes: paymentNotes || 'Bayad sa utang'
-      };
+        'Payment',
+        now,
+        paymentNotes || 'Bayad sa utang'
+      );
 
       // Atomic read-check-write so concurrent submits cannot both pass the check
       const result = await db.transaction('rw', db.customers, db.utangLedger, db.syncQueue, async () => {
@@ -336,15 +357,14 @@ export const UtangPage: React.FC = () => {
     setIsSaving(true);
     try {
       const now = new Date().toISOString();
-      const ledgerRecord: UtangLedgerRecord = {
-        id: crypto.randomUUID(),
+      const ledgerRecord = createUtangLedgerRecord(
         tenantId,
-        customerId: selectedCustomer.id,
+        selectedCustomer.id,
         amount,
-        type: 'Credit',
-        date: now,
-        notes: creditNotes || 'Dagdag na utang'
-      };
+        'Credit',
+        now,
+        creditNotes || 'Dagdag na utang'
+      );
 
       const newBalance = await db.transaction('rw', db.customers, db.utangLedger, db.syncQueue, async () => {
         const fresh = await db.customers.get(selectedCustomer.id);

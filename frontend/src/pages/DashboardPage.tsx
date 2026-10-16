@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   makeStyles,
   tokens,
@@ -122,7 +122,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   const lowStockProducts = products.filter((p) => (p.stockQty ?? 0) <= 5);
 
   // Today's boundaries
-  const todayStr = toLocalDateKey(new Date());
+  const [todayStr] = useState(() => toLocalDateKey(new Date()));
 
   const todaySales = (sales || []).filter((s) => toLocalDateKey(s.date) === todayStr);
   const totalSalesAmount = todaySales.reduce((sum, s) => sum + s.totalAmount, 0);

@@ -264,6 +264,7 @@ export const OnboardingModal: React.FC = () => {
 
   useEffect(() => {
     if (isOpen) {
+      /* oxlint-disable react/set-state-in-effect */
       const rememberedEmail = localStorage.getItem(STORAGE_KEY_LAST_EMAIL) || userEmail || '';
       if (isEditMode || isOnboarded) {
         setFormBusinessName(businessName || '');

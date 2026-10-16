@@ -112,7 +112,10 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
   const [categories, setCategories] = useState<string[]>([]);
   const [generalError, setGeneralError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const [prevOpenState, setPrevOpenState] = useState({ isOpen, barcode: unrecognizedBarcode });
+
+  if (isOpen !== prevOpenState.isOpen || unrecognizedBarcode !== prevOpenState.barcode) {
+    setPrevOpenState({ isOpen, barcode: unrecognizedBarcode });
     if (isOpen) {
       setStage('prompt');
       setName('');
@@ -124,7 +127,11 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
       setPriceError('');
       setStock(10);
       setGeneralError(null);
+    }
+  }
 
+  useEffect(() => {
+    if (isOpen) {
       // Load distinct categories for datalist
       db.products.where('tenantId').equals(tenantId).toArray().then((prods) => {
         const unique = Array.from(

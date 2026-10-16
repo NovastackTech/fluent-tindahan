@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Dialog,
   DialogSurface,
@@ -228,16 +228,15 @@ export const TermsModal: React.FC = () => {
   const { isTermsOpen, closeTerms } = useTermsStore();
   const { t } = useTranslation();
   const globalLanguage = useLanguageStore((s) => s.language);
-  const [modalLanguage, setModalLanguage] = useState<'tl' | 'en'>(
-    globalLanguage === 'tl' ? 'tl' : 'en'
-  );
+  const targetLanguage = globalLanguage === 'tl' ? 'tl' : 'en';
+  const [modalLanguage, setModalLanguage] = useState<'tl' | 'en'>(targetLanguage);
+  const [prevLanguage, setPrevLanguage] = useState(globalLanguage);
 
   // Sync with global language changes when reopened
-  useEffect(() => {
-    if (isTermsOpen) {
-      setModalLanguage(globalLanguage === 'tl' ? 'tl' : 'en');
-    }
-  }, [isTermsOpen, globalLanguage]);
+  if (globalLanguage !== prevLanguage) {
+    setPrevLanguage(globalLanguage);
+    setModalLanguage(targetLanguage);
+  }
 
   const doc: TermsDocument = modalLanguage === 'tl' ? termsTL : termsEN;
   const modalT = translations[modalLanguage];

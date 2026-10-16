@@ -170,12 +170,12 @@ public static class DatabaseSeeder
             new() { Id = Guid.Parse("a1000000-0000-0000-0000-000000000136"), TenantId = tenantId, Name = "Dinorado / Sinandomeng Rice 1kg (Tingi) 1 kg", Price = 56.00m, Cost = 48.00m, Barcode = "2000000000084", Category = "Staples & Tingi", StockQty = 50, UpdatedAt = DateTimeOffset.UtcNow },
         };
 
-            var productsToAdd = products.Where(p => !existingProductIdsSet.Contains(p.Id)).ToList();
-            if (productsToAdd.Count > 0)
-            {
-                context.Products.AddRange(productsToAdd);
-                await context.SaveChangesAsync();
-            }
+        var productsToAdd = products.Where(p => !existingProductIdsSet.Contains(p.Id)).ToList();
+        if (productsToAdd.Count > 0)
+        {
+            context.Products.AddRange(productsToAdd);
+            await context.SaveChangesAsync();
+        }
 
         // Check if Customers exist
         var customer1Id = Guid.Parse("33333333-3333-3333-3333-333333333331");

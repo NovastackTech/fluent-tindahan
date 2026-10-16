@@ -203,6 +203,8 @@ const useStyles = makeStyles({
 });
 
 const QUICK_PESO_BILLS = [20, 50, 100, 200, 500, 1000];
+const EMPTY_PRODUCTS: ProductRecord[] = [];
+const EMPTY_CUSTOMERS: CustomerRecord[] = [];
 
 export interface POSPageProps {
   onNavigate?: (tab: NavTab) => void;
@@ -324,11 +326,12 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
     () => db.products.where('tenantId').equals(tenantId).toArray(),
     [tenantId]
   );
-  const products = productResults || [];
-  const customers = useLiveQuery(
+  const products = productResults || EMPTY_PRODUCTS;
+  const customerResults = useLiveQuery(
     () => db.customers.where('tenantId').equals(tenantId).toArray(),
     [tenantId]
-  ) || [];
+  );
+  const customers = customerResults || EMPTY_CUSTOMERS;
 
   // Extract unique categories
   const categories = useMemo(() => {

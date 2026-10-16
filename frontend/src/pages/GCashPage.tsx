@@ -150,8 +150,8 @@ export const GCashPage: React.FC = () => {
     () => db.gcashTxnResolutions.where('tenantId').equals(tenantId).toArray(),
     [tenantId]
   );
-  const todayStr = toLocalDateKey(new Date());
-  const currentMonthPrefix = todayStr.slice(0, 7);
+  const [todayStr] = useState(() => toLocalDateKey(new Date()));
+  const currentMonthPrefix = useMemo(() => todayStr.slice(0, 7), [todayStr]);
   const resolutionsByTxnId = useMemo(
     () => new Map((resolutions || []).map((resolution) => [resolution.gcashTxnId, resolution])),
     [resolutions]

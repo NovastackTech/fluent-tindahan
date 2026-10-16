@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   makeStyles,
   tokens,
@@ -136,37 +136,30 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
   const isScanningRef = useRef(false);
 
-  useEffect(() => {
-    if (!isOpen) {
-      stopScanner();
-      return;
-    }
-
-    let isMounted = true;
-    setIsLoading(true);
-    setErrorMessage(null);
-
-    // Timeout gives DOM dialog time to render scanner container element
-    const timer = setTimeout(() => {
-      if (!isMounted) return;
-
-      const element = document.getElementById(SCANNER_ELEMENT_ID);
-      if (!element) {
-        setIsLoading(false);
-        return;
+  const stopScanner = useCallback(async () => {
+    if (html5QrCodeRef.current && isScanningRef.current) {
+      try {
+        await html5QrCodeRef.current.stop();
+        html5QrCodeRef.current.clear();
+      } catch {
+        // Stop error can be safely ignored on teardown
       }
+      isScanningRef.current = false;
+      html5QrCodeRef.current = null;
+    }
+  }, []);
 
-      startScanner();
-    }, 300);
+  const handleBarcodeDetected = useCallback((code: string) => {
+    const cleanCode = code.trim();
+    if (!cleanCode) return;
 
-    return () => {
-      isMounted = false;
-      clearTimeout(timer);
-      stopScanner();
-    };
-  }, [isOpen, facingMode]);
+    playScanBeep();
+    stopScanner();
+    onScan(cleanCode);
+    onClose();
+  }, [onClose, onScan, stopScanner]);
 
-  const startScanner = async () => {
+  const startScanner = useCallback(async () => {
     try {
       if (html5QrCodeRef.current) {
         await stopScanner();
@@ -213,30 +206,38 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
           : t.barcode.cameraError
       );
     }
-  };
+  }, [facingMode, handleBarcodeDetected, stopScanner, t.barcode.cameraError, t.barcode.cameraPermissionDenied]);
 
-  const stopScanner = async () => {
-    if (html5QrCodeRef.current && isScanningRef.current) {
-      try {
-        await html5QrCodeRef.current.stop();
-        html5QrCodeRef.current.clear();
-      } catch (e) {
-        // Stop error can be safely ignored on teardown
-      }
-      isScanningRef.current = false;
-      html5QrCodeRef.current = null;
+  useEffect(() => {
+    if (!isOpen) {
+      stopScanner();
+      return;
     }
-  };
 
-  const handleBarcodeDetected = (code: string) => {
-    const cleanCode = code.trim();
-    if (!cleanCode) return;
+    let isMounted = true;
 
-    playScanBeep();
-    stopScanner();
-    onScan(cleanCode);
-    onClose();
-  };
+    // Timeout gives DOM dialog time to render scanner container element
+    const timer = setTimeout(() => {
+      if (!isMounted) return;
+
+      setIsLoading(true);
+      setErrorMessage(null);
+
+      const element = document.getElementById(SCANNER_ELEMENT_ID);
+      if (!element) {
+        setIsLoading(false);
+        return;
+      }
+
+      startScanner();
+    }, 300);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+      stopScanner();
+    };
+  }, [isOpen, facingMode, startScanner, stopScanner]);
 
   const toggleTorch = async () => {
     if (!html5QrCodeRef.current || !isScanningRef.current) return;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   makeStyles,
   tokens,
@@ -131,7 +131,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
   const { isStandalone, isInstalled, isInstallable, isIos, promptInstall } = usePwaStore();
   const { tier, subscriptionEndDate, daysRemaining, openUpgradeModal } = useSubscriptionStore();
 
-  const handleTestPrint = () => {
+  const [printerMessage, setPrinterMessage] = useState<string | null>(null);
+  const [dataManagementMessage, setDataManagementMessage] = useState<string | null>(null);
+  const [storageEstimate, setStorageEstimate] = useState<{ usage: number; quota: number } | null>(null);
+  const [isPersisted, setIsPersisted] = useState<boolean | null>(null);
+
+  const handleTestPrint = useCallback(() => {
     const testData = {
       saleId: 'TEST-PRINTER-01',
       date: new Date().toISOString(),
@@ -146,12 +151,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
     };
     printThermalReceipt(testData, businessName || "Aling Nena's Tindahan", { paperWidth });
     setPrinterMessage(t.settings.printerTestSuccess);
-  };
-
-  const [printerMessage, setPrinterMessage] = useState<string | null>(null);
-  const [dataManagementMessage, setDataManagementMessage] = useState<string | null>(null);
-  const [storageEstimate, setStorageEstimate] = useState<{ usage: number; quota: number } | null>(null);
-  const [isPersisted, setIsPersisted] = useState<boolean | null>(null);
+  }, [businessName, paperWidth, t.settings.printerTestSuccess]);
 
   const pendingItemsResult = useLiveQuery(() => db.syncQueue.toArray(), []);
   const deadLetterItemsResult = useLiveQuery(() => db.deadLetterQueue.toArray(), []);
