@@ -46,6 +46,7 @@ export interface SubscriptionState {
   canAddCustomer: (currentCount: number) => boolean;
   canAddGCashTxn: (monthlyCount: number) => boolean;
   refreshSubscription: () => Promise<void>;
+  confirmCheckoutSession: (sessionId?: string) => Promise<boolean>;
   createCheckoutSession: (targetTier: PlanTier, cycle: BillingCycle) => Promise<string>;
   simulateMockPayment: (targetTier: PlanTier, cycle: BillingCycle) => Promise<void>;
 }
@@ -187,6 +188,58 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
       }
     },
 
+    confirmCheckoutSession: async (sessionId?: string) => {
+      const auth = useAuthStore.getState();
+      if (!auth.isOnboardingStatusReady || !auth.isOnboarded) return false;
+
+      set({ isLoading: true, error: null });
+      try {
+        await ensureTenantProvisioned();
+        const storedSessionId = sessionId || (typeof window !== 'undefined' ? localStorage.getItem('fluent_last_checkout_session_id') : null);
+
+        const response = await apiClient.post('/billing/confirm-session', {
+          sessionId: storedSessionId || undefined
+        });
+
+        const data = response.data;
+        const effectiveTier: PlanTier = data.tierName || (data.tier === 1 ? 'TindahanPro' : data.tier === 2 ? 'NegosyoPlus' : 'Libre');
+        const endDate = data.subscriptionEndDate || null;
+
+        if (effectiveTier !== 'Libre' && typeof window !== 'undefined') {
+          try {
+            localStorage.removeItem('fluent_last_checkout_session_id');
+          } catch {
+            // Ignore
+          }
+        }
+
+        useAuthStore.getState().setSubscription(effectiveTier, endDate);
+
+        const tenantId = useAuthStore.getState().tenantId;
+        if (tenantId) {
+          await db.tenants.update(tenantId, {
+            businessName: data.businessName || useAuthStore.getState().businessName,
+            tier: effectiveTier,
+            subscriptionEndDate: endDate || undefined,
+            updatedAt: new Date().toISOString()
+          });
+        }
+
+        set({
+          tier: effectiveTier,
+          subscriptionEndDate: endDate,
+          isActive: data.isActive,
+          daysRemaining: data.daysRemaining,
+          isLoading: false
+        });
+
+        return effectiveTier !== 'Libre';
+      } catch (err: any) {
+        set({ isLoading: false });
+        return false;
+      }
+    },
+
     createCheckoutSession: async (targetTier: PlanTier, cycle: BillingCycle) => {
       set({ isLoading: true, error: null });
       try {
@@ -196,6 +249,14 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
           targetTier: targetTier === 'TindahanPro' ? 1 : 2,
           cycle: cycle === 'Weekly' ? 0 : 1
         });
+
+        if (response.data?.sessionId && typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('fluent_last_checkout_session_id', response.data.sessionId);
+          } catch {
+            // Ignore
+          }
+        }
 
         set({ isLoading: false });
         return response.data.checkoutUrl;

@@ -76,6 +76,39 @@ public class BillingController : ControllerBase
         }
     }
 
+    public record ConfirmCheckoutRequest(string? SessionId = null);
+
+    /// <summary>
+    /// Confirms and synchronizes a PayMongo checkout session with the tenant's subscription.
+    /// Provides an immediate, reliable fallback when webhooks are delayed, unregistered, or failed.
+    /// </summary>
+    [HttpPost("confirm-session")]
+    [ProducesResponseType(typeof(TenantSubscriptionDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    public async Task<ActionResult<TenantSubscriptionDto>> ConfirmSession(
+        [FromBody] ConfirmCheckoutRequest? request,
+        CancellationToken cancellationToken)
+    {
+        if (_currentUserService.TenantId == Guid.Empty)
+        {
+            return Unauthorized(new { message = "A valid tenant is required to confirm checkout." });
+        }
+
+        try
+        {
+            var result = await _mediator.Send(
+                new ConfirmCheckoutSessionCommand(_currentUserService.TenantId, request?.SessionId),
+                cancellationToken);
+            return Ok(result);
+        }
+        catch (PaymentGatewayException ex)
+        {
+            _logger.LogError(ex, "Payment gateway failure during checkout confirmation.");
+            return StatusCode(StatusCodes.Status502BadGateway, new { message = ex.Message });
+        }
+    }
+
     /// <summary>
     /// Retrieves current tenant subscription status, limits, and usage counts.
     /// </summary>

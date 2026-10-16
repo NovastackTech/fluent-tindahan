@@ -204,9 +204,173 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
     }
 
     /// <summary>
+    /// Retrieves a hosted checkout session directly from PayMongo to confirm payment status,
+    /// providing a resilient fallback when webhooks are delayed, unreachable, or unregistered.
+    /// </summary>
+    public async Task<CheckoutSessionDetails?> RetrieveCheckoutSessionAsync(
+        string sessionId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return null;
+        }
+
+        var secretKey = _configuration["PayMongo:SecretKey"];
+
+        if (IsMissingOrMock(secretKey) || sessionId.StartsWith("cs_mock_"))
+        {
+            if (!_environment.IsDevelopment())
+            {
+                throw new PaymentGatewayException("Payment gateway is not configured.");
+            }
+
+            _logger.LogInformation("Retrieving mock checkout session {SessionId} (Development).", sessionId);
+            return new CheckoutSessionDetails(
+                SessionId: sessionId,
+                Status: "paid",
+                IsPaid: true,
+                TenantId: Guid.Empty,
+                Tier: PlanTier.TindahanPro,
+                Cycle: BillingCycle.Monthly,
+                AmountCentavos: TierPricing.GetPriceCentavos(PlanTier.TindahanPro, BillingCycle.Monthly),
+                PaymentId: $"pay_mock_{Guid.NewGuid():N}",
+                PaymentMethod: "mock"
+            );
+        }
+
+        var requestMessage = new HttpRequestMessage(HttpMethod.Get, $"https://api.paymongo.com/v1/checkout_sessions/{sessionId}");
+        var authBytes = Encoding.UTF8.GetBytes($"{secretKey!.Trim()}:");
+        requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Basic", Convert.ToBase64String(authBytes));
+
+        HttpResponseMessage response;
+        string responseContent;
+        try
+        {
+            response = await _httpClient.SendAsync(requestMessage, cancellationToken);
+            responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "Could not connect to PayMongo while retrieving checkout session {SessionId}.", sessionId);
+            throw new PaymentGatewayException("Payment gateway is temporarily unavailable. Please try again later.", ex);
+        }
+        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogError(ex, "PayMongo timed out while retrieving checkout session {SessionId}.", sessionId);
+            throw new PaymentGatewayException("Payment gateway timed out. Please try again later.", ex);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogWarning("PayMongo checkout session retrieval failed for {SessionId}. Status: {StatusCode}, Response: {Response}",
+                sessionId, response.StatusCode, responseContent);
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(responseContent);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("data", out var dataElem) ||
+                !dataElem.TryGetProperty("attributes", out var attrElem))
+            {
+                return null;
+            }
+
+            var status = attrElem.TryGetProperty("status", out var statusElem) ? statusElem.GetString() ?? string.Empty : string.Empty;
+            var isPaid = string.Equals(status, "paid", StringComparison.OrdinalIgnoreCase);
+
+            Guid tenantId = Guid.Empty;
+            PlanTier tier = PlanTier.Libre;
+            BillingCycle cycle = BillingCycle.Monthly;
+
+            if (attrElem.TryGetProperty("metadata", out var metaElem) && metaElem.ValueKind == JsonValueKind.Object)
+            {
+                if (metaElem.TryGetProperty("tenant_id", out var tElem) && Guid.TryParse(tElem.GetString(), out var parsedTenantId))
+                {
+                    tenantId = parsedTenantId;
+                }
+
+                if (metaElem.TryGetProperty("tier", out var tierElem) &&
+                    Enum.TryParse<PlanTier>(tierElem.GetString(), ignoreCase: true, out var parsedTier) &&
+                    Enum.IsDefined(parsedTier))
+                {
+                    tier = parsedTier;
+                }
+
+                if (metaElem.TryGetProperty("cycle", out var cycleElem) &&
+                    Enum.TryParse<BillingCycle>(cycleElem.GetString(), ignoreCase: true, out var parsedCycle) &&
+                    Enum.IsDefined(parsedCycle))
+                {
+                    cycle = parsedCycle;
+                }
+            }
+
+            // Find paid payment if present
+            string paymentId = sessionId;
+            string paymentMethod = "paymongo";
+            long amountCentavos = tier != PlanTier.Libre ? TierPricing.GetPriceCentavos(tier, cycle) : 0;
+
+            if (attrElem.TryGetProperty("payments", out var paymentsElem) &&
+                paymentsElem.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var p in paymentsElem.EnumerateArray())
+                {
+                    var pid = p.TryGetProperty("id", out var idElem) ? idElem.GetString() : null;
+                    if (string.IsNullOrWhiteSpace(pid) ||
+                        !p.TryGetProperty("attributes", out var pAttr) ||
+                        pAttr.ValueKind != JsonValueKind.Object)
+                    {
+                        continue;
+                    }
+
+                    var pStatus = pAttr.TryGetProperty("status", out var psElem) ? psElem.GetString() : null;
+                    if (string.Equals(pStatus, "paid", StringComparison.OrdinalIgnoreCase))
+                    {
+                        paymentId = pid;
+                        isPaid = true;
+
+                        if (pAttr.TryGetProperty("amount", out var amtElem) && amtElem.TryGetInt64(out var amt))
+                        {
+                            amountCentavos = amt;
+                        }
+
+                        if (pAttr.TryGetProperty("source", out var srcElem) &&
+                            srcElem.ValueKind == JsonValueKind.Object &&
+                            srcElem.TryGetProperty("type", out var typeElem))
+                        {
+                            paymentMethod = typeElem.GetString() ?? paymentMethod;
+                        }
+
+                        break;
+                    }
+                }
+            }
+
+            return new CheckoutSessionDetails(
+                SessionId: sessionId,
+                Status: status,
+                IsPaid: isPaid,
+                TenantId: tenantId,
+                Tier: tier,
+                Cycle: cycle,
+                AmountCentavos: amountCentavos,
+                PaymentId: paymentId,
+                PaymentMethod: paymentMethod
+            );
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogError(ex, "Failed to parse PayMongo checkout session retrieval response for {SessionId}.", sessionId);
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Verifies a <c>Paymongo-Signature</c> header (<c>t=&lt;unix&gt;,te=&lt;hmac&gt;,li=&lt;hmac&gt;</c>).
     /// Fails closed: a missing secret is only tolerated in Development, timestamps older than
-    /// <see cref="WebhookTimestampTolerance"/> are rejected, and Production only accepts the live-mode <c>li</c> signature.
+    /// <see cref="WebhookTimestampTolerance"/> are rejected, and Production with a live key requires the live-mode <c>li</c> signature.
     /// </summary>
     public bool VerifyWebhookSignature(string jsonPayload, string signatureHeader)
     {
@@ -230,24 +394,33 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
 
         try
         {
-            var signatureKey = _environment.IsProduction() ? "li" : "te";
+            var isTestSecret = webhookSecret!.Contains("test", StringComparison.OrdinalIgnoreCase);
+            var mustRequireLiveSignature = _environment.IsProduction() && !isTestSecret;
+
             string? timestamp = null;
-            string? expectedHash = null;
+            string? teHash = null;
+            string? liHash = null;
 
             foreach (var part in signatureHeader.Split(','))
             {
                 var kv = part.Trim().Split('=', 2);
                 if (kv.Length != 2) continue;
 
-                if (kv[0].Equals("t", StringComparison.Ordinal))
+                if (kv[0].Equals("t", StringComparison.OrdinalIgnoreCase))
                 {
                     timestamp = kv[1];
                 }
-                else if (kv[0].Equals(signatureKey, StringComparison.Ordinal))
+                else if (kv[0].Equals("te", StringComparison.OrdinalIgnoreCase))
                 {
-                    expectedHash = kv[1];
+                    teHash = kv[1];
+                }
+                else if (kv[0].Equals("li", StringComparison.OrdinalIgnoreCase))
+                {
+                    liHash = kv[1];
                 }
             }
+
+            var expectedHash = mustRequireLiveSignature ? liHash : (teHash ?? liHash);
 
             if (string.IsNullOrEmpty(timestamp) || string.IsNullOrEmpty(expectedHash))
             {

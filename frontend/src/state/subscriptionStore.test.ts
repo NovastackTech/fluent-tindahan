@@ -260,4 +260,41 @@ describe('subscriptionStore', () => {
       expect(useAuthStore.getState().tier).toBe('NegosyoPlus');
     });
   });
+
+  describe('confirmCheckoutSession', () => {
+    it('saves sessionId to localStorage on checkout session creation', async () => {
+      vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
+        data: { checkoutUrl: 'https://paymongo.com/pay', sessionId: 'cs_test_999' }
+      } as any);
+
+      const url = await useSubscriptionStore.getState().createCheckoutSession('TindahanPro', 'Monthly');
+
+      expect(url).toBe('https://paymongo.com/pay');
+      expect(localStorage.getItem('fluent_last_checkout_session_id')).toBe('cs_test_999');
+    });
+
+    it('confirms checkout session, upgrades tier and clears stored session id', async () => {
+      localStorage.setItem('fluent_last_checkout_session_id', 'cs_test_999');
+      const newEndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+      const postSpy = vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
+        data: {
+          tierName: 'TindahanPro',
+          isActive: true,
+          subscriptionEndDate: newEndDate,
+          daysRemaining: 30
+        }
+      } as any);
+
+      const confirmed = await useSubscriptionStore.getState().confirmCheckoutSession();
+
+      expect(confirmed).toBe(true);
+      expect(postSpy).toHaveBeenCalledWith('/billing/confirm-session', {
+        sessionId: 'cs_test_999'
+      });
+      expect(useSubscriptionStore.getState().tier).toBe('TindahanPro');
+      expect(useSubscriptionStore.getState().subscriptionEndDate).toBe(newEndDate);
+      expect(localStorage.getItem('fluent_last_checkout_session_id')).toBeNull();
+    });
+  });
 });

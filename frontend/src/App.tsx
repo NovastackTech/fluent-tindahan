@@ -202,16 +202,29 @@ export const App: React.FC = () => {
     const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
     const isBillingSuccess = searchParams?.get('billing') === 'success';
 
-    useSubscriptionStore.getState().refreshSubscription().then(() => {
+    const handleBillingReturn = async () => {
+      const hasStoredCheckoutSession = typeof window !== 'undefined' && !!localStorage.getItem('fluent_last_checkout_session_id');
+
+      if (isBillingSuccess || hasStoredCheckoutSession) {
+        await useSubscriptionStore.getState().confirmCheckoutSession();
+      }
+
+      await useSubscriptionStore.getState().refreshSubscription();
+
       if (isBillingSuccess) {
         setBillingSuccessMessage('Salamat sa iyong pag-upgrade! Matagumpay ang iyong subscription sa Fluent Tindahan.');
         if (window.history && window.history.replaceState) {
           const url = new URL(window.location.href);
           url.searchParams.delete('billing');
+          url.searchParams.delete('mock_paid');
+          url.searchParams.delete('ref');
+          url.searchParams.delete('tier');
           window.history.replaceState(null, '', url.pathname + url.search);
         }
       }
-    }).catch(console.error);
+    };
+
+    handleBillingReturn().catch(console.error);
   }, [isOnboarded, isOnboardingStatusReady]);
 
   return (

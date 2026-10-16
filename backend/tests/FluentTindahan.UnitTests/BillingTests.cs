@@ -2217,6 +2217,177 @@ public class BillingTests
     }
 
     [Fact]
+    public void VerifyWebhookSignature_InProductionWithTestSecret_AcceptsTeSignature()
+    {
+        var fixedTime = DateTimeOffset.UtcNow;
+        var timeProvider = new MutableTimeProvider(fixedTime);
+        var secret = "whsk_test_67890";
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["PayMongo:WebhookSecret"] = secret
+            })
+            .Build();
+
+        var envMock = new Mock<IHostEnvironment>();
+        envMock.Setup(e => e.EnvironmentName).Returns("Production");
+
+        var service = new PayMongoPaymentGatewayService(
+            new HttpClient(),
+            config,
+            envMock.Object,
+            timeProvider,
+            NullLogger<PayMongoPaymentGatewayService>.Instance);
+
+        var payload = "{\"data\":{\"id\":\"evt_test_123\"}}";
+        var timestamp = fixedTime.ToUnixTimeSeconds();
+        var hash = ComputeHmacSha256Hex(secret, $"{timestamp}.{payload}");
+        var signatureHeader = $"t={timestamp},te={hash}";
+
+        var verified = service.VerifyWebhookSignature(payload, signatureHeader);
+        verified.Should().BeTrue("test webhook signatures must be accepted in Production when configured with a test secret");
+    }
+
+    [Fact]
+    public void TryParsePaidCheckoutEvent_WithMultiplePaymentAttempts_PicksPaidPayment()
+    {
+        var tenantId = Guid.NewGuid();
+        var json = $$"""
+        {
+            "data": {
+                "attributes": {
+                    "type": "checkout_session.payment.paid",
+                    "data": {
+                        "attributes": {
+                            "metadata": {
+                                "tenant_id": "{{tenantId}}",
+                                "tier": "TindahanPro",
+                                "cycle": "Monthly"
+                            },
+                            "payments": [
+                                {
+                                    "id": "pay_failed_001",
+                                    "attributes": {
+                                        "status": "failed",
+                                        "amount": 12900,
+                                        "currency": "PHP"
+                                    }
+                                },
+                                {
+                                    "id": "pay_paid_002",
+                                    "attributes": {
+                                        "status": "paid",
+                                        "amount": 12900,
+                                        "currency": "PHP",
+                                        "source": { "type": "gcash" }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+        """;
+
+        var parsed = ProcessPaymentWebhookCommandHandler.TryParsePaidCheckoutEvent(
+            json, out var eventType, out var payment, out var error);
+
+        parsed.Should().BeTrue(error);
+        eventType.Should().Be("checkout_session.payment.paid");
+        payment.Should().NotBeNull();
+        payment!.PaymentId.Should().Be("pay_paid_002");
+        payment.TenantId.Should().Be(tenantId);
+        payment.Tier.Should().Be(PlanTier.TindahanPro);
+        payment.AmountCentavos.Should().Be(12900L);
+        payment.PaymentMethod.Should().Be("gcash");
+    }
+
+    [Fact]
+    public async Task ConfirmCheckoutSessionCommandHandler_WhenSessionIsPaid_UpgradesTenantAndSetsSubscriptionEndDate()
+    {
+        using var context = CreateInMemoryDbContext();
+        var tenant = await context.Tenants.FirstAsync(t => t.Id == _testTenantId);
+        tenant.ExternalCustomerId = "cs_live_session_123";
+        await context.SaveChangesAsync();
+
+        var gatewayMock = new Mock<IPaymentGatewayService>();
+        gatewayMock.Setup(g => g.RetrieveCheckoutSessionAsync("cs_live_session_123", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CheckoutSessionDetails(
+                SessionId: "cs_live_session_123",
+                Status: "paid",
+                IsPaid: true,
+                TenantId: _testTenantId,
+                Tier: PlanTier.TindahanPro,
+                Cycle: BillingCycle.Monthly,
+                AmountCentavos: 12900L,
+                PaymentId: "pay_confirmed_001",
+                PaymentMethod: "gcash"
+            ));
+
+        var senderMock = new Mock<ISender>();
+        var applyHandler = new ApplySubscriptionPaymentCommandHandler(context, NullLogger<ApplySubscriptionPaymentCommandHandler>.Instance);
+        var getSubHandler = new GetTenantSubscriptionQueryHandler(context, _currentUserServiceMock.Object);
+
+        senderMock.Setup(s => s.Send(It.IsAny<ApplySubscriptionPaymentCommand>(), It.IsAny<CancellationToken>()))
+            .Returns((IRequest<WebhookProcessResultDto> cmd, CancellationToken ct) => applyHandler.Handle((ApplySubscriptionPaymentCommand)cmd, ct));
+
+        senderMock.Setup(s => s.Send(It.IsAny<GetTenantSubscriptionQuery>(), It.IsAny<CancellationToken>()))
+            .Returns((IRequest<TenantSubscriptionDto> query, CancellationToken ct) => getSubHandler.Handle((GetTenantSubscriptionQuery)query, ct));
+
+        var handler = new ConfirmCheckoutSessionCommandHandler(
+            context,
+            gatewayMock.Object,
+            senderMock.Object,
+            NullLogger<ConfirmCheckoutSessionCommandHandler>.Instance);
+
+        var result = await handler.Handle(new ConfirmCheckoutSessionCommand(_testTenantId), CancellationToken.None);
+
+        result.Tier.Should().Be(PlanTier.TindahanPro);
+        result.IsActive.Should().BeTrue();
+        result.SubscriptionEndDate.Should().NotBeNull();
+        result.SubscriptionEndDate.Should().BeAfter(DateTimeOffset.UtcNow.AddDays(25));
+
+        // Verify in DB
+        var updatedTenant = await context.Tenants.FirstAsync(t => t.Id == _testTenantId);
+        updatedTenant.Tier.Should().Be(PlanTier.TindahanPro);
+        updatedTenant.SubscriptionEndDate.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task CreateCheckoutSessionCommandHandler_WithContext_PersistsSessionIdOnTenant()
+    {
+        using var context = CreateInMemoryDbContext();
+        var gatewayMock = new Mock<IPaymentGatewayService>();
+        gatewayMock.Setup(g => g.CreateCheckoutSessionAsync(
+            _testTenantId,
+            PlanTier.TindahanPro,
+            BillingCycle.Monthly,
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CheckoutSessionResult(
+                CheckoutUrl: "https://checkout.paymongo.com/cs_session_456",
+                SessionId: "cs_session_456",
+                ReferenceNumber: "ref_123",
+                Amount: 129m,
+                Currency: "PHP",
+                Tier: PlanTier.TindahanPro,
+                Cycle: BillingCycle.Monthly
+            ));
+
+        var handler = new CreateCheckoutSessionCommandHandler(
+            gatewayMock.Object,
+            _currentUserServiceMock.Object,
+            context);
+
+        var result = await handler.Handle(new CreateCheckoutSessionCommand(PlanTier.TindahanPro, BillingCycle.Monthly), CancellationToken.None);
+
+        result.SessionId.Should().Be("cs_session_456");
+
+        var tenant = await context.Tenants.FirstAsync(t => t.Id == _testTenantId);
+        tenant.ExternalCustomerId.Should().Be("cs_session_456");
+    }
+
+    [Fact]
     public void BillingController_AuthenticationAttributes_AreConfigured()
     {
         var controllerType = typeof(BillingController);
