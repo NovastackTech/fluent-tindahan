@@ -407,6 +407,10 @@ namespace FluentTindahan.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(256)")
                         .HasDefaultValue("");
 
+                    b.Property<string>("OwnerName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .ValueGeneratedOnAdd()

@@ -65,6 +65,9 @@ export const PwaUpdateToast: React.FC = () => {
     } catch {
       setIsUpdating(false);
     }
+    setTimeout(() => {
+      setIsUpdating(false);
+    }, 3000);
   };
 
   const handleDismiss = () => {

@@ -8,6 +8,7 @@ using FluentTindahan.Application.Common.Interfaces;
 using FluentTindahan.Domain.Entities;
 using FluentTindahan.Domain.Enums;
 using FluentTindahan.Domain.Interfaces;
+using FluentTindahan.WebApi.Authorization;
 using FluentTindahan.WebApi.Controllers.Helpers;
 
 namespace FluentTindahan.WebApi.Controllers;
@@ -123,6 +124,21 @@ public class AuthController : ControllerBase
 
         [Required, MinLength(6, ErrorMessage = "Password must be at least 6 characters.")]
         public string NewPassword { get; init; } = string.Empty;
+    }
+
+    public sealed record UpdateProfileRequest
+    {
+        [Required, StringLength(200, MinimumLength = 2)]
+        public string BusinessName { get; init; } = string.Empty;
+
+        [EmailAddress, StringLength(256)]
+        public string? Email { get; init; }
+
+        [StringLength(100)]
+        public string? OwnerName { get; init; }
+
+        [StringLength(30)]
+        public string? Phone { get; init; }
     }
 
     public sealed record AuthResponseDto(
@@ -255,6 +271,10 @@ public class AuthController : ControllerBase
                 user.Email = displayEmail;
                 user.NormalizedEmail = normalizedEmail;
                 user.Phone = request.Phone?.Trim() ?? user.Phone;
+                if (!string.IsNullOrWhiteSpace(request.OwnerName))
+                {
+                    user.OwnerName = request.OwnerName.Trim();
+                }
                 user.Role = "Owner";
                 AuthLockoutHelper.ResetPinLockout(user);
                 AuthLockoutHelper.ResetPasswordLockout(user);
@@ -288,6 +308,7 @@ public class AuthController : ControllerBase
                     Email = displayEmail,
                     NormalizedEmail = normalizedEmail,
                     Phone = request.Phone?.Trim() ?? string.Empty,
+                    OwnerName = string.IsNullOrWhiteSpace(request.OwnerName) ? null : request.OwnerName.Trim(),
                     Role = "Owner",
                     FailedPinAttempts = 0,
                     PinLockoutEnd = null,
@@ -327,6 +348,7 @@ public class AuthController : ControllerBase
                 Email = displayEmail,
                 NormalizedEmail = normalizedEmail,
                 Phone = request.Phone?.Trim() ?? string.Empty,
+                OwnerName = string.IsNullOrWhiteSpace(request.OwnerName) ? null : request.OwnerName.Trim(),
                 Role = "Owner",
                 FailedPinAttempts = 0,
                 PinLockoutEnd = null,
@@ -371,7 +393,7 @@ public class AuthController : ControllerBase
             tenant,
             access,
             refreshToken,
-            request.OwnerName?.Trim() ?? string.Empty));
+            user.OwnerName));
     }
 
     /// <summary>
@@ -849,5 +871,99 @@ public class AuthController : ControllerBase
         await _context.SaveChangesAsync(cancellationToken);
 
         return Ok(new { message = "Matagumpay na nabago ang password. Na-revoke ang lahat ng lumang sessions. / Password changed successfully. All previous sessions revoked." });
+    }
+
+    /// <summary>
+    /// Updates the store and owner profile (BusinessName, OwnerName, Phone, and optionally Email).
+    /// Returns the updated AuthResponseDto and issues a refreshed access token.
+    /// </summary>
+    [Authorize(Policy = AuthorizationPolicies.TenantResolved)]
+    [HttpPut("profile")]
+    [HttpPut("/api/tenant/profile")]
+    [ProducesResponseType(typeof(AuthResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<AuthResponseDto>> UpdateProfile(
+        [FromBody] UpdateProfileRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request == null || !ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
+        var businessName = request.BusinessName?.Trim() ?? string.Empty;
+        if (businessName.Length < 2)
+        {
+            return BadRequest(new { message = "Kailangan ng pangalan ng tindahan (minimum 2 letra). / Store name is required (minimum 2 chars)." });
+        }
+
+        var userId = AuthClaimsHelper.ResolveUserId(_currentUserService, HttpContext?.User);
+        if (!userId.HasValue || userId == Guid.Empty)
+        {
+            return Unauthorized(new { message = "User is not authenticated." });
+        }
+
+        var tenantId = _currentUserService.TenantId;
+        var user = await _context.Users.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Id == userId.Value, cancellationToken);
+        if (user == null)
+        {
+            return Unauthorized(new { message = "Hindi natagpuan ang account. / User account not found." });
+        }
+
+        var tenant = await _context.Tenants.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == user.TenantId, cancellationToken);
+        if (tenant == null)
+        {
+            return NotFound(new { message = "Hindi natagpuan ang tindahan. / Store not found." });
+        }
+
+        if (tenantId != Guid.Empty && user.TenantId != tenantId)
+        {
+            return Forbid();
+        }
+
+        tenant.BusinessName = businessName;
+        user.OwnerName = string.IsNullOrWhiteSpace(request.OwnerName) ? null : request.OwnerName.Trim();
+        user.Phone = string.IsNullOrWhiteSpace(request.Phone) ? string.Empty : request.Phone.Trim();
+
+        if (!string.IsNullOrWhiteSpace(request.Email))
+        {
+            var cleanEmail = CleanDisplayEmail(request.Email);
+            var normalizedEmail = NormalizeEmail(request.Email);
+            if (string.IsNullOrWhiteSpace(normalizedEmail) || !new EmailAddressAttribute().IsValid(normalizedEmail))
+            {
+                return BadRequest(new { message = "Kailangan ng wastong email address. / Valid email address is required." });
+            }
+
+            if (!string.Equals(user.NormalizedEmail, normalizedEmail, StringComparison.OrdinalIgnoreCase))
+            {
+                var emailExists = await _context.Users.IgnoreQueryFilters()
+                    .AnyAsync(u => u.NormalizedEmail == normalizedEmail && u.Id != user.Id, cancellationToken);
+                if (emailExists)
+                {
+                    return Conflict(new { message = "May account nang nakarehistro gamit ang email na ito. / An account is already registered with this email." });
+                }
+                user.Email = cleanEmail;
+                user.NormalizedEmail = normalizedEmail;
+            }
+        }
+
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsUniqueEmailViolation(ex))
+        {
+            _context.ChangeTracker.Clear();
+            return Conflict(new { message = "May account nang nakarehistro gamit ang email na ito. / An account is already registered with this email." });
+        }
+
+        var access = _jwtTokenService.GenerateAccessToken(user.Id, tenant.Id, email: user.Email, role: user.Role);
+        return Ok(AuthResponseBuilder.Build(user, tenant, access, refreshToken: null, ownerName: user.OwnerName));
     }
 }

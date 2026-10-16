@@ -3,6 +3,17 @@ import { usePwaStore } from '../state/pwaStore';
 let updateSWFunction: ((reloadPage?: boolean) => Promise<void>) | null = null;
 let updateIntervalId: ReturnType<typeof setInterval> | null = null;
 let initPromise: Promise<void> | null = null;
+let isReloading = false;
+
+function executeReload(): void {
+  if (typeof window === 'undefined') return;
+  usePwaStore.getState().setNeedRefresh(false);
+  try {
+    window.location.reload();
+  } catch {
+    window.location.href = window.location.href;
+  }
+}
 
 /**
  * Initializes Service Worker registration via vite-plugin-pwa.
@@ -66,32 +77,85 @@ export function initServiceWorker(): Promise<void> {
  * Called by PwaUpdateToast when the cashier taps "Reload & Update".
  */
 export async function reloadAppForUpdate(): Promise<void> {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  if (isReloading) {
+    return;
+  }
+  isReloading = true;
+
+  // Clear banner state immediately so it does not linger
+  usePwaStore.getState().setNeedRefresh(false);
+
+  // 1. Listen for controllerchange: if the service worker updates and takes control,
+  // reload immediately so the page fetches from the new service worker.
+  if ('serviceWorker' in navigator && typeof navigator.serviceWorker.addEventListener === 'function') {
+    try {
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        executeReload();
+      }, { once: true });
+    } catch {
+      // ignore
+    }
+  }
+
+  // 2. Instruct waiting worker to skip waiting via updateSWFunction (bounded by timeout)
   if (updateSWFunction) {
     try {
-      await updateSWFunction(true);
+      await Promise.race([
+        updateSWFunction(true),
+        new Promise((resolve) => setTimeout(resolve, 300))
+      ]);
     } catch (error) {
       console.error('[PWA] Service worker update failed, falling back to browser reload:', error);
     }
   }
 
-  if (
-    typeof navigator !== 'undefined' &&
-    'serviceWorker' in navigator &&
-    typeof navigator.serviceWorker.getRegistration === 'function'
-  ) {
+  // 3. Directly post SKIP_WAITING to all registrations and waiting service workers (bounded by timeout)
+  if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
     try {
-      const registration = await navigator.serviceWorker.getRegistration();
-      if (registration?.waiting) {
-        registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+      const fetchRegs = async (): Promise<readonly ServiceWorkerRegistration[]> => {
+        if (typeof navigator.serviceWorker.getRegistrations === 'function') {
+          return await navigator.serviceWorker.getRegistrations();
+        }
+        if (typeof navigator.serviceWorker.getRegistration === 'function') {
+          const reg = await navigator.serviceWorker.getRegistration();
+          return reg ? [reg] : [];
+        }
+        return [];
+      };
+
+      const registrations = await Promise.race([
+        fetchRegs(),
+        new Promise<readonly ServiceWorkerRegistration[]>((resolve) => setTimeout(() => resolve([]), 300))
+      ]);
+
+      for (const reg of registrations) {
+        if (reg?.waiting) {
+          reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+        }
       }
     } catch (error) {
       console.error('[PWA] Failed to message waiting service worker:', error);
     }
   }
 
-  if (typeof window !== 'undefined') {
-    window.location.reload();
-  }
+  // 4. Guaranteed execution: trigger reload directly
+  executeReload();
+
+  // 5. Fallback timer: in case the first reload was queued or ignored by the browser
+  setTimeout(() => {
+    executeReload();
+  }, 500);
+
+  // 6. Hard navigation fallback
+  setTimeout(() => {
+    if (typeof window !== 'undefined') {
+      window.location.href = window.location.href;
+    }
+  }, 1200);
 }
 
 /**
@@ -101,6 +165,7 @@ export async function reloadAppForUpdate(): Promise<void> {
 export function _resetUpdateSWFunctionForTest(): void {
   updateSWFunction = null;
   initPromise = null;
+  isReloading = false;
   if (updateIntervalId) {
     clearInterval(updateIntervalId);
     updateIntervalId = null;

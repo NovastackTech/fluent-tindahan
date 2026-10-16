@@ -2529,5 +2529,191 @@ public class AuthControllerTests
         var (token, _) = service.GenerateAccessToken(Guid.NewGuid(), Guid.NewGuid());
         token.Should().NotBeNullOrWhiteSpace();
     }
+
+    [Fact]
+    public async Task Register_And_Login_PreservesAndReturnsOwnerName()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        var regResult = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "maria@sarisari.ph",
+            Password = "Password123!",
+            BusinessName = "Maria Tindahan",
+            OwnerName = "Maria Santos",
+            Phone = "09171234567",
+            Pin = "1234"
+        }, CancellationToken.None);
+
+        var regOk = regResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var regDto = regOk.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        regDto.OwnerName.Should().Be("Maria Santos");
+
+        var dbUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Email == "maria@sarisari.ph");
+        dbUser.OwnerName.Should().Be("Maria Santos");
+
+        // Login with password should return OwnerName
+        var loginResult = await controller.Login(new AuthController.LoginRequest
+        {
+            Email = "maria@sarisari.ph",
+            Password = "Password123!"
+        }, CancellationToken.None);
+
+        var loginOk = loginResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var loginDto = loginOk.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        loginDto.OwnerName.Should().Be("Maria Santos");
+
+        // Login with PIN should return OwnerName
+        var pinResult = await controller.LoginPin(new AuthController.LoginPinRequest
+        {
+            Email = "maria@sarisari.ph",
+            Pin = "1234"
+        }, CancellationToken.None);
+
+        var pinOk = pinResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var pinDto = pinOk.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        pinDto.OwnerName.Should().Be("Maria Santos");
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenAuthenticated_UpdatesDatabaseAndReturnsUpdatedDto()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        var regResult = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "owner@tindahan.ph",
+            Password = "Password123!",
+            BusinessName = "Initial Store Name",
+            OwnerName = "Initial Owner",
+            Phone = "09181112233"
+        }, CancellationToken.None);
+
+        var regDto = ((OkObjectResult)regResult.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        var userId = regDto.UserId;
+        var tenantId = regDto.TenantId;
+
+        var mockCurrentUserService = new Mock<ICurrentUserService>();
+        mockCurrentUserService.Setup(s => s.UserId).Returns(userId);
+        mockCurrentUserService.Setup(s => s.TenantId).Returns(tenantId);
+        mockCurrentUserService.Setup(s => s.IsAuthenticated).Returns(true);
+
+        var authController = CreateController(context, currentUserService: mockCurrentUserService.Object);
+        SetAuthenticatedUser(authController, userId, tenantId, email: "owner@tindahan.ph");
+
+        var updateResult = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "Jonathan Solatorio #1",
+            OwnerName = "Jonathan Solatorio",
+            Phone = "09171234567",
+            Email = "jsolatorio310@gmail.com"
+        }, CancellationToken.None);
+
+        var ok = updateResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = ok.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        dto.BusinessName.Should().Be("Jonathan Solatorio #1");
+        dto.OwnerName.Should().Be("Jonathan Solatorio");
+        dto.Phone.Should().Be("09171234567");
+        dto.Email.Should().Be("jsolatorio310@gmail.com");
+
+        // Verify database persistence across logout/re-login
+        var dbTenant = await context.Tenants.IgnoreQueryFilters().FirstAsync(t => t.Id == tenantId);
+        dbTenant.BusinessName.Should().Be("Jonathan Solatorio #1");
+
+        var dbUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
+        dbUser.OwnerName.Should().Be("Jonathan Solatorio");
+        dbUser.Phone.Should().Be("09171234567");
+        dbUser.Email.Should().Be("jsolatorio310@gmail.com");
+        dbUser.NormalizedEmail.Should().Be("jsolatorio310@gmail.com");
+
+        // Re-login after "logout" retrieves the updated persisted data
+        var reloginResult = await controller.Login(new AuthController.LoginRequest
+        {
+            Email = "jsolatorio310@gmail.com",
+            Password = "Password123!"
+        }, CancellationToken.None);
+
+        var reloginDto = ((OkObjectResult)reloginResult.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        reloginDto.BusinessName.Should().Be("Jonathan Solatorio #1");
+        reloginDto.OwnerName.Should().Be("Jonathan Solatorio");
+        reloginDto.Phone.Should().Be("09171234567");
+        reloginDto.Email.Should().Be("jsolatorio310@gmail.com");
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenEmailTakenByAnotherUser_ReturnsConflict()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        // Register store 1
+        await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "store1@example.ph",
+            Password = "Password123!",
+            BusinessName = "Store One"
+        }, CancellationToken.None);
+
+        // Register store 2
+        var store2Reg = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "store2@example.ph",
+            Password = "Password123!",
+            BusinessName = "Store Two"
+        }, CancellationToken.None);
+
+        var store2Dto = ((OkObjectResult)store2Reg.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        var mockCurrentUserService = new Mock<ICurrentUserService>();
+        mockCurrentUserService.Setup(s => s.UserId).Returns(store2Dto.UserId);
+        mockCurrentUserService.Setup(s => s.TenantId).Returns(store2Dto.TenantId);
+        mockCurrentUserService.Setup(s => s.IsAuthenticated).Returns(true);
+
+        var authController = CreateController(context, currentUserService: mockCurrentUserService.Object);
+        SetAuthenticatedUser(authController, store2Dto.UserId, store2Dto.TenantId, email: "store2@example.ph");
+
+        // Store 2 tries to update its email to store 1's email
+        var conflictResult = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "Store Two Updated",
+            Email = "store1@example.ph"
+        }, CancellationToken.None);
+
+        conflictResult.Result.Should().BeOfType<ConflictObjectResult>();
+    }
+
+    [Fact]
+    public async Task UpdateProfile_WhenStoreNameTooShort_ReturnsBadRequest()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        var reg = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "short@example.ph",
+            Password = "Password123!",
+            BusinessName = "Valid Store"
+        }, CancellationToken.None);
+
+        var regDto = ((OkObjectResult)reg.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        var mockCurrentUserService = new Mock<ICurrentUserService>();
+        mockCurrentUserService.Setup(s => s.UserId).Returns(regDto.UserId);
+        mockCurrentUserService.Setup(s => s.TenantId).Returns(regDto.TenantId);
+        mockCurrentUserService.Setup(s => s.IsAuthenticated).Returns(true);
+
+        var authController = CreateController(context, currentUserService: mockCurrentUserService.Object);
+        SetAuthenticatedUser(authController, regDto.UserId, regDto.TenantId, email: "short@example.ph");
+
+        var badResult = await authController.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "A" // too short (< 2)
+        }, CancellationToken.None);
+
+        badResult.Result.Should().BeOfType<BadRequestObjectResult>();
+    }
 }
 

@@ -57,7 +57,22 @@ vi.mock('../services/authService', async (importOriginal) => {
       hasPin: true,
       token: 'mock-pin-token',
       expiresAt: '2028-01-01'
-    })
+    }),
+    updateProfile: vi.fn().mockImplementation((payload) => Promise.resolve({
+      tenantId: useAuthStore.getState().tenantId,
+      userId: useAuthStore.getState().userId,
+      email: payload.email || useAuthStore.getState().userEmail,
+      businessName: payload.businessName,
+      ownerName: payload.ownerName || '',
+      phone: payload.phone || '',
+      role: 'Owner',
+      tier: 'Libre',
+      planTier: 'Libre',
+      subscriptionEndDate: null,
+      hasPin: false,
+      token: 'mock-token',
+      expiresAt: '2028-01-01'
+    }))
   };
 });
 
@@ -395,6 +410,13 @@ describe('OnboardingModal', () => {
       expect(useAuthStore.getState().businessName).toBe('Updated Store Name');
       expect(useAuthStore.getState().isOnboardingOpen).toBe(false);
     });
+    expect(authService.updateProfile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        businessName: 'Updated Store Name',
+        ownerName: 'Juan Dela Cruz',
+        email: 'owner@tindahan.ph'
+      })
+    );
     expect(await db.tenants.get(tenantId)).toMatchObject({
       id: tenantId,
       businessName: 'Updated Store Name'
@@ -424,7 +446,59 @@ describe('OnboardingModal', () => {
     fireEvent.click(screen.getByRole('button', { name: /I-save ang Profile|Save Profile/i }));
 
     await waitFor(() => expect(useAuthStore.getState().isOnboardingOpen).toBe(false));
+    expect(authService.updateProfile).toHaveBeenCalled();
     expect(useAuthStore.getState().ownerName).toBe('');
     expect(useAuthStore.getState().userPhone).toBe('');
+  });
+
+  it('displays error when updateProfile returns 409 email conflict in edit mode', async () => {
+    vi.mocked(authService.updateProfile).mockRejectedValueOnce({
+      response: {
+        status: 409,
+        data: { message: 'May account nang nakarehistro gamit ang email na ito.' }
+      }
+    });
+
+    useAuthStore.setState({
+      isOnboarded: true,
+      isOnboardingOpen: true,
+      onboardingMode: 'edit',
+      businessName: 'Original Store',
+      userEmail: 'duplicate@tindahan.ph'
+    });
+
+    renderModal();
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Profile|Save Profile/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('May account nang nakarehistro gamit ang email na ito.')
+      ).toBeInTheDocument();
+    });
+    expect(useAuthStore.getState().isOnboardingOpen).toBe(true);
+  });
+
+  it('falls back gracefully to local store update on network failure in edit mode', async () => {
+    vi.mocked(authService.updateProfile).mockRejectedValueOnce(new Error('Network error'));
+
+    const tenantId = crypto.randomUUID();
+    useAuthStore.setState({
+      tenantId,
+      isOnboarded: true,
+      isOnboardingOpen: true,
+      onboardingMode: 'edit',
+      businessName: 'Original Store',
+      userEmail: 'offline@tindahan.ph'
+    });
+
+    renderModal();
+    const storeInput = screen.getByPlaceholderText(/Hal. Tindahan ni Aling Maria|e.g. Maria's Sari-Sari Store/i);
+    fireEvent.change(storeInput, { target: { value: 'Offline Store Update' } });
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Profile|Save Profile/i }));
+
+    await waitFor(() => {
+      expect(useAuthStore.getState().isOnboardingOpen).toBe(false);
+      expect(useAuthStore.getState().businessName).toBe('Offline Store Update');
+    });
   });
 });

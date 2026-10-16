@@ -51,7 +51,7 @@ import { normalizePhilippineMobile } from '../utils/philippineMobile';
 import { DEFAULT_GCASH_FEE_TIERS, useGCashFeeStore } from '../state/gcashFeeStore';
 import { processSyncQueue } from '../sync/syncEngine';
 import { ConfirmUnsyncedLoginDialog } from './ConfirmUnsyncedLoginDialog';
-import { registerStore, loginStore, loginPin, type AuthResponseDto } from '../services/authService';
+import { registerStore, loginStore, loginPin, updateProfile, type AuthResponseDto } from '../services/authService';
 
 const useStyles = makeStyles({
   surface: {
@@ -399,12 +399,36 @@ export const OnboardingModal: React.FC = () => {
         : '';
 
       if (isEditMode) {
-        updateStoreProfile({
-          businessName: trimmedBusinessName,
-          ownerName: trimmedOwnerName,
-          userPhone: normalizedPhone,
-          userEmail: trimmedEmail
-        });
+        try {
+          const authResult = await updateProfile({
+            businessName: trimmedBusinessName,
+            ownerName: trimmedOwnerName,
+            phone: normalizedPhone,
+            email: trimmedEmail
+          });
+
+          await loginWithAuthPayload(authResult);
+        } catch (serverError: any) {
+          const status = serverError?.response?.status;
+          const serverMessage = serverError?.response?.data?.message;
+
+          if (status === 409 || status === 400) {
+            setSubmissionError(
+              serverMessage ||
+              t.onboarding.emailAlreadyExists ||
+              'May error sa pag-update ng profile.'
+            );
+            return;
+          }
+
+          console.warn('[OnboardingModal] Profile update server sync deferred:', serverError);
+          updateStoreProfile({
+            businessName: trimmedBusinessName,
+            ownerName: trimmedOwnerName,
+            userPhone: normalizedPhone,
+            userEmail: trimmedEmail
+          });
+        }
 
         await db.tenants.update(tenantId, {
           businessName: trimmedBusinessName,

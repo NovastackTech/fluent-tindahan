@@ -40,6 +40,13 @@ export interface LoginPinRequestPayload {
   pin: string;
 }
 
+export interface UpdateProfileRequestPayload {
+  businessName: string;
+  ownerName?: string;
+  phone?: string;
+  email?: string;
+}
+
 export interface UpdatePinRequestPayload {
   email: string;
   password: string;
@@ -166,6 +173,11 @@ export async function loginPin(payload: LoginPinRequestPayload): Promise<AuthRes
 
 export async function updatePin(payload: UpdatePinRequestPayload): Promise<{ message: string; hasPin: boolean }> {
   const response = await apiClient.put<{ message: string; hasPin: boolean }>('/auth/pin', payload);
+  return response.data;
+}
+
+export async function updateProfile(payload: UpdateProfileRequestPayload): Promise<AuthResponseDto> {
+  const response = await apiClient.put<AuthResponseDto>('/auth/profile', payload);
   return response.data;
 }
 

@@ -402,6 +402,102 @@ describe('registerServiceWorker', () => {
     });
   });
 
+  it('clears needRefresh state immediately when reloadAppForUpdate is executed', async () => {
+    const originalLocation = window.location;
+    const reloadMock = vi.fn();
+    Object.defineProperty(window, 'location', {
+      value: { ...originalLocation, reload: reloadMock },
+      configurable: true,
+      writable: true
+    });
+
+    usePwaStore.setState({ needRefresh: true });
+    expect(usePwaStore.getState().needRefresh).toBe(true);
+
+    _resetUpdateSWFunctionForTest();
+    await reloadAppForUpdate();
+
+    expect(usePwaStore.getState().needRefresh).toBe(false);
+    expect(reloadMock).toHaveBeenCalledTimes(1);
+
+    Object.defineProperty(window, 'location', {
+      value: originalLocation,
+      configurable: true,
+      writable: true
+    });
+  });
+
+  it('messages all waiting workers returned by getRegistrations', async () => {
+    const originalLocation = window.location;
+    const reloadMock = vi.fn();
+    Object.defineProperty(window, 'location', {
+      value: { ...originalLocation, reload: reloadMock },
+      configurable: true,
+      writable: true
+    });
+
+    const postMessageMock1 = vi.fn();
+    const postMessageMock2 = vi.fn();
+    const mockRegs = [
+      { waiting: { postMessage: postMessageMock1 } },
+      { waiting: null },
+      { waiting: { postMessage: postMessageMock2 } }
+    ];
+
+    Object.defineProperty(navigator, 'serviceWorker', {
+      value: {
+        register: vi.fn(),
+        getRegistrations: vi.fn().mockResolvedValue(mockRegs)
+      },
+      configurable: true,
+      writable: true
+    });
+
+    _resetUpdateSWFunctionForTest();
+    await reloadAppForUpdate();
+
+    expect(postMessageMock1).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
+    expect(postMessageMock2).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
+    expect(reloadMock).toHaveBeenCalledTimes(1);
+
+    Object.defineProperty(window, 'location', {
+      value: originalLocation,
+      configurable: true,
+      writable: true
+    });
+  });
+
+  it('registers a controllerchange event listener on navigator.serviceWorker', async () => {
+    const originalLocation = window.location;
+    const reloadMock = vi.fn();
+    Object.defineProperty(window, 'location', {
+      value: { ...originalLocation, reload: reloadMock },
+      configurable: true,
+      writable: true
+    });
+
+    const addEventListenerMock = vi.fn();
+    Object.defineProperty(navigator, 'serviceWorker', {
+      value: {
+        register: vi.fn(),
+        addEventListener: addEventListenerMock
+      },
+      configurable: true,
+      writable: true
+    });
+
+    _resetUpdateSWFunctionForTest();
+    await reloadAppForUpdate();
+
+    expect(addEventListenerMock).toHaveBeenCalledWith('controllerchange', expect.any(Function), { once: true });
+
+    Object.defineProperty(window, 'location', {
+      value: originalLocation,
+      configurable: true,
+      writable: true
+    });
+  });
+
   it('guards against duplicate registration when initServiceWorker is called multiple times', async () => {
     Object.defineProperty(navigator, 'serviceWorker', {
       value: {
