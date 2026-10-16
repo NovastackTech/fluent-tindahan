@@ -14,6 +14,7 @@ import { useSyncStore, processSyncQueue, retryDeadLetterItem } from '../sync/syn
 import { db } from '../db/db';
 import { useTranslation } from '../state/languageStore';
 import { hasPendingProfileUpdate } from '../services/profileSync';
+import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
 
 const useStyles = makeStyles({
   container: {
@@ -33,6 +34,7 @@ export const OfflineSyncBanner: React.FC = () => {
   const styles = useStyles();
   const { isOnline, isSyncing, pendingCount, deadLetterCount, lastErrorMessage } = useSyncStore();
   const { t, language } = useTranslation();
+  const displayedErrorMessage = getLocalizedSyncErrorMessage(lastErrorMessage, language) || lastErrorMessage;
 
   const [isRetrying, setIsRetrying] = React.useState(false);
   const pendingProfile = hasPendingProfileUpdate();
@@ -132,7 +134,7 @@ export const OfflineSyncBanner: React.FC = () => {
         <MessageBar intent="error" layout="multiline">
           <MessageBarBody>
             <MessageBarTitle>Dead Letter Queue ({deadLetterCount})</MessageBarTitle>
-            {lastErrorMessage || t.common.dlqWarning}
+            {displayedErrorMessage || t.common.dlqWarning}
           </MessageBarBody>
           <MessageBarActions
             containerAction={
@@ -154,7 +156,7 @@ export const OfflineSyncBanner: React.FC = () => {
         <MessageBar intent="error" layout="multiline">
           <MessageBarBody>
             <MessageBarTitle>{language === 'tl' ? 'Problema sa Pag-sync' : 'Sync Error'}</MessageBarTitle>
-            {lastErrorMessage}
+            {displayedErrorMessage}
           </MessageBarBody>
           <MessageBarActions
             containerAction={

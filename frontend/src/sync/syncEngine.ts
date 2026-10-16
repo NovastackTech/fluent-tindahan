@@ -14,6 +14,8 @@ import {
   TenantProvisioningError
 } from '../services/apiClient';
 import { useAuthStore } from '../state/authStore';
+import { useLanguageStore } from '../state/languageStore';
+import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
 import { createClientUuid } from '../utils/uuid';
 import { create } from 'zustand';
 import { hasPendingProfileUpdate, syncPendingProfileUpdate } from '../services/profileSync';
@@ -96,6 +98,18 @@ useAuthStore.subscribe((authState, prevAuthState) => {
   if (currentTenant && prevTenant && currentTenant.toLowerCase() !== prevTenant.toLowerCase()) {
     const newTenantLastSync = getSavedLastSyncedAt(currentTenant);
     useSyncStore.getState().setLastSyncedAt(newTenantLastSync);
+  }
+});
+
+useLanguageStore.subscribe((langState, prevLangState) => {
+  if (langState.language !== prevLangState?.language) {
+    const currentError = useSyncStore.getState().lastErrorMessage;
+    if (currentError) {
+      const localized = getLocalizedSyncErrorMessage(currentError, langState.language);
+      if (localized && localized !== currentError) {
+        useSyncStore.setState({ lastErrorMessage: localized });
+      }
+    }
   }
 });
 

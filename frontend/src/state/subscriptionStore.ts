@@ -7,6 +7,8 @@ import {
 } from '../services/apiClient';
 import { db, type PlanTier } from '../db/db';
 import { useAuthStore } from './authStore';
+import { useLanguageStore } from './languageStore';
+import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
 
 export type BillingCycle = 'Weekly' | 'Monthly';
 export const SUBSCRIPTION_REFRESH_ERROR = 'SUBSCRIPTION_REFRESH_ERROR';
@@ -319,4 +321,16 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
       }
     }
   };
+});
+
+useLanguageStore.subscribe((langState, prevLangState) => {
+  if (langState.language !== prevLangState?.language) {
+    const currentError = useSubscriptionStore.getState().error;
+    if (currentError && currentError !== SUBSCRIPTION_REFRESH_ERROR) {
+      const localized = getLocalizedSyncErrorMessage(currentError, langState.language);
+      if (localized && localized !== currentError) {
+        useSubscriptionStore.setState({ error: localized });
+      }
+    }
+  }
 });

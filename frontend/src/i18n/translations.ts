@@ -36,6 +36,9 @@ export interface Translations {
     gcash: string;
     import: string;
     settings: string;
+    menuTitle: string;
+    expandMenu: string;
+    collapseMenu: string;
   };
   pos: {
     title: string;
@@ -796,7 +799,10 @@ export const translations: Record<Language, Translations> = {
       utang: 'Utang',
       gcash: 'GCash',
       import: 'Import',
-      settings: 'Sync'
+      settings: 'Sync',
+      menuTitle: 'Menu ng Tindahan',
+      expandMenu: 'Buksan ang menu',
+      collapseMenu: 'Itago ang menu'
     },
     pos: {
       title: 'Tindahan Point of Sale',
@@ -1496,7 +1502,10 @@ export const translations: Record<Language, Translations> = {
       utang: 'Credit Ledger',
       gcash: 'GCash Hub',
       import: 'Import CSV',
-      settings: 'Settings'
+      settings: 'Settings',
+      menuTitle: 'Store Menu',
+      expandMenu: 'Open menu',
+      collapseMenu: 'Close menu'
     },
     pos: {
       title: 'Point of Sale',

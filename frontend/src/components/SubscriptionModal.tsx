@@ -34,6 +34,7 @@ import {
 import { type PlanTier } from '../db/db';
 import { useLanguageStore } from '../state/languageStore';
 import { formatPeso } from '../utils/currency';
+import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
 
 const useStyles = makeStyles({
   surface: {
@@ -154,6 +155,7 @@ export const SubscriptionModal: React.FC = () => {
   const [cycle, setCycle] = useState<BillingCycle>('Monthly');
   const [processingTier, setProcessingTier] = useState<PlanTier | null>(null);
   const isRefreshError = error === SUBSCRIPTION_REFRESH_ERROR;
+  const displayedError = getLocalizedSyncErrorMessage(error, language) || error;
 
   const handleCheckout = async (targetTier: PlanTier) => {
     setProcessingTier(targetTier);
@@ -214,7 +216,7 @@ export const SubscriptionModal: React.FC = () => {
                     ? (isTagalog
                       ? 'Hindi ma-refresh ang detalye ng subscription. Ipinapakita pa rin ang mga plano at presyo gamit ang huling na-save na plano.'
                       : 'Subscription details could not be refreshed. Plans and prices are still available using your saved plan.')
-                    : error}
+                    : displayedError}
                 </MessageBarBody>
                 {isRefreshError && (
                   <Button

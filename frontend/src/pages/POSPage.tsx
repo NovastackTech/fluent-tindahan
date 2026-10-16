@@ -1023,16 +1023,18 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
                     </Badge>
                   )}
                 </div>
-                <Text size={100} style={{ color: tokens.colorNeutralForeground3, display: 'block', marginTop: '2px' }}>
-                  {t.pos.stockLabel}: {p.stockQty}{' '}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px', flexWrap: 'wrap' }}>
+                  <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>
+                    {t.pos.stockLabel}: {p.stockQty}
+                  </Text>
                   {isOutOfStock ? (
-                    <Badge size="extra-small" color="danger">{t.pos.outOfStock}</Badge>
+                    <Badge size="small" appearance="tint" color="danger">{t.pos.outOfStock}</Badge>
                   ) : isAtMaxStock ? (
-                    <Badge size="extra-small" color="warning">{language === 'tl' ? 'Nasa limit na' : 'At max stock'}</Badge>
+                    <Badge size="small" appearance="tint" color="warning">{language === 'tl' ? 'Nasa limit na' : 'At max stock'}</Badge>
                   ) : p.stockQty <= 5 ? (
-                    <Badge size="extra-small" color="warning">{t.pos.lowStockBadge}</Badge>
+                    <Badge size="small" appearance="tint" color="warning">{t.pos.lowStockBadge}</Badge>
                   ) : null}
-                </Text>
+                </div>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
