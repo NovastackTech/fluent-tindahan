@@ -93,6 +93,7 @@ const useStyles = makeStyles({
 });
 
 const EMPTY_CUSTOMERS: CustomerRecord[] = [];
+const LEGACY_DEFAULT_NOTES = new Set(['Unang tala ng utang', 'Dagdag na utang', 'Bayad sa utang']);
 
 function createUtangLedgerRecord(
   tenantId: string,
@@ -286,7 +287,7 @@ export const UtangPage: React.FC = () => {
         amount,
         'Payment',
         now,
-        paymentNotes || 'Bayad sa utang'
+        paymentNotes.trim()
       );
 
       // Atomic read-check-write so concurrent submits cannot both pass the check
@@ -528,99 +529,97 @@ export const UtangPage: React.FC = () => {
           <DialogBody>
             {selectedCustomer && (
               <>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
-                    <DialogTitle>{selectedCustomer.name}</DialogTitle>
-                    <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-                      Tel: {selectedCustomer.phone || 'N/A'}
-                    </Text>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>{t.utang.currentDebt}</Text>
-                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: selectedCustomer.totalUtangBalance > 0 ? tokens.colorPaletteRedForeground1 : tokens.colorPaletteGreenForeground1 }}>
-                      {formatPeso(selectedCustomer.totalUtangBalance)}
+                <DialogTitle
+                  action={
+                    <div style={{ textAlign: 'right' }}>
+                      <Text size={100} style={{ color: tokens.colorNeutralForeground3, display: 'block' }}>{t.utang.currentDebt}</Text>
+                      <div style={{ fontSize: '24px', fontWeight: 'bold', color: selectedCustomer.totalUtangBalance > 0 ? tokens.colorPaletteRedForeground1 : tokens.colorPaletteGreenForeground1 }}>
+                        {formatPeso(selectedCustomer.totalUtangBalance)}
+                      </div>
                     </div>
+                  }
+                >
+                  <span style={{ display: 'block' }}>{selectedCustomer.name}</span>
+                  <span style={{ fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground3, fontWeight: 'normal', display: 'block' }}>
+                    Tel: {selectedCustomer.phone || 'N/A'}
+                  </span>
+                </DialogTitle>
+
+                <DialogContent>
+                  {/* Quick actions for this customer */}
+                  <div style={{ display: 'flex', gap: '8px', margin: '16px 0', flexWrap: 'wrap' }}>
+                    <Button
+                      appearance="primary"
+                      icon={<PaymentRegular />}
+                      style={{ flexGrow: 1 }}
+                      onClick={() => {
+                        setPaymentAmount(selectedCustomer.totalUtangBalance.toString());
+                        setIsPaymentOpen(true);
+                      }}
+                    >
+                      {t.utang.payButton}
+                    </Button>
+                    <Button
+                      appearance="secondary"
+                      icon={<AddRegular />}
+                      style={{ flexGrow: 1 }}
+                      onClick={() => setIsAddCreditOpen(true)}
+                    >
+                      {t.utang.addDebtButton}
+                    </Button>
                   </div>
-                </div>
 
-                {/* Quick actions for this customer */}
-                <div style={{ display: 'flex', gap: '8px', margin: '16px 0', flexWrap: 'wrap' }}>
-                  <Button
-                    appearance="primary"
-                    icon={<PaymentRegular />}
-                    style={{ flexGrow: 1 }}
-                    onClick={() => {
-                      setPaymentAmount(selectedCustomer.totalUtangBalance.toString());
-                      setIsPaymentOpen(true);
-                    }}
-                  >
-                    {t.utang.payButton}
-                  </Button>
-                  <Button
-                    appearance="secondary"
-                    icon={<AddRegular />}
-                    style={{ flexGrow: 1 }}
-                    onClick={() => setIsAddCreditOpen(true)}
-                  >
-                    {t.utang.addDebtButton}
-                  </Button>
-                </div>
+                  <Divider style={{ margin: '8px 0' }} />
 
-                <Divider style={{ margin: '8px 0' }} />
+                  <Text weight="semibold" size={300} style={{ marginBottom: '8px', display: 'block' }}>
+                    {t.utang.timelineTitle}
+                  </Text>
 
-                <Text weight="semibold" size={300} style={{ marginBottom: '8px', display: 'block' }}>
-                  {t.utang.timelineTitle}
-                </Text>
+                  <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                    {ledgerEntries.length === 0 ? (
+                      <Text size={200} style={{ color: tokens.colorNeutralForeground3, textAlign: 'center', display: 'block', padding: '12px' }}>
+                        {t.utang.noTransactions}
+                      </Text>
+                    ) : (
+                      ledgerEntries.map((entry) => {
+                        const isCredit = entry.type === 'Credit';
+                        const rawNotes = entry.notes?.trim() || '';
+                        const displayNotes = LEGACY_DEFAULT_NOTES.has(rawNotes) ? '' : rawNotes;
 
-                <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
-                  {ledgerEntries.length === 0 ? (
-                    <Text size={200} style={{ color: tokens.colorNeutralForeground3, textAlign: 'center', display: 'block', padding: '12px' }}>
-                      {t.utang.noTransactions}
-                    </Text>
-                  ) : (
-                    ledgerEntries.map((entry) => {
-                      const isCredit = entry.type === 'Credit';
-                      const rawNotes = entry.notes?.trim() || '';
-                      const isGenericLabel =
-                        rawNotes === 'Unang tala ng utang' ||
-                        rawNotes === 'Dagdag na utang' ||
-                        rawNotes === t.nav.utang ||
-                        rawNotes === t.common.pesos;
-                      const displayNotes = isGenericLabel ? '' : rawNotes;
-
-                      return (
-                        <div key={entry.id} className={styles.timelineItem}>
-                          <div className={styles.timelineHeaderRow}>
-                            <Badge
-                              appearance="filled"
-                              color={isCredit ? 'danger' : 'success'}
-                              size="small"
-                              className={styles.timelineBadge}
-                            >
-                              {isCredit ? '+\u00A0UTANG' : '-\u00A0BAYAD'}
-                            </Badge>
-                            <Text
-                              weight="bold"
-                              size={300}
-                              className={styles.timelineAmount}
-                              style={{ color: isCredit ? tokens.colorPaletteRedForeground1 : tokens.colorPaletteGreenForeground1 }}
-                            >
-                              {isCredit ? '+' : '-'}{formatPeso(entry.amount)}
+                        return (
+                          <div key={entry.id} className={styles.timelineItem}>
+                            <div className={styles.timelineHeaderRow}>
+                              <Badge
+                                appearance="filled"
+                                color={isCredit ? 'danger' : 'success'}
+                                size="small"
+                                className={styles.timelineBadge}
+                              >
+                                {isCredit ? '+\u00A0UTANG' : '-\u00A0BAYAD'}
+                              </Badge>
+                              <Text
+                                weight="bold"
+                                size={300}
+                                className={styles.timelineAmount}
+                                style={{ color: isCredit ? tokens.colorPaletteRedForeground1 : tokens.colorPaletteGreenForeground1 }}
+                              >
+                                {isCredit ? '+' : '-'}{formatPeso(entry.amount)}
+                              </Text>
+                            </div>
+                            {displayNotes && (
+                              <Text weight="semibold" size={200} className={styles.timelineNotes}>
+                                {displayNotes}
+                              </Text>
+                            )}
+                            <Text size={100} style={{ color: tokens.colorNeutralForeground3, marginTop: '2px', display: 'block' }}>
+                              {new Date(entry.date).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
                             </Text>
                           </div>
-                          {displayNotes && (
-                            <Text weight="semibold" size={200} className={styles.timelineNotes}>
-                              {displayNotes}
-                            </Text>
-                          )}
-                          <Text size={100} style={{ color: tokens.colorNeutralForeground3, marginTop: '2px', display: 'block' }}>
-                            {new Date(entry.date).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
-                          </Text>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </DialogContent>
               </>
             )}
 
