@@ -8,8 +8,8 @@ describe('translations', () => {
   });
 
   it('ensures all top-level keys in tl match en', () => {
-    const tlKeys = Object.keys(translations.tl).sort();
-    const enKeys = Object.keys(translations.en).sort();
+    const tlKeys = Object.keys(translations.tl).sort((a, b) => a.localeCompare(b));
+    const enKeys = Object.keys(translations.en).sort((a, b) => a.localeCompare(b));
     expect(tlKeys).toEqual(enKeys);
   });
 
@@ -17,8 +17,8 @@ describe('translations', () => {
     const sections = Object.keys(translations.tl) as Array<keyof typeof translations.tl>;
 
     for (const section of sections) {
-      const tlSubKeys = Object.keys(translations.tl[section]).sort();
-      const enSubKeys = Object.keys(translations.en[section]).sort();
+      const tlSubKeys = Object.keys(translations.tl[section]).sort((a, b) => a.localeCompare(b));
+      const enSubKeys = Object.keys(translations.en[section]).sort((a, b) => a.localeCompare(b));
       expect(tlSubKeys).toEqual(enSubKeys);
 
       // Verify no empty string values

@@ -1,4 +1,4 @@
-import { db, normalizeRef, type ProductRecord, type CustomerRecord, type UtangLedgerRecord, type GCashTxnRecord } from './db';
+import { db, normalizeRef, type ProductRecord, type CustomerRecord, type UtangLedgerRecord, type GCashTxnRecord, type SyncQueueRecord } from './db';
 import { DEMO_BUSINESS_NAME } from '../constants/demoProfile';
 import { createClientUuid } from '../utils/uuid';
 
@@ -6,6 +6,20 @@ export { createClientUuid } from '../utils/uuid';
 
 export const DEFAULT_TENANT_ID = '11111111-1111-1111-1111-111111111111';
 export const DEFAULT_USER_ID = '22222222-2222-2222-2222-222222222222';
+export const NEW_USER_STARTER_PRODUCT_COUNT = 10;
+
+const NEW_USER_STARTER_PRODUCT_IDS = new Set([
+  'a1000000-0000-0000-0000-000000000001', // Lucky Me! Instant Pancit Canton Kalamansi 80g
+  'a1000000-0000-0000-0000-000000000013', // Kopiko Blanca 3-in-1 Coffee 52g
+  'a1000000-0000-0000-0000-000000000018', // Nescafe 3-in-1 Original Coffee 56g
+  'a1000000-0000-0000-0000-000000000021', // Milo Activ-Go Chocolate Powder Drink 24g
+  'a1000000-0000-0000-0000-000000000022', // Bear Brand Fortified Powdered Milk Drink 33g
+  'a1000000-0000-0000-0000-000000000032', // Coca-Cola Regular Mismo 290ml
+  'a1000000-0000-0000-0000-000000000035', // Mega Sardines in Tomato Sauce Green 155g
+  'a1000000-0000-0000-0000-000000000049', // Silver Swan Soy Sauce 100ml
+  'a1000000-0000-0000-0000-000000000064', // SkyFlakes Crackers Plain 25g
+  'a1000000-0000-0000-0000-000000000095'  // Sunsilk Shampoo Smooth & Manageable Pink 13ml
+]);
 
 export async function seedDexieDatabaseIfNeeded(
   force = false,
@@ -681,13 +695,16 @@ export async function seedDexieDatabaseIfNeeded(
   ];
 
   if (targetTenantId !== DEFAULT_TENANT_ID) {
-    const tenantProducts = products.map((product) => ({
+    const starterCatalog = products
+      .filter((p) => NEW_USER_STARTER_PRODUCT_IDS.has(p.id))
+      .slice(0, NEW_USER_STARTER_PRODUCT_COUNT);
+    const tenantProducts = starterCatalog.map((product) => ({
       ...product,
       id: createClientUuid(),
       tenantId: targetTenantId
     }));
 
-    await db.transaction('rw', db.tenants, db.products, async () => {
+    await db.transaction('rw', db.tenants, db.products, db.syncQueue, async () => {
       const existingTenant = await db.tenants.get(targetTenantId);
       if (!existingTenant) {
         await db.tenants.add({
@@ -699,11 +716,25 @@ export async function seedDexieDatabaseIfNeeded(
       }
 
       const productCount = await db.products.where('tenantId').equals(targetTenantId).count();
-      if (!force && productCount >= 50) {
+      if (!force && productCount >= NEW_USER_STARTER_PRODUCT_COUNT) {
         return;
       }
 
       await db.products.bulkPut(tenantProducts);
+
+      const baseQueueOrder = Date.now() * 1000;
+      const syncRecords: SyncQueueRecord[] = tenantProducts.map((p, idx) => ({
+        id: createClientUuid(),
+        entity: 'Product',
+        action: 'Insert',
+        timestamp: now,
+        payload: p,
+        status: 'Pending',
+        retryCount: 0,
+        queueOrder: baseQueueOrder + idx
+      }));
+
+      await db.syncQueue.bulkPut(syncRecords);
     });
     return;
   }

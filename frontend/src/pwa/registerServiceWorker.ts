@@ -154,20 +154,16 @@ export async function reloadAppForUpdate(): Promise<void> {
     executeReload();
   }, 500);
 
-  // 6. Hard navigation fallback
+  // 6. Hard navigation fallback: force assign location href if reload calls were ignored
   setTimeout(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        if (typeof window.location?.assign === 'function') {
-          window.location.assign(window.location.href);
-        } else if (typeof window.location?.replace === 'function') {
-          window.location.replace(window.location.href);
-        }
-      } catch {
-        // ignore
-      } finally {
-        isReloading = false;
+    try {
+      if (typeof window !== 'undefined' && typeof window.location?.assign === 'function') {
+        window.location.assign(window.location.href);
       }
+    } catch {
+      // ignore
+    } finally {
+      isReloading = false;
     }
   }, 1200);
 }

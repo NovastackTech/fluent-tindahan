@@ -1,5 +1,6 @@
 import { useCartStore } from '../state/cartStore';
 import { usePwaStore } from '../state/pwaStore';
+import { createClientUuid } from '../utils/uuid';
 
 export const PWA_CART_CHANNEL_NAME = 'fluent_tindahan_cart_coordination';
 
@@ -22,15 +23,19 @@ export interface TabClosedMessage {
 export type PwaTabMessage = CartStatusMessage | QueryCartStatusMessage | TabClosedMessage;
 
 let tabId: string = '';
+let fallbackCounter = 0;
 let broadcastChannel: BroadcastChannel | null = null;
 const activeRemoteCartTabs = new Set<string>();
 let unsubscribeCartStore: (() => void) | null = null;
 
 export function getTabId(): string {
   if (!tabId) {
-    tabId = typeof crypto !== 'undefined' && crypto.randomUUID
-      ? crypto.randomUUID()
-      : Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
+    try {
+      tabId = createClientUuid();
+    } catch {
+      fallbackCounter += 1;
+      tabId = `tab-${Date.now()}-${fallbackCounter}`;
+    }
   }
   return tabId;
 }

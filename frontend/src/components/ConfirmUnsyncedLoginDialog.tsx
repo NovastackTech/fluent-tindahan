@@ -93,14 +93,30 @@ export const ConfirmUnsyncedLoginDialog: React.FC<ConfirmUnsyncedLoginDialogProp
               </div>
             </div>
           </DialogContent>
-          <DialogActions>
-            <Button appearance="secondary" onClick={onClose} data-testid="unsynced-dialog-cancel-btn">
+          <DialogActions
+            fluid
+            style={{
+              gridColumn: '1 / -1',
+              display: 'flex',
+              flexWrap: 'wrap',
+              justifyContent: 'flex-end',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            <Button
+              appearance="secondary"
+              style={{ whiteSpace: 'nowrap' }}
+              onClick={onClose}
+              data-testid="unsynced-dialog-cancel-btn"
+            >
               {t.common.cancel}
             </Button>
             {onSyncFirst && (
               <Button
                 appearance="primary"
                 icon={isSyncing ? <Spinner size="tiny" /> : <ArrowSyncRegular />}
+                style={{ whiteSpace: 'nowrap' }}
                 disabled={isSyncing}
                 onClick={onSyncFirst}
                 data-testid="unsynced-dialog-sync-btn"
@@ -112,7 +128,8 @@ export const ConfirmUnsyncedLoginDialog: React.FC<ConfirmUnsyncedLoginDialogProp
               appearance="secondary"
               style={{
                 color: tokens.colorPaletteRedForeground1,
-                borderColor: tokens.colorPaletteRedBorder1
+                borderColor: tokens.colorPaletteRedBorder1,
+                whiteSpace: 'nowrap'
               }}
               disabled={isSyncing}
               onClick={onConfirmWipeAndLogin}

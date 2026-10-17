@@ -570,4 +570,34 @@ describe('registerServiceWorker', () => {
     expect(_getUpdateIntervalIdForTest()).toBeNull();
     vi.useRealTimers();
   });
+
+  it('triggers hard navigation fallback with window.location.assign after 1200ms timeout', async () => {
+    vi.useFakeTimers();
+    const originalLocation = window.location;
+    const reloadMock = vi.fn();
+    const assignMock = vi.fn();
+
+    Object.defineProperty(window, 'location', {
+      value: { ...originalLocation, reload: reloadMock, assign: assignMock, href: 'http://localhost:5173/' },
+      configurable: true,
+      writable: true
+    });
+
+    _resetUpdateSWFunctionForTest();
+    await reloadAppForUpdate();
+
+    expect(assignMock).not.toHaveBeenCalled();
+
+    // Advance 1200ms to trigger the hard navigation fallback
+    vi.advanceTimersByTime(1200);
+
+    expect(assignMock).toHaveBeenCalledWith('http://localhost:5173/');
+
+    Object.defineProperty(window, 'location', {
+      value: originalLocation,
+      configurable: true,
+      writable: true
+    });
+    vi.useRealTimers();
+  });
 });

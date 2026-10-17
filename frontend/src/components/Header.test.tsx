@@ -28,132 +28,210 @@ describe('Header', () => {
     );
   };
 
-  it('renders app logo, title, and store name', () => {
-    renderHeader();
+  describe('Standard Horizontal Toolbar (Wide / Desktop View)', () => {
+    it('renders app logo, title, and store name', () => {
+      renderHeader();
 
-    expect(screen.getByText('FT')).toBeInTheDocument();
-    expect(screen.getByText(/Fluent Tindahan/i)).toBeInTheDocument();
-    expect(screen.getByText(/Aling Nena's Store/i)).toBeInTheDocument();
-  });
-
-  it('toggles language when language button is clicked', () => {
-    renderHeader();
-
-    const langBtn = screen.getByTestId('language-toggle-btn');
-    fireEvent.click(langBtn);
-
-    expect(useLanguageStore.getState().language).toBe('en');
-  });
-
-  it('cycles theme mode between light, dark, and system when theme button is clicked', () => {
-    renderHeader();
-
-    const buttons = screen.getAllByRole('button');
-    // The theme button is the last button in the header
-    const themeBtn = buttons[buttons.length - 1];
-
-    // Starts at light, click moves to dark
-    fireEvent.click(themeBtn);
-    expect(useThemeStore.getState().themeMode).toBe('dark');
-    expect(useThemeStore.getState().isDarkMode).toBe(true);
-
-    // Click moves to system
-    fireEvent.click(themeBtn);
-    expect(useThemeStore.getState().themeMode).toBe('system');
-
-    // Click moves back to light
-    fireEvent.click(themeBtn);
-    expect(useThemeStore.getState().themeMode).toBe('light');
-    expect(useThemeStore.getState().isDarkMode).toBe(false);
-  });
-
-  it('renders PWA install button when app is installable and not in standalone mode', () => {
-    const promptInstallSpy = vi.fn().mockResolvedValue(true);
-    usePwaStore.setState({
-      isInstallable: true,
-      isStandalone: false,
-      promptInstall: promptInstallSpy
+      expect(screen.getByText('FT')).toBeInTheDocument();
+      expect(screen.getByText(/Fluent Tindahan/i)).toBeInTheDocument();
+      expect(screen.getByText(/Aling Nena's Store/i)).toBeInTheDocument();
     });
 
-    renderHeader();
+    it('toggles language when language button is clicked', () => {
+      renderHeader();
 
-    const installBtn = screen.getByRole('button', { name: /I-install ang Fluent Tindahan sa device|Install Fluent Tindahan to device/i });
-    expect(installBtn).toBeInTheDocument();
+      const langBtn = screen.getByTestId('language-toggle-btn');
+      fireEvent.click(langBtn);
 
-    fireEvent.click(installBtn);
-    expect(promptInstallSpy).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not render PWA install button when isInstalled is true', () => {
-    usePwaStore.setState({
-      isInstallable: true,
-      isStandalone: false,
-      isInstalled: true
+      expect(useLanguageStore.getState().language).toBe('en');
     });
 
-    renderHeader();
+    it('cycles theme mode between light, dark, and system when theme button is clicked', () => {
+      renderHeader();
 
-    expect(screen.queryByRole('button', { name: /I-install ang Fluent Tindahan sa device|Install Fluent Tindahan to device/i })).not.toBeInTheDocument();
+      const buttons = screen.getAllByRole('button');
+      // The theme button is the last button in the header
+      const themeBtn = buttons[buttons.length - 1];
+
+      // Starts at light, click moves to dark
+      fireEvent.click(themeBtn);
+      expect(useThemeStore.getState().themeMode).toBe('dark');
+      expect(useThemeStore.getState().isDarkMode).toBe(true);
+
+      // Click moves to system
+      fireEvent.click(themeBtn);
+      expect(useThemeStore.getState().themeMode).toBe('system');
+
+      // Click moves back to light
+      fireEvent.click(themeBtn);
+      expect(useThemeStore.getState().themeMode).toBe('light');
+      expect(useThemeStore.getState().isDarkMode).toBe(false);
+    });
+
+    it('renders PWA install button when app is installable and not in standalone mode', () => {
+      const promptInstallSpy = vi.fn().mockResolvedValue(true);
+      usePwaStore.setState({
+        isInstallable: true,
+        isStandalone: false,
+        promptInstall: promptInstallSpy
+      });
+
+      renderHeader();
+
+      const installBtn = screen.getByRole('button', { name: /I-install ang Fluent Tindahan sa device|Install Fluent Tindahan to device/i });
+      expect(installBtn).toBeInTheDocument();
+
+      fireEvent.click(installBtn);
+      expect(promptInstallSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not render PWA install button when isInstalled is true', () => {
+      usePwaStore.setState({
+        isInstallable: true,
+        isStandalone: false,
+        isInstalled: true
+      });
+
+      renderHeader();
+
+      expect(screen.queryByRole('button', { name: /I-install ang Fluent Tindahan sa device|Install Fluent Tindahan to device/i })).not.toBeInTheDocument();
+    });
+
+    it('renders plan tier badge and opens upgrade modal on click', () => {
+      useSubscriptionStore.setState({ tier: 'TindahanPro' });
+      renderHeader();
+
+      expect(screen.getByText('PRO')).toBeInTheDocument();
+
+      const planBtn = screen.getByTitle('View Subscription Plans');
+      fireEvent.click(planBtn);
+
+      expect(useSubscriptionStore.getState().isUpgradeModalOpen).toBe(true);
+    });
+
+    it('renders disclaimer button and opens disclaimer modal on click', () => {
+      renderHeader();
+
+      const disclaimerBtn = screen.getByTestId('header-disclaimer-btn');
+      expect(disclaimerBtn).toBeInTheDocument();
+
+      fireEvent.click(disclaimerBtn);
+      expect(useDisclaimerStore.getState().isDisclaimerOpen).toBe(true);
+    });
+
+    it('hides store subtitle, plan tier badge, and sync indicators when activeTab is login', () => {
+      useAuthStore.setState({ businessName: "Aling Nena's Store", isOnboarded: true });
+      renderHeader({ activeTab: 'login' });
+
+      expect(screen.getByText('FT')).toBeInTheDocument();
+      expect(screen.getByText(/Fluent Tindahan/i)).toBeInTheDocument();
+      expect(screen.queryByText(/Aling Nena's Store/i)).not.toBeInTheDocument();
+      expect(screen.queryByTitle('View Subscription Plans')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Naka-online|Online/i)).not.toBeInTheDocument();
+    });
+
+    it('hides store subtitle and sync indicators when user is not onboarded (logged out)', () => {
+      useAuthStore.setState({ businessName: '', isOnboarded: false });
+      renderHeader();
+
+      expect(screen.getByText('FT')).toBeInTheDocument();
+      expect(screen.getByText(/Fluent Tindahan/i)).toBeInTheDocument();
+      expect(screen.queryByText(/Aling Nena's/i)).not.toBeInTheDocument();
+      expect(screen.queryByTitle('View Subscription Plans')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Naka-online|Online/i)).not.toBeInTheDocument();
+    });
+
+    it('translates landing shortcut button to Tuklasin in TL and Explore in EN', () => {
+      const mockNavigate = vi.fn();
+      const { unmount } = renderHeader({ onNavigate: mockNavigate, activeTab: 'dashboard' });
+
+      // Default language is 'tl'
+      expect(screen.getByText('Tuklasin')).toBeInTheDocument();
+      unmount();
+
+      useLanguageStore.setState({ language: 'en' });
+      renderHeader({ onNavigate: mockNavigate, activeTab: 'dashboard' });
+      expect(screen.getByText('Explore')).toBeInTheDocument();
+
+      useLanguageStore.setState({ language: 'tl' });
+    });
   });
 
-  it('renders plan tier badge and opens upgrade modal on click', () => {
-    useSubscriptionStore.setState({ tier: 'TindahanPro' });
-    renderHeader();
+  describe('Collapsible Header Toolbar in Phone View', () => {
+    it('renders in collapsed state with toggle button when forceCollapsible is true', () => {
+      renderHeader({ forceCollapsible: true });
 
-    expect(screen.getByText('PRO')).toBeInTheDocument();
+      // Toggle button should be present
+      const toggleBtn = screen.getByTestId('header-toolbar-toggle');
+      expect(toggleBtn).toBeInTheDocument();
 
-    const planBtn = screen.getByTitle('View Subscription Plans');
-    fireEvent.click(planBtn);
+      // In collapsed state, the collapsible tray should NOT be in the DOM
+      expect(screen.queryByTestId('header-collapsible-tray')).not.toBeInTheDocument();
+      // Language toggle is inside tray, so it is not visible in collapsed state
+      expect(screen.queryByTestId('language-toggle-btn')).not.toBeInTheDocument();
+    });
 
-    expect(useSubscriptionStore.getState().isUpgradeModalOpen).toBe(true);
-  });
+    it('expands the tray when toggle button is clicked and reveals all action buttons', () => {
+      const mockNavigate = vi.fn();
+      renderHeader({ forceCollapsible: true, onNavigate: mockNavigate, activeTab: 'dashboard' });
 
-  it('renders disclaimer button and opens disclaimer modal on click', () => {
-    renderHeader();
+      const toggleBtn = screen.getByTestId('header-toolbar-toggle');
+      fireEvent.click(toggleBtn);
 
-    const disclaimerBtn = screen.getByTestId('header-disclaimer-btn');
-    expect(disclaimerBtn).toBeInTheDocument();
+      // Collapsible tray should now be visible
+      expect(screen.getByTestId('header-collapsible-tray')).toBeInTheDocument();
+      expect(screen.getByTestId('language-toggle-btn')).toBeInTheDocument();
+      expect(screen.getByTestId('header-disclaimer-btn')).toBeInTheDocument();
+      expect(screen.getByTestId('header-landing-toggle-btn')).toBeInTheDocument();
 
-    fireEvent.click(disclaimerBtn);
-    expect(useDisclaimerStore.getState().isDisclaimerOpen).toBe(true);
-  });
+      // Language button functions in tray
+      fireEvent.click(screen.getByTestId('language-toggle-btn'));
+      expect(useLanguageStore.getState().language).toBe('en');
 
-  it('hides store subtitle, plan tier badge, and sync indicators when activeTab is login', () => {
-    useAuthStore.setState({ businessName: "Aling Nena's Store", isOnboarded: true });
-    renderHeader({ activeTab: 'login' });
+      // Clicking toggle again collapses the tray
+      fireEvent.click(toggleBtn);
+      expect(screen.queryByTestId('header-collapsible-tray')).not.toBeInTheDocument();
+    });
 
-    expect(screen.getByText('FT')).toBeInTheDocument();
-    expect(screen.getByText(/Fluent Tindahan/i)).toBeInTheDocument();
-    expect(screen.queryByText(/Aling Nena's Store/i)).not.toBeInTheDocument();
-    expect(screen.queryByTitle('View Subscription Plans')).not.toBeInTheDocument();
-    expect(screen.queryByText(/Naka-online|Online/i)).not.toBeInTheDocument();
-  });
+    it('collapses tray when pressing Escape key', () => {
+      renderHeader({ forceCollapsible: true });
 
-  it('hides store subtitle and sync indicators when user is not onboarded (logged out)', () => {
-    useAuthStore.setState({ businessName: '', isOnboarded: false });
-    renderHeader();
+      const toggleBtn = screen.getByTestId('header-toolbar-toggle');
+      fireEvent.click(toggleBtn);
+      expect(screen.getByTestId('header-collapsible-tray')).toBeInTheDocument();
 
-    expect(screen.getByText('FT')).toBeInTheDocument();
-    expect(screen.getByText(/Fluent Tindahan/i)).toBeInTheDocument();
-    expect(screen.queryByText(/Aling Nena's/i)).not.toBeInTheDocument();
-    expect(screen.queryByTitle('View Subscription Plans')).not.toBeInTheDocument();
-    expect(screen.queryByText(/Naka-online|Online/i)).not.toBeInTheDocument();
-  });
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(screen.queryByTestId('header-collapsible-tray')).not.toBeInTheDocument();
+    });
 
-  it('translates landing shortcut button to Tuklasin in TL and Explore in EN', () => {
-    const mockNavigate = vi.fn();
-    const { unmount } = renderHeader({ onNavigate: mockNavigate, activeTab: 'dashboard' });
+    it('collapses tray when clicking outside', () => {
+      renderHeader({ forceCollapsible: true });
 
-    // Default language is 'tl'
-    expect(screen.getByText('Tuklasin')).toBeInTheDocument();
-    unmount();
+      const toggleBtn = screen.getByTestId('header-toolbar-toggle');
+      fireEvent.click(toggleBtn);
+      expect(screen.getByTestId('header-collapsible-tray')).toBeInTheDocument();
 
-    useLanguageStore.setState({ language: 'en' });
-    renderHeader({ onNavigate: mockNavigate, activeTab: 'dashboard' });
-    expect(screen.getByText('Explore')).toBeInTheDocument();
+      fireEvent.mouseDown(document.body);
+      expect(screen.queryByTestId('header-collapsible-tray')).not.toBeInTheDocument();
+    });
 
-    useLanguageStore.setState({ language: 'tl' });
+    it('automatically activates collapsibility when screen width is narrow (< 640px)', () => {
+      vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(375);
+      vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(667);
+
+      renderHeader();
+
+      expect(screen.getByTestId('header-toolbar-toggle')).toBeInTheDocument();
+    });
+
+    it('remains horizontal standard toolbar when screen is wide (>= 640px)', () => {
+      vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1024);
+      vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(768);
+
+      renderHeader();
+
+      expect(screen.queryByTestId('header-toolbar-toggle')).not.toBeInTheDocument();
+      expect(screen.getByTestId('language-toggle-btn')).toBeInTheDocument();
+    });
   });
 });
-
-

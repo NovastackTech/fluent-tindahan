@@ -14,6 +14,7 @@ import { useTermsStore } from '../state/termsStore';
 import { db } from '../db/db';
 import { DEFAULT_GCASH_FEE_TIERS, GCASH_FEE_STORAGE_KEY, useGCashFeeStore } from '../state/gcashFeeStore';
 import * as authService from '../services/authService';
+import * as apiClientModule from '../services/apiClient';
 
 vi.mock('../services/authService', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/authService')>();
@@ -163,7 +164,7 @@ describe('SettingsPage', () => {
 
     expect(window.confirm).toHaveBeenCalled();
     await waitFor(async () => {
-      expect(await db.products.where('tenantId').equals('settings-test-tenant').count()).toBe(50);
+      expect(await db.products.where('tenantId').equals('settings-test-tenant').count()).toBe(10);
     });
     expect(await db.products.get('other-product')).toBeDefined();
     expect(await db.products.get('active-product')).toBeUndefined();
@@ -752,6 +753,33 @@ describe('SettingsPage', () => {
       expect(useAuthStore.getState().userEmail).toBe('');
       expect(useAuthStore.getState().isOnboarded).toBe(false);
       expect(useAuthStore.getState().isOnboardingOpen).toBe(false);
+    });
+  });
+
+  it('updates last synced timestamp when clicking Force Cloud Sync Now even with 0 pending items', async () => {
+    useAuthStore.setState({
+      isOnboarded: true,
+      isOnboardingStatusReady: true
+    });
+    vi.spyOn(apiClientModule, 'ensureTenantProvisioned').mockResolvedValue(undefined);
+    vi.spyOn(apiClientModule.apiClient, 'post').mockResolvedValue({
+      data: { results: [] }
+    } as any);
+
+    renderSettings();
+
+    // Initially displays Last sync: Never
+    expect(screen.getByText(/Last sync: Never/i)).toBeInTheDocument();
+
+    const forceSyncBtn = screen.getByRole('button', { name: /Puwersahing Mag-Sync Ngayon|Force Cloud Sync Now/i });
+    await act(async () => {
+      fireEvent.click(forceSyncBtn);
+    });
+
+    await waitFor(() => {
+      expect(useSyncStore.getState().lastSyncedAt).not.toBeNull();
+      expect(screen.queryByText(/Last sync: Never/i)).not.toBeInTheDocument();
+      expect(screen.getByText(/Last sync:/i)).toBeInTheDocument();
     });
   });
 });

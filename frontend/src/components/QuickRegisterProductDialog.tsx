@@ -112,7 +112,10 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
   const [categories, setCategories] = useState<string[]>([]);
   const [generalError, setGeneralError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const [prevOpenState, setPrevOpenState] = useState({ isOpen, barcode: unrecognizedBarcode });
+
+  if (isOpen !== prevOpenState.isOpen || unrecognizedBarcode !== prevOpenState.barcode) {
+    setPrevOpenState({ isOpen, barcode: unrecognizedBarcode });
     if (isOpen) {
       setStage('prompt');
       setName('');
@@ -124,12 +127,16 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
       setPriceError('');
       setStock(10);
       setGeneralError(null);
+    }
+  }
 
+  useEffect(() => {
+    if (isOpen) {
       // Load distinct categories for datalist
       db.products.where('tenantId').equals(tenantId).toArray().then((prods) => {
         const unique = Array.from(
           new Set(prods.map((p) => p.category?.trim()).filter(Boolean) as string[])
-        ).sort();
+        ).sort((a, b) => a.localeCompare(b));
         setCategories(unique);
       });
     }
@@ -171,7 +178,7 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
     const currentCount = await db.products.where('tenantId').equals(tenantId).count();
     const { canAddProduct, openUpgradeModal } = useSubscriptionStore.getState();
     if (!canAddProduct(currentCount)) {
-      setGeneralError('Limit reached for Libre tier (50 products max). Please upgrade to Tindahan Pro or Negosyo Plus.');
+      setGeneralError('Limit reached for Libre tier (30 products max). Please upgrade to Tindahan Pro or Negosyo Plus.');
       openUpgradeModal();
       return;
     }
