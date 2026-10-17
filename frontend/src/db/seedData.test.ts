@@ -40,7 +40,7 @@ describe('seedData', () => {
     expect(count2).toBe(count1);
   });
 
-  it('seeds an isolated catalog for a new tenant without changing default data or copying demo activity', async () => {
+  it('seeds an isolated catalog of 10 starter products for a new tenant without changing default data or copying demo activity', async () => {
     await seedDexieDatabaseIfNeeded();
     const defaultProduct = await db.products.orderBy('id').first();
     const newTenantId = '99999999-9999-4999-8999-999999999999';
@@ -49,14 +49,14 @@ describe('seedData', () => {
 
     const tenantProducts = await db.products.where('tenantId').equals(newTenantId).toArray();
     const retainedDefaultProduct = await db.products.get(defaultProduct!.id);
-    expect(tenantProducts).toHaveLength(50);
+    expect(tenantProducts).toHaveLength(10);
     expect(tenantProducts.every((product) => product.id !== defaultProduct!.id)).toBe(true);
     expect(retainedDefaultProduct?.tenantId).toBe(DEFAULT_TENANT_ID);
     expect(await db.customers.where('tenantId').equals(newTenantId).count()).toBe(0);
     expect(await db.utangLedger.where('tenantId').equals(newTenantId).count()).toBe(0);
     expect(await db.gcashTxns.where('tenantId').equals(newTenantId).count()).toBe(0);
     expect((await db.tenants.get(newTenantId))?.businessName).toBe('New Store');
-    expect(await db.syncQueue.count()).toBe(50);
+    expect(await db.syncQueue.count()).toBe(10);
     const queuedItems = await db.syncQueue.toArray();
     expect(queuedItems.every((item) => item.entity === 'Product' && item.action === 'Insert' && item.payload.tenantId === newTenantId)).toBe(true);
   });
@@ -69,7 +69,7 @@ describe('seedData', () => {
     expect((await db.tenants.get(emptyTenantId))?.businessName).toBe('Clean Store');
   });
 
-  it('keeps a custom tenant catalog at 50 when two non-forced seeds race', async () => {
+  it('keeps a custom tenant catalog at 10 when two non-forced seeds race', async () => {
     const tenantId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
     await Promise.all([
@@ -77,7 +77,7 @@ describe('seedData', () => {
       seedDexieDatabaseIfNeeded(false, tenantId, false, 'Concurrent Store')
     ]);
 
-    expect(await db.products.where('tenantId').equals(tenantId).count()).toBe(50);
+    expect(await db.products.where('tenantId').equals(tenantId).count()).toBe(10);
     expect((await db.tenants.get(tenantId))?.businessName).toBe('Concurrent Store');
   });
 

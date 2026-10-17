@@ -46,7 +46,7 @@ import { useAuthStore } from '../state/authStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
 import { useGCashFeeStore, DEFAULT_GCASH_FEE_TIERS } from '../state/gcashFeeStore';
 import { db } from '../db/db';
-import { processSyncQueue } from '../sync/syncEngine';
+import { processSyncQueue, updateQueueCounts, kickSync } from '../sync/syncEngine';
 import { ConfirmUnsyncedLoginDialog } from '../components/ConfirmUnsyncedLoginDialog';
 import { registerStore, loginStore, loginPin, type AuthResponseDto } from '../services/authService';
 import { createClientUuid, seedDexieDatabaseIfNeeded, DEFAULT_TENANT_ID } from '../db/seedData';
@@ -574,6 +574,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
       });
 
       void useSubscriptionStore.getState().refreshSubscription();
+      await updateQueueCounts();
+      void kickSync();
       onNavigate('pos');
     } catch (err: any) {
       setAuthError(err?.message || t.onboarding.submitError);
@@ -599,6 +601,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
         subscriptionEndDate: null,
         isActive: false
       });
+      await updateQueueCounts();
       onNavigate('pos');
     } catch (err) {
       console.error('Failed to launch demo:', err);
@@ -671,7 +674,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
             </div>
             <div className={styles.perkItem}>
               <CheckmarkCircleRegular primaryFill={tokens.colorPaletteGreenForeground1} />
-              <span>Libre Magpakailanman — Hanggang 50 paninda at 30 debtors</span>
+              <span>Libre Magpakailanman — Hanggang 30 paninda at 30 debtors</span>
             </div>
           </div>
         </div>
@@ -1293,7 +1296,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                 {t.landing.planFreeDesc}
               </Text>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px' }}>
-                <div>✓ Hanggang 50 Produkto</div>
+                <div>✓ Hanggang 30 Produkto</div>
                 <div>✓ Hanggang 30 Utang Debtors</div>
                 <div>✓ 30 GCash Txns bawat buwan</div>
                 <div>✓ 100% Offline POS & Kaha</div>

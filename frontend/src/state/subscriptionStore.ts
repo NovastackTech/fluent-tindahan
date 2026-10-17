@@ -82,7 +82,7 @@ export const getTierLimits = (tier: PlanTier): TierLimits => {
     case 'Libre':
     default:
       return {
-        maxProducts: 50,
+        maxProducts: 30,
         maxCustomers: 30,
         maxGCashTransactionsPerMonth: 30,
         maxUsers: 1,

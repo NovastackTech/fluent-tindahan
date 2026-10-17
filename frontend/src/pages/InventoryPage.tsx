@@ -542,8 +542,8 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
     if (!canAddProduct(products.length)) {
       setLimitBanner(
         language === 'tl'
-          ? 'Naabot na ang limitasyon ng Libreng plano (50 produkto). Mag-upgrade sa Tindahan Pro o Negosyo Plus upang magdagdag pa.'
-          : 'Limit reached for Libre plan (50 products maximum). Please upgrade to Tindahan Pro or Negosyo Plus to add more products.'
+          ? 'Naabot na ang limitasyon ng Libreng plano (30 produkto). Mag-upgrade sa Tindahan Pro o Negosyo Plus upang magdagdag pa.'
+          : 'Limit reached for Libre plan (30 products maximum). Please upgrade to Tindahan Pro or Negosyo Plus to add more products.'
       );
       openUpgradeModal();
       return;
@@ -634,8 +634,8 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
         if (!canAddProduct(products.length)) {
           setModalGeneralError(
             language === 'tl'
-              ? 'Naabot na ang limitasyon ng Libreng plano (50 produkto). Mag-upgrade sa Tindahan Pro o Negosyo Plus upang magdagdag pa.'
-              : 'Limit reached for Libre plan (50 products maximum). Please upgrade to Tindahan Pro or Negosyo Plus to add more products.'
+              ? 'Naabot na ang limitasyon ng Libreng plano (30 produkto). Mag-upgrade sa Tindahan Pro o Negosyo Plus upang magdagdag pa.'
+              : 'Limit reached for Libre plan (30 products maximum). Please upgrade to Tindahan Pro or Negosyo Plus to add more products.'
           );
           openUpgradeModal();
           return;
@@ -782,12 +782,12 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
               <div className={styles.metricValue}>
                 {metrics.totalProducts}
                 {tier === 'Libre' && (
-                  <span style={{ fontSize: '14px', fontWeight: 'normal', color: tokens.colorNeutralForeground3 }}> / 50</span>
+                  <span style={{ fontSize: '14px', fontWeight: 'normal', color: tokens.colorNeutralForeground3 }}> / 30</span>
                 )}
               </div>
-              {tier === 'Libre' && metrics.totalProducts >= 45 && (
+              {tier === 'Libre' && metrics.totalProducts >= 25 && (
                 <Badge appearance="tint" color="warning" size="small" data-testid="product-cap-badge">
-                  {metrics.totalProducts >= 50 ? t.inventory.fullCapacityBadge : t.inventory.nearCapacityBadge}
+                  {metrics.totalProducts >= 30 ? t.inventory.fullCapacityBadge : t.inventory.nearCapacityBadge}
                 </Badge>
               )}
             </div>

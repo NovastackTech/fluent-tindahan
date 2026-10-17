@@ -63,6 +63,7 @@ import {
   useSyncStore,
   processSyncQueue,
   updateQueueCounts,
+  kickSync,
   retryDeadLetterItem,
   deleteDeadLetterItem,
   clearDeadLetterQueue,
@@ -88,6 +89,8 @@ const useStyles = makeStyles({
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: tokens.spacingHorizontalS,
     ...shorthands.padding(tokens.spacingVerticalXS, '0')
   },
   queueItem: {
@@ -233,6 +236,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
         }
       );
       await seedDexieDatabaseIfNeeded(true, tenantId, false, businessName);
+      await updateQueueCounts();
+      void kickSync();
       setDataManagementMessage(t.settings.resetSuccess);
     }
   };
@@ -533,7 +538,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
 
       {/* SaaS Subscription & Plan Management */}
       <Card className={styles.card}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <SparkleRegular fontSize={20} color={tokens.colorPaletteGoldForeground2} />
             <Text weight="bold" size={400}>{t.subscription.planSection}</Text>
@@ -541,6 +546,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
           <Badge
             appearance="filled"
             color={tier === 'NegosyoPlus' ? 'important' : tier === 'TindahanPro' ? 'warning' : 'informative'}
+            style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
           >
             {tier === 'NegosyoPlus' ? 'NEGOSYO+' : tier === 'TindahanPro' ? 'PRO' : 'LIBRE'}
           </Badge>
@@ -568,7 +574,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
             {daysRemaining !== null && (
               <div className={styles.infoRow}>
                 <Text size={200}>{t.subscription.daysRemaining}</Text>
-                <Badge appearance="tint" color={daysRemaining <= 3 ? 'danger' : 'success'}>
+                <Badge appearance="tint" color={daysRemaining <= 3 ? 'danger' : 'success'} style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
                   {daysRemaining} {daysRemaining === 1 ? 'araw / day' : 'araw / days'}
                 </Badge>
               </div>
@@ -585,7 +591,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
         <div className={styles.infoRow}>
           <Text size={200}>{t.subscription.productLimit}</Text>
           <Text size={200}>
-            {tier === 'Libre' ? '50 max' : t.subscription.unlimited}
+            {tier === 'Libre' ? '30 max' : t.subscription.unlimited}
           </Text>
         </div>
 
@@ -623,7 +629,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
 
       {/* Account & Multi-tenant isolation */}
       <Card className={styles.card}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
           <Text weight="bold" size={400}>
             {t.settings.deviceInfoSection}
           </Text>
@@ -633,6 +639,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
               size="small"
               icon={<EditRegular />}
               onClick={() => openOnboarding('edit')}
+              style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
             >
               {t.settings.editProfileBtn}
             </Button>
@@ -660,14 +667,19 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
         )}
         <div className={styles.infoRow}>
           <Text size={200}>{t.settings.pinStatusLabel}</Text>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Badge appearance="tint" color={hasPin ? 'success' : 'informative'}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px', flexWrap: 'wrap' }}>
+            <Badge
+              appearance="tint"
+              color={hasPin ? 'success' : 'informative'}
+              style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+            >
               {hasPin ? t.settings.pinActive : t.settings.pinInactive}
             </Badge>
             <Button
               size="small"
               appearance="subtle"
               icon={<KeyRegular />}
+              style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
               onClick={() => {
                 setPinDialogPassword('');
                 setPinDialogNewPin('');
@@ -683,6 +695,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
                 size="small"
                 appearance="subtle"
                 icon={<LockClosedRegular />}
+                style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
                 onClick={() => setIsSessionLocked(true)}
               >
                 {t.settings.lockSessionBtn}
@@ -692,11 +705,11 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
         </div>
         <div className={styles.infoRow}>
           <Text size={200}>{t.settings.tenantId}:</Text>
-          <Text size={200} style={{ fontFamily: 'monospace' }}>{tenantId}</Text>
+          <Text size={200} style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{tenantId}</Text>
         </div>
         <div className={styles.infoRow}>
           <Text size={200}>{t.settings.userId}:</Text>
-          <Text size={200} style={{ fontFamily: 'monospace' }}>{userId}</Text>
+          <Text size={200} style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{userId}</Text>
         </div>
 
         <Divider style={{ margin: '12px 0 8px 0' }} />
@@ -727,6 +740,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
           <Badge
             appearance="filled"
             color={isStandalone ? 'success' : 'informative'}
+            style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
           >
             {isStandalone ? t.pwa.statusInstalled : t.pwa.statusBrowser}
           </Badge>
@@ -766,7 +780,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
         </div>
         <div className={styles.infoRow}>
           <Text size={200}>{t.settings.persistentStorage}:</Text>
-          <Badge appearance="tint" color={isPersisted ? 'success' : 'warning'}>
+          <Badge appearance="tint" color={isPersisted ? 'success' : 'warning'} style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
             {isPersisted ? t.settings.persistentActive : t.settings.persistentInactive}
           </Badge>
         </div>
@@ -1055,9 +1069,20 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
                 </Badge>
               </div>
             </DialogContent>
-            <DialogActions>
+            <DialogActions
+              fluid
+              style={{
+                gridColumn: '1 / -1',
+                display: 'flex',
+                flexWrap: 'wrap',
+                justifyContent: 'flex-end',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
               <Button
                 appearance="secondary"
+                style={{ whiteSpace: 'nowrap' }}
                 onClick={() => setIsClearDlqConfirmOpen(false)}
                 data-testid="cancel-clear-dlq-btn"
               >
@@ -1067,7 +1092,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
                 appearance="primary"
                 style={{
                   backgroundColor: tokens.colorPaletteRedBackground3,
-                  color: tokens.colorPaletteRedForegroundInverted
+                  color: tokens.colorPaletteRedForegroundInverted,
+                  whiteSpace: 'nowrap'
                 }}
                 onClick={async () => {
                   await clearDeadLetterQueue();
@@ -1137,12 +1163,23 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
                 />
               </Field>
             </DialogContent>
-            <DialogActions>
-              <Button appearance="secondary" onClick={() => setIsPinDialogOpen(false)}>
+            <DialogActions
+              fluid
+              style={{
+                gridColumn: '1 / -1',
+                display: 'flex',
+                flexWrap: 'wrap',
+                justifyContent: 'flex-end',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              <Button appearance="secondary" style={{ whiteSpace: 'nowrap' }} onClick={() => setIsPinDialogOpen(false)}>
                 {t.common.cancel}
               </Button>
               <Button
                 appearance="primary"
+                style={{ whiteSpace: 'nowrap' }}
                 disabled={isPinDialogSubmitting || !pinDialogPassword}
                 icon={isPinDialogSubmitting ? <Spinner size="extra-tiny" /> : undefined}
                 onClick={handleSavePin}
@@ -1178,14 +1215,29 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
                 <Text size={300}>{t.settings.logoutConfirmDesc}</Text>
               )}
             </DialogContent>
-            <DialogActions>
-              <Button appearance="secondary" onClick={() => setIsLogoutConfirmOpen(false)}>
+            <DialogActions
+              fluid
+              style={{
+                gridColumn: '1 / -1',
+                display: 'flex',
+                flexWrap: 'wrap',
+                justifyContent: 'flex-end',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              <Button
+                appearance="secondary"
+                style={{ whiteSpace: 'nowrap' }}
+                onClick={() => setIsLogoutConfirmOpen(false)}
+              >
                 {t.common.cancel}
               </Button>
               {logoutUnsyncedCount > 0 && (
                 <Button
                   appearance="primary"
                   icon={<ArrowSyncRegular />}
+                  style={{ whiteSpace: 'nowrap' }}
                   onClick={async () => {
                     setIsLogoutConfirmOpen(false);
                     await handleForceSync();
@@ -1198,7 +1250,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
                 appearance={logoutUnsyncedCount > 0 ? 'secondary' : 'primary'}
                 style={{
                   color: tokens.colorPaletteRedForeground1,
-                  borderColor: tokens.colorPaletteRedBorder1
+                  borderColor: tokens.colorPaletteRedBorder1,
+                  whiteSpace: 'nowrap'
                 }}
                 onClick={async () => {
                   setIsLogoutConfirmOpen(false);

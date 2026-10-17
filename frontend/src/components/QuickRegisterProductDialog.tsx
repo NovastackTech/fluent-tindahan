@@ -178,7 +178,7 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
     const currentCount = await db.products.where('tenantId').equals(tenantId).count();
     const { canAddProduct, openUpgradeModal } = useSubscriptionStore.getState();
     if (!canAddProduct(currentCount)) {
-      setGeneralError('Limit reached for Libre tier (50 products max). Please upgrade to Tindahan Pro or Negosyo Plus.');
+      setGeneralError('Limit reached for Libre tier (30 products max). Please upgrade to Tindahan Pro or Negosyo Plus.');
       openUpgradeModal();
       return;
     }

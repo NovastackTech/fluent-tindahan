@@ -34,7 +34,7 @@ describe('subscriptionStore', () => {
   describe('getTierLimits', () => {
     it('returns strict limits for Libre tier', () => {
       const limits = getTierLimits('Libre');
-      expect(limits.maxProducts).toBe(50);
+      expect(limits.maxProducts).toBe(30);
       expect(limits.maxCustomers).toBe(30);
       expect(limits.maxGCashTransactionsPerMonth).toBe(30);
       expect(limits.canImportCsv).toBe(false);
@@ -70,9 +70,9 @@ describe('subscriptionStore', () => {
   describe('allowance guards', () => {
     it('guards product additions based on tier', () => {
       const store = useSubscriptionStore.getState();
-      expect(store.canAddProduct(49)).toBe(true);
-      expect(store.canAddProduct(50)).toBe(false);
-      expect(store.canAddProduct(51)).toBe(false);
+      expect(store.canAddProduct(29)).toBe(true);
+      expect(store.canAddProduct(30)).toBe(false);
+      expect(store.canAddProduct(31)).toBe(false);
 
       useSubscriptionStore.setState({ tier: 'TindahanPro' });
       expect(useSubscriptionStore.getState().canAddProduct(1000)).toBe(true);

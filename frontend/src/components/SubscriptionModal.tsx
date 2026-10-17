@@ -307,7 +307,7 @@ export const SubscriptionModal: React.FC = () => {
                   <ul className={styles.featureList}>
                     <li className={styles.featureItem}>
                       <CheckmarkRegular className={styles.checkIcon} />
-                      <span>{isTagalog ? 'Hanggang 50 paninda' : 'Up to 50 product items'}</span>
+                      <span>{isTagalog ? 'Hanggang 30 paninda' : 'Up to 30 product items'}</span>
                     </li>
                     <li className={styles.featureItem}>
                       <CheckmarkRegular className={styles.checkIcon} />

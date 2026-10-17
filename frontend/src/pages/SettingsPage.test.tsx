@@ -163,7 +163,7 @@ describe('SettingsPage', () => {
 
     expect(window.confirm).toHaveBeenCalled();
     await waitFor(async () => {
-      expect(await db.products.where('tenantId').equals('settings-test-tenant').count()).toBe(50);
+      expect(await db.products.where('tenantId').equals('settings-test-tenant').count()).toBe(10);
     });
     expect(await db.products.get('other-product')).toBeDefined();
     expect(await db.products.get('active-product')).toBeUndefined();
