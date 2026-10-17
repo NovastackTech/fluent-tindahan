@@ -83,17 +83,19 @@ export function getLocalizedSyncErrorMessage(
   }
 
   // 2. Check DLQ single item moved message
-  const tlDlqMatch = message.match(/^Nalipat sa Dead Letter Queue ang (\d+) transaksyon:\s*(.+)$/i);
+  const tlDlqMatch = message.match(/^Nalipat sa Dead Letter Queue ang (\d+) transaksyon: (.+)$/i);
   if (tlDlqMatch) {
-    const [, count, detail] = tlDlqMatch;
+    const [, count, rawDetail] = tlDlqMatch;
+    const detail = rawDetail.trim();
     if (targetLang === 'en') {
       return `${count} transaction${count === '1' ? '' : 's'} moved to Dead Letter Queue: ${detail}`;
     }
     return message;
   }
-  const enDlqMatch = message.match(/^(\d+) transaction(?:s)? moved to Dead Letter Queue:\s*(.+)$/i);
+  const enDlqMatch = message.match(/^(\d+) transactions? moved to Dead Letter Queue: (.+)$/i);
   if (enDlqMatch) {
-    const [, count, detail] = enDlqMatch;
+    const [, count, rawDetail] = enDlqMatch;
+    const detail = rawDetail.trim();
     if (targetLang === 'tl') {
       return `Nalipat sa Dead Letter Queue ang ${count} transaksyon: ${detail}`;
     }

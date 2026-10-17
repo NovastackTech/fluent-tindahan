@@ -63,24 +63,17 @@ const useStyles = makeStyles({
   },
   timelineItem: {
     display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    ...shorthands.gap(tokens.spacingHorizontalM),
-    ...shorthands.padding(tokens.spacingVerticalS, '0'),
-    ...shorthands.borderBottom('1px', 'solid', tokens.colorNeutralStroke2)
-  },
-  timelineLeft: {
-    display: 'flex',
     flexDirection: 'column',
-    flexGrow: 1,
-    flexShrink: 1,
-    minWidth: 0
+    ...shorthands.padding(tokens.spacingVerticalS, '0'),
+    ...shorthands.borderBottom('1px', 'solid', tokens.colorNeutralStroke2),
+    width: '100%'
   },
-  timelineBadgeRow: {
+  timelineHeaderRow: {
     display: 'flex',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    ...shorthands.gap(tokens.spacingHorizontalXS),
-    minWidth: 0
+    width: '100%',
+    marginBottom: '2px'
   },
   timelineBadge: {
     whiteSpace: 'nowrap',
@@ -89,7 +82,8 @@ const useStyles = makeStyles({
   timelineNotes: {
     overflowWrap: 'break-word',
     wordBreak: 'break-word',
-    minWidth: 0
+    marginTop: '2px',
+    display: 'block'
   },
   timelineAmount: {
     whiteSpace: 'nowrap',
@@ -248,7 +242,7 @@ export const UtangPage: React.FC = () => {
         amount: initBalance,
         type: 'Credit',
         date: now,
-        notes: 'Unang tala ng utang'
+        notes: ''
       };
       await db.utangLedger.add(ledgerRecord);
       await enqueueSync('UtangLedger', 'Insert', ledgerRecord);
@@ -363,7 +357,7 @@ export const UtangPage: React.FC = () => {
         amount,
         'Credit',
         now,
-        creditNotes || 'Dagdag na utang'
+        creditNotes.trim()
       );
 
       const newBalance = await db.transaction('rw', db.customers, db.utangLedger, db.syncQueue, async () => {
@@ -586,33 +580,41 @@ export const UtangPage: React.FC = () => {
                   ) : (
                     ledgerEntries.map((entry) => {
                       const isCredit = entry.type === 'Credit';
+                      const rawNotes = entry.notes?.trim() || '';
+                      const isGenericLabel =
+                        rawNotes === 'Unang tala ng utang' ||
+                        rawNotes === 'Dagdag na utang' ||
+                        rawNotes === t.nav.utang ||
+                        rawNotes === t.common.pesos;
+                      const displayNotes = isGenericLabel ? '' : rawNotes;
+
                       return (
                         <div key={entry.id} className={styles.timelineItem}>
-                          <div className={styles.timelineLeft}>
-                            <div className={styles.timelineBadgeRow}>
-                              <Badge
-                                appearance="filled"
-                                color={isCredit ? 'danger' : 'success'}
-                                size="small"
-                                className={styles.timelineBadge}
-                              >
-                                {isCredit ? '+\u00A0UTANG' : '-\u00A0BAYAD'}
-                              </Badge>
-                              <Text weight="semibold" size={200} className={styles.timelineNotes}>
-                                {entry.notes || (isCredit ? t.nav.utang : t.common.pesos)}
-                              </Text>
-                            </div>
-                            <Text size={100} style={{ color: tokens.colorNeutralForeground3, marginTop: '2px', display: 'block' }}>
-                              {new Date(entry.date).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                          <div className={styles.timelineHeaderRow}>
+                            <Badge
+                              appearance="filled"
+                              color={isCredit ? 'danger' : 'success'}
+                              size="small"
+                              className={styles.timelineBadge}
+                            >
+                              {isCredit ? '+\u00A0UTANG' : '-\u00A0BAYAD'}
+                            </Badge>
+                            <Text
+                              weight="bold"
+                              size={300}
+                              className={styles.timelineAmount}
+                              style={{ color: isCredit ? tokens.colorPaletteRedForeground1 : tokens.colorPaletteGreenForeground1 }}
+                            >
+                              {isCredit ? '+' : '-'}{formatPeso(entry.amount)}
                             </Text>
                           </div>
-                          <Text
-                            weight="bold"
-                            size={300}
-                            className={styles.timelineAmount}
-                            style={{ color: isCredit ? tokens.colorPaletteRedForeground1 : tokens.colorPaletteGreenForeground1 }}
-                          >
-                            {isCredit ? '+' : '-'}{formatPeso(entry.amount)}
+                          {displayNotes && (
+                            <Text weight="semibold" size={200} className={styles.timelineNotes}>
+                              {displayNotes}
+                            </Text>
+                          )}
+                          <Text size={100} style={{ color: tokens.colorNeutralForeground3, marginTop: '2px', display: 'block' }}>
+                            {new Date(entry.date).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
                           </Text>
                         </div>
                       );

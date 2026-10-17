@@ -456,4 +456,63 @@ describe('UtangPage', () => {
 
     alertMock.mockRestore();
   });
+
+  it('hides generic Unang tala ng utang and Dagdag na utang labels from timeline while preserving custom notes', async () => {
+    await db.customers.add({
+      id: 'cust-generic-labels',
+      tenantId: 'tenant-1',
+      name: 'Maria Santos Demo',
+      phone: '09876542345',
+      totalUtangBalance: 2234,
+      updatedAt: new Date().toISOString()
+    });
+
+    await db.utangLedger.add({
+      id: 'ledger-initial',
+      tenantId: 'tenant-1',
+      customerId: 'cust-generic-labels',
+      type: 'Credit',
+      amount: 1000,
+      date: new Date().toISOString(),
+      notes: 'Unang tala ng utang'
+    });
+
+    await db.utangLedger.add({
+      id: 'ledger-additional',
+      tenantId: 'tenant-1',
+      customerId: 'cust-generic-labels',
+      type: 'Credit',
+      amount: 1234,
+      date: new Date().toISOString(),
+      notes: 'Dagdag na utang'
+    });
+
+    await db.utangLedger.add({
+      id: 'ledger-custom',
+      tenantId: 'tenant-1',
+      customerId: 'cust-generic-labels',
+      type: 'Credit',
+      amount: 50,
+      date: new Date().toISOString(),
+      notes: '2 itlog at mantika'
+    });
+
+    renderUtang();
+
+    await waitFor(() => {
+      expect(screen.getByText('Maria Santos Demo')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Maria Santos Demo'));
+
+    await waitFor(() => {
+      expect(screen.getByText('+₱1,000.00')).toBeInTheDocument();
+      expect(screen.getByText('+₱1,234.00')).toBeInTheDocument();
+      expect(screen.getByText('+₱50.00')).toBeInTheDocument();
+      expect(screen.getByText('2 itlog at mantika')).toBeInTheDocument();
+      expect(screen.queryByText('Unang tala ng utang')).not.toBeInTheDocument();
+      expect(screen.queryByText('Dagdag na utang')).not.toBeInTheDocument();
+    });
+  });
 });
+

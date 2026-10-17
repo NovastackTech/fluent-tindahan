@@ -261,7 +261,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
 
   const handleManualSync = () => {
     if (isOnline) {
-      processSyncQueue({ force: true });
+      void processSyncQueue({ force: true }).catch(console.error);
     }
   };
 
