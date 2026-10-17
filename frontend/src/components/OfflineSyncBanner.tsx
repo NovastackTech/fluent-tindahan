@@ -98,7 +98,7 @@ export const OfflineSyncBanner: React.FC = () => {
                   appearance="subtle"
                   icon={<ArrowSyncRegular />}
                   disabled={isSyncing}
-                  onClick={() => processSyncQueue()}
+                  onClick={() => processSyncQueue({ force: true })}
                 >
                   {isSyncing ? t.common.syncing : t.common.forceSync}
                 </Button>
@@ -121,7 +121,7 @@ export const OfflineSyncBanner: React.FC = () => {
                 appearance="subtle"
                 icon={<ArrowSyncRegular />}
                 disabled={isSyncing}
-                onClick={() => processSyncQueue()}
+                onClick={() => processSyncQueue({ force: true })}
               >
                 {isSyncing ? t.common.syncing : t.common.forceSync}
               </Button>

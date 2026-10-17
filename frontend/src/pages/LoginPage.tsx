@@ -33,6 +33,7 @@ import { db } from '../db/db';
 import { processSyncQueue, kickSync, updateQueueCounts, pullCatalogFromServer } from '../sync/syncEngine';
 import { ConfirmUnsyncedLoginDialog } from '../components/ConfirmUnsyncedLoginDialog';
 import { useTranslation } from '../state/languageStore';
+import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
 import { useAuthStore } from '../state/authStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
 import { useGCashFeeStore, DEFAULT_GCASH_FEE_TIERS } from '../state/gcashFeeStore';
@@ -116,7 +117,7 @@ const useStyles = makeStyles({
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   const styles = useStyles();
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const { completeOnboarding, loginWithAuthPayload } = useAuthStore();
 
   const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
@@ -363,7 +364,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
       void kickSync();
       onNavigate('pos');
     } catch (err: any) {
-      setAuthError(err?.message || t.onboarding.submitError);
+      const msg = err?.response?.data?.message || err?.message || t.onboarding.submitError;
+      setAuthError(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -428,7 +430,23 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
 
         {authError && (
           <div className={styles.errorBanner} role="alert" data-testid="login-error-banner">
-            <Text weight="semibold">{authError}</Text>
+            <Text weight="semibold">{getLocalizedSyncErrorMessage(authError, language) || authError}</Text>
+            {loginMode === 'pin' && (
+              <div style={{ marginTop: '8px' }}>
+                <Button
+                  appearance="subtle"
+                  size="small"
+                  icon={<LockClosedRegular />}
+                  onClick={() => {
+                    setLoginMode('password');
+                    setAuthError('');
+                  }}
+                  data-testid="login-switch-to-password-btn"
+                >
+                  {language === 'tl' ? 'Mag-login gamit ang Password' : 'Log in using Password'}
+                </Button>
+              </div>
+            )}
           </div>
         )}
 

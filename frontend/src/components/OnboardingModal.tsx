@@ -19,7 +19,8 @@ import {
   makeStyles,
   tokens,
   shorthands,
-  Spinner
+  Spinner,
+  mergeClasses
 } from '@fluentui/react-components';
 import {
   BuildingShopRegular,
@@ -45,6 +46,7 @@ import {
 } from '../state/authStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
 import { useTranslation } from '../state/languageStore';
+import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
 import { createClientUuid, seedDexieDatabaseIfNeeded } from '../db/seedData';
 import { db } from '../db/db';
 import { normalizePhilippineMobile } from '../utils/philippineMobile';
@@ -124,15 +126,118 @@ const useStyles = makeStyles({
   switchPrompt: {
     textAlign: 'center',
     marginTop: tokens.spacingVerticalM
+  },
+  statusNotice: {
+    display: 'block',
+    marginBottom: tokens.spacingVerticalM,
+    ...shorthands.padding('8px', '12px'),
+    ...shorthands.borderRadius(tokens.borderRadiusMedium)
+  },
+  errorNotice: {
+    color: tokens.colorPaletteRedForeground1,
+    backgroundColor: tokens.colorPaletteRedBackground1
+  },
+  warningNotice: {
+    color: tokens.colorPaletteYellowForeground1,
+    backgroundColor: tokens.colorPaletteYellowBackground1
   }
 });
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PIN_REGEX = /^\d{4,6}$/;
 
+interface PasswordInputProps {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}
+
+const PasswordInput: React.FC<PasswordInputProps> = ({ value, onChange, placeholder }) => {
+  const styles = useStyles();
+  const [show, setShow] = useState(false);
+
+  return (
+    <div className={styles.passwordInputWrapper}>
+      <Input
+        type={show ? 'text' : 'password'}
+        value={value}
+        onChange={(_, data) => onChange(data.value)}
+        placeholder={placeholder}
+        contentBefore={<LockClosedRegular />}
+        contentAfter={
+          <Button
+            appearance="subtle"
+            size="small"
+            icon={show ? <EyeOffRegular /> : <EyeRegular />}
+            onClick={() => setShow((prev) => !prev)}
+            type="button"
+          />
+        }
+        style={{ width: '100%' }}
+      />
+    </div>
+  );
+};
+
+interface PinInputProps {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}
+
+const PinInput: React.FC<PinInputProps> = ({ value, onChange, placeholder }) => (
+  <Input
+    type="password"
+    inputMode="numeric"
+    pattern="[0-9]*"
+    maxLength={6}
+    value={value}
+    onChange={(_, data) => {
+      const cleaned = data.value.replace(/\D/g, '').slice(0, 6);
+      onChange(cleaned);
+    }}
+    placeholder={placeholder}
+    contentBefore={<KeyRegular />}
+  />
+);
+
+interface EmailFieldProps {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  error?: string;
+  placeholder?: string;
+  autoFocus?: boolean;
+}
+
+const EmailField: React.FC<EmailFieldProps> = ({
+  label,
+  value,
+  onChange,
+  error,
+  placeholder,
+  autoFocus
+}) => (
+  <Field
+    label={label}
+    required
+    validationState={error ? 'error' : 'none'}
+    validationMessage={error}
+  >
+    <Input
+      type="email"
+      value={value}
+      onChange={(_, data) => onChange(data.value)}
+      placeholder={placeholder}
+      contentBefore={<MailRegular />}
+      autoFocus={autoFocus}
+    />
+  </Field>
+);
+
 export const OnboardingModal: React.FC = () => {
   const styles = useStyles();
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
 
   const {
     tenantId,
@@ -164,10 +269,8 @@ export const OnboardingModal: React.FC = () => {
   const [formEmail, setFormEmail] = useState('');
   const [formPassword, setFormPassword] = useState('');
   const [formPin, setFormPin] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [formCurrentPassword, setFormCurrentPassword] = useState('');
   const [formCurrentPin, setFormCurrentPin] = useState('');
-  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [currentPasswordError, setCurrentPasswordError] = useState('');
   const [catalogChoice, setCatalogChoice] = useState<'standard' | 'empty'>('standard');
   const [offersGcash, setOffersGcash] = useState(true);
@@ -179,7 +282,6 @@ export const OnboardingModal: React.FC = () => {
   const [loginMode, setLoginMode] = useState<'password' | 'pin'>('password');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginPinVal, setLoginPinVal] = useState('');
-  const [showLoginPassword, setShowLoginPassword] = useState(false);
 
   // Errors & States
   const [businessNameError, setBusinessNameError] = useState('');
@@ -211,6 +313,32 @@ export const OnboardingModal: React.FC = () => {
   } | null>(null);
   const [isSyncingFirst, setIsSyncingFirst] = useState(false);
 
+  const clearValidationErrors = () => {
+    setBusinessNameError('');
+    setPhoneError('');
+    setEmailError('');
+    setPasswordError('');
+    setPinError('');
+    setCurrentPasswordError('');
+    setSubmissionError('');
+    setOfflineNotice('');
+  };
+
+  const finishLogin = async (payload: AuthResponseDto) => {
+    useSubscriptionStore.setState({
+      tier: payload.tier,
+      subscriptionEndDate: payload.subscriptionEndDate,
+      isActive: payload.tier !== 'Libre'
+    });
+    void useSubscriptionStore.getState().refreshSubscription();
+    const productCount = await db.products.where('tenantId').equals(payload.tenantId).count();
+    if (productCount === 0) {
+      void pullCatalogFromServer().then(() => updateQueueCounts()).catch(console.error);
+    }
+    void processSyncQueue().catch(console.error);
+    closeOnboarding();
+  };
+
   const handleConfirmWipeAndLogin = async () => {
     if (!pendingAuthPayload) return;
     setIsUnsyncedDialogOpen(false);
@@ -221,18 +349,7 @@ export const OnboardingModal: React.FC = () => {
         pendingAuthPayload.localPin,
         true
       );
-      useSubscriptionStore.setState({
-        tier: pendingAuthPayload.payload.tier,
-        subscriptionEndDate: pendingAuthPayload.payload.subscriptionEndDate,
-        isActive: pendingAuthPayload.payload.tier !== 'Libre'
-      });
-      void useSubscriptionStore.getState().refreshSubscription();
-      const productCount = await db.products.where('tenantId').equals(pendingAuthPayload.payload.tenantId).count();
-      if (productCount === 0) {
-        void pullCatalogFromServer().then(() => updateQueueCounts()).catch(console.error);
-      }
-      void processSyncQueue().catch(console.error);
-      closeOnboarding();
+      await finishLogin(pendingAuthPayload.payload);
     } finally {
       setIsSubmitting(false);
       setPendingAuthPayload(null);
@@ -252,18 +369,7 @@ export const OnboardingModal: React.FC = () => {
           pendingAuthPayload.localPin,
           false
         );
-        useSubscriptionStore.setState({
-          tier: pendingAuthPayload.payload.tier,
-          subscriptionEndDate: pendingAuthPayload.payload.subscriptionEndDate,
-          isActive: pendingAuthPayload.payload.tier !== 'Libre'
-        });
-        void useSubscriptionStore.getState().refreshSubscription();
-        const productCount = await db.products.where('tenantId').equals(pendingAuthPayload.payload.tenantId).count();
-        if (productCount === 0) {
-          void pullCatalogFromServer().then(() => updateQueueCounts()).catch(console.error);
-        }
-        void processSyncQueue().catch(console.error);
-        closeOnboarding();
+        await finishLogin(pendingAuthPayload.payload);
       }
     } catch (e) {
       console.warn('Sync attempt failed:', e);
@@ -294,15 +400,7 @@ export const OnboardingModal: React.FC = () => {
       setLoginPinVal('');
       setFormCurrentPassword('');
       setFormCurrentPin('');
-      setShowCurrentPassword(false);
-      setCurrentPasswordError('');
-      setBusinessNameError('');
-      setPhoneError('');
-      setEmailError('');
-      setPasswordError('');
-      setPinError('');
-      setSubmissionError('');
-      setOfflineNotice('');
+      clearValidationErrors();
       setIsSubmitting(false);
     } else {
       onboardingIds.current = null;
@@ -314,6 +412,38 @@ export const OnboardingModal: React.FC = () => {
     return null;
   }
 
+  const validateEmail = (email: string): boolean => {
+    const trimmed = email.trim();
+    if (!trimmed) {
+      setEmailError(t.onboarding.emailRequired);
+      return false;
+    }
+    if (!EMAIL_REGEX.test(trimmed)) {
+      setEmailError(t.onboarding.emailInvalid);
+      return false;
+    }
+    setEmailError('');
+    return true;
+  };
+
+  const validatePinFormat = (pin: string, required: boolean): boolean => {
+    const trimmed = pin.trim();
+    if (!trimmed) {
+      if (required) {
+        setPinError(t.onboarding.pinInvalid);
+        return false;
+      }
+      setPinError('');
+      return true;
+    }
+    if (!PIN_REGEX.test(trimmed)) {
+      setPinError(t.onboarding.pinInvalid);
+      return false;
+    }
+    setPinError('');
+    return true;
+  };
+
   const validateRegister = (): boolean => {
     let isValid = true;
 
@@ -324,15 +454,8 @@ export const OnboardingModal: React.FC = () => {
       setBusinessNameError('');
     }
 
-    const trimmedEmail = formEmail.trim();
-    if (!trimmedEmail) {
-      setEmailError(t.onboarding.emailRequired);
+    if (!validateEmail(formEmail)) {
       isValid = false;
-    } else if (!EMAIL_REGEX.test(trimmedEmail)) {
-      setEmailError(t.onboarding.emailInvalid);
-      isValid = false;
-    } else {
-      setEmailError('');
     }
 
     if (isEditMode) {
@@ -344,11 +467,8 @@ export const OnboardingModal: React.FC = () => {
           setCurrentPasswordError('');
         }
 
-        if (formCurrentPin.trim() && !PIN_REGEX.test(formCurrentPin.trim())) {
-          setPinError(t.onboarding.pinInvalid);
+        if (!validatePinFormat(formCurrentPin, false)) {
           isValid = false;
-        } else {
-          setPinError('');
         }
       } else {
         setCurrentPasswordError('');
@@ -367,11 +487,8 @@ export const OnboardingModal: React.FC = () => {
         setPasswordError('');
       }
 
-      if (formPin.trim() && !PIN_REGEX.test(formPin.trim())) {
-        setPinError(t.onboarding.pinInvalid);
+      if (!validatePinFormat(formPin, false)) {
         isValid = false;
-      } else {
-        setPinError('');
       }
     }
 
@@ -393,15 +510,8 @@ export const OnboardingModal: React.FC = () => {
   const validateLogin = (): boolean => {
     let isValid = true;
 
-    const trimmedEmail = loginEmail.trim();
-    if (!trimmedEmail) {
-      setEmailError(t.onboarding.emailRequired);
+    if (!validateEmail(loginEmail)) {
       isValid = false;
-    } else if (!EMAIL_REGEX.test(trimmedEmail)) {
-      setEmailError(t.onboarding.emailInvalid);
-      isValid = false;
-    } else {
-      setEmailError('');
     }
 
     if (loginMode === 'password') {
@@ -411,19 +521,18 @@ export const OnboardingModal: React.FC = () => {
       } else {
         setPasswordError('');
       }
-    } else {
-      if (!loginPinVal.trim()) {
-        setPinError(t.onboarding.pinInvalid);
-        isValid = false;
-      } else if (!PIN_REGEX.test(loginPinVal.trim())) {
-        setPinError(t.onboarding.pinInvalid);
-        isValid = false;
-      } else {
-        setPinError('');
-      }
+    } else if (!validatePinFormat(loginPinVal, true)) {
+      isValid = false;
     }
 
     return isValid;
+  };
+
+  const updateLocalTenantBusinessName = async (name: string) => {
+    await db.tenants.update(tenantId, {
+      businessName: name,
+      updatedAt: new Date().toISOString()
+    }).catch(console.warn);
   };
 
   const handleRegisterSubmit = async (e?: React.FormEvent) => {
@@ -469,10 +578,7 @@ export const OnboardingModal: React.FC = () => {
           clearPendingProfileUpdate();
           void updateQueueCounts();
 
-          await db.tenants.update(tenantId, {
-            businessName: trimmedBusinessName,
-            updatedAt: new Date().toISOString()
-          }).catch(console.warn);
+          await updateLocalTenantBusinessName(trimmedBusinessName);
 
           closeOnboarding();
           return;
@@ -511,10 +617,7 @@ export const OnboardingModal: React.FC = () => {
           setOfflineNotice(t.onboarding.savedLocallyNotice);
           void updateQueueCounts();
 
-          await db.tenants.update(tenantId, {
-            businessName: trimmedBusinessName,
-            updatedAt: new Date().toISOString()
-          }).catch(console.warn);
+          await updateLocalTenantBusinessName(trimmedBusinessName);
 
           noticeTimer.current = setTimeout(() => {
             closeOnboarding();
@@ -655,18 +758,7 @@ export const OnboardingModal: React.FC = () => {
         return;
       }
 
-      useSubscriptionStore.setState({
-        tier: authResult.tier,
-        subscriptionEndDate: authResult.subscriptionEndDate,
-        isActive: authResult.tier !== 'Libre'
-      });
-      void useSubscriptionStore.getState().refreshSubscription();
-      const productCount = await db.products.where('tenantId').equals(authResult.tenantId).count();
-      if (productCount === 0) {
-        void pullCatalogFromServer().then(() => updateQueueCounts()).catch(console.error);
-      }
-      void processSyncQueue().catch(console.error);
-      closeOnboarding();
+      await finishLogin(authResult);
     } catch (apiErr: any) {
       const status = apiErr?.response?.status;
       const responseData = apiErr?.response?.data;
@@ -710,11 +802,7 @@ export const OnboardingModal: React.FC = () => {
               selectedValue={activeTab}
               onTabSelect={(_, data) => {
                 setActiveTab(data.value as 'register' | 'login');
-                setSubmissionError('');
-                setOfflineNotice('');
-                setEmailError('');
-                setPasswordError('');
-                setPinError('');
+                clearValidationErrors();
               }}
             >
               <Tab value="register" icon={<SparkleRegular />}>
@@ -731,30 +819,16 @@ export const OnboardingModal: React.FC = () => {
               <Text
                 role="alert"
                 size={200}
-                style={{
-                  color: tokens.colorPaletteRedForeground1,
-                  display: 'block',
-                  marginBottom: tokens.spacingVerticalM,
-                  padding: '8px 12px',
-                  backgroundColor: tokens.colorPaletteRedBackground1,
-                  borderRadius: tokens.borderRadiusMedium
-                }}
+                className={mergeClasses(styles.statusNotice, styles.errorNotice)}
               >
-                {submissionError}
+                {getLocalizedSyncErrorMessage(submissionError, language) || submissionError}
               </Text>
             )}
 
             {offlineNotice && (
               <Text
                 size={200}
-                style={{
-                  color: tokens.colorPaletteYellowForeground1,
-                  display: 'block',
-                  marginBottom: tokens.spacingVerticalM,
-                  padding: '8px 12px',
-                  backgroundColor: tokens.colorPaletteYellowBackground1,
-                  borderRadius: tokens.borderRadiusMedium
-                }}
+                className={mergeClasses(styles.statusNotice, styles.warningNotice)}
               >
                 {offlineNotice}
               </Text>
@@ -785,23 +859,16 @@ export const OnboardingModal: React.FC = () => {
                   </Field>
 
                   {/* Email Address */}
-                  <Field
+                  <EmailField
                     label={t.onboarding.emailLabel}
-                    required
-                    validationState={emailError ? 'error' : 'none'}
-                    validationMessage={emailError}
-                  >
-                    <Input
-                      type="email"
-                      value={formEmail}
-                      onChange={(_, data) => {
-                        setFormEmail(data.value);
-                        if (emailError) setEmailError('');
-                      }}
-                      placeholder={t.onboarding.emailPlaceholder}
-                      contentBefore={<MailRegular />}
-                    />
-                  </Field>
+                    value={formEmail}
+                    onChange={(val) => {
+                      setFormEmail(val);
+                      if (emailError) setEmailError('');
+                    }}
+                    error={emailError}
+                    placeholder={t.onboarding.emailPlaceholder}
+                  />
 
                   {/* Current Password & PIN required when changing email in Edit Mode */}
                   {isEditMode && isEmailChanged && (
@@ -813,28 +880,14 @@ export const OnboardingModal: React.FC = () => {
                         validationState={currentPasswordError ? 'error' : 'none'}
                         validationMessage={currentPasswordError}
                       >
-                        <div className={styles.passwordInputWrapper}>
-                          <Input
-                            type={showCurrentPassword ? 'text' : 'password'}
-                            value={formCurrentPassword}
-                            onChange={(_, data) => {
-                              setFormCurrentPassword(data.value);
-                              if (currentPasswordError) setCurrentPasswordError('');
-                            }}
-                            placeholder={t.onboarding.currentPasswordPlaceholder}
-                            contentBefore={<LockClosedRegular />}
-                            contentAfter={
-                              <Button
-                                appearance="subtle"
-                                size="small"
-                                icon={showCurrentPassword ? <EyeOffRegular /> : <EyeRegular />}
-                                onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                                type="button"
-                              />
-                            }
-                            style={{ width: '100%' }}
-                          />
-                        </div>
+                        <PasswordInput
+                          value={formCurrentPassword}
+                          onChange={(val) => {
+                            setFormCurrentPassword(val);
+                            if (currentPasswordError) setCurrentPasswordError('');
+                          }}
+                          placeholder={t.onboarding.currentPasswordPlaceholder}
+                        />
                       </Field>
 
                       {hasPin && (
@@ -844,20 +897,14 @@ export const OnboardingModal: React.FC = () => {
                           validationState={pinError ? 'error' : 'none'}
                           validationMessage={pinError}
                         >
-                          <Input
-                            type="password"
-                            inputMode="numeric"
-                            pattern="[0-9]*"
-                            maxLength={6}
+                          <PinInput
                             value={formCurrentPin}
-                            onChange={(_, data) => {
-                              const cleaned = data.value.replace(/\D/g, '').slice(0, 6);
-                              setFormCurrentPin(cleaned);
+                            onChange={(val) => {
+                              setFormCurrentPin(val);
                               if (pinError) setPinError('');
                               if (currentPasswordError) setCurrentPasswordError('');
                             }}
                             placeholder={t.onboarding.pinPlaceholder}
-                            contentBefore={<KeyRegular />}
                           />
                         </Field>
                       )}
@@ -873,28 +920,14 @@ export const OnboardingModal: React.FC = () => {
                         validationState={passwordError ? 'error' : 'none'}
                         validationMessage={passwordError}
                       >
-                        <div className={styles.passwordInputWrapper}>
-                          <Input
-                            type={showPassword ? 'text' : 'password'}
-                            value={formPassword}
-                            onChange={(_, data) => {
-                              setFormPassword(data.value);
-                              if (passwordError) setPasswordError('');
-                            }}
-                            placeholder={t.onboarding.passwordPlaceholder}
-                            contentBefore={<LockClosedRegular />}
-                            contentAfter={
-                              <Button
-                                appearance="subtle"
-                                size="small"
-                                icon={showPassword ? <EyeOffRegular /> : <EyeRegular />}
-                                onClick={() => setShowPassword(!showPassword)}
-                                type="button"
-                              />
-                            }
-                            style={{ width: '100%' }}
-                          />
-                        </div>
+                        <PasswordInput
+                          value={formPassword}
+                          onChange={(val) => {
+                            setFormPassword(val);
+                            if (passwordError) setPasswordError('');
+                          }}
+                          placeholder={t.onboarding.passwordPlaceholder}
+                        />
                       </Field>
 
                       <Field
@@ -903,19 +936,13 @@ export const OnboardingModal: React.FC = () => {
                         validationState={pinError ? 'error' : 'none'}
                         validationMessage={pinError}
                       >
-                        <Input
-                          type="password"
-                          inputMode="numeric"
-                          pattern="[0-9]*"
-                          maxLength={6}
+                        <PinInput
                           value={formPin}
-                          onChange={(_, data) => {
-                            const cleaned = data.value.replace(/\D/g, '').slice(0, 6);
-                            setFormPin(cleaned);
+                          onChange={(val) => {
+                            setFormPin(val);
                             if (pinError) setPinError('');
                           }}
                           placeholder={t.onboarding.pinPlaceholder}
-                          contentBefore={<KeyRegular />}
                         />
                       </Field>
                     </>
@@ -1042,24 +1069,17 @@ export const OnboardingModal: React.FC = () => {
                   </Text>
 
                   {/* Login Email */}
-                  <Field
+                  <EmailField
                     label={t.onboarding.emailLabel}
-                    required
-                    validationState={emailError ? 'error' : 'none'}
-                    validationMessage={emailError}
-                  >
-                    <Input
-                      type="email"
-                      value={loginEmail}
-                      onChange={(_, data) => {
-                        setLoginEmail(data.value);
-                        if (emailError) setEmailError('');
-                      }}
-                      placeholder={t.onboarding.emailPlaceholder}
-                      contentBefore={<MailRegular />}
-                      autoFocus
-                    />
-                  </Field>
+                    value={loginEmail}
+                    onChange={(val) => {
+                      setLoginEmail(val);
+                      if (emailError) setEmailError('');
+                    }}
+                    error={emailError}
+                    placeholder={t.onboarding.emailPlaceholder}
+                    autoFocus
+                  />
 
                   {/* Mode Selector */}
                   <RadioGroup
@@ -1084,28 +1104,14 @@ export const OnboardingModal: React.FC = () => {
                       validationState={passwordError ? 'error' : 'none'}
                       validationMessage={passwordError}
                     >
-                      <div className={styles.passwordInputWrapper}>
-                        <Input
-                          type={showLoginPassword ? 'text' : 'password'}
-                          value={loginPassword}
-                          onChange={(_, data) => {
-                            setLoginPassword(data.value);
-                            if (passwordError) setPasswordError('');
-                          }}
-                          placeholder={t.onboarding.passwordPlaceholder}
-                          contentBefore={<LockClosedRegular />}
-                          contentAfter={
-                            <Button
-                              appearance="subtle"
-                              size="small"
-                              icon={showLoginPassword ? <EyeOffRegular /> : <EyeRegular />}
-                              onClick={() => setShowLoginPassword(!showLoginPassword)}
-                              type="button"
-                            />
-                          }
-                          style={{ width: '100%' }}
-                        />
-                      </div>
+                      <PasswordInput
+                        value={loginPassword}
+                        onChange={(val) => {
+                          setLoginPassword(val);
+                          if (passwordError) setPasswordError('');
+                        }}
+                        placeholder={t.onboarding.passwordPlaceholder}
+                      />
                     </Field>
                   ) : (
                     /* PIN Input */
@@ -1115,19 +1121,13 @@ export const OnboardingModal: React.FC = () => {
                       validationState={pinError ? 'error' : 'none'}
                       validationMessage={pinError}
                     >
-                      <Input
-                        type="password"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        maxLength={6}
+                      <PinInput
                         value={loginPinVal}
-                        onChange={(_, data) => {
-                          const cleaned = data.value.replace(/\D/g, '').slice(0, 6);
-                          setLoginPinVal(cleaned);
+                        onChange={(val) => {
+                          setLoginPinVal(val);
                           if (pinError) setPinError('');
                         }}
                         placeholder={t.onboarding.pinPlaceholder}
-                        contentBefore={<KeyRegular />}
                       />
                     </Field>
                   )}

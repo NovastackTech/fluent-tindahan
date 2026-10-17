@@ -64,9 +64,18 @@ export function getLocalizedSyncErrorMessage(
 ): string | null {
   if (!message) return null;
 
+  // 1. Check bilingual slash-separated messages: "Tagalog message / English message"
+  if (message.includes(' / ')) {
+    const slashIdx = message.indexOf(' / ');
+    const tlPart = message.slice(0, slashIdx).trim();
+    const enPart = message.slice(slashIdx + 3).trim();
+    const selected = targetLang === 'tl' ? tlPart : enPart;
+    return getLocalizedSyncErrorMessage(selected, targetLang) || selected;
+  }
+
   const normalized = normalizeQuotes(message);
 
-  // 1. Check exact mappings
+  // 2. Check exact mappings
   for (const mapping of EXACT_ERROR_MAPPINGS) {
     if (normalized === normalizeQuotes(mapping.tl) || normalized === normalizeQuotes(mapping.en)) {
       return targetLang === 'tl' ? mapping.tl : mapping.en;
@@ -114,3 +123,5 @@ export function getLocalizedSyncErrorMessage(
 
   return message;
 }
+
+export const getLocalizedErrorMessage = getLocalizedSyncErrorMessage;

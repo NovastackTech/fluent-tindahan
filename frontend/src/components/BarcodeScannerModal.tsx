@@ -217,8 +217,10 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         } catch {
           // Stop error can be safely ignored on teardown
         }
-        html5QrCodeRef.current = null;
-        isScanningRef.current = false;
+        if (html5QrCodeRef.current === qrCode) {
+          html5QrCodeRef.current = null;
+          isScanningRef.current = false;
+        }
         return;
       }
 

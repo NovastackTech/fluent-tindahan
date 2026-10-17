@@ -150,5 +150,64 @@ describe('BarcodeScannerModal', () => {
       expect(mockClear).toHaveBeenCalled();
     });
   });
+
+  it('does not clear newer scanner refs when a stale run start() resolves late', async () => {
+    let resolveFirstStart: () => void = () => {};
+    let callCount = 0;
+
+    mockStart.mockImplementation(() => {
+      callCount += 1;
+      if (callCount === 1) {
+        return new Promise<void>((resolve) => {
+          resolveFirstStart = resolve;
+        });
+      }
+      return Promise.resolve();
+    });
+
+    const { rerender } = render(
+      <FluentProvider theme={sariSariLightTheme}>
+        <BarcodeScannerModal isOpen={true} onClose={vi.fn()} onScan={vi.fn()} />
+      </FluentProvider>
+    );
+
+    // Wait for the first start() call
+    await waitFor(() => {
+      expect(mockStart).toHaveBeenCalledTimes(1);
+    }, { timeout: 1500 });
+
+    // Switch camera to trigger a new run
+    const switchBtn = screen.getByRole('button', { name: /Palitan ang Kamera|Switch Camera/i });
+    fireEvent.click(switchBtn);
+
+    // Wait for the second start() call to execute and resolve
+    await waitFor(() => {
+      expect(mockStart).toHaveBeenCalledTimes(2);
+    }, { timeout: 1500 });
+
+    // Now resolve the stale first start()
+    resolveFirstStart();
+
+    // Verify torch still works on the newer instance
+    const torchBtn = screen.getByRole('button', { name: /Flashlight/i });
+    fireEvent.click(torchBtn);
+
+    await waitFor(() => {
+      expect(mockApplyVideoConstraints).toHaveBeenCalled();
+    });
+
+    // Close the modal and ensure stopScanner() cleans up the active scanner
+    rerender(
+      <FluentProvider theme={sariSariLightTheme}>
+        <BarcodeScannerModal isOpen={false} onClose={vi.fn()} onScan={vi.fn()} />
+      </FluentProvider>
+    );
+
+    await waitFor(() => {
+      expect(mockStop).toHaveBeenCalled();
+      expect(mockClear).toHaveBeenCalled();
+    });
+  });
 });
+
 

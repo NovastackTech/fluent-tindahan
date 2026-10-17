@@ -59,6 +59,27 @@ describe('syncErrors utility', () => {
     expect(getLocalizedSyncErrorMessage(en, 'tl')).toBe(tl);
   });
 
+  it('extracts either TL or EN from bilingual slash-separated messages', () => {
+    const lockout =
+      'Naka-lockout ang iyong IP address dahil sa 5 sunod-sunod na maling pagsubok sa PIN. Maghintay nang 15 minuto. / IP address throttled for 15 minutes due to 5 failed PIN attempts.';
+
+    expect(getLocalizedSyncErrorMessage(lockout, 'tl')).toBe(
+      'Naka-lockout ang iyong IP address dahil sa 5 sunod-sunod na maling pagsubok sa PIN. Maghintay nang 15 minuto.'
+    );
+    expect(getLocalizedSyncErrorMessage(lockout, 'en')).toBe(
+      'IP address throttled for 15 minutes due to 5 failed PIN attempts.'
+    );
+
+    const pinFailed =
+      'Maling email o PIN code. May natitira ka pang 4 pagsubok bago mag-lockout. / Invalid email or PIN code. 4 attempts remaining.';
+    expect(getLocalizedSyncErrorMessage(pinFailed, 'tl')).toBe(
+      'Maling email o PIN code. May natitira ka pang 4 pagsubok bago mag-lockout.'
+    );
+    expect(getLocalizedSyncErrorMessage(pinFailed, 'en')).toBe(
+      'Invalid email or PIN code. 4 attempts remaining.'
+    );
+  });
+
   it('returns untouched string for unknown messages and null for falsy values', () => {
     expect(getLocalizedSyncErrorMessage(null, 'en')).toBeNull();
     expect(getLocalizedSyncErrorMessage(undefined, 'tl')).toBeNull();

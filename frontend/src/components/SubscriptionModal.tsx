@@ -50,6 +50,17 @@ const useStyles = makeStyles({
     alignItems: 'center',
     marginBottom: tokens.spacingVerticalM
   },
+  cardHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  },
+  tierActionSection: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: tokens.spacingVerticalS,
+    marginTop: tokens.spacingVerticalM
+  },
   cycleToggle: {
     display: 'flex',
     justifyContent: 'center',
@@ -157,13 +168,10 @@ export const SubscriptionModal: React.FC = () => {
   const isRefreshError = error === SUBSCRIPTION_REFRESH_ERROR;
   const displayedError = getLocalizedSyncErrorMessage(error, language) || error;
 
-  const handleCheckout = async (targetTier: PlanTier) => {
+  const runTierAction = async (targetTier: PlanTier, action: () => Promise<void>) => {
     setProcessingTier(targetTier);
     try {
-      const checkoutUrl = await createCheckoutSession(targetTier, cycle);
-      if (checkoutUrl) {
-        window.location.href = checkoutUrl;
-      }
+      await action();
     } catch {
       // Error is stored in Zustand
     } finally {
@@ -171,16 +179,62 @@ export const SubscriptionModal: React.FC = () => {
     }
   };
 
-  const handleSimulatePayment = async (targetTier: PlanTier) => {
-    setProcessingTier(targetTier);
-    try {
-      await simulateMockPayment(targetTier, cycle);
-    } catch {
-      // Error stored in store
-    } finally {
-      setProcessingTier(null);
-    }
+  const handleCheckout = async (targetTier: PlanTier) => {
+    await runTierAction(targetTier, async () => {
+      const checkoutUrl = await createCheckoutSession(targetTier, cycle);
+      if (checkoutUrl) {
+        window.location.href = checkoutUrl;
+      }
+    });
   };
+
+  const handleSimulatePayment = async (targetTier: PlanTier) => {
+    await runTierAction(targetTier, () => simulateMockPayment(targetTier, cycle));
+  };
+
+  const cycleUnitText = cycle === 'Weekly'
+    ? (isTagalog ? '/ linggo' : '/ week')
+    : (isTagalog ? '/ buwan' : '/ month');
+
+  const renderActiveBadge = (targetTier: PlanTier) =>
+    currentTier === targetTier ? (
+      <Badge color="success" appearance="filled">
+        {isTagalog ? 'Aktibo' : 'Active'}
+      </Badge>
+    ) : null;
+
+  const renderPaidTierActions = (
+    targetTier: 'TindahanPro' | 'NegosyoPlus',
+    extendLabel: string,
+    upgradeLabel: string
+  ) => (
+    <div className={styles.tierActionSection}>
+      <Button
+        appearance="primary"
+        icon={<CreditCardPersonRegular />}
+        disabled={isLoading && processingTier === targetTier}
+        onClick={() => handleCheckout(targetTier)}
+      >
+        {isLoading && processingTier === targetTier ? (
+          <Spinner size="tiny" />
+        ) : currentTier === targetTier ? (
+          extendLabel
+        ) : (
+          upgradeLabel
+        )}
+      </Button>
+      {IS_MOCK_PAYMENT_ENABLED && (
+        <Button
+          appearance="subtle"
+          size="small"
+          icon={<SparkleRegular />}
+          onClick={() => handleSimulatePayment(targetTier)}
+        >
+          {isTagalog ? 'Subukan (Simulate Test)' : 'Simulate Test Upgrade'}
+        </Button>
+      )}
+    </div>
+  );
 
   if (!isUpgradeModalOpen) return null;
 
@@ -285,7 +339,7 @@ export const SubscriptionModal: React.FC = () => {
               {/* LIBRE */}
               <Card className={mergeClasses(styles.tierCard, currentTier === 'Libre' && styles.activeTierCard)} style={{ overflow: 'visible' }}>
                 <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div className={styles.cardHeader}>
                     <Text weight="bold" size={500}>Libre</Text>
                     {currentTier === 'Libre' && (
                       <Badge color="informative" appearance="filled">
@@ -358,15 +412,11 @@ export const SubscriptionModal: React.FC = () => {
                   {isTagalog ? 'Pinakasulit / Popular' : 'Most Popular'}
                 </Badge>
                 <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div className={styles.cardHeader}>
                     <Text weight="bold" size={500} style={{ color: tokens.colorBrandForeground1 }}>
                       Tindahan Pro
                     </Text>
-                    {currentTier === 'TindahanPro' && (
-                      <Badge color="success" appearance="filled">
-                        {isTagalog ? 'Aktibo' : 'Active'}
-                      </Badge>
-                    )}
+                    {renderActiveBadge('TindahanPro')}
                   </div>
                   <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
                     {isTagalog ? 'Para sa lumalakas na benta at aktibong GCash agent' : 'For busy stores & high-volume GCash agents'}
@@ -377,7 +427,7 @@ export const SubscriptionModal: React.FC = () => {
                       {formatPeso(cycle === 'Weekly' ? 35 : 129)}
                     </Text>
                     <Text size={300} style={{ color: tokens.colorNeutralForeground3 }}>
-                      {cycle === 'Weekly' ? (isTagalog ? '/ linggo' : '/ week') : (isTagalog ? '/ buwan' : '/ month')}
+                      {cycleUnitText}
                     </Text>
                   </div>
 
@@ -413,32 +463,11 @@ export const SubscriptionModal: React.FC = () => {
                   </ul>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: tokens.spacingVerticalS, marginTop: tokens.spacingVerticalM }}>
-                  <Button
-                    appearance="primary"
-                    icon={<CreditCardPersonRegular />}
-                    disabled={isLoading && processingTier === 'TindahanPro'}
-                    onClick={() => handleCheckout('TindahanPro')}
-                  >
-                    {isLoading && processingTier === 'TindahanPro' ? (
-                      <Spinner size="tiny" />
-                    ) : currentTier === 'TindahanPro' ? (
-                      isTagalog ? 'Palawigin ang Pro' : 'Extend Pro'
-                    ) : (
-                      isTagalog ? 'Mag-upgrade sa Pro' : 'Upgrade to Pro'
-                    )}
-                  </Button>
-                  {IS_MOCK_PAYMENT_ENABLED && (
-                    <Button
-                      appearance="subtle"
-                      size="small"
-                      icon={<SparkleRegular />}
-                      onClick={() => handleSimulatePayment('TindahanPro')}
-                    >
-                      {isTagalog ? 'Subukan (Simulate Test)' : 'Simulate Test Upgrade'}
-                    </Button>
-                  )}
-                </div>
+                {renderPaidTierActions(
+                  'TindahanPro',
+                  isTagalog ? 'Palawigin ang Pro' : 'Extend Pro',
+                  isTagalog ? 'Mag-upgrade sa Pro' : 'Upgrade to Pro'
+                )}
               </Card>
 
               {/* NEGOSYO PLUS */}
@@ -447,13 +476,9 @@ export const SubscriptionModal: React.FC = () => {
                 style={{ overflow: 'visible' }}
               >
                 <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div className={styles.cardHeader}>
                     <Text weight="bold" size={500}>Negosyo Plus</Text>
-                    {currentTier === 'NegosyoPlus' && (
-                      <Badge color="success" appearance="filled">
-                        {isTagalog ? 'Aktibo' : 'Active'}
-                      </Badge>
-                    )}
+                    {renderActiveBadge('NegosyoPlus')}
                   </div>
                   <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
                     {isTagalog ? 'Para sa minimart o tindahan na may tauhan / tindera' : 'For minimarts & stores with staff helpers'}
@@ -464,7 +489,7 @@ export const SubscriptionModal: React.FC = () => {
                       {formatPeso(cycle === 'Weekly' ? 89 : 349)}
                     </Text>
                     <Text size={300} style={{ color: tokens.colorNeutralForeground3 }}>
-                      {cycle === 'Weekly' ? (isTagalog ? '/ linggo' : '/ week') : (isTagalog ? '/ buwan' : '/ month')}
+                      {cycleUnitText}
                     </Text>
                   </div>
 
@@ -496,32 +521,11 @@ export const SubscriptionModal: React.FC = () => {
                   </ul>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: tokens.spacingVerticalS, marginTop: tokens.spacingVerticalM }}>
-                  <Button
-                    appearance="primary"
-                    icon={<CreditCardPersonRegular />}
-                    disabled={isLoading && processingTier === 'NegosyoPlus'}
-                    onClick={() => handleCheckout('NegosyoPlus')}
-                  >
-                    {isLoading && processingTier === 'NegosyoPlus' ? (
-                      <Spinner size="tiny" />
-                    ) : currentTier === 'NegosyoPlus' ? (
-                      isTagalog ? 'Palawigin ang Negosyo Plus' : 'Extend Negosyo Plus'
-                    ) : (
-                      isTagalog ? 'Mag-upgrade sa Negosyo' : 'Upgrade to Negosyo'
-                    )}
-                  </Button>
-                  {IS_MOCK_PAYMENT_ENABLED && (
-                    <Button
-                      appearance="subtle"
-                      size="small"
-                      icon={<SparkleRegular />}
-                      onClick={() => handleSimulatePayment('NegosyoPlus')}
-                    >
-                      {isTagalog ? 'Subukan (Simulate Test)' : 'Simulate Test Upgrade'}
-                    </Button>
-                  )}
-                </div>
+                {renderPaidTierActions(
+                  'NegosyoPlus',
+                  isTagalog ? 'Palawigin ang Negosyo Plus' : 'Extend Negosyo Plus',
+                  isTagalog ? 'Mag-upgrade sa Negosyo' : 'Upgrade to Negosyo'
+                )}
               </Card>
             </div>
 

@@ -187,11 +187,13 @@ function getAuthSessionKey(): string {
   return `${tenantId}:${firebaseToken ?? ''}`;
 }
 
-export async function processSyncQueue(): Promise<{ processed: number; conflicts: number; errors: number }> {
+export async function processSyncQueue(options?: { force?: boolean }): Promise<{ processed: number; conflicts: number; errors: number }> {
   const auth = useAuthStore.getState();
   if (!auth.isOnboardingStatusReady || !auth.isOnboarded) {
     return { processed: 0, conflicts: 0, errors: 0 };
   }
+
+  const isForce = Boolean(options?.force);
 
   // Attempt to sync pending profile update if queued
   if (hasPendingProfileUpdate()) {
@@ -207,14 +209,23 @@ export async function processSyncQueue(): Promise<{ processed: number; conflicts
   if (store.isSyncing) return { processed: 0, conflicts: 0, errors: 0 };
 
   const authSessionKey = getAuthSessionKey();
-  if (store.authBlockedSessionKey === authSessionKey) {
-    return { processed: 0, conflicts: 0, errors: 0 };
-  }
-  if (store.authBlockedSessionKey !== null) {
-    useSyncStore.setState({ authBlockedSessionKey: null, lastErrorMessage: null });
-  }
-  if (store.nextRetryAt !== null && Date.now() < store.nextRetryAt) {
-    return { processed: 0, conflicts: 0, errors: 0 };
+  if (!isForce) {
+    if (store.authBlockedSessionKey === authSessionKey) {
+      return { processed: 0, conflicts: 0, errors: 0 };
+    }
+    if (store.authBlockedSessionKey !== null) {
+      useSyncStore.setState({ authBlockedSessionKey: null, lastErrorMessage: null });
+    }
+    if (store.nextRetryAt !== null && Date.now() < store.nextRetryAt) {
+      return { processed: 0, conflicts: 0, errors: 0 };
+    }
+  } else {
+    useSyncStore.setState({
+      authBlockedSessionKey: null,
+      batchFailureCount: 0,
+      nextRetryAt: null,
+      lastErrorMessage: null
+    });
   }
 
   const pendingItems = await db.syncQueue
@@ -223,7 +234,7 @@ export async function processSyncQueue(): Promise<{ processed: number; conflicts
     .limit(50)
     .toArray();
 
-  if (pendingItems.length === 0) {
+  if (pendingItems.length === 0 && !isForce) {
     await updateQueueCounts();
     return { processed: 0, conflicts: 0, errors: 0 };
   }
@@ -303,7 +314,7 @@ export async function processSyncQueue(): Promise<{ processed: number; conflicts
 
     const response = await apiClient.post('/sync/batch', payload);
     useSyncStore.setState({ batchFailureCount: 0, nextRetryAt: null });
-    const data = response.data;
+    const data = response?.data || {};
     const results: Array<{ syncId: string; status: string; error?: string }> = data.results || [];
 
     let successCount = 0;

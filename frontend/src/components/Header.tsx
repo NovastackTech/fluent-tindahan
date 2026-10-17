@@ -261,7 +261,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
 
   const handleManualSync = () => {
     if (isOnline) {
-      processSyncQueue();
+      processSyncQueue({ force: true });
     }
   };
 
@@ -270,49 +270,81 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
   const showSyncIndicators = !isLoggedOut;
 
   // Reusable action components
+  const handleToggleLanding = () => {
+    if (!onNavigate) return;
+    if (activeTab === 'landing') {
+      onNavigate(isOnboarded ? 'pos' : 'login');
+    } else {
+      onNavigate('landing');
+    }
+  };
+
+  const renderSyncBadge = () => {
+    if (!showSyncIndicators) return null;
+    return isOnline ? (
+      <Tooltip
+        content={
+          isSyncing
+            ? t.common.syncing
+            : pendingCount > 0
+            ? `${pendingCount} ${t.common.queued}`
+            : t.common.allSynced
+        }
+        relationship="label"
+      >
+        <Button
+          appearance="subtle"
+          size="small"
+          onClick={handleManualSync}
+          icon={
+            isSyncing ? (
+              <Spinner size="extra-tiny" />
+            ) : (
+              <CloudCheckmarkRegular primaryFill={tokens.colorPaletteGreenForeground1} />
+            )
+          }
+        >
+          <Badge
+            appearance="filled"
+            color={pendingCount > 0 ? 'warning' : 'success'}
+            size="small"
+          >
+            {isSyncing ? t.common.syncing : pendingCount > 0 ? `${pendingCount} ${t.common.queued}` : t.common.online}
+          </Badge>
+        </Button>
+      </Tooltip>
+    ) : (
+      <Tooltip content={t.banner.offlineDesc} relationship="label">
+        <Badge appearance="filled" color="danger" icon={<CloudDismissRegular />} size="small">
+          {t.common.offline} ({pendingCount})
+        </Badge>
+      </Tooltip>
+    );
+  };
+
+  const renderForceSyncButton = (inTray = false) => {
+    if (!showSyncIndicators || !isOnline || isSyncing) return null;
+    return (
+      <Tooltip content={t.common.forceSync} relationship="label">
+        <Button
+          appearance="subtle"
+          size="small"
+          className={inTray ? styles.trayActionBtn : undefined}
+          icon={<ArrowSyncRegular />}
+          onClick={handleManualSync}
+          aria-label={t.common.forceSync}
+        >
+          {inTray && <span>{t.common.forceSync}</span>}
+        </Button>
+      </Tooltip>
+    );
+  };
+
   const renderSyncAction = () => {
     if (!showSyncIndicators) return null;
     return (
       <>
-        {isOnline ? (
-          <Tooltip
-            content={
-              isSyncing
-                ? t.common.syncing
-                : pendingCount > 0
-                ? `${pendingCount} ${t.common.queued}`
-                : t.common.allSynced
-            }
-            relationship="label"
-          >
-            <Button
-              appearance="subtle"
-              size="small"
-              onClick={handleManualSync}
-              icon={
-                isSyncing ? (
-                  <Spinner size="extra-tiny" />
-                ) : (
-                  <CloudCheckmarkRegular primaryFill={tokens.colorPaletteGreenForeground1} />
-                )
-              }
-            >
-              <Badge
-                appearance="filled"
-                color={pendingCount > 0 ? 'warning' : 'success'}
-                size="small"
-              >
-                {isSyncing ? t.common.syncing : pendingCount > 0 ? `${pendingCount} ${t.common.queued}` : t.common.online}
-              </Badge>
-            </Button>
-          </Tooltip>
-        ) : (
-          <Tooltip content={t.banner.offlineDesc} relationship="label">
-            <Badge appearance="filled" color="danger" icon={<CloudDismissRegular />} size="small">
-              {t.common.offline} ({pendingCount})
-            </Badge>
-          </Tooltip>
-        )}
+        {renderSyncBadge()}
 
         {deadLetterCount > 0 && (
           <Tooltip content={`${deadLetterCount} ${t.common.dlqWarning}`} relationship="label">
@@ -322,18 +354,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
           </Tooltip>
         )}
 
-        {/* Sync Trigger button */}
-        {isOnline && !isSyncing && (
-          <Tooltip content={t.common.forceSync} relationship="label">
-            <Button
-              appearance="subtle"
-              size="small"
-              icon={<ArrowSyncRegular />}
-              onClick={handleManualSync}
-              aria-label={t.common.forceSync}
-            />
-          </Tooltip>
-        )}
+        {renderForceSyncButton(false)}
       </>
     );
   };
@@ -394,13 +415,11 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
 
   const renderLandingToggleAction = (inTray = false) => {
     if (!onNavigate) return null;
+    const isLanding = activeTab === 'landing';
+    const returnLabel = isOnboarded ? t.landing.openPosBtn : t.landing.tabLogin;
     return (
       <Tooltip
-        content={
-          activeTab === 'landing'
-            ? (isOnboarded ? t.landing.openPosBtn : t.landing.tabLogin)
-            : t.landing.exploreTooltip
-        }
+        content={isLanding ? returnLabel : t.landing.exploreTooltip}
         relationship="label"
       >
         <Button
@@ -408,34 +427,26 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
           size="small"
           className={mergeClasses(styles.landingToggleBtn, inTray && styles.trayActionBtn)}
           icon={
-            activeTab === 'landing'
+            isLanding
               ? (isOnboarded ? <ShoppingBagRegular /> : <KeyRegular />)
               : <SparkleRegular />
           }
-          onClick={() => {
-            if (activeTab === 'landing') {
-              onNavigate(isOnboarded ? 'pos' : 'login');
-            } else if (activeTab === 'login') {
-              onNavigate('landing');
-            } else {
-              onNavigate('landing');
-            }
-          }}
+          onClick={handleToggleLanding}
           data-testid="header-landing-toggle-btn"
-          aria-label={
-            activeTab === 'landing'
-              ? (isOnboarded ? t.landing.openPosBtn : t.landing.tabLogin)
-              : t.landing.exploreTitle
-          }
+          aria-label={isLanding ? returnLabel : t.landing.exploreTitle}
         >
           <span className={inTray ? undefined : styles.landingToggleLabel}>
-            {activeTab === 'landing'
-              ? (isOnboarded ? t.landing.openPosBtn : t.landing.tabLogin)
-              : t.landing.exploreNavBtn}
+            {isLanding ? returnLabel : t.landing.exploreNavBtn}
           </span>
         </Button>
       </Tooltip>
     );
+  };
+
+  const getThemeModeLabel = () => {
+    if (themeMode === 'light') return t.common.themeModeLight;
+    if (themeMode === 'dark') return t.common.themeModeDark;
+    return t.common.themeModeSystem;
   };
 
   const renderThemeAction = (inTray = false) => (
@@ -462,24 +473,10 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
             <DesktopRegular />
           )
         }
-        aria-label={
-          themeMode === 'light'
-            ? t.common.themeModeLight
-            : themeMode === 'dark'
-            ? t.common.themeModeDark
-            : t.common.themeModeSystem
-        }
+        aria-label={getThemeModeLabel()}
         onClick={cycleThemeMode}
       >
-        {inTray && (
-          <span>
-            {themeMode === 'light'
-              ? t.common.themeModeLight
-              : themeMode === 'dark'
-              ? t.common.themeModeDark
-              : t.common.themeModeSystem}
-          </span>
-        )}
+        {inTray && <span>{getThemeModeLabel()}</span>}
       </Button>
     </Tooltip>
   );
@@ -489,17 +486,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
       <div className={styles.headerInner} ref={headerInnerRef}>
         <div
           className={styles.titleGroup}
-          onClick={() => {
-            if (onNavigate) {
-              if (activeTab === 'landing') {
-                onNavigate(isOnboarded ? 'pos' : 'login');
-              } else if (activeTab === 'login') {
-                onNavigate('landing');
-              } else {
-                onNavigate('landing');
-              }
-            }
-          }}
+          onClick={handleToggleLanding}
           style={{ cursor: onNavigate ? 'pointer' : 'default' }}
           title={activeTab === 'landing' ? (isOnboarded ? t.nav.dashboard : t.landing.tabLogin) : t.landing.exploreTitle}
         >
@@ -538,47 +525,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
         {isCollapsible ? (
           <div className={styles.actionsGroup}>
             {/* Primary Connectivity Status Badge */}
-            {showSyncIndicators && (
-              isOnline ? (
-                <Tooltip
-                  content={
-                    isSyncing
-                      ? t.common.syncing
-                      : pendingCount > 0
-                      ? `${pendingCount} ${t.common.queued}`
-                      : t.common.allSynced
-                  }
-                  relationship="label"
-                >
-                  <Button
-                    appearance="subtle"
-                    size="small"
-                    onClick={handleManualSync}
-                    icon={
-                      isSyncing ? (
-                        <Spinner size="extra-tiny" />
-                      ) : (
-                        <CloudCheckmarkRegular primaryFill={tokens.colorPaletteGreenForeground1} />
-                      )
-                    }
-                  >
-                    <Badge
-                      appearance="filled"
-                      color={pendingCount > 0 ? 'warning' : 'success'}
-                      size="small"
-                    >
-                      {isSyncing ? t.common.syncing : pendingCount > 0 ? `${pendingCount} ${t.common.queued}` : t.common.online}
-                    </Badge>
-                  </Button>
-                </Tooltip>
-              ) : (
-                <Tooltip content={t.banner.offlineDesc} relationship="label">
-                  <Badge appearance="filled" color="danger" icon={<CloudDismissRegular />} size="small">
-                    {t.common.offline} ({pendingCount})
-                  </Badge>
-                </Tooltip>
-              )
-            )}
+            {renderSyncBadge()}
 
             {/* Collapsible Toolbar Toggle Button */}
             <Tooltip
@@ -613,20 +560,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
       {/* Expanded Collapsible Toolbar Tray */}
       {isCollapsible && isExpanded && (
         <div className={styles.collapsibleTray} data-testid="header-collapsible-tray">
-          {showSyncIndicators && isOnline && !isSyncing && (
-            <Tooltip content={t.common.forceSync} relationship="label">
-              <Button
-                appearance="subtle"
-                size="small"
-                className={styles.trayActionBtn}
-                icon={<ArrowSyncRegular />}
-                onClick={handleManualSync}
-                aria-label={t.common.forceSync}
-              >
-                <span>{t.common.forceSync}</span>
-              </Button>
-            </Tooltip>
-          )}
+          {renderForceSyncButton(true)}
           {renderLanguageAction(true)}
           {renderThemeAction(true)}
           {renderDisclaimerAction(true)}

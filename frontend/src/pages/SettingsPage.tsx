@@ -72,6 +72,7 @@ import {
 import { useAuthStore } from '../state/authStore';
 import { seedDexieDatabaseIfNeeded } from '../db/seedData';
 import { useTranslation } from '../state/languageStore';
+import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
 
 const useStyles = makeStyles({
   container: {
@@ -192,7 +193,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
   }, []);
 
   const handleForceSync = async () => {
-    await processSyncQueue();
+    await processSyncQueue({ force: true });
   };
 
   const handlePullCatalog = async () => {
@@ -1123,7 +1124,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
 
               {pinDialogError && (
                 <Text role="alert" size={200} style={{ color: tokens.colorPaletteRedForeground1 }}>
-                  {pinDialogError}
+                  {getLocalizedSyncErrorMessage(pinDialogError, language) || pinDialogError}
                 </Text>
               )}
               {pinDialogSuccess && (

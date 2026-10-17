@@ -42,6 +42,7 @@ import {
 } from '@fluentui/react-icons';
 import type { NavTab } from '../components/Navigation';
 import { useTranslation } from '../state/languageStore';
+import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
 import { useAuthStore } from '../state/authStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
 import { useGCashFeeStore, DEFAULT_GCASH_FEE_TIERS } from '../state/gcashFeeStore';
@@ -339,7 +340,7 @@ const useStyles = makeStyles({
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
   const styles = useStyles();
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const {
     isOnboarded,
     businessName,
@@ -752,7 +753,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                 {authError && (
                   <div style={{ marginBottom: tokens.spacingVerticalM }}>
                     <Text role="alert" className={styles.errorText} style={{ display: 'block' }}>
-                      {authError}
+                      {getLocalizedSyncErrorMessage(authError, language) || authError}
                     </Text>
                   </div>
                 )}
