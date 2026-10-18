@@ -517,7 +517,7 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
                 TenantId = tenantId,
                 Name = raw.Name ?? "Unknown Customer",
                 Phone = normalizedPhone,
-                TotalUtangBalance = raw.TotalUtangBalance,
+                TotalUtangBalance = 0m,
                 UpdatedAt = op.Timestamp,
                 IsDeleted = false
             };

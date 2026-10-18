@@ -100,8 +100,12 @@ describe('UtangPage', () => {
     const saved = await db.customers.where('name').equals('Mang Kanor').first();
     expect(saved).toBeDefined();
     expect(saved?.totalUtangBalance).toBe(150);
-    expect(await db.utangLedger.toArray()).toHaveLength(1);
-    expect(await db.syncQueue.toArray()).toHaveLength(2);
+    const syncOps = await db.syncQueue.toArray();
+    expect(syncOps).toHaveLength(2);
+    const customerOp = syncOps.find((op) => op.entity === 'Customer');
+    expect(customerOp?.payload.totalUtangBalance).toBe(0);
+    const ledgerOp = syncOps.find((op) => op.entity === 'UtangLedger');
+    expect(ledgerOp?.payload.amount).toBe(150);
   });
 
   it('shows inline validation when saving a customer with a blank name', async () => {

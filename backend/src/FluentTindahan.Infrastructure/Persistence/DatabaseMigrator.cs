@@ -39,5 +39,19 @@ public static class DatabaseMigrator
         }
 
         await db.Database.MigrateAsync(cancellationToken);
+
+        if (db.Database.IsRelational())
+        {
+            await db.Database.ExecuteSqlRawAsync("""
+                UPDATE "Customers" c
+                SET "TotalUtangBalance" = COALESCE(
+                    (SELECT SUM(CASE WHEN u."Type" = 'Credit' THEN u."Amount" ELSE -u."Amount" END)
+                     FROM "UtangLedgers" u
+                     WHERE u."CustomerId" = c."Id"),
+                    0
+                )
+                WHERE EXISTS (SELECT 1 FROM "UtangLedgers" u WHERE u."CustomerId" = c."Id");
+                """, cancellationToken);
+        }
     }
 }

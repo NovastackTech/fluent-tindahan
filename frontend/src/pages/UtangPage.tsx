@@ -232,7 +232,7 @@ export const UtangPage: React.FC = () => {
     };
 
     await db.customers.add(newCustomer);
-    await enqueueSync('Customer', 'Insert', newCustomer);
+    await enqueueSync('Customer', 'Insert', { ...newCustomer, totalUtangBalance: 0 });
 
     if (initBalance > 0) {
       const ledgerId = crypto.randomUUID();
