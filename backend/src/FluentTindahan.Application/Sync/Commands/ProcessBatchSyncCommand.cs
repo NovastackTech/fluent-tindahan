@@ -557,8 +557,8 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
         existing.IsDeleted = false;
         existing.Name = raw.Name ?? existing.Name;
         existing.Phone = normalizedPhone;
-        // TotalUtangBalance is normally maintained by UtangLedger, but if sync provided latest computed balance:
-        if (raw.TotalUtangBalance >= 0)
+        // TotalUtangBalance is maintained by UtangLedger; only accept client value on explicit Update
+        if (!string.Equals(action, "Insert", StringComparison.OrdinalIgnoreCase) && raw.TotalUtangBalance >= 0)
         {
             existing.TotalUtangBalance = raw.TotalUtangBalance;
         }
