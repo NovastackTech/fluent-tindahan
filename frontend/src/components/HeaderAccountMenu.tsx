@@ -66,7 +66,7 @@ export const HeaderAccountMenu: React.FC<HeaderAccountMenuProps> = ({ businessNa
   const storeLabel = businessName?.trim() ?? '';
 
   return (
-    <div className={styles.root} onClick={(event) => event.stopPropagation()}>
+    <div className={styles.root}>
       <Menu positioning={{ position: 'below', align: 'start' }}>
         <MenuTrigger disableButtonEnhancement>
           <Button
@@ -75,6 +75,9 @@ export const HeaderAccountMenu: React.FC<HeaderAccountMenuProps> = ({ businessNa
             className={styles.trigger}
             data-testid="header-account-menu"
             aria-label={storeLabel || t.settings.logoutBtn}
+            onClick={(event) => {
+              event.stopPropagation();
+            }}
           >
             {storeLabel ? <span className={styles.storeName}>{storeLabel}</span> : <PersonRegular />}
             <ChevronDownRegular />
@@ -86,7 +89,8 @@ export const HeaderAccountMenu: React.FC<HeaderAccountMenuProps> = ({ businessNa
               icon={<SignOutRegular />}
               className={styles.logoutItem}
               data-testid="header-logout-item"
-              onClick={() => {
+              onClick={(event) => {
+                event.stopPropagation();
                 onLogout();
               }}
             >
