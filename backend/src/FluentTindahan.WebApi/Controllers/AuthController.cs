@@ -188,6 +188,108 @@ public class AuthController : ControllerBase
 
     #endregion
 
+    private async Task<(Tenant? ExistingTenant, User? PlaceholderUser, ActionResult? ErrorResult)> ValidateAnonymousStoreUpgradeAsync(
+        Guid tenantId,
+        Guid? requestedUserId,
+        string? refreshToken,
+        CancellationToken cancellationToken)
+    {
+        var existingTenant = await _context.Tenants.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
+
+        if (existingTenant == null)
+        {
+            return (null, null, null);
+        }
+
+        var existingUsers = await _context.Users.IgnoreQueryFilters()
+            .Where(u => u.TenantId == tenantId)
+            .ToListAsync(cancellationToken);
+
+        var isAnonymousProvisionedOwner = requestedUserId.HasValue &&
+            existingUsers.Count == 1 &&
+            existingUsers[0].Id == requestedUserId.Value &&
+            string.IsNullOrEmpty(existingUsers[0].PasswordHash) &&
+            string.IsNullOrEmpty(existingUsers[0].Email);
+
+        if (!isAnonymousProvisionedOwner)
+        {
+            return (null, null, Conflict(new { message = "May tindahan nang nakarehistro gamit ang ID na ito. / This store is already registered." }));
+        }
+
+        var placeholderUser = existingUsers[0];
+        var claimUserId = AuthClaimsHelper.ResolveUserId(_currentUserService, HttpContext?.User);
+        var claimTenantId = AuthClaimsHelper.ResolveTenantId(_currentUserService, HttpContext?.User);
+        var isAuthenticated = AuthClaimsHelper.IsAuthenticated(_currentUserService, HttpContext?.User);
+
+        var isCallerAuthenticatedAsPlaceholder = isAuthenticated &&
+            claimUserId.HasValue &&
+            claimUserId.Value == placeholderUser.Id &&
+            claimTenantId.HasValue &&
+            claimTenantId.Value == tenantId;
+
+        var candidateSessionToken = refreshToken
+            ?? (Request?.Headers.TryGetValue("X-Refresh-Token", out var rtHeader) == true ? rtHeader.ToString() : null);
+
+        var isSameDeviceSession = await AuthClaimsHelper.ValidatePlaceholderSessionAsync(
+            _jwtTokenService,
+            _context,
+            placeholderUser,
+            tenantId,
+            candidateSessionToken,
+            cancellationToken);
+
+        if (!isCallerAuthenticatedAsPlaceholder && !isSameDeviceSession)
+        {
+            return (null, null, Unauthorized(new
+            {
+                message = "Hindi pinapayagan ang pag-upgrade ng tindahang ito nang walang authenticated session mula sa parehong device. / Upgrading this store is only allowed from an authenticated session from the same device, not from IDs alone."
+            }));
+        }
+
+        return (existingTenant, placeholderUser, null);
+    }
+
+    private async Task<ActionResult<AuthResponseDto>> SaveNewUserAndRespondAsync(
+        User user,
+        Tenant tenant,
+        bool isNewUser,
+        CancellationToken cancellationToken)
+    {
+        var access = _jwtTokenService.GenerateAccessToken(user.Id, tenant.Id, email: user.Email, role: user.Role);
+        var (refreshToken, _, _, _) = AuthRefreshTokenHelper.IssueRefreshToken(
+            _context,
+            _jwtTokenService,
+            user,
+            tenant.Id,
+            _timeProvider);
+
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsUniqueEmailViolation(ex))
+        {
+            _context.ChangeTracker.Clear();
+            return Conflict(new { message = "May tindahan nang nakarehistro gamit ang email na ito. Pakipili ang Mag-login. / A store is already registered with this email." });
+        }
+        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            _context.ChangeTracker.Clear();
+            return Conflict(new { message = "May tindahan o user nang nakarehistro gamit ang ID na ito. / A store or user is already registered with this ID." });
+        }
+
+        AuthLockoutHelper.ResetIpPinThrottle(AuthClaimsHelper.GetClientIpAddress(HttpContext));
+
+        return Ok(AuthResponseBuilder.Build(
+            user,
+            tenant,
+            access,
+            refreshToken,
+            user.OwnerName,
+            isNewUser: isNewUser));
+    }
+
     /// <summary>
     /// Registers a new store and owner identity using email and password.
     /// Preserves client-supplied TenantId and UserId when provided to align local Dexie records.
@@ -234,68 +336,31 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = "Kailangan ng pangalan ng tindahan (minimum 2 letra). / Store name is required (minimum 2 chars)." });
         }
 
-        Tenant tenant;
-        User user;
+        Tenant? tenant = null;
+        User? user = null;
 
         if (request.TenantId.HasValue && request.TenantId.Value != Guid.Empty)
         {
-            var existingTenant = await _context.Tenants.IgnoreQueryFilters()
-                .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
+            var (existingTenant, placeholderUser, upgradeError) = await ValidateAnonymousStoreUpgradeAsync(
+                tenantId,
+                request.UserId,
+                request.RefreshToken,
+                cancellationToken);
 
-            if (existingTenant != null)
+            if (upgradeError != null)
             {
-                var existingUsers = await _context.Users.IgnoreQueryFilters()
-                    .Where(u => u.TenantId == tenantId)
-                    .ToListAsync(cancellationToken);
+                return upgradeError;
+            }
 
-                var isAnonymousProvisionedOwner = request.UserId.HasValue &&
-                    existingUsers.Count == 1 &&
-                    existingUsers[0].Id == request.UserId.Value &&
-                    string.IsNullOrEmpty(existingUsers[0].PasswordHash) &&
-                    string.IsNullOrEmpty(existingUsers[0].Email);
-
-                if (!isAnonymousProvisionedOwner)
-                {
-                    return Conflict(new { message = "May tindahan nang nakarehistro gamit ang ID na ito. / This store is already registered." });
-                }
-
-                var placeholderUser = existingUsers[0];
-                var claimUserId = AuthClaimsHelper.ResolveUserId(_currentUserService, HttpContext?.User);
-                var claimTenantId = AuthClaimsHelper.ResolveTenantId(_currentUserService, HttpContext?.User);
-                var isAuthenticated = AuthClaimsHelper.IsAuthenticated(_currentUserService, HttpContext?.User);
-
-                var isCallerAuthenticatedAsPlaceholder = isAuthenticated &&
-                    claimUserId.HasValue &&
-                    claimUserId.Value == placeholderUser.Id &&
-                    claimTenantId.HasValue &&
-                    claimTenantId.Value == tenantId;
-
-                var candidateSessionToken = request.RefreshToken
-                    ?? (Request?.Headers.TryGetValue("X-Refresh-Token", out var rtHeader) == true ? rtHeader.ToString() : null);
-
-                var isSameDeviceSession = await AuthClaimsHelper.ValidatePlaceholderSessionAsync(
-                    _jwtTokenService,
-                    _context,
-                    placeholderUser,
-                    tenantId,
-                    candidateSessionToken,
-                    cancellationToken);
-
-                if (!isCallerAuthenticatedAsPlaceholder && !isSameDeviceSession)
-                {
-                    return Unauthorized(new
-                    {
-                        message = "Hindi pinapayagan ang pag-upgrade ng tindahang ito nang walang authenticated session mula sa parehong device. / Upgrading this store is only allowed from an authenticated session from the same device, not from IDs alone."
-                    });
-                }
-
+            if (existingTenant != null && placeholderUser != null)
+            {
                 tenant = existingTenant;
                 if (string.IsNullOrWhiteSpace(tenant.BusinessName))
                 {
                     tenant.BusinessName = businessName;
                 }
 
-                user = existingUsers[0];
+                user = placeholderUser;
                 user.Email = displayEmail;
                 user.NormalizedEmail = normalizedEmail;
                 user.Phone = request.Phone?.Trim() ?? user.Phone;
@@ -308,47 +373,9 @@ public class AuthController : ControllerBase
                 AuthLockoutHelper.ResetPasswordLockout(user);
                 user.LastLoginAt = _timeProvider.GetUtcNow();
             }
-            else
-            {
-                if (request.UserId.HasValue && request.UserId.Value != Guid.Empty)
-                {
-                    var userIdInUse = await _context.Users.IgnoreQueryFilters()
-                        .AnyAsync(u => u.Id == userId, cancellationToken);
-                    if (userIdInUse)
-                    {
-                        return Conflict(new { message = "Ginagamit na ang user ID na ito. / The user ID is already in use." });
-                    }
-                }
-
-                tenant = new Tenant
-                {
-                    Id = tenantId,
-                    BusinessName = businessName,
-                    Tier = PlanTier.Libre,
-                    CreatedAt = _timeProvider.GetUtcNow()
-                };
-                _context.Tenants.Add(tenant);
-
-                user = new User
-                {
-                    Id = userId,
-                    TenantId = tenantId,
-                    Email = displayEmail,
-                    NormalizedEmail = normalizedEmail,
-                    Phone = request.Phone?.Trim() ?? string.Empty,
-                    OwnerName = string.IsNullOrWhiteSpace(request.OwnerName) ? null : request.OwnerName.Trim(),
-                    Role = "Owner",
-                    FailedPinAttempts = 0,
-                    PinLockoutEnd = null,
-                    FailedPasswordAttempts = 0,
-                    PasswordLockoutEnd = null,
-                    CreatedAt = _timeProvider.GetUtcNow(),
-                    LastLoginAt = _timeProvider.GetUtcNow()
-                };
-                _context.Users.Add(user);
-            }
         }
-        else
+
+        if (tenant == null || user == null)
         {
             if (request.UserId.HasValue && request.UserId.Value != Guid.Empty)
             {
@@ -393,37 +420,7 @@ public class AuthController : ControllerBase
             ? _passwordHasher.HashPassword(user, request.Pin.Trim())
             : null;
 
-        var access = _jwtTokenService.GenerateAccessToken(user.Id, tenant.Id, email: user.Email, role: user.Role);
-        var (refreshToken, _, _, _) = AuthRefreshTokenHelper.IssueRefreshToken(
-            _context,
-            _jwtTokenService,
-            user,
-            tenant.Id,
-            _timeProvider);
-
-        try
-        {
-            await _context.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateException ex) when (IsUniqueEmailViolation(ex))
-        {
-            _context.ChangeTracker.Clear();
-            return Conflict(new { message = "May tindahan nang nakarehistro gamit ang email na ito. Pakipili ang Mag-login. / A store is already registered with this email." });
-        }
-        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
-        {
-            _context.ChangeTracker.Clear();
-            return Conflict(new { message = "May tindahan o user nang nakarehistro gamit ang ID na ito. / A store or user is already registered with this ID." });
-        }
-
-        AuthLockoutHelper.ResetIpPinThrottle(AuthClaimsHelper.GetClientIpAddress(HttpContext));
-
-        return Ok(AuthResponseBuilder.Build(
-            user,
-            tenant,
-            access,
-            refreshToken,
-            user.OwnerName));
+        return await SaveNewUserAndRespondAsync(user, tenant, isNewUser: false, cancellationToken);
     }
 
     /// <summary>
@@ -545,68 +542,31 @@ public class AuthController : ControllerBase
                     ? $"{googleUser.FullName.Trim()}'s Tindahan"
                     : "Aking Tindahan"));
 
-        Tenant tenant;
-        User user;
+        Tenant? tenant = null;
+        User? user = null;
 
         if (request.TenantId.HasValue && request.TenantId.Value != Guid.Empty)
         {
-            var existingTenant = await _context.Tenants.IgnoreQueryFilters()
-                .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
+            var (existingTenant, placeholderUser, upgradeError) = await ValidateAnonymousStoreUpgradeAsync(
+                tenantId,
+                request.UserId,
+                request.RefreshToken,
+                cancellationToken);
 
-            if (existingTenant != null)
+            if (upgradeError != null)
             {
-                var existingUsers = await _context.Users.IgnoreQueryFilters()
-                    .Where(u => u.TenantId == tenantId)
-                    .ToListAsync(cancellationToken);
+                return upgradeError;
+            }
 
-                var isAnonymousProvisionedOwner = request.UserId.HasValue &&
-                    existingUsers.Count == 1 &&
-                    existingUsers[0].Id == request.UserId.Value &&
-                    string.IsNullOrEmpty(existingUsers[0].PasswordHash) &&
-                    string.IsNullOrEmpty(existingUsers[0].Email);
-
-                if (!isAnonymousProvisionedOwner)
-                {
-                    return Conflict(new { message = "May tindahan nang nakarehistro gamit ang ID na ito. / This store is already registered." });
-                }
-
-                var placeholderUser = existingUsers[0];
-                var claimUserId = AuthClaimsHelper.ResolveUserId(_currentUserService, HttpContext?.User);
-                var claimTenantId = AuthClaimsHelper.ResolveTenantId(_currentUserService, HttpContext?.User);
-                var isAuthenticated = AuthClaimsHelper.IsAuthenticated(_currentUserService, HttpContext?.User);
-
-                var isCallerAuthenticatedAsPlaceholder = isAuthenticated &&
-                    claimUserId.HasValue &&
-                    claimUserId.Value == placeholderUser.Id &&
-                    claimTenantId.HasValue &&
-                    claimTenantId.Value == tenantId;
-
-                var candidateSessionToken = request.RefreshToken
-                    ?? (Request?.Headers.TryGetValue("X-Refresh-Token", out var rtHeader) == true ? rtHeader.ToString() : null);
-
-                var isSameDeviceSession = await AuthClaimsHelper.ValidatePlaceholderSessionAsync(
-                    _jwtTokenService,
-                    _context,
-                    placeholderUser,
-                    tenantId,
-                    candidateSessionToken,
-                    cancellationToken);
-
-                if (!isCallerAuthenticatedAsPlaceholder && !isSameDeviceSession)
-                {
-                    return Unauthorized(new
-                    {
-                        message = "Hindi pinapayagan ang pag-upgrade ng tindahang ito nang walang authenticated session mula sa parehong device. / Upgrading this store is only allowed from an authenticated session from the same device, not from IDs alone."
-                    });
-                }
-
+            if (existingTenant != null && placeholderUser != null)
+            {
                 tenant = existingTenant;
                 if (string.IsNullOrWhiteSpace(tenant.BusinessName))
                 {
                     tenant.BusinessName = businessName;
                 }
 
-                user = existingUsers[0];
+                user = placeholderUser;
                 user.Email = displayEmail;
                 user.NormalizedEmail = normalizedEmail;
                 user.FirebaseUid = googleSubject;
@@ -619,48 +579,9 @@ public class AuthController : ControllerBase
                 AuthLockoutHelper.ResetPasswordLockout(user);
                 user.LastLoginAt = _timeProvider.GetUtcNow();
             }
-            else
-            {
-                if (request.UserId.HasValue && request.UserId.Value != Guid.Empty)
-                {
-                    var userIdInUse = await _context.Users.IgnoreQueryFilters()
-                        .AnyAsync(u => u.Id == userId, cancellationToken);
-                    if (userIdInUse)
-                    {
-                        return Conflict(new { message = "Ginagamit na ang user ID na ito. / The user ID is already in use." });
-                    }
-                }
-
-                tenant = new Tenant
-                {
-                    Id = tenantId,
-                    BusinessName = businessName,
-                    Tier = PlanTier.Libre,
-                    CreatedAt = _timeProvider.GetUtcNow()
-                };
-                _context.Tenants.Add(tenant);
-
-                user = new User
-                {
-                    Id = userId,
-                    TenantId = tenantId,
-                    Email = displayEmail,
-                    NormalizedEmail = normalizedEmail,
-                    FirebaseUid = googleSubject,
-                    PasswordHash = string.Empty,
-                    OwnerName = string.IsNullOrWhiteSpace(googleUser.FullName) ? null : googleUser.FullName.Trim(),
-                    Role = "Owner",
-                    FailedPinAttempts = 0,
-                    PinLockoutEnd = null,
-                    FailedPasswordAttempts = 0,
-                    PasswordLockoutEnd = null,
-                    CreatedAt = _timeProvider.GetUtcNow(),
-                    LastLoginAt = _timeProvider.GetUtcNow()
-                };
-                _context.Users.Add(user);
-            }
         }
-        else
+
+        if (tenant == null || user == null)
         {
             if (request.UserId.HasValue && request.UserId.Value != Guid.Empty)
             {
@@ -706,38 +627,7 @@ public class AuthController : ControllerBase
             user.PinHash = _passwordHasher.HashPassword(user, request.Pin.Trim());
         }
 
-        var newAccess = _jwtTokenService.GenerateAccessToken(user.Id, tenant.Id, email: user.Email, role: user.Role);
-        var (newRefreshToken, _, _, _) = AuthRefreshTokenHelper.IssueRefreshToken(
-            _context,
-            _jwtTokenService,
-            user,
-            tenant.Id,
-            _timeProvider);
-
-        try
-        {
-            await _context.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateException ex) when (IsUniqueEmailViolation(ex))
-        {
-            _context.ChangeTracker.Clear();
-            return Conflict(new { message = "May tindahan nang nakarehistro gamit ang email na ito. Pakipili ang Mag-login. / A store is already registered with this email." });
-        }
-        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
-        {
-            _context.ChangeTracker.Clear();
-            return Conflict(new { message = "May tindahan o user nang nakarehistro gamit ang ID na ito. / A store or user is already registered with this ID." });
-        }
-
-        AuthLockoutHelper.ResetIpPinThrottle(AuthClaimsHelper.GetClientIpAddress(HttpContext));
-
-        return Ok(AuthResponseBuilder.Build(
-            user,
-            tenant,
-            newAccess,
-            newRefreshToken,
-            user.OwnerName,
-            isNewUser: true));
+        return await SaveNewUserAndRespondAsync(user, tenant, isNewUser: true, cancellationToken);
     }
 
     /// <summary>

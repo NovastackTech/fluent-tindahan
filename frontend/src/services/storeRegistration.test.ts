@@ -290,19 +290,26 @@ describe('storeRegistration services', () => {
       expect(useAuthStore.getState().isOnboarded).toBe(true);
     });
 
-    it('returns unsyncedCount when local unsynced mutations block login', async () => {
+    it('returns unsyncedCount and newUserPreferences when local unsynced mutations block login', async () => {
       vi.spyOn(useAuthStore.getState(), 'loginWithAuthPayload').mockResolvedValueOnce({
         success: false,
         unsyncedCount: 3
       });
 
       const result = await executeGoogleAuth({
-        accessToken: 'valid-token'
+        accessToken: 'valid-token',
+        businessName: 'Google Unsynced Store',
+        offerGcash: false,
+        includeStarterProducts: false
       });
 
       expect(result.success).toBe(false);
       expect(result.unsyncedCount).toBe(3);
       expect(result.authResult).toBeDefined();
+      expect(result.newUserPreferences).toEqual({
+        offerGcash: false,
+        includeStarterProducts: false
+      });
     });
   });
 
@@ -310,8 +317,47 @@ describe('storeRegistration services', () => {
     it('restores tenant data from server and triggers queue sync', async () => {
       await finalizeSuccessfulLogin('mock-tenant-id');
 
+      expect(seedData.seedDexieDatabaseIfNeeded).not.toHaveBeenCalled();
       expect(syncEngine.restoreTenantDataFromServer).toHaveBeenCalled();
       expect(syncEngine.processSyncQueue).toHaveBeenCalled();
+    });
+
+    it('seeds Dexie database and configures zero GCash fees when isNewUser is true and offerGcash is false', async () => {
+      const setFeeSpy = vi.spyOn(useGCashFeeStore.getState(), 'setFeeForTenant');
+
+      await finalizeSuccessfulLogin('mock-new-tenant', {
+        isNewUser: true,
+        businessName: 'My New Google Store',
+        includeStarterProducts: true,
+        offerGcash: false
+      });
+
+      expect(seedData.seedDexieDatabaseIfNeeded).toHaveBeenCalledWith(
+        false,
+        'mock-new-tenant',
+        false,
+        'My New Google Store'
+      );
+      expect(setFeeSpy).toHaveBeenCalled();
+      const feeCalls = setFeeSpy.mock.calls;
+      expect(feeCalls.every(([, , fee]) => fee === 0)).toBe(true);
+      expect(syncEngine.restoreTenantDataFromServer).toHaveBeenCalled();
+    });
+
+    it('seeds Dexie database without starter products when includeStarterProducts is false', async () => {
+      await finalizeSuccessfulLogin('mock-new-tenant-empty', {
+        isNewUser: true,
+        businessName: 'Empty Store',
+        includeStarterProducts: false,
+        offerGcash: true
+      });
+
+      expect(seedData.seedDexieDatabaseIfNeeded).toHaveBeenCalledWith(
+        false,
+        'mock-new-tenant-empty',
+        true,
+        'Empty Store'
+      );
     });
   });
 });

@@ -1,8 +1,11 @@
+using System.Net;
+using System.Net.Http;
 using System.Security.Claims;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using FluentTindahan.Application.Common.Interfaces;
@@ -932,5 +935,159 @@ public class InfrastructureTests
     {
         var builder = new Npgsql.NpgsqlConnectionStringBuilder(connStr);
         builder.Password.Should().Be(expected);
+    }
+
+    [Fact]
+    public async Task GoogleAuthService_MissingClientIdConfig_FailsClosedAndReturnsNull()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        var handler = new MockHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK));
+        using var client = new HttpClient(handler);
+        var loggerMock = new Mock<ILogger<GoogleAuthService>>();
+
+        var service = new GoogleAuthService(client, config, loggerMock.Object);
+
+        var accessResult = await service.VerifyGoogleTokenAsync("access-token-123", null);
+        accessResult.Should().BeNull();
+
+        var idResult = await service.VerifyGoogleTokenAsync(null, "id-token-123");
+        idResult.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GoogleAuthService_AccessToken_AudienceMismatch_ReturnsNull()
+    {
+        var inMemory = new Dictionary<string, string?>
+        {
+            { "Google:ClientId", "my-app-client-id" }
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(inMemory).Build();
+        var handler = new MockHttpMessageHandler(req =>
+        {
+            if (req.RequestUri!.AbsoluteUri.Contains("tokeninfo"))
+            {
+                // Returned audience belongs to another client
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{\"aud\":\"attacker-client-id\",\"sub\":\"user-1\"}")
+                };
+            }
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+        using var client = new HttpClient(handler);
+        var loggerMock = new Mock<ILogger<GoogleAuthService>>();
+
+        var service = new GoogleAuthService(client, config, loggerMock.Object);
+        var result = await service.VerifyGoogleTokenAsync("foreign-access-token", null);
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GoogleAuthService_AccessToken_MatchingAudience_ReturnsProfile()
+    {
+        var inMemory = new Dictionary<string, string?>
+        {
+            { "Google:ClientId", "my-app-client-id" }
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(inMemory).Build();
+        var handler = new MockHttpMessageHandler(req =>
+        {
+            if (req.RequestUri!.AbsoluteUri.Contains("tokeninfo"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{\"aud\":\"my-app-client-id\",\"sub\":\"google-sub-1\"}")
+                };
+            }
+            if (req.RequestUri.AbsoluteUri.Contains("userinfo"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{\"sub\":\"google-sub-1\",\"email\":\"tindahan@gmail.com\",\"email_verified\":true,\"name\":\"Nanay Gloria\",\"given_name\":\"Gloria\"}")
+                };
+            }
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+        using var client = new HttpClient(handler);
+        var loggerMock = new Mock<ILogger<GoogleAuthService>>();
+
+        var service = new GoogleAuthService(client, config, loggerMock.Object);
+        var result = await service.VerifyGoogleTokenAsync("valid-access-token", null);
+
+        result.Should().NotBeNull();
+        result!.Subject.Should().Be("google-sub-1");
+        result.Email.Should().Be("tindahan@gmail.com");
+        result.EmailVerified.Should().BeTrue();
+        result.FullName.Should().Be("Nanay Gloria");
+        result.GivenName.Should().Be("Gloria");
+    }
+
+    [Fact]
+    public async Task GoogleAuthService_IdToken_AudienceMismatch_ReturnsNull()
+    {
+        var inMemory = new Dictionary<string, string?>
+        {
+            { "Google:ClientId", "my-app-client-id" }
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(inMemory).Build();
+        var handler = new MockHttpMessageHandler(req =>
+        {
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"aud\":\"foreign-client-id\",\"sub\":\"google-sub-2\",\"email\":\"victim@gmail.com\"}")
+            };
+        });
+        using var client = new HttpClient(handler);
+        var loggerMock = new Mock<ILogger<GoogleAuthService>>();
+
+        var service = new GoogleAuthService(client, config, loggerMock.Object);
+        var result = await service.VerifyGoogleTokenAsync(null, "foreign-id-token");
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GoogleAuthService_IdToken_MatchingAudience_ReturnsProfile()
+    {
+        var inMemory = new Dictionary<string, string?>
+        {
+            { "Google:ClientId", "my-app-client-id" }
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(inMemory).Build();
+        var handler = new MockHttpMessageHandler(req =>
+        {
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"aud\":\"my-app-client-id\",\"sub\":\"google-sub-3\",\"email\":\"pedro@gmail.com\",\"email_verified\":\"true\",\"name\":\"Pedro Penduko\",\"given_name\":\"Pedro\"}")
+            };
+        });
+        using var client = new HttpClient(handler);
+        var loggerMock = new Mock<ILogger<GoogleAuthService>>();
+
+        var service = new GoogleAuthService(client, config, loggerMock.Object);
+        var result = await service.VerifyGoogleTokenAsync(null, "valid-id-token");
+
+        result.Should().NotBeNull();
+        result!.Subject.Should().Be("google-sub-3");
+        result.Email.Should().Be("pedro@gmail.com");
+        result.EmailVerified.Should().BeTrue();
+        result.FullName.Should().Be("Pedro Penduko");
+        result.GivenName.Should().Be("Pedro");
+    }
+
+    private sealed class MockHttpMessageHandler : HttpMessageHandler
+    {
+        private readonly Func<HttpRequestMessage, HttpResponseMessage> _handler;
+
+        public MockHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> handler)
+        {
+            _handler = handler;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(_handler(request));
+        }
     }
 }

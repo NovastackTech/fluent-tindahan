@@ -88,7 +88,35 @@ export async function executeStoreRegistration(
   return { success: true };
 }
 
-export async function finalizeSuccessfulLogin(_tenantId: string): Promise<void> {
+export interface FinalizeLoginOptions {
+  isNewUser?: boolean;
+  businessName?: string;
+  includeStarterProducts?: boolean;
+  offerGcash?: boolean;
+}
+
+export async function finalizeSuccessfulLogin(
+  tenantId: string,
+  options?: FinalizeLoginOptions
+): Promise<void> {
+  if (options?.isNewUser) {
+    await seedDexieDatabaseIfNeeded(
+      false,
+      tenantId,
+      options.includeStarterProducts === false,
+      options.businessName
+    );
+
+    try {
+      const fees = options.offerGcash !== false ? DEFAULT_GCASH_FEE_TIERS : DEFAULT_GCASH_FEE_TIERS.map(() => 0);
+      fees.forEach((fee, idx) => {
+        useGCashFeeStore.getState().setFeeForTenant(tenantId, idx, fee);
+      });
+    } catch (fErr) {
+      console.warn('Could not set GCash fees:', fErr);
+    }
+  }
+
   void useSubscriptionStore.getState().refreshSubscription();
   void restoreTenantDataFromServer().catch(console.error);
   void processSyncQueue().catch(console.error);
@@ -106,6 +134,10 @@ export interface ExecuteStoreLoginResult {
   unsyncedCount?: number;
   authResult?: AuthResponseDto;
   localPin?: string;
+  newUserPreferences?: {
+    offerGcash?: boolean;
+    includeStarterProducts?: boolean;
+  };
 }
 
 export async function executeStoreLogin(
@@ -176,34 +208,69 @@ export async function executeGoogleAuth(
     false
   );
 
+  const newUserPreferences = {
+    offerGcash: params.offerGcash !== false,
+    includeStarterProducts: params.includeStarterProducts !== false
+  };
+
   if (!loginRes.success) {
     return {
       success: false,
       unsyncedCount: loginRes.unsyncedCount,
       authResult,
-      localPin
+      localPin,
+      newUserPreferences
     };
   }
 
-  if (authResult.isNewUser) {
-    await seedDexieDatabaseIfNeeded(
-      false,
-      authResult.tenantId,
-      params.includeStarterProducts === false,
-      authResult.businessName
-    );
-
-    try {
-      const fees = params.offerGcash !== false ? DEFAULT_GCASH_FEE_TIERS : DEFAULT_GCASH_FEE_TIERS.map(() => 0);
-      fees.forEach((fee, idx) => {
-        useGCashFeeStore.getState().setFeeForTenant(authResult.tenantId, idx, fee);
-      });
-    } catch (fErr) {
-      console.warn('Could not set GCash fees:', fErr);
-    }
-  }
-
-  await finalizeSuccessfulLogin(authResult.tenantId);
+  await finalizeSuccessfulLogin(authResult.tenantId, {
+    isNewUser: authResult.isNewUser,
+    businessName: authResult.businessName,
+    includeStarterProducts: newUserPreferences.includeStarterProducts,
+    offerGcash: newUserPreferences.offerGcash
+  });
   return { success: true, authResult };
+}
+
+export interface ProcessGoogleAuthFlowParams extends ExecuteGoogleAuthParams {
+  onSuccess: () => void;
+  onUnsyncedDetected: (
+    unsyncedCount: number,
+    authResult: AuthResponseDto,
+    localPin?: string,
+    newUserPreferences?: { offerGcash?: boolean; includeStarterProducts?: boolean }
+  ) => void;
+  onError: (errorMessage: string) => void;
+  defaultErrorMessage: string;
+}
+
+export async function processGoogleAuthFlow(
+  params: ProcessGoogleAuthFlowParams
+): Promise<void> {
+  try {
+    const res = await executeGoogleAuth({
+      accessToken: params.accessToken,
+      idToken: params.idToken,
+      businessName: params.businessName,
+      pin: params.pin,
+      offerGcash: params.offerGcash,
+      includeStarterProducts: params.includeStarterProducts
+    });
+
+    if (!res.success && res.authResult) {
+      params.onUnsyncedDetected(
+        res.unsyncedCount || 0,
+        res.authResult,
+        res.localPin,
+        res.newUserPreferences
+      );
+      return;
+    }
+
+    params.onSuccess();
+  } catch (err: any) {
+    const msg = err?.response?.data?.message || err?.message || params.defaultErrorMessage;
+    params.onError(msg);
+  }
 }
 

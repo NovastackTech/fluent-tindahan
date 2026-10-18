@@ -40,10 +40,78 @@ public class GoogleAuthService : IGoogleAuthService
         return null;
     }
 
+    private string? GetConfiguredClientId()
+    {
+        var expectedClientId = _configuration["Google:ClientId"] ?? _configuration["GOOGLE_CLIENT_ID"];
+        if (string.IsNullOrWhiteSpace(expectedClientId))
+        {
+            _logger.LogWarning("Google:ClientId or GOOGLE_CLIENT_ID is not configured");
+            return null;
+        }
+
+        return expectedClientId;
+    }
+
+    private static GoogleUserInfo? ExtractGoogleUserInfo(JsonElement root)
+    {
+        if (!root.TryGetProperty("sub", out var subProp) || string.IsNullOrWhiteSpace(subProp.GetString()))
+        {
+            return null;
+        }
+
+        var sub = subProp.GetString()!;
+        var email = root.TryGetProperty("email", out var emailProp) ? emailProp.GetString() ?? string.Empty : string.Empty;
+
+        var emailVerified = false;
+        if (root.TryGetProperty("email_verified", out var evProp))
+        {
+            if (evProp.ValueKind == JsonValueKind.True || evProp.ValueKind == JsonValueKind.False)
+            {
+                emailVerified = evProp.GetBoolean();
+            }
+            else if (evProp.ValueKind == JsonValueKind.String && bool.TryParse(evProp.GetString(), out var parsedEv))
+            {
+                emailVerified = parsedEv;
+            }
+        }
+
+        var name = root.TryGetProperty("name", out var nameProp) ? nameProp.GetString() : null;
+        var givenName = root.TryGetProperty("given_name", out var gnProp) ? gnProp.GetString() : null;
+
+        return new GoogleUserInfo(sub, email, emailVerified, name, givenName);
+    }
+
     private async Task<GoogleUserInfo?> VerifyAccessTokenAsync(string accessToken, CancellationToken cancellationToken)
     {
         try
         {
+            var expectedClientId = GetConfiguredClientId();
+            if (expectedClientId == null)
+            {
+                return null;
+            }
+
+            var tokenInfoUrl = $"https://oauth2.googleapis.com/tokeninfo?access_token={Uri.EscapeDataString(accessToken)}";
+            using var infoResp = await _httpClient.GetAsync(tokenInfoUrl, cancellationToken);
+            if (!infoResp.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Google tokeninfo verification failed with status {StatusCode}", infoResp.StatusCode);
+                return null;
+            }
+
+            var infoJson = await infoResp.Content.ReadAsStringAsync(cancellationToken);
+            using var infoDoc = JsonDocument.Parse(infoJson);
+            var infoRoot = infoDoc.RootElement;
+
+            var aud = infoRoot.TryGetProperty("aud", out var audProp) ? audProp.GetString() : null;
+            var azp = infoRoot.TryGetProperty("azp", out var azpProp) ? azpProp.GetString() : null;
+            if (!string.Equals(aud, expectedClientId, StringComparison.Ordinal) &&
+                !string.Equals(azp, expectedClientId, StringComparison.Ordinal))
+            {
+                _logger.LogWarning("Google access token audience {Aud} / azp {Azp} did not match expected client id", aud, azp);
+                return null;
+            }
+
             using var request = new HttpRequestMessage(HttpMethod.Get, "https://www.googleapis.com/oauth2/v3/userinfo");
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
@@ -56,33 +124,7 @@ public class GoogleAuthService : IGoogleAuthService
 
             var json = await response.Content.ReadAsStringAsync(cancellationToken);
             using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            if (!root.TryGetProperty("sub", out var subProp) || string.IsNullOrWhiteSpace(subProp.GetString()))
-            {
-                return null;
-            }
-
-            var sub = subProp.GetString()!;
-            var email = root.TryGetProperty("email", out var emailProp) ? emailProp.GetString() ?? string.Empty : string.Empty;
-
-            var emailVerified = false;
-            if (root.TryGetProperty("email_verified", out var evProp))
-            {
-                if (evProp.ValueKind == JsonValueKind.True || evProp.ValueKind == JsonValueKind.False)
-                {
-                    emailVerified = evProp.GetBoolean();
-                }
-                else if (evProp.ValueKind == JsonValueKind.String && bool.TryParse(evProp.GetString(), out var parsedEv))
-                {
-                    emailVerified = parsedEv;
-                }
-            }
-
-            var name = root.TryGetProperty("name", out var nameProp) ? nameProp.GetString() : null;
-            var givenName = root.TryGetProperty("given_name", out var gnProp) ? gnProp.GetString() : null;
-
-            return new GoogleUserInfo(sub, email, emailVerified, name, givenName);
+            return ExtractGoogleUserInfo(doc.RootElement);
         }
         catch (Exception ex)
         {
@@ -95,6 +137,12 @@ public class GoogleAuthService : IGoogleAuthService
     {
         try
         {
+            var expectedClientId = GetConfiguredClientId();
+            if (expectedClientId == null)
+            {
+                return null;
+            }
+
             var url = $"https://oauth2.googleapis.com/tokeninfo?id_token={Uri.EscapeDataString(idToken)}";
             using var response = await _httpClient.GetAsync(url, cancellationToken);
             if (!response.IsSuccessStatusCode)
@@ -107,43 +155,14 @@ public class GoogleAuthService : IGoogleAuthService
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
-            if (!root.TryGetProperty("sub", out var subProp) || string.IsNullOrWhiteSpace(subProp.GetString()))
+            if (!root.TryGetProperty("aud", out var audProp) ||
+                !string.Equals(audProp.GetString(), expectedClientId, StringComparison.Ordinal))
             {
+                _logger.LogWarning("Google tokeninfo audience missing or mismatched");
                 return null;
             }
 
-            var sub = subProp.GetString()!;
-            var email = root.TryGetProperty("email", out var emailProp) ? emailProp.GetString() ?? string.Empty : string.Empty;
-
-            var emailVerified = false;
-            if (root.TryGetProperty("email_verified", out var evProp))
-            {
-                if (evProp.ValueKind == JsonValueKind.True || evProp.ValueKind == JsonValueKind.False)
-                {
-                    emailVerified = evProp.GetBoolean();
-                }
-                else if (evProp.ValueKind == JsonValueKind.String && bool.TryParse(evProp.GetString(), out var parsedEv))
-                {
-                    emailVerified = parsedEv;
-                }
-            }
-
-            // Optional audience validation if configured
-            var expectedClientId = _configuration["Google:ClientId"] ?? _configuration["GOOGLE_CLIENT_ID"];
-            if (!string.IsNullOrWhiteSpace(expectedClientId) && root.TryGetProperty("aud", out var audProp))
-            {
-                var aud = audProp.GetString();
-                if (!string.Equals(aud, expectedClientId, StringComparison.Ordinal))
-                {
-                    _logger.LogWarning("Google tokeninfo aud {Aud} did not match expected client id", aud);
-                    return null;
-                }
-            }
-
-            var name = root.TryGetProperty("name", out var nameProp) ? nameProp.GetString() : null;
-            var givenName = root.TryGetProperty("given_name", out var gnProp) ? gnProp.GetString() : null;
-
-            return new GoogleUserInfo(sub, email, emailVerified, name, givenName);
+            return ExtractGoogleUserInfo(root);
         }
         catch (Exception ex)
         {
