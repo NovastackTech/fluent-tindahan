@@ -48,7 +48,7 @@ import { useAuthStore } from '../state/authStore';
 import { usePwaStore } from '../state/pwaStore';
 import { formatPeso } from '../utils/currency';
 import { normalizePhilippineMobile } from '../utils/philippineMobile';
-import { enqueueSync } from '../sync/syncEngine';
+import { addSyncRecord, kickSync, enqueueSync } from '../sync/syncEngine';
 import { ReceiptModal, type ReceiptData } from '../components/ReceiptModal';
 import { BarcodeScannerModal } from '../components/BarcodeScannerModal';
 import { QuickRegisterProductDialog } from '../components/QuickRegisterProductDialog';
@@ -214,7 +214,8 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
   const styles = useStyles();
   const { t, language } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  // Empty means "Lahat" / All — every product category is shown.
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
@@ -342,20 +343,21 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
     return [t.pos.allCategories, ...Array.from(set)];
   }, [products, t.pos.allCategories]);
 
-  // Filter products by search and category
+  // Search narrows the list; selected categories are a union (any match).
+  // No selected categories means the Lahat chip is active and nothing is excluded.
   const filteredProducts = useMemo(() => {
+    const normalizedQuery = searchQuery.toLowerCase();
+    const hasCategoryFilter = selectedCategories.length > 0;
     return products.filter((p) => {
       const matchesSearch =
-        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.name.toLowerCase().includes(normalizedQuery) ||
         (p.barcode && p.barcode.includes(searchQuery));
       const matchesCategory =
-        selectedCategory === t.pos.allCategories ||
-        selectedCategory === 'All' ||
-        selectedCategory === 'Lahat' ||
-        p.category === selectedCategory;
+        !hasCategoryFilter ||
+        (p.category != null && selectedCategories.includes(p.category));
       return matchesSearch && matchesCategory;
     });
-  }, [products, searchQuery, selectedCategory, t.pos.allCategories]);
+  }, [products, searchQuery, selectedCategories]);
 
   const totalAmount = getTotalAmount();
   const totalCount = getTotalCount();
@@ -766,7 +768,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
       }
 
       // Save directly to Dexie
-      await db.transaction('rw', db.sales, db.saleItems, db.utangLedger, db.customers, db.products, async () => {
+      await db.transaction('rw', [db.sales, db.saleItems, db.utangLedger, db.customers, db.products, db.syncQueue], async () => {
         // Atomic stock validation inside transaction if blocking and not overridden
         if (!isStockAllowed) {
           for (const item of cartItems) {
@@ -790,24 +792,29 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
           const prod = await db.products.get(item.productId);
           if (prod && prod.stockQty !== undefined) {
             const nextStock = Math.max(0, prod.stockQty - item.qty);
-            await db.products.update(item.productId, {
-              stockQty: nextStock
-            });
+            const updated: ProductRecord = {
+              ...prod,
+              stockQty: nextStock,
+              updatedAt: now
+            };
+            await db.products.put(updated);
+            await addSyncRecord('Product', 'Update', updated);
           }
         }
 
         // If Utang, append to UtangLedger and update customer balance
         if (utangId && customerId) {
-          await db.utangLedger.add({
+          const utangPayload = {
             id: utangId,
             tenantId,
             customerId,
             amount: totalAmount,
-            type: 'Credit',
+            type: 'Credit' as const,
             date: now,
             refSaleId: saleId,
             notes: `Benta POS #${saleId.slice(0, 6)}`
-          });
+          };
+          await db.utangLedger.add(utangPayload);
 
           const cust = await db.customers.get(customerId);
           if (cust) {
@@ -817,41 +824,32 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
               updatedAt: now
             });
           }
+
+          await addSyncRecord('UtangLedger', 'Insert', utangPayload);
         }
-      });
 
-      // Sync UtangLedger if Utang sale
-      if (utangId && customerId) {
-        await enqueueSync('UtangLedger', 'Insert', {
-          id: utangId,
-          customerId,
-          amount: totalAmount,
-          type: 'Credit',
+        // Enqueue Sale into sync queue
+        await addSyncRecord('Sale', 'Insert', {
+          id: saleId,
+          totalAmount,
+          paymentMethod,
           date: now,
-          refSaleId: saleId,
-          notes: `Benta POS #${saleId.slice(0, 6)}`
+          userId,
+          customerId: customerId || undefined,
+          cashReceived: paymentMethod === 'Cash' ? cashReceived : undefined,
+          changeGiven: paymentMethod === 'Cash' ? changeAmount : undefined,
+          items: cartItems.map((i) => ({
+            id: crypto.randomUUID(),
+            productId: i.productId,
+            productName: i.name,
+            qty: i.qty,
+            unitPrice: i.price,
+            subtotal: i.subtotal
+          }))
         });
-      }
-
-      // Enqueue Sale into sync queue
-      await enqueueSync('Sale', 'Insert', {
-        id: saleId,
-        totalAmount,
-        paymentMethod,
-        date: now,
-        userId,
-        customerId: customerId || undefined,
-        cashReceived: paymentMethod === 'Cash' ? cashReceived : undefined,
-        changeGiven: paymentMethod === 'Cash' ? changeAmount : undefined,
-        items: cartItems.map((i) => ({
-          id: crypto.randomUUID(),
-          productId: i.productId,
-          productName: i.name,
-          qty: i.qty,
-          unitPrice: i.price,
-          subtotal: i.subtotal
-        }))
       });
+
+      void kickSync();
 
       // Prepare receipt data and mark receipt active
       usePwaStore.getState().setHasActiveReceipt(true);
@@ -930,25 +928,41 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
           onScroll={checkScroll}
           onWheel={handleCategoryWheel}
         >
-          {categories.map((cat) => (
-            <Button
-              key={cat}
-              size="small"
-              className={styles.categoryChip}
-              appearance={selectedCategory === cat ? 'primary' : 'secondary'}
-              onClick={(e) => {
-                setSelectedCategory(cat);
-                (e.currentTarget as HTMLElement).scrollIntoView({
-                  behavior: 'smooth',
-                  block: 'nearest',
-                  inline: 'center'
-                });
-              }}
-              shape="circular"
-            >
-              {cat}
-            </Button>
-          ))}
+          {categories.map((cat, index) => {
+            const isAllChip = index === 0;
+            const isActive = isAllChip
+              ? selectedCategories.length === 0
+              : selectedCategories.includes(cat);
+
+            return (
+              <Button
+                key={isAllChip ? '__all-categories__' : cat}
+                size="small"
+                className={styles.categoryChip}
+                appearance={isActive ? 'primary' : 'secondary'}
+                aria-pressed={isActive}
+                onClick={(e) => {
+                  if (isAllChip) {
+                    setSelectedCategories([]);
+                  } else {
+                    setSelectedCategories((current) =>
+                      current.includes(cat)
+                        ? current.filter((selected) => selected !== cat)
+                        : [...current, cat]
+                    );
+                  }
+                  (e.currentTarget as HTMLElement).scrollIntoView?.({
+                    behavior: 'smooth',
+                    block: 'nearest',
+                    inline: 'center'
+                  });
+                }}
+                shape="circular"
+              >
+                {cat}
+              </Button>
+            );
+          })}
         </div>
 
         {canScrollRight && (
@@ -1268,7 +1282,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
           }
         }}
       >
-        <DialogSurface ref={checkoutDialogRef}>
+        <DialogSurface ref={checkoutDialogRef} style={{ maxWidth: '520px', width: '100%' }}>
           {receiptData ? (
             <ReceiptModal
               embedded

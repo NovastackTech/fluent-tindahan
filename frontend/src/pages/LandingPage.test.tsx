@@ -234,6 +234,7 @@ describe('LandingPage Component', () => {
     fireEvent.change(screen.getByPlaceholderText(t.storeNamePlaceholder), { target: { value: 'Bagong Tindahan' } });
     fireEvent.change(screen.getByPlaceholderText(t.emailPlaceholder), { target: { value: 'sari@tindahan.ph' } });
     fireEvent.change(screen.getByPlaceholderText(t.passwordPlaceholder), { target: { value: 'secret123' } });
+    fireEvent.change(screen.getByPlaceholderText(t.confirmPasswordPlaceholder), { target: { value: 'secret123' } });
 
     const submitBtn = screen.getByTestId('landing-register-submit-btn');
     fireEvent.click(submitBtn);

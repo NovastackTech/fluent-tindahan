@@ -3,7 +3,8 @@ import {
   initServiceWorker,
   reloadAppForUpdate,
   _resetUpdateSWFunctionForTest,
-  _getUpdateIntervalIdForTest
+  _getUpdateIntervalIdForTest,
+  _isReloadDeferredForTest
 } from './registerServiceWorker';
 import { usePwaStore } from '../state/pwaStore';
 import { useCartStore } from '../state/cartStore';
@@ -145,7 +146,8 @@ describe('registerServiceWorker', () => {
     options.onNeedReload();
 
     expect(reloadMock).not.toHaveBeenCalled();
-    expect(usePwaStore.getState().needRefresh).toBe(true);
+    expect(_isReloadDeferredForTest()).toBe(true);
+    expect(usePwaStore.getState().needRefresh).toBe(false);
 
     Object.defineProperty(window, 'location', {
       value: originalLocation,
@@ -154,7 +156,7 @@ describe('registerServiceWorker', () => {
     });
   });
 
-  it('does not reload automatically after an active cart is cleared', async () => {
+  it('reloads automatically after an active cart is cleared via deferred reload', async () => {
     vi.useFakeTimers();
     const originalLocation = window.location;
     const reloadMock = vi.fn();
@@ -179,17 +181,17 @@ describe('registerServiceWorker', () => {
 
     // Not reloaded while items are present
     expect(reloadMock).not.toHaveBeenCalled();
-    expect(usePwaStore.getState().needRefresh).toBe(true);
+    expect(_isReloadDeferredForTest()).toBe(true);
 
     // Cart is cleared without active sale
     useCartStore.getState().clearCart();
 
     expect(reloadMock).not.toHaveBeenCalled();
 
+    // Debounce advances 500ms
     vi.advanceTimersByTime(500);
 
-    expect(reloadMock).not.toHaveBeenCalled();
-    expect(usePwaStore.getState().needRefresh).toBe(true);
+    expect(reloadMock).toHaveBeenCalledTimes(1);
 
     Object.defineProperty(window, 'location', {
       value: originalLocation,
@@ -199,7 +201,8 @@ describe('registerServiceWorker', () => {
     vi.useRealTimers();
   });
 
-  it('does not reload automatically while an update is available during a sale', async () => {
+  it('does not reload automatically while an update is available during a sale, but reloads once finished', async () => {
+    vi.useFakeTimers();
     const originalLocation = window.location;
     const reloadMock = vi.fn();
     Object.defineProperty(window, 'location', {
@@ -220,7 +223,6 @@ describe('registerServiceWorker', () => {
 
     const options = (registerSW as any).mock.calls[0][0];
     options.onNeedReload();
-    expect(usePwaStore.getState().needRefresh).toBe(true);
 
     // Sale begins: transaction is active and receipt modal is displayed
     usePwaStore.getState().setIsSaleInProgress(true);
@@ -234,20 +236,24 @@ describe('registerServiceWorker', () => {
     usePwaStore.getState().setIsSaleInProgress(false);
     expect(reloadMock).not.toHaveBeenCalled();
 
-    // Cashier dismisses receipt modal; the update still requires a deliberate action.
+    // Cashier dismisses receipt modal
     usePwaStore.getState().setHasActiveReceipt(false);
-
     expect(reloadMock).not.toHaveBeenCalled();
-    expect(usePwaStore.getState().needRefresh).toBe(true);
+
+    // Debounce timer completes
+    vi.advanceTimersByTime(500);
+
+    expect(reloadMock).toHaveBeenCalledTimes(1);
 
     Object.defineProperty(window, 'location', {
       value: originalLocation,
       configurable: true,
       writable: true
     });
+    vi.useRealTimers();
   });
 
-  it('surfaces onNeedReload as a prompt when cart is empty', async () => {
+  it('reloads page via onNeedReload when cart is empty and no sale in progress', async () => {
     const originalLocation = window.location;
     const reloadMock = vi.fn();
     Object.defineProperty(window, 'location', {
@@ -269,8 +275,8 @@ describe('registerServiceWorker', () => {
     const options = (registerSW as any).mock.calls[0][0];
     options.onNeedReload();
 
-    expect(reloadMock).not.toHaveBeenCalled();
-    expect(usePwaStore.getState().needRefresh).toBe(true);
+    expect(reloadMock).toHaveBeenCalledTimes(1);
+    expect(usePwaStore.getState().needRefresh).toBe(false);
 
     Object.defineProperty(window, 'location', {
       value: originalLocation,
@@ -490,6 +496,48 @@ describe('registerServiceWorker', () => {
     await reloadAppForUpdate();
 
     expect(addEventListenerMock).toHaveBeenCalledWith('controllerchange', expect.any(Function), { once: true });
+
+    Object.defineProperty(window, 'location', {
+      value: originalLocation,
+      configurable: true,
+      writable: true
+    });
+  });
+
+  it('triggers executeReload when controllerchange event fires', async () => {
+    const originalLocation = window.location;
+    const reloadMock = vi.fn();
+    Object.defineProperty(window, 'location', {
+      value: { ...originalLocation, reload: reloadMock },
+      configurable: true,
+      writable: true
+    });
+
+    let controllerChangeCallback: (() => void) | undefined;
+    const addEventListenerMock = vi.fn((event: string, cb: () => void) => {
+      if (event === 'controllerchange') {
+        controllerChangeCallback = cb;
+      }
+    });
+
+    Object.defineProperty(navigator, 'serviceWorker', {
+      value: {
+        register: vi.fn(),
+        addEventListener: addEventListenerMock
+      },
+      configurable: true,
+      writable: true
+    });
+
+    _resetUpdateSWFunctionForTest();
+    await reloadAppForUpdate();
+
+    expect(reloadMock).not.toHaveBeenCalled();
+
+    // Trigger controllerchange from activating SW
+    controllerChangeCallback?.();
+
+    expect(reloadMock).toHaveBeenCalledTimes(1);
 
     Object.defineProperty(window, 'location', {
       value: originalLocation,

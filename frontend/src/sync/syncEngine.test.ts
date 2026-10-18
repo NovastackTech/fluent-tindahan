@@ -10,6 +10,11 @@ import {
   getArchivedDeadLetterItems,
   clearDeadLetterArchive,
   pullCatalogFromServer,
+  pullCustomersFromServer,
+  pullUtangFromServer,
+  pullGCashFromServer,
+  pullSalesFromServer,
+  restoreTenantDataFromServer,
   initSyncEngine,
   STORAGE_KEY_LAST_SYNCED,
   getSyncStorageKey,
@@ -900,6 +905,229 @@ describe('syncEngine', () => {
       conflictReason: 'GCash operation conflicted on server'
     });
     expect(useSyncStore.getState().lastErrorMessage).toBe('1 GCash transaction conflict detected.');
+  });
+
+  it('pullCustomersFromServer populates customers into Dexie', async () => {
+    (apiClient.get as any).mockResolvedValueOnce({
+      data: [
+        {
+          id: 'cust-1',
+          tenantId: DEFAULT_TENANT_ID,
+          name: 'Maria Santos',
+          phone: '09171234567',
+          totalUtangBalance: 150,
+          updatedAt: '2026-10-18T00:00:00.000Z'
+        }
+      ]
+    });
+
+    const count = await pullCustomersFromServer();
+    expect(count).toBe(1);
+    const saved = await db.customers.get('cust-1');
+    expect(saved?.name).toBe('Maria Santos');
+    expect(saved?.totalUtangBalance).toBe(150);
+  });
+
+  it('pullUtangFromServer populates utang ledger into Dexie', async () => {
+    (apiClient.get as any).mockResolvedValueOnce({
+      data: [
+        {
+          id: 'utang-1',
+          tenantId: DEFAULT_TENANT_ID,
+          customerId: 'cust-1',
+          amount: 150,
+          type: 'Credit',
+          date: '2026-10-18T00:00:00.000Z',
+          notes: 'Initial utang'
+        }
+      ]
+    });
+
+    const count = await pullUtangFromServer();
+    expect(count).toBe(1);
+    const saved = await db.utangLedger.get('utang-1');
+    expect(saved?.amount).toBe(150);
+    expect(saved?.customerId).toBe('cust-1');
+  });
+
+  it('pullGCashFromServer populates gcash transactions into Dexie with normalized ref', async () => {
+    (apiClient.get as any).mockResolvedValueOnce({
+      data: [
+        {
+          id: 'gcash-1',
+          tenantId: DEFAULT_TENANT_ID,
+          type: 'CashIn',
+          amount: 500,
+          fee: 10,
+          refNo: 'REF-998877',
+          customerPhone: '09171234567',
+          date: '2026-10-18T00:00:00.000Z'
+        }
+      ]
+    });
+
+    const count = await pullGCashFromServer();
+    expect(count).toBe(1);
+    const saved = await db.gcashTxns.get('gcash-1');
+    expect(saved?.amount).toBe(500);
+    expect(saved?.refNoNorm).toBe('ref-998877');
+  });
+
+  it('pullSalesFromServer populates sales and saleItems into Dexie', async () => {
+    (apiClient.get as any).mockResolvedValueOnce({
+      data: [
+        {
+          id: 'sale-1',
+          tenantId: DEFAULT_TENANT_ID,
+          totalAmount: 100,
+          paymentMethod: 'Cash',
+          date: '2026-10-18T00:00:00.000Z',
+          userId: 'user-1',
+          items: [
+            {
+              id: 'item-1',
+              productId: 'prod-1',
+              qty: 2,
+              unitPrice: 50,
+              subtotal: 100
+            }
+          ]
+        }
+      ]
+    });
+
+    const count = await pullSalesFromServer();
+    expect(count).toBe(1);
+    const savedSale = await db.sales.get('sale-1');
+    expect(savedSale?.totalAmount).toBe(100);
+    const savedItem = await db.saleItems.get('item-1');
+    expect(savedItem?.qty).toBe(2);
+  });
+
+  it('restoreTenantDataFromServer pulls all resources', async () => {
+    (apiClient.get as any).mockImplementation((url: string) => {
+      if (url === '/products') return Promise.resolve({ data: [] });
+      if (url === '/customers') return Promise.resolve({ data: [] });
+      if (url === '/utang') return Promise.resolve({ data: [] });
+      if (url === '/gcash') return Promise.resolve({ data: [] });
+      if (url === '/sales') return Promise.resolve({ data: [] });
+      return Promise.resolve({ data: [] });
+    });
+
+    await restoreTenantDataFromServer();
+    expect(apiClient.get).toHaveBeenCalledWith('/products');
+    expect(apiClient.get).toHaveBeenCalledWith('/customers');
+    expect(apiClient.get).toHaveBeenCalledWith('/utang');
+    expect(apiClient.get).toHaveBeenCalledWith('/gcash');
+    expect(apiClient.get).toHaveBeenCalledWith('/sales');
+  });
+
+  it('pullCatalogFromServer preserves local product edits that have pending syncQueue updates', async () => {
+    await db.products.put({
+      id: 'prod-local-edit',
+      tenantId: DEFAULT_TENANT_ID,
+      name: 'Local Edited Item',
+      price: 25,
+      cost: 15,
+      stockQty: 2,
+      updatedAt: '2026-10-18T10:00:00.000Z'
+    });
+
+    await db.syncQueue.add({
+      id: 'sync-prod-1',
+      entity: 'Product',
+      action: 'Update',
+      timestamp: new Date().toISOString(),
+      payload: { id: 'prod-local-edit', stockQty: 2 },
+      status: 'Pending',
+      retryCount: 0,
+      queueOrder: 1
+    });
+
+    (apiClient.get as any).mockResolvedValueOnce({
+      data: [
+        {
+          id: 'prod-local-edit',
+          tenantId: DEFAULT_TENANT_ID,
+          name: 'Server Stale Name',
+          price: 20,
+          cost: 10,
+          stockQty: 10,
+          updatedAt: '2026-10-18T09:00:00.000Z'
+        },
+        {
+          id: 'prod-unmodified',
+          tenantId: DEFAULT_TENANT_ID,
+          name: 'Server Item',
+          price: 30,
+          cost: 20,
+          stockQty: 5,
+          updatedAt: '2026-10-18T09:00:00.000Z'
+        }
+      ]
+    });
+
+    const count = await pullCatalogFromServer();
+    expect(count).toBe(1);
+
+    const preserved = await db.products.get('prod-local-edit');
+    expect(preserved?.stockQty).toBe(2);
+    expect(preserved?.name).toBe('Local Edited Item');
+
+    const imported = await db.products.get('prod-unmodified');
+    expect(imported?.stockQty).toBe(5);
+  });
+
+  it('pullCustomersFromServer preserves local customer balance when pending mutations or newer updatedAt exist', async () => {
+    await db.customers.put({
+      id: 'cust-local-edit',
+      tenantId: DEFAULT_TENANT_ID,
+      name: 'Ka Freddie',
+      phone: '09191234567',
+      totalUtangBalance: 150,
+      updatedAt: '2026-10-18T11:00:00.000Z'
+    });
+
+    await db.syncQueue.add({
+      id: 'sync-utang-1',
+      entity: 'UtangLedger',
+      action: 'Insert',
+      timestamp: new Date().toISOString(),
+      payload: { id: 'u-1', customerId: 'cust-local-edit', amount: 50 },
+      status: 'Pending',
+      retryCount: 0,
+      queueOrder: 1
+    });
+
+    (apiClient.get as any).mockResolvedValueOnce({
+      data: [
+        {
+          id: 'cust-local-edit',
+          tenantId: DEFAULT_TENANT_ID,
+          name: 'Ka Freddie',
+          phone: '09191234567',
+          totalUtangBalance: 100,
+          updatedAt: '2026-10-18T09:00:00.000Z'
+        },
+        {
+          id: 'cust-new',
+          tenantId: DEFAULT_TENANT_ID,
+          name: 'Ate Susan',
+          phone: '09181234567',
+          totalUtangBalance: 0,
+          updatedAt: '2026-10-18T09:00:00.000Z'
+        }
+      ]
+    });
+
+    const count = await pullCustomersFromServer();
+    expect(count).toBe(1);
+
+    const preserved = await db.customers.get('cust-local-edit');
+    expect(preserved?.totalUtangBalance).toBe(150);
+
+    const imported = await db.customers.get('cust-new');
+    expect(imported?.name).toBe('Ate Susan');
   });
 
   it('initSyncEngine attaches online and offline event handlers', () => {

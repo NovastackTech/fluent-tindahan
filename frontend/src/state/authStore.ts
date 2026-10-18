@@ -555,7 +555,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (isNewTenant) {
       let pendingCount = 0;
       try {
-        pendingCount = await db.syncQueue.count();
+        const [syncCount, dlqCount] = await Promise.all([
+          db.syncQueue.count(),
+          db.deadLetterQueue.count()
+        ]);
+        pendingCount = syncCount + dlqCount;
       } catch (e) {
         console.warn('[authStore] Failed to check syncQueue count:', e);
       }
@@ -636,7 +640,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   logout: async (forceWipe = false): Promise<LogoutResult> => {
     let pendingCount = 0;
     try {
-      pendingCount = await db.syncQueue.count();
+      const [syncCount, dlqCount] = await Promise.all([
+        db.syncQueue.count(),
+        db.deadLetterQueue.count()
+      ]);
+      pendingCount = syncCount + dlqCount;
       if (hasPendingProfileUpdate()) {
         pendingCount += 1;
       }

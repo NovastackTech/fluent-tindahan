@@ -22,7 +22,6 @@ import {
   ArrowSyncRegular,
   DeleteRegular,
   ArrowClockwiseRegular,
-  CloudArrowDownRegular,
   DatabaseRegular,
   SignOutRegular,
   GlobeRegular,
@@ -63,15 +62,14 @@ import {
   useSyncStore,
   processSyncQueue,
   updateQueueCounts,
-  kickSync,
   retryDeadLetterItem,
   deleteDeadLetterItem,
-  clearDeadLetterQueue,
-  pullCatalogFromServer
+  clearDeadLetterQueue
 } from '../sync/syncEngine';
 import { useAuthStore } from '../state/authStore';
-import { seedDexieDatabaseIfNeeded } from '../db/seedData';
 import { useTranslation } from '../state/languageStore';
+import { SafeLogoutDialog } from '../components/SafeLogoutDialog';
+import { useSafeLogout } from '../components/useSafeLogout';
 import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
 
 const useStyles = makeStyles({
@@ -122,7 +120,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
     setLocalPinVerifier,
     setIsSessionLocked,
     openOnboarding,
-    logout,
     role
   } = useAuthStore();
   const { t, language, setLanguage } = useTranslation();
@@ -134,9 +131,23 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
   const [gcashFeeDrafts, setGcashFeeDrafts] = useState<Record<string, string>>({});
   const { isStandalone, isInstalled, isInstallable, isIos, promptInstall } = usePwaStore();
   const { tier, subscriptionEndDate, daysRemaining, openUpgradeModal } = useSubscriptionStore();
+  const {
+    isLogoutConfirmOpen,
+    logoutUnsyncedCount,
+    initiateLogout: handleInitiateLogout,
+    initiateSwitchAccount: handleInitiateSwitchAccount,
+    cancelLogout,
+    syncFirst,
+    confirmLogout
+  } = useSafeLogout({
+    onLoggedOut: () => {
+      if (onNavigate) {
+        onNavigate('login');
+      }
+    }
+  });
 
   const [printerMessage, setPrinterMessage] = useState<string | null>(null);
-  const [dataManagementMessage, setDataManagementMessage] = useState<string | null>(null);
   const [storageEstimate, setStorageEstimate] = useState<{ usage: number; quota: number } | null>(null);
   const [isPersisted, setIsPersisted] = useState<boolean | null>(null);
 
@@ -174,9 +185,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
   const [pinDialogSuccess, setPinDialogSuccess] = useState('');
   const [isPinDialogSubmitting, setIsPinDialogSubmitting] = useState(false);
 
-  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
-  const [logoutUnsyncedCount, setLogoutUnsyncedCount] = useState(0);
-
   useEffect(() => {
     updateQueueCounts().catch(console.error);
     if (navigator.storage && navigator.storage.estimate) {
@@ -194,53 +202,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
 
   const handleForceSync = async () => {
     await processSyncQueue({ force: true });
-  };
-
-  const handlePullCatalog = async () => {
-    const count = await pullCatalogFromServer();
-    setDataManagementMessage(`${t.settings.pullSuccessAlert} (${count})`);
-  };
-
-  const handleResetSeed = async () => {
-    if (window.confirm(t.settings.resetSeedConfirm)) {
-      await db.transaction(
-        'rw',
-        [
-          db.products,
-          db.customers,
-          db.sales,
-          db.saleItems,
-          db.utangLedger,
-          db.gcashTxns,
-          db.gcashTxnResolutions,
-          db.syncQueue,
-          db.deadLetterQueue
-        ],
-        async () => {
-          await db.products.where('tenantId').equals(tenantId).delete();
-          await db.customers.where('tenantId').equals(tenantId).delete();
-          await db.sales.where('tenantId').equals(tenantId).delete();
-          await db.saleItems.where('tenantId').equals(tenantId).delete();
-          await db.utangLedger.where('tenantId').equals(tenantId).delete();
-          await db.gcashTxns.where('tenantId').equals(tenantId).delete();
-          await db.gcashTxnResolutions.where('tenantId').equals(tenantId).delete();
-
-          const syncQueue = await db.syncQueue.toArray();
-          await db.syncQueue.bulkDelete(syncQueue
-            .filter((item) => item.payload?.tenantId === tenantId)
-            .map((item) => item.id));
-
-          const deadLetters = await db.deadLetterQueue.toArray();
-          await db.deadLetterQueue.bulkDelete(deadLetters
-            .filter((item) => item.payload?.tenantId === tenantId)
-            .map((item) => item.id));
-        }
-      );
-      await seedDexieDatabaseIfNeeded(true, tenantId, false, businessName);
-      await updateQueueCounts();
-      void kickSync();
-      setDataManagementMessage(t.settings.resetSuccess);
-    }
   };
 
   const handleSavePin = async () => {
@@ -283,35 +244,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
       setPinDialogError(err?.response?.data?.message || t.onboarding.loginFailed);
     } finally {
       setIsPinDialogSubmitting(false);
-    }
-  };
-
-  const handleInitiateLogout = async () => {
-    let pending = 0;
-    try {
-      pending = await db.syncQueue.count();
-    } catch (e) {
-      console.warn(e);
-    }
-    setLogoutUnsyncedCount(pending);
-    setIsLogoutConfirmOpen(true);
-  };
-
-  const handleInitiateSwitchAccount = async () => {
-    let pending = 0;
-    try {
-      pending = await db.syncQueue.count();
-    } catch (e) {
-      console.warn(e);
-    }
-    if (pending > 0) {
-      setLogoutUnsyncedCount(pending);
-      setIsLogoutConfirmOpen(true);
-    } else {
-      if (onNavigate) {
-        onNavigate('login');
-      }
-      await logout(true);
     }
   };
 
@@ -628,103 +560,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
         </div>
       </Card>
 
-      {/* Account & Multi-tenant isolation */}
-      <Card className={styles.card}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
-          <Text weight="bold" size={400}>
-            {t.settings.deviceInfoSection}
-          </Text>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <Button
-              appearance="subtle"
-              size="small"
-              icon={<EditRegular />}
-              onClick={() => openOnboarding('edit')}
-              style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
-            >
-              {t.settings.editProfileBtn}
-            </Button>
-          </div>
-        </div>
-        <div className={styles.infoRow}>
-          <Text size={200}>{t.settings.storeNameLabel}</Text>
-          <Text size={200} weight="bold">{businessName}</Text>
-        </div>
-        {ownerName && (
-          <div className={styles.infoRow}>
-            <Text size={200}>{t.settings.ownerNameLabel}</Text>
-            <Text size={200}>{ownerName}</Text>
-          </div>
-        )}
-        <div className={styles.infoRow}>
-          <Text size={200}>{t.settings.emailLabel}</Text>
-          <Text size={200} style={{ fontFamily: 'monospace' }}>{userEmail || '—'}</Text>
-        </div>
-        {userPhone && (
-          <div className={styles.infoRow}>
-            <Text size={200}>{t.settings.userPhoneLabel}</Text>
-            <Text size={200} style={{ fontFamily: 'monospace' }}>{userPhone}</Text>
-          </div>
-        )}
-        <div className={styles.infoRow}>
-          <Text size={200}>{t.settings.pinStatusLabel}</Text>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px', flexWrap: 'wrap' }}>
-            <Badge
-              appearance="tint"
-              color={hasPin ? 'success' : 'informative'}
-              style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
-            >
-              {hasPin ? t.settings.pinActive : t.settings.pinInactive}
-            </Badge>
-            <Button
-              size="small"
-              appearance="subtle"
-              icon={<KeyRegular />}
-              style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
-              onClick={() => {
-                setPinDialogPassword('');
-                setPinDialogNewPin('');
-                setPinDialogError('');
-                setPinDialogSuccess('');
-                setIsPinDialogOpen(true);
-              }}
-            >
-              {hasPin ? t.settings.changePinBtn : t.settings.setPinBtn}
-            </Button>
-            {hasPin && (
-              <Button
-                size="small"
-                appearance="subtle"
-                icon={<LockClosedRegular />}
-                style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
-                onClick={() => setIsSessionLocked(true)}
-              >
-                {t.settings.lockSessionBtn}
-              </Button>
-            )}
-          </div>
-        </div>
-        <div className={styles.infoRow}>
-          <Text size={200}>{t.settings.tenantId}:</Text>
-          <Text size={200} style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{tenantId}</Text>
-        </div>
-        <div className={styles.infoRow}>
-          <Text size={200}>{t.settings.userId}:</Text>
-          <Text size={200} style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{userId}</Text>
-        </div>
 
-        <Divider style={{ margin: '12px 0 8px 0' }} />
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          <Button
-            appearance="secondary"
-            size="small"
-            icon={<ArrowClockwiseRegular />}
-            onClick={handleInitiateSwitchAccount}
-          >
-            {t.settings.switchAccountBtn}
-          </Button>
-        </div>
-      </Card>
 
       {/* Progressive Web App (PWA) System */}
       <Card className={styles.card}>
@@ -990,45 +826,104 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
         </div>
       </Card>
 
-      {/* Cloud & Data Management */}
+      {/* Account & Multi-tenant isolation / Store & Device Details */}
       <Card className={styles.card}>
-        <Text weight="bold" size={400} style={{ marginBottom: '8px', display: 'block' }}>
-          {t.settings.dataManagement}
-        </Text>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <Button
-            appearance="secondary"
-            icon={<CloudArrowDownRegular />}
-            onClick={handlePullCatalog}
-          >
-            {t.settings.pullCatalogBtn}
-          </Button>
-
-          <Button
-            appearance="secondary"
-            icon={<ArrowClockwiseRegular />}
-            onClick={handleResetSeed}
-          >
-            {t.settings.resetSeedBtn}
-          </Button>
-
-          {dataManagementMessage && (
-            <Text
-              role="status"
-              size={200}
-              style={{
-                color: tokens.colorPaletteGreenForeground1,
-                display: 'block',
-                marginTop: '4px',
-                fontWeight: 600
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+          <Text weight="bold" size={400}>
+            {t.settings.deviceInfoSection}
+          </Text>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <Button
+              appearance="subtle"
+              size="small"
+              icon={<EditRegular />}
+              onClick={() => openOnboarding('edit')}
+              style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+            >
+              {t.settings.editProfileBtn}
+            </Button>
+          </div>
+        </div>
+        <div className={styles.infoRow}>
+          <Text size={200}>{t.settings.storeNameLabel}</Text>
+          <Text size={200} weight="bold">{businessName}</Text>
+        </div>
+        {ownerName && (
+          <div className={styles.infoRow}>
+            <Text size={200}>{t.settings.ownerNameLabel}</Text>
+            <Text size={200}>{ownerName}</Text>
+          </div>
+        )}
+        <div className={styles.infoRow}>
+          <Text size={200}>{t.settings.emailLabel}</Text>
+          <Text size={200} style={{ fontFamily: 'monospace' }}>{userEmail || '—'}</Text>
+        </div>
+        {userPhone && (
+          <div className={styles.infoRow}>
+            <Text size={200}>{t.settings.userPhoneLabel}</Text>
+            <Text size={200} style={{ fontFamily: 'monospace' }}>{userPhone}</Text>
+          </div>
+        )}
+        <div className={styles.infoRow}>
+          <Text size={200}>{t.settings.pinStatusLabel}</Text>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px', flexWrap: 'wrap' }}>
+            <Badge
+              appearance="tint"
+              color={hasPin ? 'success' : 'informative'}
+              style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+            >
+              {hasPin ? t.settings.pinActive : t.settings.pinInactive}
+            </Badge>
+            <Button
+              size="small"
+              appearance="subtle"
+              icon={<KeyRegular />}
+              style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+              onClick={() => {
+                setPinDialogPassword('');
+                setPinDialogNewPin('');
+                setPinDialogError('');
+                setPinDialogSuccess('');
+                setIsPinDialogOpen(true);
               }}
             >
-              ✓ {dataManagementMessage}
-            </Text>
-          )}
+              {hasPin ? t.settings.changePinBtn : t.settings.setPinBtn}
+            </Button>
+            {hasPin && (
+              <Button
+                size="small"
+                appearance="subtle"
+                icon={<LockClosedRegular />}
+                style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+                onClick={() => setIsSessionLocked(true)}
+              >
+                {t.settings.lockSessionBtn}
+              </Button>
+            )}
+          </div>
+        </div>
+        <div className={styles.infoRow}>
+          <Text size={200}>{t.settings.tenantId}:</Text>
+          <Text size={200} style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{tenantId}</Text>
+        </div>
+        <div className={styles.infoRow}>
+          <Text size={200}>{t.settings.userId}:</Text>
+          <Text size={200} style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{userId}</Text>
+        </div>
 
+        <Divider style={{ margin: '12px 0 8px 0' }} />
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <Button
+            appearance="secondary"
+            size="small"
+            icon={<ArrowClockwiseRegular />}
+            onClick={handleInitiateSwitchAccount}
+          >
+            {t.settings.switchAccountBtn}
+          </Button>
           <Button
             appearance="subtle"
+            size="small"
             style={{ color: tokens.colorPaletteRedForeground1 }}
             icon={<SignOutRegular />}
             onClick={handleInitiateLogout}
@@ -1192,82 +1087,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
         </DialogSurface>
       </Dialog>
 
-      {/* Safe Logout Dialog */}
-      <Dialog
+      <SafeLogoutDialog
         open={isLogoutConfirmOpen}
-        onOpenChange={(_, data) => !data.open && setIsLogoutConfirmOpen(false)}
-      >
-        <DialogSurface>
-          <DialogBody>
-            <DialogTitle>
-              {t.settings.logoutConfirmTitle}
-            </DialogTitle>
-            <DialogContent>
-              {logoutUnsyncedCount > 0 ? (
-                <div>
-                  <Text size={300} weight="semibold" style={{ color: tokens.colorPaletteRedForeground1, display: 'block', marginBottom: '8px' }}>
-                    {t.settings.logoutUnsyncedWarning.replace('{count}', String(logoutUnsyncedCount))}
-                  </Text>
-                  <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-                    {t.settings.logoutConfirmDesc}
-                  </Text>
-                </div>
-              ) : (
-                <Text size={300}>{t.settings.logoutConfirmDesc}</Text>
-              )}
-            </DialogContent>
-            <DialogActions
-              fluid
-              style={{
-                gridColumn: '1 / -1',
-                display: 'flex',
-                flexWrap: 'wrap',
-                justifyContent: 'flex-end',
-                alignItems: 'center',
-                gap: '8px'
-              }}
-            >
-              <Button
-                appearance="secondary"
-                style={{ whiteSpace: 'nowrap' }}
-                onClick={() => setIsLogoutConfirmOpen(false)}
-              >
-                {t.common.cancel}
-              </Button>
-              {logoutUnsyncedCount > 0 && (
-                <Button
-                  appearance="primary"
-                  icon={<ArrowSyncRegular />}
-                  style={{ whiteSpace: 'nowrap' }}
-                  onClick={async () => {
-                    setIsLogoutConfirmOpen(false);
-                    await handleForceSync();
-                  }}
-                >
-                  {t.settings.syncFirstBtn}
-                </Button>
-              )}
-              <Button
-                appearance={logoutUnsyncedCount > 0 ? 'secondary' : 'primary'}
-                style={{
-                  color: tokens.colorPaletteRedForeground1,
-                  borderColor: tokens.colorPaletteRedBorder1,
-                  whiteSpace: 'nowrap'
-                }}
-                onClick={async () => {
-                  setIsLogoutConfirmOpen(false);
-                  if (onNavigate) {
-                    onNavigate('login');
-                  }
-                  await logout(true);
-                }}
-              >
-                {logoutUnsyncedCount > 0 ? t.settings.forceLogoutBtn : t.settings.logoutBtn}
-              </Button>
-            </DialogActions>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
+        unsyncedCount={logoutUnsyncedCount}
+        onDismiss={cancelLogout}
+        onSyncFirst={syncFirst}
+        onConfirmLogout={confirmLogout}
+      />
     </div>
   );
 };
