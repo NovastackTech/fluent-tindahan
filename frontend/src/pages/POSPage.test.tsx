@@ -1050,6 +1050,135 @@ describe('POSPage', () => {
     });
   });
 
+  const exactAmountButton = () => screen.getByRole('button', { name: /Eksaktong Halaga|Exact Amount/i });
+  const cashTenderInput = () => screen.getByRole('spinbutton', { name: /Tinanggap na pera|Cash received/i });
+
+  it('preselects exact cash when checkout opens and completes the sale without re-entering the amount', async () => {
+    useCartStore.setState({ cashReceived: 500, paymentMethod: 'GCash' });
+    renderPOS();
+
+    await waitFor(() => {
+      expect(screen.getByText('Lucky Me Pancit Canton Kalamansi')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText('Lucky Me Pancit Canton Kalamansi'));
+    fireEvent.click(screen.getByRole('button', { name: /Bayad|Pay/i }));
+
+    const dialog = screen.getByRole('dialog');
+    expect(screen.getByRole('tab', { name: 'GCash' })).toHaveAttribute('aria-selected', 'true');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Cash' }));
+
+    expect(exactAmountButton()).toHaveAttribute('aria-pressed', 'true');
+    expect(cashTenderInput()).toHaveValue(16);
+    expect(within(dialog).getByText('₱0.00')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Kumpletuhin ang Benta|Complete Sale/i })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole('button', { name: /Kumpletuhin ang Benta|Complete Sale/i }));
+
+    await waitFor(async () => {
+      const sales = await db.sales.toArray();
+      expect(sales).toHaveLength(1);
+      expect(sales[0].paymentMethod).toBe('Cash');
+      expect(sales[0].totalAmount).toBe(16);
+      expect(sales[0].cashReceived).toBe(16);
+      expect(sales[0].changeGiven).toBe(0);
+    });
+  });
+
+  it('drops exact-amount selection for a typed or quick tender, keeps it across payment tabs, and applies the new total on reopen', async () => {
+    await db.products.add({
+      id: 'p-soap',
+      tenantId: 't-1',
+      name: 'Safeguard Soap',
+      price: 12.5,
+      cost: 9,
+      barcode: '4800011122001',
+      category: 'Personal Care',
+      stockQty: 10,
+      updatedAt: new Date().toISOString()
+    });
+
+    renderPOS();
+
+    await waitFor(() => {
+      expect(screen.getByText('Lucky Me Pancit Canton Kalamansi')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText('Lucky Me Pancit Canton Kalamansi'));
+    fireEvent.click(screen.getByRole('button', { name: /Bayad|Pay/i }));
+
+    const dialog = screen.getByRole('dialog');
+    expect(exactAmountButton()).toHaveAttribute('aria-pressed', 'true');
+    expect(cashTenderInput()).toHaveValue(16);
+
+    fireEvent.change(cashTenderInput(), { target: { value: '50' } });
+    expect(exactAmountButton()).toHaveAttribute('aria-pressed', 'false');
+    expect(cashTenderInput()).toHaveValue(50);
+    expect(within(dialog).getByText('₱34.00')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'GCash' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Utang' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Split' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Cash' }));
+
+    expect(exactAmountButton()).toHaveAttribute('aria-pressed', 'false');
+    expect(cashTenderInput()).toHaveValue(50);
+    expect(within(dialog).getByText('₱34.00')).toBeInTheDocument();
+
+    fireEvent.change(cashTenderInput(), { target: { value: '16' } });
+    expect(exactAmountButton()).toHaveAttribute('aria-pressed', 'true');
+    expect(within(dialog).getByText('₱0.00')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '₱100.00' }));
+    expect(exactAmountButton()).toHaveAttribute('aria-pressed', 'false');
+    expect(cashTenderInput()).toHaveValue(100);
+    expect(within(dialog).getByText('₱84.00')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /^Kanselahin$|^Cancel$/i }));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Safeguard Soap'));
+    fireEvent.click(screen.getByRole('button', { name: /Bayad|Pay/i }));
+
+    expect(exactAmountButton()).toHaveAttribute('aria-pressed', 'true');
+    expect(cashTenderInput()).toHaveValue(28.5);
+    expect(within(screen.getByRole('dialog')).getByText('₱0.00')).toBeInTheDocument();
+    expect(exactAmountButton()).toHaveTextContent('₱28.50');
+  });
+
+  it('deselects exact amount when a quick bill equals the total and still shows zero change', async () => {
+    await db.products.add({
+      id: 'p-bill',
+      tenantId: 't-1',
+      name: 'Load 20',
+      price: 20,
+      cost: 19,
+      barcode: '4800011122002',
+      category: 'Load',
+      stockQty: 10,
+      updatedAt: new Date().toISOString()
+    });
+
+    renderPOS();
+
+    await waitFor(() => {
+      expect(screen.getByText('Load 20')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText('Load 20'));
+    fireEvent.click(screen.getByRole('button', { name: /Bayad|Pay/i }));
+
+    const dialog = screen.getByRole('dialog');
+    expect(exactAmountButton()).toHaveAttribute('aria-pressed', 'true');
+    expect(cashTenderInput()).toHaveValue(20);
+
+    fireEvent.click(screen.getByRole('button', { name: '₱20.00' }));
+
+    expect(exactAmountButton()).toHaveAttribute('aria-pressed', 'false');
+    expect(cashTenderInput()).toHaveValue(20);
+    expect(within(dialog).getByText('₱0.00')).toBeInTheDocument();
+  });
+
   it('renders low stock badge alongside stock count when product stock is 5 or below', async () => {
     await db.products.add({
       id: 'chippy-barbecue',
@@ -1071,7 +1200,6 @@ describe('POSPage', () => {
     });
   });
 });
-
 
 
 
