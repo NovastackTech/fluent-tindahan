@@ -35,6 +35,9 @@ import { usePwaStore } from '../state/pwaStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
 import { useDisclaimerStore } from '../state/disclaimerStore';
 import { SubscriptionModal } from './SubscriptionModal';
+import { HeaderAccountMenu } from './HeaderAccountMenu';
+import { SafeLogoutDialog } from './SafeLogoutDialog';
+import { useSafeLogout } from './useSafeLogout';
 
 const useStyles = makeStyles({
   header: {
@@ -85,18 +88,6 @@ const useStyles = makeStyles({
     alignItems: 'center',
     ...shorthands.gap(tokens.spacingHorizontalXS),
     flexShrink: 0
-  },
-  storeName: {
-    fontSize: tokens.fontSizeBase200,
-    color: tokens.colorNeutralForeground3,
-    display: 'block',
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    maxWidth: '180px',
-    '@media (max-width: 400px)': {
-      maxWidth: '120px'
-    }
   },
   langButton: {
     fontWeight: 600,
@@ -182,6 +173,13 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
   const { isInstallable, isStandalone, isInstalled, promptInstall } = usePwaStore();
   const { tier, openUpgradeModal } = useSubscriptionStore();
   const openDisclaimer = useDisclaimerStore((s) => s.openDisclaimer);
+  const safeLogout = useSafeLogout({
+    onLoggedOut: () => {
+      if (onNavigate) {
+        onNavigate('login');
+      }
+    }
+  });
 
   const headerRef = useRef<HTMLElement>(null);
   const headerInnerRef = useRef<HTMLDivElement>(null);
@@ -515,8 +513,13 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
                 </Button>
               )}
             </div>
-            {showStoreInfo && (
-              <span className={styles.storeName}>{businessName}</span>
+            {!isLoggedOut && (
+              <HeaderAccountMenu
+                businessName={showStoreInfo ? businessName ?? '' : ''}
+                onLogout={() => {
+                  void safeLogout.initiateLogout();
+                }}
+              />
             )}
           </div>
         </div>
@@ -570,6 +573,13 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
       )}
 
       <SubscriptionModal />
+      <SafeLogoutDialog
+        open={safeLogout.isLogoutConfirmOpen}
+        unsyncedCount={safeLogout.logoutUnsyncedCount}
+        onDismiss={safeLogout.cancelLogout}
+        onSyncFirst={safeLogout.syncFirst}
+        onConfirmLogout={safeLogout.confirmLogout}
+      />
     </header>
   );
 };

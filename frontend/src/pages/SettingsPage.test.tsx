@@ -83,6 +83,22 @@ describe('SettingsPage', () => {
     expect(screen.getByText(/Aling Nena's Tindahan & GCash/)).toBeInTheDocument();
   });
 
+  it('renders Store & Device Details at the bottom of the page containing the logout button', () => {
+    renderSettings();
+
+    const legalTitle = screen.getByText(/Legal, Pagsunod|Legal, Compliance/i);
+    const deviceInfoTitle = screen.getByText(/Impormasyon ng Tindahan at Device|Store & Device Details/i);
+    const logoutBtn = screen.getByRole('button', { name: /Mag-log Out|Log Out/i });
+
+    // Store & Device Details must follow the Legal & Compliance section in the DOM
+    expect(legalTitle.compareDocumentPosition(deviceInfoTitle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // The logout button must be inside the Store & Device Details card
+    const deviceInfoCard = deviceInfoTitle.closest('.fui-Card');
+    expect(deviceInfoCard).not.toBeNull();
+    expect(deviceInfoCard?.contains(logoutBtn)).toBe(true);
+  });
+
   it('allows switching language between Tagalog and English', () => {
     renderSettings();
 
