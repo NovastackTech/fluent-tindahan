@@ -1,11 +1,22 @@
 import { usePwaStore } from '../state/pwaStore';
+import { useCartStore } from '../state/cartStore';
 
 let updateSWFunction: ((reloadPage?: boolean) => Promise<void>) | null = null;
 let updateIntervalId: ReturnType<typeof setInterval> | null = null;
 let initPromise: Promise<void> | null = null;
 let isReloading = false;
+let deferredReloadUnsubscribe: (() => void) | null = null;
+let deferredReloadTimer: ReturnType<typeof setTimeout> | null = null;
 
 function executeReload(): void {
+  if (deferredReloadTimer) {
+    clearTimeout(deferredReloadTimer);
+    deferredReloadTimer = null;
+  }
+  if (deferredReloadUnsubscribe) {
+    deferredReloadUnsubscribe();
+    deferredReloadUnsubscribe = null;
+  }
   if (typeof window === 'undefined') return;
   usePwaStore.getState().setNeedRefresh(false);
   try {
@@ -16,6 +27,52 @@ function executeReload(): void {
     } else if (typeof window.location?.replace === 'function') {
       window.location.replace(window.location.href);
     }
+  }
+}
+
+function canSafelyReload(): boolean {
+  const hasLocalCart = useCartStore.getState().items.length > 0;
+  const pwaState = usePwaStore.getState();
+  return !hasLocalCart && !pwaState.isSaleInProgress && !pwaState.hasActiveReceipt;
+}
+
+function triggerDeferredReloadSubscription(): void {
+  if (deferredReloadUnsubscribe) return;
+
+  const checkSafeAndReload = () => {
+    if (!canSafelyReload()) {
+      return;
+    }
+
+    if (deferredReloadTimer) {
+      clearTimeout(deferredReloadTimer);
+    }
+
+    deferredReloadTimer = setTimeout(() => {
+      deferredReloadTimer = null;
+      if (canSafelyReload()) {
+        if (deferredReloadUnsubscribe) {
+          deferredReloadUnsubscribe();
+          deferredReloadUnsubscribe = null;
+        }
+        executeReload();
+      }
+    }, 500);
+  };
+
+  const unsubCart = useCartStore.subscribe(checkSafeAndReload);
+  const unsubPwa = usePwaStore.subscribe(checkSafeAndReload);
+  deferredReloadUnsubscribe = () => {
+    unsubCart();
+    unsubPwa();
+  };
+}
+
+function handleControllingReload(): void {
+  if (canSafelyReload()) {
+    executeReload();
+  } else {
+    triggerDeferredReloadSubscription();
   }
 }
 
@@ -49,7 +106,7 @@ export function initServiceWorker(): Promise<void> {
           usePwaStore.getState().setOfflineReady(true);
         },
         onNeedReload() {
-          usePwaStore.getState().setNeedRefresh(true);
+          handleControllingReload();
         },
         onRegisteredSW(_swUrl: string, registration?: ServiceWorkerRegistration) {
           if (registration) {
@@ -93,11 +150,13 @@ export async function reloadAppForUpdate(): Promise<void> {
   // Clear banner state immediately so it does not linger
   usePwaStore.getState().setNeedRefresh(false);
 
-  // 1. Listen for controllerchange: if the service worker updates and takes control,
+  // 1. Listen for controllerchange: when the new service worker activates and claims the page,
   // reload immediately so the page fetches from the new service worker.
+  let controllerChangeFired = false;
   if ('serviceWorker' in navigator && typeof navigator.serviceWorker.addEventListener === 'function') {
     try {
       navigator.serviceWorker.addEventListener('controllerchange', () => {
+        controllerChangeFired = true;
         executeReload();
       }, { once: true });
     } catch {
@@ -146,15 +205,17 @@ export async function reloadAppForUpdate(): Promise<void> {
     }
   }
 
-  // 4. Guaranteed execution: trigger reload directly
-  executeReload();
-
-  // 5. Fallback timer: in case the first reload was queued or ignored by the browser
-  setTimeout(() => {
+  // 4. If controllerchange already fired or serviceWorker event listeners are unavailable, reload directly.
+  // Otherwise, allow a short window for controllerchange to trigger executeReload before fallback.
+  if (controllerChangeFired || !('serviceWorker' in navigator) || typeof navigator.serviceWorker.addEventListener !== 'function') {
     executeReload();
-  }, 500);
+  } else {
+    setTimeout(() => {
+      executeReload();
+    }, 1000);
+  }
 
-  // 6. Hard navigation fallback: force assign location href if reload calls were ignored
+  // 5. Hard navigation fallback: force assign location href if reload calls were ignored
   setTimeout(() => {
     try {
       if (typeof window !== 'undefined' && typeof window.location?.assign === 'function') {
@@ -180,8 +241,24 @@ export function _resetUpdateSWFunctionForTest(): void {
     clearInterval(updateIntervalId);
     updateIntervalId = null;
   }
+  if (deferredReloadTimer) {
+    clearTimeout(deferredReloadTimer);
+    deferredReloadTimer = null;
+  }
+  if (deferredReloadUnsubscribe) {
+    deferredReloadUnsubscribe();
+    deferredReloadUnsubscribe = null;
+  }
   usePwaStore.getState().setIsSaleInProgress(false);
   usePwaStore.getState().setHasActiveReceipt(false);
+}
+
+/**
+ * Returns whether deferred reload subscription is currently active.
+ * @internal
+ */
+export function _isReloadDeferredForTest(): boolean {
+  return Boolean(deferredReloadUnsubscribe);
 }
 
 /**

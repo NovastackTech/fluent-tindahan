@@ -116,6 +116,9 @@ export const App: React.FC = () => {
     const handlePreloadError = (event: Event) => {
       event.preventDefault();
       console.warn('[PWA] Vite dynamic chunk preload error detected.');
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        return;
+      }
       usePwaStore.getState().setNeedRefresh(true);
     };
     window.addEventListener('vite:preloadError', handlePreloadError);
