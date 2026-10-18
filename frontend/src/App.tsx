@@ -23,7 +23,7 @@ import { OnboardingModal } from './components/OnboardingModal';
 import { SessionLockModal } from './components/SessionLockModal';
 import { DisclaimerModal } from './components/DisclaimerModal';
 import { TermsModal } from './components/TermsModal';
-import { initSyncEngine } from './sync/syncEngine';
+import { initSyncEngine, pullCatalogFromServer, updateQueueCounts } from './sync/syncEngine';
 import { usePwaStore, initPwaListeners } from './state/pwaStore';
 import { initServiceWorker } from './pwa/registerServiceWorker';
 import { initPwaTabCoordinator } from './pwa/pwaTabCoordinator';
@@ -45,7 +45,7 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ defa
 const LandingPage = lazy(() => import('./pages/LandingPage').then(m => ({ default: m.LandingPage })));
 const LoginPage = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })));
 
-export function getInitialNavTab(): NavTab {
+function getInitialNavTab(): NavTab {
   if (typeof window === 'undefined') return 'dashboard';
   const params = new URLSearchParams(window.location.search);
   const tabParam = params.get('tab') as NavTab | null;
@@ -100,6 +100,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (!isOnboardingStatusReady) return;
     if (!isOnboarded && activeTab !== 'landing' && activeTab !== 'login') {
+      // oxlint-disable-next-line react/set-state-in-effect - Route unauthenticated non-landing users to login when onboarding state is confirmed
       handleTabChange('login');
     }
   }, [isOnboarded, isOnboardingStatusReady, activeTab]);
@@ -194,10 +195,26 @@ export const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!isOnboardingStatusReady || !isOnboarded || storeServicesStarted.current) return;
+    if (!isOnboarded) {
+      storeServicesStarted.current = false;
+      return;
+    }
+    if (!isOnboardingStatusReady || storeServicesStarted.current) return;
     storeServicesStarted.current = true;
 
     initSyncEngine();
+
+    const checkAndPullCatalog = async () => {
+      const activeTenantId = useAuthStore.getState().tenantId;
+      if (activeTenantId && activeTenantId !== DEFAULT_TENANT_ID) {
+        const productCount = await db.products.where('tenantId').equals(activeTenantId).count();
+        if (productCount === 0) {
+          await pullCatalogFromServer();
+          await updateQueueCounts();
+        }
+      }
+    };
+    checkAndPullCatalog().catch(console.error);
 
     const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
     const isBillingSuccess = searchParams?.get('billing') === 'success';

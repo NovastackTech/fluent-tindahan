@@ -29,6 +29,7 @@ import { useSubscriptionStore } from '../state/subscriptionStore';
 import { calculateGCashFee, DEFAULT_GCASH_FEE_TIERS, useGCashFeeStore } from '../state/gcashFeeStore';
 import { formatPeso } from '../utils/currency';
 import { toLocalDateKey } from '../utils/date';
+import { useTodayKey } from '../hooks/useTodayKey';
 import { normalizePhilippineMobile } from '../utils/philippineMobile';
 
 
@@ -66,6 +67,40 @@ const useStyles = makeStyles({
     alignItems: 'center',
     ...shorthands.padding(tokens.spacingVerticalS, '0'),
     ...shorthands.borderBottom('1px', 'solid', tokens.colorNeutralStroke2)
+  },
+  tabList: {
+    marginBottom: '16px',
+    width: '100%',
+    display: 'flex'
+  },
+  tabItem: {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: '0px',
+    minWidth: 0,
+    justifyContent: 'center',
+    paddingLeft: tokens.spacingHorizontalS,
+    paddingRight: tokens.spacingHorizontalS
+  },
+  tabLabel: {
+    display: 'inline-flex',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    lineHeight: 1.25,
+    minWidth: 0
+  },
+  tabMainText: {
+    fontWeight: 600,
+    whiteSpace: 'nowrap'
+  },
+  tabSubText: {
+    fontSize: tokens.fontSizeBase100,
+    color: tokens.colorNeutralForeground3,
+    fontWeight: 'normal',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    maxWidth: '100%'
   }
 });
 
@@ -150,8 +185,8 @@ export const GCashPage: React.FC = () => {
     () => db.gcashTxnResolutions.where('tenantId').equals(tenantId).toArray(),
     [tenantId]
   );
-  const todayStr = toLocalDateKey(new Date());
-  const currentMonthPrefix = todayStr.slice(0, 7);
+  const todayStr = useTodayKey();
+  const currentMonthPrefix = useMemo(() => todayStr.slice(0, 7), [todayStr]);
   const resolutionsByTxnId = useMemo(
     () => new Map((resolutions || []).map((resolution) => [resolution.gcashTxnId, resolution])),
     [resolutions]
@@ -435,10 +470,34 @@ export const GCashPage: React.FC = () => {
           <TabList
             selectedValue={txnType}
             onTabSelect={(_, data) => setTxnType(data.value as any)}
-            style={{ marginBottom: '16px' }}
+            className={styles.tabList}
           >
-            <Tab value="CashIn" icon={<ArrowUploadRegular />}>{t.gcash.cashIn}</Tab>
-            <Tab value="CashOut" icon={<ArrowDownloadRegular />}>{t.gcash.cashOut}</Tab>
+            <Tab
+              value="CashIn"
+              icon={<ArrowUploadRegular />}
+              className={styles.tabItem}
+              data-testid="gcash-tab-cash-in"
+            >
+              <span className={styles.tabLabel}>
+                <span className={styles.tabMainText}>Cash In</span>
+                <span className={styles.tabSubText}>
+                  {language === 'tl' ? '(Pasok sa GCash)' : '(Send to GCash)'}
+                </span>
+              </span>
+            </Tab>
+            <Tab
+              value="CashOut"
+              icon={<ArrowDownloadRegular />}
+              className={styles.tabItem}
+              data-testid="gcash-tab-cash-out"
+            >
+              <span className={styles.tabLabel}>
+                <span className={styles.tabMainText}>Cash Out</span>
+                <span className={styles.tabSubText}>
+                  {language === 'tl' ? '(Bigay ng Pera)' : '(Disburse Cash)'}
+                </span>
+              </span>
+            </Tab>
           </TabList>
 
           <div className={styles.gridTwo}>

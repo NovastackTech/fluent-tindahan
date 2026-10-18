@@ -14,10 +14,13 @@ import {
   TenantProvisioningError
 } from '../services/apiClient';
 import { useAuthStore } from '../state/authStore';
+import { useLanguageStore } from '../state/languageStore';
+import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
 import { createClientUuid } from '../utils/uuid';
 import { create } from 'zustand';
 import { hasPendingProfileUpdate, syncPendingProfileUpdate } from '../services/profileSync';
 
+import { DEFAULT_TENANT_ID } from '../db/seedData';
 import { STORAGE_KEY_LAST_SYNCED, getSyncStorageKey } from '../constants/sync';
 export { STORAGE_KEY_LAST_SYNCED, getSyncStorageKey };
 
@@ -99,6 +102,18 @@ useAuthStore.subscribe((authState, prevAuthState) => {
   }
 });
 
+useLanguageStore.subscribe((langState, prevLangState) => {
+  if (langState.language !== prevLangState?.language) {
+    const currentError = useSyncStore.getState().lastErrorMessage;
+    if (currentError) {
+      const localized = getLocalizedSyncErrorMessage(currentError, langState.language);
+      if (localized && localized !== currentError) {
+        useSyncStore.setState({ lastErrorMessage: localized });
+      }
+    }
+  }
+});
+
 function getDeviceId(): string {
   const KEY = 'fluent_tindahan_device_id';
   let deviceId = localStorage.getItem(KEY);
@@ -172,11 +187,13 @@ function getAuthSessionKey(): string {
   return `${tenantId}:${firebaseToken ?? ''}`;
 }
 
-export async function processSyncQueue(): Promise<{ processed: number; conflicts: number; errors: number }> {
+export async function processSyncQueue(options?: { force?: boolean }): Promise<{ processed: number; conflicts: number; errors: number }> {
   const auth = useAuthStore.getState();
   if (!auth.isOnboardingStatusReady || !auth.isOnboarded) {
     return { processed: 0, conflicts: 0, errors: 0 };
   }
+
+  const isForce = Boolean(options?.force);
 
   // Attempt to sync pending profile update if queued
   if (hasPendingProfileUpdate()) {
@@ -192,14 +209,23 @@ export async function processSyncQueue(): Promise<{ processed: number; conflicts
   if (store.isSyncing) return { processed: 0, conflicts: 0, errors: 0 };
 
   const authSessionKey = getAuthSessionKey();
-  if (store.authBlockedSessionKey === authSessionKey) {
-    return { processed: 0, conflicts: 0, errors: 0 };
-  }
-  if (store.authBlockedSessionKey !== null) {
-    useSyncStore.setState({ authBlockedSessionKey: null, lastErrorMessage: null });
-  }
-  if (store.nextRetryAt !== null && Date.now() < store.nextRetryAt) {
-    return { processed: 0, conflicts: 0, errors: 0 };
+  if (!isForce) {
+    if (store.authBlockedSessionKey === authSessionKey) {
+      return { processed: 0, conflicts: 0, errors: 0 };
+    }
+    if (store.authBlockedSessionKey !== null) {
+      useSyncStore.setState({ authBlockedSessionKey: null, lastErrorMessage: null });
+    }
+    if (store.nextRetryAt !== null && Date.now() < store.nextRetryAt) {
+      return { processed: 0, conflicts: 0, errors: 0 };
+    }
+  } else {
+    useSyncStore.setState({
+      authBlockedSessionKey: null,
+      batchFailureCount: 0,
+      nextRetryAt: null,
+      lastErrorMessage: null
+    });
   }
 
   const pendingItems = await db.syncQueue
@@ -208,7 +234,7 @@ export async function processSyncQueue(): Promise<{ processed: number; conflicts
     .limit(50)
     .toArray();
 
-  if (pendingItems.length === 0) {
+  if (pendingItems.length === 0 && !isForce) {
     await updateQueueCounts();
     return { processed: 0, conflicts: 0, errors: 0 };
   }
@@ -288,7 +314,7 @@ export async function processSyncQueue(): Promise<{ processed: number; conflicts
 
     const response = await apiClient.post('/sync/batch', payload);
     useSyncStore.setState({ batchFailureCount: 0, nextRetryAt: null });
-    const data = response.data;
+    const data = response?.data || {};
     const results: Array<{ syncId: string; status: string; error?: string }> = data.results || [];
 
     let successCount = 0;
@@ -372,6 +398,19 @@ export async function processSyncQueue(): Promise<{ processed: number; conflicts
       store.setLastErrorMessage(conflictMessages.join(' '));
     }
     await updateQueueCounts();
+
+    if (successCount > 0) {
+      const remaining = await db.syncQueue
+        .where('status')
+        .anyOf('Pending', 'Failed')
+        .count();
+      if (remaining > 0) {
+        setTimeout(() => {
+          processSyncQueue().catch(console.error);
+        }, 100);
+      }
+    }
+
     return { processed: successCount, conflicts: conflictCount, errors: failCount };
   } catch (err: any) {
     console.error('Batch sync network/server failure:', err);
@@ -634,19 +673,18 @@ export async function pullCatalogFromServer(): Promise<number> {
     const response = await apiClient.get('/products');
     const products = response.data;
     if (Array.isArray(products) && products.length > 0) {
-      for (const p of products) {
-        await db.products.put({
-          id: p.id,
-          tenantId: p.tenantId,
-          name: p.name,
-          price: p.price,
-          cost: p.cost,
-          barcode: p.barcode,
-          category: p.category,
-          stockQty: p.stockQty,
-          updatedAt: p.updatedAt
-        });
-      }
+      const formattedProducts: ProductRecord[] = products.map((p: any) => ({
+        id: p.id,
+        tenantId: p.tenantId,
+        name: p.name,
+        price: Number(p.price),
+        cost: Number(p.cost),
+        barcode: p.barcode || undefined,
+        category: p.category || undefined,
+        stockQty: Number(p.stockQty),
+        updatedAt: p.updatedAt || new Date().toISOString()
+      }));
+      await db.products.bulkPut(formattedProducts);
       return products.length;
     }
     return 0;
@@ -656,8 +694,15 @@ export async function pullCatalogFromServer(): Promise<number> {
   }
 }
 
+let isSyncEngineInitialized = false;
+
 // Setup network & sync listeners
 export function initSyncEngine() {
+  if (isSyncEngineInitialized) {
+    updateQueueCounts().catch(console.error);
+    return;
+  }
+  isSyncEngineInitialized = true;
   const store = useSyncStore.getState();
 
   window.addEventListener('online', () => {
@@ -666,6 +711,15 @@ export function initSyncEngine() {
       .then(() => updateQueueCounts())
       .catch(console.error);
     processSyncQueue().catch(console.error);
+
+    const activeTenant = useAuthStore.getState().tenantId;
+    if (activeTenant && activeTenant !== DEFAULT_TENANT_ID) {
+      db.products.where('tenantId').equals(activeTenant).count().then((count) => {
+        if (count === 0) {
+          pullCatalogFromServer().then(() => updateQueueCounts()).catch(console.error);
+        }
+      }).catch(console.error);
+    }
   });
 
   window.addEventListener('offline', () => {

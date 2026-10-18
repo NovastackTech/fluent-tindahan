@@ -81,6 +81,7 @@ describe('OnboardingModal', () => {
     localStorage.clear();
     await db.tenants.clear();
     await db.products.clear();
+    await db.syncQueue.clear();
     useGCashFeeStore.setState({ feesByTenant: {} });
     useAuthStore.setState({
       consentAccepted: true,

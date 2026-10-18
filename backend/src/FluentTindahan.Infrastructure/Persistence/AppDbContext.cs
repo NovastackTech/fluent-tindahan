@@ -62,7 +62,7 @@ public class AppDbContext : DbContext, IApplicationDbContext
             builder.Property(t => t.SubscriptionEndDate);
             builder.Property(t => t.ExternalCustomerId).HasMaxLength(128);
             builder.Property(t => t.CheckoutSessionId).HasMaxLength(128);
-            builder.UseXminAsConcurrencyToken();
+            builder.Property<uint>("xmin").IsRowVersion();
         });
 
         // User

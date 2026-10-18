@@ -23,6 +23,7 @@ import {
 } from '@fluentui/react-icons';
 import { useAuthStore } from '../state/authStore';
 import { useTranslation } from '../state/languageStore';
+import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
 import { verifyLocalPin, loginPin, loginStore } from '../services/authService';
 
 const useStyles = makeStyles({
@@ -70,7 +71,7 @@ const useStyles = makeStyles({
 
 export const SessionLockModal: React.FC = () => {
   const styles = useStyles();
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const {
     isSessionLocked,
     setIsSessionLocked,
@@ -98,7 +99,9 @@ export const SessionLockModal: React.FC = () => {
 
   const isLocked = !usePassword && isOfflinePinLockedOut();
   const lockoutMinutes = isLocked ? getOfflinePinLockoutMinutesRemaining() : 0;
-  const displayedError = error || (isLocked ? t.settings.pinLockedError.replace('{minutes}', String(lockoutMinutes || 15)) : '');
+  const displayedError =
+    (getLocalizedSyncErrorMessage(error, language) || error) ||
+    (isLocked ? t.settings.pinLockedError.replace('{minutes}', String(lockoutMinutes || 15)) : '');
 
   const handleUnlock = async () => {
     if (isVerifying) return;
