@@ -10,7 +10,6 @@ import * as syncEngine from '../sync/syncEngine';
 import { useAuthStore } from '../state/authStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
 import { useGCashFeeStore } from '../state/gcashFeeStore';
-import { db } from '../db/db';
 
 vi.mock('./authService', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./authService')>();
@@ -79,6 +78,7 @@ vi.mock('../sync/syncEngine', async (importOriginal) => {
     updateQueueCounts: vi.fn().mockResolvedValue(undefined),
     kickSync: vi.fn().mockResolvedValue(undefined),
     pullCatalogFromServer: vi.fn().mockResolvedValue(undefined),
+    restoreTenantDataFromServer: vi.fn().mockResolvedValue(undefined),
     processSyncQueue: vi.fn().mockResolvedValue(undefined)
   };
 });
@@ -215,16 +215,10 @@ describe('storeRegistration services', () => {
   });
 
   describe('finalizeSuccessfulLogin', () => {
-    it('pulls catalog when tenant has 0 products and triggers queue sync', async () => {
-      vi.spyOn(db.products, 'where').mockReturnValue({
-        equals: () => ({
-          count: () => Promise.resolve(0)
-        })
-      } as any);
-
+    it('restores tenant data from server and triggers queue sync', async () => {
       await finalizeSuccessfulLogin('mock-tenant-id');
 
-      expect(syncEngine.pullCatalogFromServer).toHaveBeenCalled();
+      expect(syncEngine.restoreTenantDataFromServer).toHaveBeenCalled();
       expect(syncEngine.processSyncQueue).toHaveBeenCalled();
     });
   });

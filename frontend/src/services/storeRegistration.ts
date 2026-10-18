@@ -3,8 +3,7 @@ import { createClientUuid, seedDexieDatabaseIfNeeded } from '../db/seedData';
 import { useGCashFeeStore, DEFAULT_GCASH_FEE_TIERS } from '../state/gcashFeeStore';
 import { useAuthStore } from '../state/authStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
-import { db } from '../db/db';
-import { updateQueueCounts, kickSync, pullCatalogFromServer, processSyncQueue } from '../sync/syncEngine';
+import { updateQueueCounts, kickSync, restoreTenantDataFromServer, processSyncQueue } from '../sync/syncEngine';
 
 export interface ExecuteStoreRegistrationParams {
   businessName: string;
@@ -89,12 +88,9 @@ export async function executeStoreRegistration(
   return { success: true };
 }
 
-export async function finalizeSuccessfulLogin(tenantId: string): Promise<void> {
+export async function finalizeSuccessfulLogin(_tenantId: string): Promise<void> {
   void useSubscriptionStore.getState().refreshSubscription();
-  const productCount = await db.products.where('tenantId').equals(tenantId).count();
-  if (productCount === 0) {
-    void pullCatalogFromServer().then(() => updateQueueCounts()).catch(console.error);
-  }
+  void restoreTenantDataFromServer().catch(console.error);
   void processSyncQueue().catch(console.error);
 }
 

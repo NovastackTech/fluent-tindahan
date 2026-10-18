@@ -23,7 +23,7 @@ import { OnboardingModal } from './components/OnboardingModal';
 import { SessionLockModal } from './components/SessionLockModal';
 import { DisclaimerModal } from './components/DisclaimerModal';
 import { TermsModal } from './components/TermsModal';
-import { initSyncEngine, pullCatalogFromServer, updateQueueCounts } from './sync/syncEngine';
+import { initSyncEngine, restoreTenantDataFromServer } from './sync/syncEngine';
 import { usePwaStore, initPwaListeners } from './state/pwaStore';
 import { initServiceWorker } from './pwa/registerServiceWorker';
 import { initPwaTabCoordinator } from './pwa/pwaTabCoordinator';
@@ -215,11 +215,15 @@ export const App: React.FC = () => {
 
     const checkAndPullCatalog = async () => {
       const activeTenantId = useAuthStore.getState().tenantId;
-      if (activeTenantId && activeTenantId !== DEFAULT_TENANT_ID) {
-        const productCount = await db.products.where('tenantId').equals(activeTenantId).count();
-        if (productCount === 0) {
-          await pullCatalogFromServer();
-          await updateQueueCounts();
+      if (activeTenantId) {
+        const [prodCount, custCount, utangCount, gcashCount] = await Promise.all([
+          db.products.where('tenantId').equals(activeTenantId).count(),
+          db.customers.where('tenantId').equals(activeTenantId).count(),
+          db.utangLedger.where('tenantId').equals(activeTenantId).count(),
+          db.gcashTxns.where('tenantId').equals(activeTenantId).count()
+        ]);
+        if (prodCount === 0 && custCount === 0 && utangCount === 0 && gcashCount === 0) {
+          await restoreTenantDataFromServer();
         }
       }
     };

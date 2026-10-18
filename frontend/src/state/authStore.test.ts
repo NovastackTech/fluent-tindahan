@@ -504,6 +504,25 @@ describe('authStore', () => {
 
     postSpy.mockRestore();
   });
+
+  it('blocks logout when deadLetterQueue has unhandled items', async () => {
+    const { db } = await import('../db/db');
+    await db.deadLetterQueue.add({
+      id: 'dlq-1',
+      entity: 'Product',
+      action: 'Insert',
+      timestamp: new Date().toISOString(),
+      payload: {},
+      retryCount: 3,
+      failedAt: new Date().toISOString()
+    });
+
+    const result = await useAuthStore.getState().logout(false);
+    expect(result.success).toBe(false);
+    expect(result.unsyncedCount).toBeGreaterThanOrEqual(1);
+
+    await db.deadLetterQueue.clear();
+  });
 });
 
 

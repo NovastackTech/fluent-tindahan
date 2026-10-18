@@ -71,7 +71,8 @@ vi.mock('../sync/syncEngine', async (importOriginal) => {
     ...actual,
     processSyncQueue: vi.fn().mockResolvedValue({ processed: 0, conflicts: 0, errors: 0 }),
     kickSync: vi.fn().mockResolvedValue(undefined),
-    pullCatalogFromServer: vi.fn().mockResolvedValue(0)
+    pullCatalogFromServer: vi.fn().mockResolvedValue(0),
+    restoreTenantDataFromServer: vi.fn().mockResolvedValue(undefined)
   };
 });
 
@@ -147,7 +148,7 @@ describe('LoginPage Component', () => {
       });
       expect(useAuthStore.getState().isOnboarded).toBe(true);
       expect(useAuthStore.getState().userEmail).toBe('owner@tindahan.ph');
-      expect(syncEngine.pullCatalogFromServer).toHaveBeenCalled();
+      expect(syncEngine.restoreTenantDataFromServer).toHaveBeenCalled();
       expect(onNavigate).toHaveBeenCalledWith('pos');
     });
   });

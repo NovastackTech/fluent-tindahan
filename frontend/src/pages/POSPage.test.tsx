@@ -453,6 +453,9 @@ describe('POSPage', () => {
       const ledger = await db.utangLedger.toArray();
       expect(ledger).toHaveLength(1);
       expect(ledger[0].amount).toBe(16);
+
+      const queue = await db.syncQueue.toArray();
+      expect(queue.some((q) => q.entity === 'Product' && q.action === 'Update')).toBe(true);
     });
   });
 
