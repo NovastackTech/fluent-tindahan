@@ -539,5 +539,68 @@ describe('UtangPage', () => {
       expect(screen.queryByText('Bayad sa utang')).not.toBeInTheDocument();
     });
   });
+
+  it('keeps customer dialog accessible after closing nested Add Utang or Record Payment dialog', async () => {
+    await db.customers.add({
+      id: 'cust-nested-test',
+      tenantId: 'tenant-1',
+      name: 'QA Suki',
+      phone: '09171112222',
+      totalUtangBalance: 100,
+      updatedAt: new Date().toISOString()
+    });
+
+    renderUtang();
+    fireEvent.click(await screen.findByText('QA Suki'));
+
+    // Customer dialog is open
+    expect(await screen.findByRole('button', { name: /Isara|Close/i })).toBeInTheDocument();
+
+    // 1. Open Add Utang and cancel
+    fireEvent.click(screen.getByRole('button', { name: /Dagdagan ng Utang|Add Debt|Magtala ng Utang/i }));
+    const cancelAddCreditBtn = await screen.findByRole('button', { name: /Kanselahin|Cancel/i });
+    fireEvent.click(cancelAddCreditBtn);
+
+    await waitFor(() => {
+      const closeBtn = screen.getByRole('button', { name: /Isara|Close/i });
+      expect(closeBtn).toBeInTheDocument();
+      expect(closeBtn.closest('[aria-hidden="true"]')).toBeNull();
+    });
+
+    const payBtn = screen.getByRole('button', { name: /Magbayad|Pay/i });
+    expect(payBtn).toBeInTheDocument();
+    expect(payBtn.closest('[aria-hidden="true"]')).toBeNull();
+
+    // 2. Open Record Payment and cancel
+    fireEvent.click(payBtn);
+    const cancelPayBtn = await screen.findByRole('button', { name: /Kanselahin|Cancel/i });
+    fireEvent.click(cancelPayBtn);
+
+    await waitFor(() => {
+      const closeBtn = screen.getByRole('button', { name: /Isara|Close/i });
+      expect(closeBtn).toBeInTheDocument();
+      expect(closeBtn.closest('[aria-hidden="true"]')).toBeNull();
+    });
+
+    // 3. Open Add Utang, save credit, and check accessibility on customer dialog with updated balance
+    fireEvent.click(screen.getByRole('button', { name: /Dagdagan ng Utang|Add Debt|Magtala ng Utang/i }));
+    const creditInputs = screen.getAllByRole('spinbutton');
+    fireEvent.change(creditInputs[creditInputs.length - 1], { target: { value: '50' } });
+    fireEvent.click(screen.getByRole('button', { name: /Itala ang Utang|Save Credit/i }));
+
+    await waitFor(() => {
+      const closeBtn = screen.getByRole('button', { name: /Isara|Close/i });
+      expect(closeBtn).toBeInTheDocument();
+      expect(closeBtn.closest('[aria-hidden="true"]')).toBeNull();
+    });
+  });
 });
+
+
+
+
+
+
+
+
 
