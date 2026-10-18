@@ -560,103 +560,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
         </div>
       </Card>
 
-      {/* Account & Multi-tenant isolation */}
-      <Card className={styles.card}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
-          <Text weight="bold" size={400}>
-            {t.settings.deviceInfoSection}
-          </Text>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <Button
-              appearance="subtle"
-              size="small"
-              icon={<EditRegular />}
-              onClick={() => openOnboarding('edit')}
-              style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
-            >
-              {t.settings.editProfileBtn}
-            </Button>
-          </div>
-        </div>
-        <div className={styles.infoRow}>
-          <Text size={200}>{t.settings.storeNameLabel}</Text>
-          <Text size={200} weight="bold">{businessName}</Text>
-        </div>
-        {ownerName && (
-          <div className={styles.infoRow}>
-            <Text size={200}>{t.settings.ownerNameLabel}</Text>
-            <Text size={200}>{ownerName}</Text>
-          </div>
-        )}
-        <div className={styles.infoRow}>
-          <Text size={200}>{t.settings.emailLabel}</Text>
-          <Text size={200} style={{ fontFamily: 'monospace' }}>{userEmail || '—'}</Text>
-        </div>
-        {userPhone && (
-          <div className={styles.infoRow}>
-            <Text size={200}>{t.settings.userPhoneLabel}</Text>
-            <Text size={200} style={{ fontFamily: 'monospace' }}>{userPhone}</Text>
-          </div>
-        )}
-        <div className={styles.infoRow}>
-          <Text size={200}>{t.settings.pinStatusLabel}</Text>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px', flexWrap: 'wrap' }}>
-            <Badge
-              appearance="tint"
-              color={hasPin ? 'success' : 'informative'}
-              style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
-            >
-              {hasPin ? t.settings.pinActive : t.settings.pinInactive}
-            </Badge>
-            <Button
-              size="small"
-              appearance="subtle"
-              icon={<KeyRegular />}
-              style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
-              onClick={() => {
-                setPinDialogPassword('');
-                setPinDialogNewPin('');
-                setPinDialogError('');
-                setPinDialogSuccess('');
-                setIsPinDialogOpen(true);
-              }}
-            >
-              {hasPin ? t.settings.changePinBtn : t.settings.setPinBtn}
-            </Button>
-            {hasPin && (
-              <Button
-                size="small"
-                appearance="subtle"
-                icon={<LockClosedRegular />}
-                style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
-                onClick={() => setIsSessionLocked(true)}
-              >
-                {t.settings.lockSessionBtn}
-              </Button>
-            )}
-          </div>
-        </div>
-        <div className={styles.infoRow}>
-          <Text size={200}>{t.settings.tenantId}:</Text>
-          <Text size={200} style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{tenantId}</Text>
-        </div>
-        <div className={styles.infoRow}>
-          <Text size={200}>{t.settings.userId}:</Text>
-          <Text size={200} style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{userId}</Text>
-        </div>
 
-        <Divider style={{ margin: '12px 0 8px 0' }} />
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          <Button
-            appearance="secondary"
-            size="small"
-            icon={<ArrowClockwiseRegular />}
-            onClick={handleInitiateSwitchAccount}
-          >
-            {t.settings.switchAccountBtn}
-          </Button>
-        </div>
-      </Card>
 
       {/* Progressive Web App (PWA) System */}
       <Card className={styles.card}>
@@ -922,14 +826,104 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
         </div>
       </Card>
 
-      {/* Cloud & Data Management */}
+      {/* Account & Multi-tenant isolation / Store & Device Details */}
       <Card className={styles.card}>
-        <Text weight="bold" size={400} style={{ marginBottom: '8px', display: 'block' }}>
-          {t.settings.dataManagement}
-        </Text>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+          <Text weight="bold" size={400}>
+            {t.settings.deviceInfoSection}
+          </Text>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <Button
+              appearance="subtle"
+              size="small"
+              icon={<EditRegular />}
+              onClick={() => openOnboarding('edit')}
+              style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+            >
+              {t.settings.editProfileBtn}
+            </Button>
+          </div>
+        </div>
+        <div className={styles.infoRow}>
+          <Text size={200}>{t.settings.storeNameLabel}</Text>
+          <Text size={200} weight="bold">{businessName}</Text>
+        </div>
+        {ownerName && (
+          <div className={styles.infoRow}>
+            <Text size={200}>{t.settings.ownerNameLabel}</Text>
+            <Text size={200}>{ownerName}</Text>
+          </div>
+        )}
+        <div className={styles.infoRow}>
+          <Text size={200}>{t.settings.emailLabel}</Text>
+          <Text size={200} style={{ fontFamily: 'monospace' }}>{userEmail || '—'}</Text>
+        </div>
+        {userPhone && (
+          <div className={styles.infoRow}>
+            <Text size={200}>{t.settings.userPhoneLabel}</Text>
+            <Text size={200} style={{ fontFamily: 'monospace' }}>{userPhone}</Text>
+          </div>
+        )}
+        <div className={styles.infoRow}>
+          <Text size={200}>{t.settings.pinStatusLabel}</Text>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px', flexWrap: 'wrap' }}>
+            <Badge
+              appearance="tint"
+              color={hasPin ? 'success' : 'informative'}
+              style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+            >
+              {hasPin ? t.settings.pinActive : t.settings.pinInactive}
+            </Badge>
+            <Button
+              size="small"
+              appearance="subtle"
+              icon={<KeyRegular />}
+              style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+              onClick={() => {
+                setPinDialogPassword('');
+                setPinDialogNewPin('');
+                setPinDialogError('');
+                setPinDialogSuccess('');
+                setIsPinDialogOpen(true);
+              }}
+            >
+              {hasPin ? t.settings.changePinBtn : t.settings.setPinBtn}
+            </Button>
+            {hasPin && (
+              <Button
+                size="small"
+                appearance="subtle"
+                icon={<LockClosedRegular />}
+                style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+                onClick={() => setIsSessionLocked(true)}
+              >
+                {t.settings.lockSessionBtn}
+              </Button>
+            )}
+          </div>
+        </div>
+        <div className={styles.infoRow}>
+          <Text size={200}>{t.settings.tenantId}:</Text>
+          <Text size={200} style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{tenantId}</Text>
+        </div>
+        <div className={styles.infoRow}>
+          <Text size={200}>{t.settings.userId}:</Text>
+          <Text size={200} style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{userId}</Text>
+        </div>
+
+        <Divider style={{ margin: '12px 0 8px 0' }} />
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <Button
+            appearance="secondary"
+            size="small"
+            icon={<ArrowClockwiseRegular />}
+            onClick={handleInitiateSwitchAccount}
+          >
+            {t.settings.switchAccountBtn}
+          </Button>
           <Button
             appearance="subtle"
+            size="small"
             style={{ color: tokens.colorPaletteRedForeground1 }}
             icon={<SignOutRegular />}
             onClick={handleInitiateLogout}
