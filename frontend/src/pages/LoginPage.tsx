@@ -5,9 +5,7 @@ import {
   shorthands,
   Card,
   Text,
-  Input,
   Button,
-  Field,
   TabList,
   Tab,
   Badge,
@@ -17,10 +15,6 @@ import {
 } from '@fluentui/react-components';
 import {
   KeyRegular,
-  LockClosedRegular,
-  MailRegular,
-  EyeRegular,
-  EyeOffRegular,
   ArrowRightRegular,
   SparkleRegular,
   ArrowLeftRegular,
@@ -32,14 +26,15 @@ import { db } from '../db/db';
 import { processSyncQueue, kickSync, updateQueueCounts, pullCatalogFromServer } from '../sync/syncEngine';
 import { ConfirmUnsyncedLoginDialog } from '../components/ConfirmUnsyncedLoginDialog';
 import { useTranslation } from '../state/languageStore';
-import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
 import { useAuthStore } from '../state/authStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
 import { useGCashFeeStore, DEFAULT_GCASH_FEE_TIERS } from '../state/gcashFeeStore';
 import { registerStore, loginStore, loginPin, type AuthResponseDto } from '../services/authService';
 import { createClientUuid, seedDexieDatabaseIfNeeded, DEFAULT_TENANT_ID } from '../db/seedData';
 import { RegistrationFormFields } from '../components/RegistrationFormFields';
-import { validateRegistrationInput } from '../utils/registrationValidation';
+import { LoginFormFields } from '../components/LoginFormFields';
+import { AuthErrorBanner } from '../components/AuthErrorBanner';
+import { validateRegistrationInput, validateLoginInput } from '../utils/registrationValidation';
 
 export interface LoginPageProps {
   onNavigate: (tab: NavTab) => void;
@@ -269,32 +264,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
     setAuthErrors([]);
     setLoginFieldErrors({});
 
-    const trimmedEmail = loginEmailVal.trim().toLowerCase();
-    const errors: string[] = [];
-    const fieldErrors: { email?: boolean; password?: boolean; pin?: boolean } = {};
-
-    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      errors.push(t.onboarding.emailInvalid);
-      fieldErrors.email = true;
-    }
-
-    if (loginMode === 'password') {
-      if (!loginPasswordVal) {
-        errors.push(t.onboarding.passwordRequired);
-        fieldErrors.password = true;
-      }
-    } else {
-      if (!loginPinVal.trim() || !/^\d{4,6}$/.test(loginPinVal.trim())) {
-        errors.push(t.onboarding.pinInvalid);
-        fieldErrors.pin = true;
-      }
-    }
-
-    if (errors.length > 0) {
-      setAuthErrors(errors);
-      setLoginFieldErrors(fieldErrors);
+    const validation = validateLoginInput(loginEmailVal, loginMode, loginPasswordVal, loginPinVal, t);
+    if (!validation.isValid) {
+      setAuthErrors(validation.errors);
+      setLoginFieldErrors(validation.fieldErrors);
       return;
     }
+
+    const trimmedEmail = validation.trimmedEmail;
 
     setIsSubmitting(true);
     try {
@@ -503,38 +480,19 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
           </Tab>
         </TabList>
 
-        {authErrors.length > 0 && (
-          <div className={styles.errorBanner} role="alert" data-testid="login-error-banner">
-            {authErrors.length === 1 ? (
-              <Text weight="semibold">{getLocalizedSyncErrorMessage(authErrors[0], language) || authErrors[0]}</Text>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                {authErrors.map((err, idx) => (
-                  <Text key={idx} weight="semibold">
-                    • {getLocalizedSyncErrorMessage(err, language) || err}
-                  </Text>
-                ))}
-              </div>
-            )}
-            {activeTab === 'login' && loginMode === 'pin' && (
-              <div style={{ marginTop: '8px' }}>
-                <Button
-                  appearance="subtle"
-                  size="small"
-                  icon={<LockClosedRegular />}
-                  onClick={() => {
-                    setLoginMode('password');
-                    setAuthErrors([]);
-                    setLoginFieldErrors({});
-                  }}
-                  data-testid="login-switch-to-password-btn"
-                >
-                  {language === 'tl' ? 'Mag-login gamit ang Password' : 'Log in using Password'}
-                </Button>
-              </div>
-            )}
-          </div>
-        )}
+        <AuthErrorBanner
+          authErrors={authErrors}
+          language={language}
+          containerClassName={styles.errorBanner}
+          testId="login-error-banner"
+          showSwitchToPassword={activeTab === 'login' && loginMode === 'pin'}
+          onSwitchToPassword={() => {
+            setLoginMode('password');
+            setAuthErrors([]);
+            setLoginFieldErrors({});
+          }}
+          switchToPasswordTestId="login-switch-to-password-btn"
+        />
 
         {pendingSyncCount > 0 && (
           <div
@@ -560,113 +518,25 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
 
         {activeTab === 'login' ? (
           <form onSubmit={handleLoginSubmit} noValidate>
-            <Field
-              label={t.landing.emailLabel}
-              required
-              validationState={loginFieldErrors.email ? 'error' : undefined}
-              style={{ marginBottom: tokens.spacingVerticalM }}
-            >
-              <Input
-                type="email"
-                id="login-email"
-                name="email"
-                autoComplete="username"
-                enterKeyHint="next"
-                value={loginEmailVal}
-                onChange={(_, d) => {
-                  setLoginEmailVal(d.value);
-                  if (loginFieldErrors.email) {
-                    setLoginFieldErrors(prev => ({ ...prev, email: false }));
-                  }
-                }}
-                aria-invalid={Boolean(loginFieldErrors.email)}
-                placeholder={t.landing.emailPlaceholder}
-                contentBefore={<MailRegular />}
-                required
-              />
-            </Field>
-
-            {loginMode === 'password' ? (
-              <Field
-                label={t.landing.passwordLabel}
-                required
-                validationState={loginFieldErrors.password ? 'error' : undefined}
-                style={{ marginBottom: tokens.spacingVerticalS }}
-              >
-                <Input
-                  type={showPassword ? 'text' : 'password'}
-                  id="login-password"
-                  name="password"
-                  autoComplete="current-password"
-                  enterKeyHint="done"
-                  value={loginPasswordVal}
-                  onChange={(_, d) => {
-                    setLoginPasswordVal(d.value);
-                    if (loginFieldErrors.password) {
-                      setLoginFieldErrors(prev => ({ ...prev, password: false }));
-                    }
-                  }}
-                  aria-invalid={Boolean(loginFieldErrors.password)}
-                  placeholder={t.landing.passwordPlaceholder}
-                  contentBefore={<LockClosedRegular />}
-                  contentAfter={
-                    <Button
-                      appearance="subtle"
-                      size="small"
-                      icon={showPassword ? <EyeOffRegular /> : <EyeRegular />}
-                      onClick={() => setShowPassword(!showPassword)}
-                      type="button"
-                      aria-label="Toggle password visibility"
-                    />
-                  }
-                  required
-                />
-              </Field>
-            ) : (
-              <Field
-                label={t.landing.pinLabel}
-                hint="4–6 numeric digits"
-                required
-                validationState={loginFieldErrors.pin ? 'error' : undefined}
-                style={{ marginBottom: tokens.spacingVerticalS }}
-              >
-                <Input
-                  type="password"
-                  id="login-pin"
-                  name="pin"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  enterKeyHint="done"
-                  value={loginPinVal}
-                  onChange={(_, d) => {
-                    setLoginPinVal(d.value);
-                    if (loginFieldErrors.pin) {
-                      setLoginFieldErrors(prev => ({ ...prev, pin: false }));
-                    }
-                  }}
-                  aria-invalid={Boolean(loginFieldErrors.pin)}
-                  placeholder={t.landing.pinPlaceholder}
-                  contentBefore={<KeyRegular />}
-                  required
-                />
-              </Field>
-            )}
-
-            <div className={styles.modeToggleRow}>
-              <Button
-                appearance="transparent"
-                size="small"
-                type="button"
-                onClick={() => {
-                  setLoginMode(loginMode === 'password' ? 'pin' : 'password');
-                  setAuthErrors([]);
-                  setLoginFieldErrors({});
-                }}
-                data-testid="login-toggle-mode-btn"
-              >
-                {loginMode === 'password' ? t.landing.usePinToggle : t.landing.usePasswordToggle}
-              </Button>
-            </div>
+            <LoginFormFields
+              idPrefix="login"
+              loginEmailVal={loginEmailVal}
+              setLoginEmailVal={setLoginEmailVal}
+              loginPasswordVal={loginPasswordVal}
+              setLoginPasswordVal={setLoginPasswordVal}
+              loginPinVal={loginPinVal}
+              setLoginPinVal={setLoginPinVal}
+              loginMode={loginMode}
+              setLoginMode={setLoginMode}
+              showPassword={showPassword}
+              setShowPassword={setShowPassword}
+              loginFieldErrors={loginFieldErrors}
+              setLoginFieldErrors={setLoginFieldErrors}
+              setAuthErrors={setAuthErrors}
+              t={t}
+              toggleTestId="login-toggle-mode-btn"
+              toggleClassName={styles.modeToggleRow}
+            />
 
             <Button
               appearance="primary"

@@ -7,8 +7,6 @@ import {
   Card,
   Button,
   Badge,
-  Input,
-  Field,
   Checkbox,
   TabList,
   Tab,
@@ -29,11 +27,7 @@ import {
   SparkleRegular,
   CheckmarkCircleRegular,
   DismissCircleRegular,
-  LockClosedRegular,
   KeyRegular,
-  MailRegular,
-  EyeRegular,
-  EyeOffRegular,
   ArrowRightRegular,
   CalculatorRegular,
   StarFilled,
@@ -41,7 +35,6 @@ import {
 } from '@fluentui/react-icons';
 import type { NavTab } from '../components/Navigation';
 import { useTranslation } from '../state/languageStore';
-import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
 import { useAuthStore } from '../state/authStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
 import { useGCashFeeStore, DEFAULT_GCASH_FEE_TIERS } from '../state/gcashFeeStore';
@@ -52,7 +45,9 @@ import { registerStore, loginStore, loginPin, type AuthResponseDto } from '../se
 import { createClientUuid, seedDexieDatabaseIfNeeded, DEFAULT_TENANT_ID } from '../db/seedData';
 import { formatPeso } from '../utils/currency';
 import { RegistrationFormFields } from '../components/RegistrationFormFields';
-import { validateRegistrationInput } from '../utils/registrationValidation';
+import { LoginFormFields } from '../components/LoginFormFields';
+import { AuthErrorBanner } from '../components/AuthErrorBanner';
+import { validateRegistrationInput, validateLoginInput } from '../utils/registrationValidation';
 
 interface LandingPageProps {
   onNavigate: (tab: NavTab) => void;
@@ -459,32 +454,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
     setAuthErrors([]);
     setLoginFieldErrors({});
 
-    const trimmedEmail = loginEmailVal.trim().toLowerCase();
-    const errors: string[] = [];
-    const fieldErrors: { email?: boolean; password?: boolean; pin?: boolean } = {};
-
-    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      errors.push(t.onboarding.emailInvalid);
-      fieldErrors.email = true;
-    }
-
-    if (loginMode === 'password') {
-      if (!loginPasswordVal) {
-        errors.push(t.onboarding.passwordRequired);
-        fieldErrors.password = true;
-      }
-    } else {
-      if (!loginPinVal.trim() || !/^\d{4,6}$/.test(loginPinVal.trim())) {
-        errors.push(t.onboarding.pinInvalid);
-        fieldErrors.pin = true;
-      }
-    }
-
-    if (errors.length > 0) {
-      setAuthErrors(errors);
-      setLoginFieldErrors(fieldErrors);
+    const validation = validateLoginInput(loginEmailVal, loginMode, loginPasswordVal, loginPinVal, t);
+    if (!validation.isValid) {
+      setAuthErrors(validation.errors);
+      setLoginFieldErrors(validation.fieldErrors);
       return;
     }
+
+    const trimmedEmail = validation.trimmedEmail;
 
     setIsSubmitting(true);
     try {
@@ -794,133 +771,34 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                   </Tab>
                 </TabList>
 
-                {authErrors.length > 0 && (
-                  <div style={{ marginBottom: tokens.spacingVerticalM }}>
-                    {authErrors.length === 1 ? (
-                      <Text role="alert" className={styles.errorText} style={{ display: 'block' }}>
-                        {getLocalizedSyncErrorMessage(authErrors[0], language) || authErrors[0]}
-                      </Text>
-                    ) : (
-                      <div role="alert" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        {authErrors.map((err, idx) => (
-                          <Text key={idx} className={styles.errorText} style={{ display: 'block' }}>
-                            • {getLocalizedSyncErrorMessage(err, language) || err}
-                          </Text>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
+                <AuthErrorBanner
+                  authErrors={authErrors}
+                  language={language}
+                  textClassName={styles.errorText}
+                  containerStyle={{ marginBottom: tokens.spacingVerticalM }}
+                />
 
                 {activeTab === 'login' ? (
                   <form onSubmit={handleLoginSubmit} noValidate>
-                    <Field
-                      label={t.landing.emailLabel}
-                      required
-                      validationState={loginFieldErrors.email ? 'error' : undefined}
-                      style={{ marginBottom: tokens.spacingVerticalM }}
-                    >
-                      <Input
-                        type="email"
-                        id="landing-login-email"
-                        name="email"
-                        autoComplete="username"
-                        enterKeyHint="next"
-                        value={loginEmailVal}
-                        onChange={(_, d) => {
-                          setLoginEmailVal(d.value);
-                          if (loginFieldErrors.email) {
-                            setLoginFieldErrors(prev => ({ ...prev, email: false }));
-                          }
-                        }}
-                        aria-invalid={Boolean(loginFieldErrors.email)}
-                        placeholder={t.landing.emailPlaceholder}
-                        contentBefore={<MailRegular />}
-                        required
-                      />
-                    </Field>
-
-                    {loginMode === 'password' ? (
-                      <Field
-                        label={t.landing.passwordLabel}
-                        required
-                        validationState={loginFieldErrors.password ? 'error' : undefined}
-                        style={{ marginBottom: tokens.spacingVerticalM }}
-                      >
-                        <Input
-                          type={showPassword ? 'text' : 'password'}
-                          id="landing-login-password"
-                          name="password"
-                          autoComplete="current-password"
-                          enterKeyHint="done"
-                          value={loginPasswordVal}
-                          onChange={(_, d) => {
-                            setLoginPasswordVal(d.value);
-                            if (loginFieldErrors.password) {
-                              setLoginFieldErrors(prev => ({ ...prev, password: false }));
-                            }
-                          }}
-                          aria-invalid={Boolean(loginFieldErrors.password)}
-                          placeholder={t.landing.passwordPlaceholder}
-                          contentBefore={<LockClosedRegular />}
-                          contentAfter={
-                            <Button
-                              appearance="subtle"
-                              size="small"
-                              icon={showPassword ? <EyeOffRegular /> : <EyeRegular />}
-                              onClick={() => setShowPassword(!showPassword)}
-                              type="button"
-                              aria-label="Toggle password visibility"
-                            />
-                          }
-                          required
-                        />
-                      </Field>
-                    ) : (
-                      <Field
-                        label={t.landing.pinLabel}
-                        hint="4–6 numeric digits"
-                        required
-                        validationState={loginFieldErrors.pin ? 'error' : undefined}
-                        style={{ marginBottom: tokens.spacingVerticalM }}
-                      >
-                        <Input
-                          type="password"
-                          id="landing-login-pin"
-                          name="pin"
-                          inputMode="numeric"
-                          pattern="[0-9]*"
-                          enterKeyHint="done"
-                          value={loginPinVal}
-                          onChange={(_, d) => {
-                            setLoginPinVal(d.value);
-                            if (loginFieldErrors.pin) {
-                              setLoginFieldErrors(prev => ({ ...prev, pin: false }));
-                            }
-                          }}
-                          aria-invalid={Boolean(loginFieldErrors.pin)}
-                          placeholder={t.landing.pinPlaceholder}
-                          contentBefore={<KeyRegular />}
-                          required
-                        />
-                      </Field>
-                    )}
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: tokens.spacingVerticalM }}>
-                      <Button
-                        appearance="transparent"
-                        size="small"
-                        type="button"
-                        onClick={() => {
-                          setLoginMode(loginMode === 'password' ? 'pin' : 'password');
-                          setAuthErrors([]);
-                          setLoginFieldErrors({});
-                        }}
-                        data-testid="landing-toggle-pin-btn"
-                      >
-                        {loginMode === 'password' ? t.landing.usePinToggle : t.landing.usePasswordToggle}
-                      </Button>
-                    </div>
+                    <LoginFormFields
+                      idPrefix="landing"
+                      loginEmailVal={loginEmailVal}
+                      setLoginEmailVal={setLoginEmailVal}
+                      loginPasswordVal={loginPasswordVal}
+                      setLoginPasswordVal={setLoginPasswordVal}
+                      loginPinVal={loginPinVal}
+                      setLoginPinVal={setLoginPinVal}
+                      loginMode={loginMode}
+                      setLoginMode={setLoginMode}
+                      showPassword={showPassword}
+                      setShowPassword={setShowPassword}
+                      loginFieldErrors={loginFieldErrors}
+                      setLoginFieldErrors={setLoginFieldErrors}
+                      setAuthErrors={setAuthErrors}
+                      t={t}
+                      toggleTestId="landing-toggle-pin-btn"
+                      toggleStyle={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: tokens.spacingVerticalM }}
+                    />
 
                     <Button
                       appearance="primary"

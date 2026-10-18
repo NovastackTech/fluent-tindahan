@@ -76,3 +76,58 @@ export function validateRegistrationInput(
     trimmedEmail
   };
 }
+
+export interface LoginFieldErrors {
+  email?: boolean;
+  password?: boolean;
+  pin?: boolean;
+}
+
+export interface LoginValidationTranslations {
+  onboarding: {
+    emailInvalid: string;
+    passwordRequired: string;
+    pinInvalid: string;
+  };
+}
+
+export function validateLoginInput(
+  email: string,
+  loginMode: 'password' | 'pin',
+  passwordVal: string,
+  pinVal: string,
+  t: LoginValidationTranslations
+): {
+  isValid: boolean;
+  errors: string[];
+  fieldErrors: LoginFieldErrors;
+  trimmedEmail: string;
+} {
+  const trimmedEmail = email.trim().toLowerCase();
+  const errors: string[] = [];
+  const fieldErrors: LoginFieldErrors = {};
+
+  if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+    errors.push(t.onboarding.emailInvalid);
+    fieldErrors.email = true;
+  }
+
+  if (loginMode === 'password') {
+    if (!passwordVal) {
+      errors.push(t.onboarding.passwordRequired);
+      fieldErrors.password = true;
+    }
+  } else {
+    if (!pinVal.trim() || !/^\d{4,6}$/.test(pinVal.trim())) {
+      errors.push(t.onboarding.pinInvalid);
+      fieldErrors.pin = true;
+    }
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+    fieldErrors,
+    trimmedEmail
+  };
+}
