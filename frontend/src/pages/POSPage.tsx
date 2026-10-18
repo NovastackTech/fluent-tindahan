@@ -214,7 +214,8 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
   const styles = useStyles();
   const { t, language } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  // Empty means "Lahat" / All — every product category is shown.
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
@@ -342,20 +343,21 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
     return [t.pos.allCategories, ...Array.from(set)];
   }, [products, t.pos.allCategories]);
 
-  // Filter products by search and category
+  // Search narrows the list; selected categories are a union (any match).
+  // No selected categories means the Lahat chip is active and nothing is excluded.
   const filteredProducts = useMemo(() => {
+    const normalizedQuery = searchQuery.toLowerCase();
+    const hasCategoryFilter = selectedCategories.length > 0;
     return products.filter((p) => {
       const matchesSearch =
-        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.name.toLowerCase().includes(normalizedQuery) ||
         (p.barcode && p.barcode.includes(searchQuery));
       const matchesCategory =
-        selectedCategory === t.pos.allCategories ||
-        selectedCategory === 'All' ||
-        selectedCategory === 'Lahat' ||
-        p.category === selectedCategory;
+        !hasCategoryFilter ||
+        (p.category != null && selectedCategories.includes(p.category));
       return matchesSearch && matchesCategory;
     });
-  }, [products, searchQuery, selectedCategory, t.pos.allCategories]);
+  }, [products, searchQuery, selectedCategories]);
 
   const totalAmount = getTotalAmount();
   const totalCount = getTotalCount();
@@ -930,25 +932,41 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
           onScroll={checkScroll}
           onWheel={handleCategoryWheel}
         >
-          {categories.map((cat) => (
-            <Button
-              key={cat}
-              size="small"
-              className={styles.categoryChip}
-              appearance={selectedCategory === cat ? 'primary' : 'secondary'}
-              onClick={(e) => {
-                setSelectedCategory(cat);
-                (e.currentTarget as HTMLElement).scrollIntoView({
-                  behavior: 'smooth',
-                  block: 'nearest',
-                  inline: 'center'
-                });
-              }}
-              shape="circular"
-            >
-              {cat}
-            </Button>
-          ))}
+          {categories.map((cat, index) => {
+            const isAllChip = index === 0;
+            const isActive = isAllChip
+              ? selectedCategories.length === 0
+              : selectedCategories.includes(cat);
+
+            return (
+              <Button
+                key={isAllChip ? '__all-categories__' : cat}
+                size="small"
+                className={styles.categoryChip}
+                appearance={isActive ? 'primary' : 'secondary'}
+                aria-pressed={isActive}
+                onClick={(e) => {
+                  if (isAllChip) {
+                    setSelectedCategories([]);
+                  } else {
+                    setSelectedCategories((current) =>
+                      current.includes(cat)
+                        ? current.filter((selected) => selected !== cat)
+                        : [...current, cat]
+                    );
+                  }
+                  (e.currentTarget as HTMLElement).scrollIntoView?.({
+                    behavior: 'smooth',
+                    block: 'nearest',
+                    inline: 'center'
+                  });
+                }}
+                shape="circular"
+              >
+                {cat}
+              </Button>
+            );
+          })}
         </div>
 
         {canScrollRight && (
