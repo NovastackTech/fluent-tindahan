@@ -48,14 +48,20 @@ const LoginPage = lazy(() => import('./pages/LoginPage').then(m => ({ default: m
 function getInitialNavTab(): NavTab {
   if (typeof window === 'undefined') return 'dashboard';
   const params = new URLSearchParams(window.location.search);
-  const tabParam = params.get('tab') as NavTab | null;
-  const validTabs: NavTab[] = ['dashboard', 'pos', 'inventory', 'utang', 'gcash', 'import', 'settings', 'landing', 'login'];
-  if (tabParam && validTabs.includes(tabParam)) {
-    return tabParam;
+  const tabParam = params.get('tab')?.toLowerCase();
+  if (tabParam === 'signup' || tabParam === 'register') {
+    return 'login';
   }
-  const path = window.location.pathname.replace(/^\//, '').toLowerCase() as NavTab;
-  if (validTabs.includes(path)) {
-    return path;
+  const validTabs: NavTab[] = ['dashboard', 'pos', 'inventory', 'utang', 'gcash', 'import', 'settings', 'landing', 'login'];
+  if (tabParam && validTabs.includes(tabParam as NavTab)) {
+    return tabParam as NavTab;
+  }
+  const path = window.location.pathname.replace(/^\//, '').toLowerCase();
+  if (path === 'signup' || path === 'register') {
+    return 'login';
+  }
+  if (validTabs.includes(path as NavTab)) {
+    return path as NavTab;
   }
   return 'dashboard';
 }

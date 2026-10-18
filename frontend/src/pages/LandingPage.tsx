@@ -52,6 +52,7 @@ import { ConfirmUnsyncedLoginDialog } from '../components/ConfirmUnsyncedLoginDi
 import { registerStore, loginStore, loginPin, type AuthResponseDto } from '../services/authService';
 import { createClientUuid, seedDexieDatabaseIfNeeded, DEFAULT_TENANT_ID } from '../db/seedData';
 import { formatPeso } from '../utils/currency';
+import { evaluatePasswordStrength } from '../utils/passwordStrength';
 
 interface LandingPageProps {
   onNavigate: (tab: NavTab) => void;
@@ -351,19 +352,48 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
   } = useAuthStore();
 
   // Auth Card State
-  const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
+  const [activeTab, setActiveTab] = useState<'login' | 'register'>(() => {
+    if (typeof window === 'undefined') return 'login';
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab')?.toLowerCase();
+    return (tab === 'signup' || tab === 'register' || tab === 'newstore' || tab === 'new-store') ? 'register' : 'login';
+  });
   const [loginMode, setLoginMode] = useState<'password' | 'pin'>('password');
   const [loginEmailVal, setLoginEmailVal] = useState('');
   const [loginPasswordVal, setLoginPasswordVal] = useState('');
   const [loginPinVal, setLoginPinVal] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [authError, setAuthError] = useState('');
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [authErrors, setAuthErrors] = useState<string[]>([]);
+  const [regFieldErrors, setRegFieldErrors] = useState<{
+    storeName?: boolean;
+    email?: boolean;
+    password?: boolean;
+    confirmPassword?: boolean;
+    pin?: boolean;
+  }>({});
+  const [loginFieldErrors, setLoginFieldErrors] = useState<{
+    email?: boolean;
+    password?: boolean;
+    pin?: boolean;
+  }>({});
+
+  const setAuthError = (err: string | string[]) => {
+    if (!err || (Array.isArray(err) && err.length === 0)) {
+      setAuthErrors([]);
+    } else if (Array.isArray(err)) {
+      setAuthErrors(err);
+    } else {
+      setAuthErrors([err]);
+    }
+  };
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Registration Form State
   const [regStoreName, setRegStoreName] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
+  const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [regPin, setRegPin] = useState('');
   const [regOfferGcash, setRegOfferGcash] = useState(true);
 
@@ -431,11 +461,33 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
-    setAuthError('');
+    setAuthErrors([]);
+    setLoginFieldErrors({});
 
     const trimmedEmail = loginEmailVal.trim().toLowerCase();
-    if (!trimmedEmail) {
-      setAuthError(t.onboarding.emailRequired);
+    const errors: string[] = [];
+    const fieldErrors: { email?: boolean; password?: boolean; pin?: boolean } = {};
+
+    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      errors.push(t.onboarding.emailInvalid);
+      fieldErrors.email = true;
+    }
+
+    if (loginMode === 'password') {
+      if (!loginPasswordVal) {
+        errors.push(t.onboarding.passwordRequired);
+        fieldErrors.password = true;
+      }
+    } else {
+      if (!loginPinVal.trim() || !/^\d{4,6}$/.test(loginPinVal.trim())) {
+        errors.push(t.onboarding.pinInvalid);
+        fieldErrors.pin = true;
+      }
+    }
+
+    if (errors.length > 0) {
+      setAuthErrors(errors);
+      setLoginFieldErrors(fieldErrors);
       return;
     }
 
@@ -443,21 +495,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
     try {
       let authResult;
       if (loginMode === 'password') {
-        if (!loginPasswordVal) {
-          setAuthError(t.onboarding.passwordRequired);
-          setIsSubmitting(false);
-          return;
-        }
         authResult = await loginStore({
           email: trimmedEmail,
           password: loginPasswordVal
         });
       } else {
-        if (!loginPinVal.trim() || !/^\d{4,6}$/.test(loginPinVal.trim())) {
-          setAuthError(t.onboarding.pinInvalid);
-          setIsSubmitting(false);
-          return;
-        }
         authResult = await loginPin({
           email: trimmedEmail,
           pin: loginPinVal.trim()
@@ -485,7 +527,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
       onNavigate('pos');
     } catch (err: any) {
       const msg = err?.response?.data?.message || t.onboarding.loginFailed;
-      setAuthError(msg);
+      setAuthErrors([msg]);
+      if (loginMode === 'password') {
+        setLoginFieldErrors({ email: true, password: true });
+      } else {
+        setLoginFieldErrors({ email: true, pin: true });
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -494,25 +541,58 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
-    setAuthError('');
+    setAuthErrors([]);
+    setRegFieldErrors({});
 
     const trimmedStore = regStoreName.trim();
     const trimmedEmail = regEmail.trim().toLowerCase();
+    const errors: string[] = [];
+    const fieldErrors: {
+      storeName?: boolean;
+      email?: boolean;
+      password?: boolean;
+      confirmPassword?: boolean;
+      pin?: boolean;
+    } = {};
 
     if (!trimmedStore || trimmedStore.length < 2) {
-      setAuthError(t.onboarding.storeNameRequired);
-      return;
+      errors.push(t.onboarding.storeNameRequired);
+      fieldErrors.storeName = true;
     }
     if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      setAuthError(t.onboarding.emailInvalid);
-      return;
+      errors.push(t.onboarding.emailInvalid);
+      fieldErrors.email = true;
     }
-    if (!regPassword || regPassword.length < 6) {
-      setAuthError(t.onboarding.passwordMinLength);
-      return;
+    if (!regPassword) {
+      errors.push(t.onboarding.passwordRequired);
+      fieldErrors.password = true;
+    } else {
+      if (regPassword.length < 6) {
+        errors.push(t.onboarding.passwordMinLength);
+      }
+      const strength = evaluatePasswordStrength(regPassword);
+      if (!strength.isValid) {
+        errors.push(t.onboarding.passwordStrengthError);
+        fieldErrors.password = true;
+      }
     }
+
+    if (!regConfirmPassword) {
+      errors.push(t.onboarding.confirmPasswordRequired);
+      fieldErrors.confirmPassword = true;
+    } else if (regPassword !== regConfirmPassword) {
+      errors.push(t.onboarding.passwordMismatch);
+      fieldErrors.confirmPassword = true;
+    }
+
     if (regPin.trim() && !/^\d{4,6}$/.test(regPin.trim())) {
-      setAuthError(t.onboarding.pinInvalid);
+      errors.push(t.onboarding.pinInvalid);
+      fieldErrors.pin = true;
+    }
+
+    if (errors.length > 0) {
+      setAuthErrors(errors);
+      setRegFieldErrors(fieldErrors);
       return;
     }
 
@@ -550,7 +630,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
         registeredHasPin = authResult.hasPin;
       } catch (apiErr: any) {
         if (apiErr?.response?.status === 409) {
-          setAuthError(t.onboarding.emailAlreadyExists);
+          setAuthErrors([t.onboarding.emailAlreadyExists]);
+          setRegFieldErrors({ email: true });
           setIsSubmitting(false);
           return;
         }
@@ -727,18 +808,26 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
               <div>
                 <div style={{ marginBottom: tokens.spacingVerticalM }}>
                   <Text size={400} weight="bold" style={{ display: 'block' }}>
-                    {t.landing.loginCardTitle}
+                    {activeTab === 'register' ? t.login.signUpPageTitle : t.landing.loginCardTitle}
                   </Text>
                   <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-                    {t.landing.loginCardDesc}
+                    {activeTab === 'register' ? t.login.signUpPageSubtitle : t.landing.loginCardDesc}
                   </Text>
                 </div>
 
                 <TabList
                   selectedValue={activeTab}
                   onTabSelect={(_, data) => {
-                    setActiveTab(data.value as 'login' | 'register');
-                    setAuthError('');
+                    const nextTab = data.value as 'login' | 'register';
+                    setActiveTab(nextTab);
+                    setAuthErrors([]);
+                    setRegFieldErrors({});
+                    setLoginFieldErrors({});
+                    if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
+                      const url = new URL(window.location.href);
+                      url.searchParams.set('tab', nextTab === 'register' ? 'signup' : 'login');
+                      window.history.replaceState(null, '', url.pathname + url.search);
+                    }
                   }}
                   style={{ marginBottom: tokens.spacingVerticalM }}
                 >
@@ -750,17 +839,32 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                   </Tab>
                 </TabList>
 
-                {authError && (
+                {authErrors.length > 0 && (
                   <div style={{ marginBottom: tokens.spacingVerticalM }}>
-                    <Text role="alert" className={styles.errorText} style={{ display: 'block' }}>
-                      {getLocalizedSyncErrorMessage(authError, language) || authError}
-                    </Text>
+                    {authErrors.length === 1 ? (
+                      <Text role="alert" className={styles.errorText} style={{ display: 'block' }}>
+                        {getLocalizedSyncErrorMessage(authErrors[0], language) || authErrors[0]}
+                      </Text>
+                    ) : (
+                      <div role="alert" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        {authErrors.map((err, idx) => (
+                          <Text key={idx} className={styles.errorText} style={{ display: 'block' }}>
+                            • {getLocalizedSyncErrorMessage(err, language) || err}
+                          </Text>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 
                 {activeTab === 'login' ? (
                   <form onSubmit={handleLoginSubmit} noValidate>
-                    <Field label={t.landing.emailLabel} required style={{ marginBottom: tokens.spacingVerticalM }}>
+                    <Field
+                      label={t.landing.emailLabel}
+                      required
+                      validationState={loginFieldErrors.email ? 'error' : undefined}
+                      style={{ marginBottom: tokens.spacingVerticalM }}
+                    >
                       <Input
                         type="email"
                         id="landing-login-email"
@@ -768,7 +872,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                         autoComplete="username"
                         enterKeyHint="next"
                         value={loginEmailVal}
-                        onChange={(_, d) => setLoginEmailVal(d.value)}
+                        onChange={(_, d) => {
+                          setLoginEmailVal(d.value);
+                          if (loginFieldErrors.email) {
+                            setLoginFieldErrors(prev => ({ ...prev, email: false }));
+                          }
+                        }}
+                        aria-invalid={Boolean(loginFieldErrors.email)}
                         placeholder={t.landing.emailPlaceholder}
                         contentBefore={<MailRegular />}
                         required
@@ -776,7 +886,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                     </Field>
 
                     {loginMode === 'password' ? (
-                      <Field label={t.landing.passwordLabel} required style={{ marginBottom: tokens.spacingVerticalM }}>
+                      <Field
+                        label={t.landing.passwordLabel}
+                        required
+                        validationState={loginFieldErrors.password ? 'error' : undefined}
+                        style={{ marginBottom: tokens.spacingVerticalM }}
+                      >
                         <Input
                           type={showPassword ? 'text' : 'password'}
                           id="landing-login-password"
@@ -784,7 +899,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                           autoComplete="current-password"
                           enterKeyHint="done"
                           value={loginPasswordVal}
-                          onChange={(_, d) => setLoginPasswordVal(d.value)}
+                          onChange={(_, d) => {
+                            setLoginPasswordVal(d.value);
+                            if (loginFieldErrors.password) {
+                              setLoginFieldErrors(prev => ({ ...prev, password: false }));
+                            }
+                          }}
+                          aria-invalid={Boolean(loginFieldErrors.password)}
                           placeholder={t.landing.passwordPlaceholder}
                           contentBefore={<LockClosedRegular />}
                           contentAfter={
@@ -801,17 +922,28 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                         />
                       </Field>
                     ) : (
-                      <Field label={t.landing.pinLabel} hint="4–6 numeric digits" required style={{ marginBottom: tokens.spacingVerticalM }}>
+                      <Field
+                        label={t.landing.pinLabel}
+                        hint="4–6 numeric digits"
+                        required
+                        validationState={loginFieldErrors.pin ? 'error' : undefined}
+                        style={{ marginBottom: tokens.spacingVerticalM }}
+                      >
                         <Input
                           type="password"
                           id="landing-login-pin"
                           name="pin"
                           inputMode="numeric"
                           pattern="[0-9]*"
-                          maxLength={6}
                           enterKeyHint="done"
                           value={loginPinVal}
-                          onChange={(_, d) => setLoginPinVal(d.value.replace(/\D/g, '').slice(0, 6))}
+                          onChange={(_, d) => {
+                            setLoginPinVal(d.value);
+                            if (loginFieldErrors.pin) {
+                              setLoginFieldErrors(prev => ({ ...prev, pin: false }));
+                            }
+                          }}
+                          aria-invalid={Boolean(loginFieldErrors.pin)}
                           placeholder={t.landing.pinPlaceholder}
                           contentBefore={<KeyRegular />}
                           required
@@ -826,7 +958,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                         type="button"
                         onClick={() => {
                           setLoginMode(loginMode === 'password' ? 'pin' : 'password');
-                          setAuthError('');
+                          setAuthErrors([]);
+                          setLoginFieldErrors({});
                         }}
                         data-testid="landing-toggle-pin-btn"
                       >
@@ -848,40 +981,73 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                   </form>
                 ) : (
                   <form onSubmit={handleRegisterSubmit} noValidate>
-                    <Field label={t.landing.storeNameLabel} required style={{ marginBottom: tokens.spacingVerticalS }}>
+                    <Field
+                      label={t.landing.storeNameLabel}
+                      required
+                      validationState={regFieldErrors.storeName ? 'error' : undefined}
+                      style={{ marginBottom: tokens.spacingVerticalS }}
+                    >
                       <Input
                         id="landing-reg-store"
                         name="businessName"
                         value={regStoreName}
-                        onChange={(_, d) => setRegStoreName(d.value)}
+                        onChange={(_, d) => {
+                          setRegStoreName(d.value);
+                          if (regFieldErrors.storeName) {
+                            setRegFieldErrors(prev => ({ ...prev, storeName: false }));
+                          }
+                        }}
+                        aria-invalid={Boolean(regFieldErrors.storeName)}
                         placeholder={t.landing.storeNamePlaceholder}
                         contentBefore={<BuildingShopRegular />}
                         required
                       />
                     </Field>
 
-                    <Field label={t.landing.emailLabel} required style={{ marginBottom: tokens.spacingVerticalS }}>
+                    <Field
+                      label={t.landing.emailLabel}
+                      required
+                      validationState={regFieldErrors.email ? 'error' : undefined}
+                      style={{ marginBottom: tokens.spacingVerticalS }}
+                    >
                       <Input
                         type="email"
                         id="landing-reg-email"
                         name="email"
                         autoComplete="username"
                         value={regEmail}
-                        onChange={(_, d) => setRegEmail(d.value)}
+                        onChange={(_, d) => {
+                          setRegEmail(d.value);
+                          if (regFieldErrors.email) {
+                            setRegFieldErrors(prev => ({ ...prev, email: false }));
+                          }
+                        }}
+                        aria-invalid={Boolean(regFieldErrors.email)}
                         placeholder={t.landing.emailPlaceholder}
                         contentBefore={<MailRegular />}
                         required
                       />
                     </Field>
 
-                    <Field label={t.landing.passwordLabel} required style={{ marginBottom: tokens.spacingVerticalS }}>
+                    <Field
+                      label={t.landing.passwordLabel}
+                      required
+                      validationState={regFieldErrors.password ? 'error' : undefined}
+                      style={{ marginBottom: tokens.spacingVerticalS }}
+                    >
                       <Input
                         type={showPassword ? 'text' : 'password'}
                         id="landing-reg-password"
                         name="new-password"
                         autoComplete="new-password"
                         value={regPassword}
-                        onChange={(_, d) => setRegPassword(d.value)}
+                        onChange={(_, d) => {
+                          setRegPassword(d.value);
+                          if (regFieldErrors.password) {
+                            setRegFieldErrors(prev => ({ ...prev, password: false }));
+                          }
+                        }}
+                        aria-invalid={Boolean(regFieldErrors.password)}
                         placeholder={t.landing.passwordPlaceholder}
                         contentBefore={<LockClosedRegular />}
                         contentAfter={
@@ -897,15 +1063,59 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                       />
                     </Field>
 
-                    <Field label={t.landing.pinLabel} style={{ marginBottom: tokens.spacingVerticalS }}>
+                    <Field
+                      label={t.landing.confirmPasswordLabel}
+                      required
+                      validationState={regFieldErrors.confirmPassword ? 'error' : undefined}
+                      style={{ marginBottom: tokens.spacingVerticalS }}
+                    >
+                      <Input
+                        type={showConfirmPassword ? 'text' : 'password'}
+                        id="landing-reg-confirm-password"
+                        name="confirm-password"
+                        autoComplete="new-password"
+                        value={regConfirmPassword}
+                        onChange={(_, d) => {
+                          setRegConfirmPassword(d.value);
+                          if (regFieldErrors.confirmPassword) {
+                            setRegFieldErrors(prev => ({ ...prev, confirmPassword: false }));
+                          }
+                        }}
+                        aria-invalid={Boolean(regFieldErrors.confirmPassword)}
+                        placeholder={t.landing.confirmPasswordPlaceholder}
+                        contentBefore={<LockClosedRegular />}
+                        contentAfter={
+                          <Button
+                            appearance="subtle"
+                            size="small"
+                            icon={showConfirmPassword ? <EyeOffRegular /> : <EyeRegular />}
+                            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                            type="button"
+                          />
+                        }
+                        required
+                        data-testid="landing-reg-confirm-password"
+                      />
+                    </Field>
+
+                    <Field
+                      label={t.landing.pinLabel}
+                      validationState={regFieldErrors.pin ? 'error' : undefined}
+                      style={{ marginBottom: tokens.spacingVerticalS }}
+                    >
                       <Input
                         type="password"
                         id="landing-reg-pin"
                         name="pin"
                         inputMode="numeric"
-                        maxLength={6}
                         value={regPin}
-                        onChange={(_, d) => setRegPin(d.value.replace(/\D/g, '').slice(0, 6))}
+                        onChange={(_, d) => {
+                          setRegPin(d.value);
+                          if (regFieldErrors.pin) {
+                            setRegFieldErrors(prev => ({ ...prev, pin: false }));
+                          }
+                        }}
+                        aria-invalid={Boolean(regFieldErrors.pin)}
                         placeholder={t.landing.pinPlaceholder}
                         contentBefore={<KeyRegular />}
                       />

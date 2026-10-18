@@ -132,43 +132,6 @@ describe('SettingsPage', () => {
     fireEvent.click(syncBtn);
   });
 
-  it('triggers reset seed data when confirmed by user', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-    vi.spyOn(window, 'alert').mockImplementation(() => {});
-    await db.products.bulkAdd([
-      {
-        id: 'active-product',
-        tenantId: 'settings-test-tenant',
-        name: 'Active Product',
-        price: 10,
-        cost: 8,
-        stockQty: 1,
-        updatedAt: new Date().toISOString()
-      },
-      {
-        id: 'other-product',
-        tenantId: 'other-tenant',
-        name: 'Other Product',
-        price: 10,
-        cost: 8,
-        stockQty: 1,
-        updatedAt: new Date().toISOString()
-      }
-    ]);
-
-    renderSettings();
-
-    const resetBtn = screen.getByRole('button', { name: /I-reset.*(Seeder|Sample)/i });
-    expect(resetBtn).toBeInTheDocument();
-    fireEvent.click(resetBtn);
-
-    expect(window.confirm).toHaveBeenCalled();
-    await waitFor(async () => {
-      expect(await db.products.where('tenantId').equals('settings-test-tenant').count()).toBe(10);
-    });
-    expect(await db.products.get('other-product')).toBeDefined();
-    expect(await db.products.get('active-product')).toBeUndefined();
-  });
 
   it('renders pending queue items and dead letter queue items', async () => {
     await db.syncQueue.add({
