@@ -581,6 +581,9 @@ export interface Translations {
     passwordPlaceholder: string;
     passwordRequired: string;
     passwordMinLength: string;
+    passwordStrengthError: string;
+    confirmPasswordRequired: string;
+    passwordMismatch: string;
     pinLabel: string;
     pinPlaceholder: string;
     pinHint: string;
@@ -624,6 +627,12 @@ export interface Translations {
     emailPlaceholder: string;
     passwordLabel: string;
     passwordPlaceholder: string;
+    confirmPasswordLabel: string;
+    confirmPasswordPlaceholder: string;
+    passwordStrengthHint: string;
+    passwordStrengthWeak: string;
+    passwordStrengthMedium: string;
+    passwordStrengthStrong: string;
     pinLabel: string;
     pinPlaceholder: string;
     usePinToggle: string;
@@ -714,6 +723,8 @@ export interface Translations {
   login: {
     pageTitle: string;
     pageSubtitle: string;
+    signUpPageTitle: string;
+    signUpPageSubtitle: string;
     badgeText: string;
     backToLanding: string;
     demoNote: string;
@@ -762,6 +773,47 @@ const sharedProductFormTranslations: Record<Language, SharedProductFormTranslati
     priceMustBePositive: 'Retail price must be greater than ₱0.',
     priceExceedsMax: 'Retail price cannot exceed ₱999,999.99.',
     stockExceedsMax: 'Stock quantity cannot exceed 999,999.'
+  }
+};
+
+type SharedAuthFormTranslations = Pick<
+  Translations['landing'],
+  | 'passwordLabel'
+  | 'passwordPlaceholder'
+  | 'confirmPasswordLabel'
+  | 'confirmPasswordPlaceholder'
+  | 'passwordStrengthHint'
+  | 'passwordStrengthWeak'
+  | 'passwordStrengthMedium'
+  | 'passwordStrengthStrong'
+  | 'pinLabel'
+  | 'pinPlaceholder'
+>;
+
+const sharedAuthFormTranslations: Record<Language, SharedAuthFormTranslations> = {
+  tl: {
+    passwordLabel: 'Password',
+    passwordPlaceholder: 'Minimum 8 characters',
+    confirmPasswordLabel: 'Kumpirmahin ang Password',
+    confirmPasswordPlaceholder: 'Ulitin ang password',
+    passwordStrengthHint: 'Minimum 8 characters na may pinaghalong letra at numero',
+    passwordStrengthWeak: 'Mahina',
+    passwordStrengthMedium: 'Katamtaman',
+    passwordStrengthStrong: 'Malakas',
+    pinLabel: 'Quick POS PIN',
+    pinPlaceholder: '4 hanggang 6 na numero'
+  },
+  en: {
+    passwordLabel: 'Password',
+    passwordPlaceholder: 'Minimum 8 characters',
+    confirmPasswordLabel: 'Confirm Password',
+    confirmPasswordPlaceholder: 'Re-enter password',
+    passwordStrengthHint: 'Minimum 8 characters with letters & numbers',
+    passwordStrengthWeak: 'Weak',
+    passwordStrengthMedium: 'Medium',
+    passwordStrengthStrong: 'Strong',
+    pinLabel: 'Quick POS PIN',
+    pinPlaceholder: '4 to 6 digits'
   }
 };
 
@@ -1300,9 +1352,12 @@ export const translations: Record<Language, Translations> = {
       emailRequired: 'Kailangan ang wastong email address.',
       emailInvalid: 'Maling format ng email address.',
       passwordLabel: 'Password',
-      passwordPlaceholder: 'Minimum 6 characters',
-      passwordRequired: 'Kailangan ang password (minimum 6 characters).',
-      passwordMinLength: 'Dapat mayroong 6 o higit pang characters ang password.',
+      passwordPlaceholder: 'Minimum 8 characters',
+      passwordRequired: 'Kailangan ang password (minimum 8 characters na may letra at numero).',
+      passwordMinLength: 'Dapat mayroong 8 o higit pang characters ang password.',
+      passwordStrengthError: 'Dapat mayroong 8 o higit pang characters at may pinaghalong letra at numero ang password.',
+      confirmPasswordRequired: 'Kailangan kumpirmahin ang password.',
+      passwordMismatch: 'Hindi magkatugma ang password.',
       pinLabel: 'Quick POS PIN (Opsyonal)',
       pinPlaceholder: '4 hanggang 6 na numero',
       pinHint: 'Gamitin para sa mabilisang pag-unlock ng kaha / POS nang hindi paulit-ulit na nagta-type ng buong password.',
@@ -1370,10 +1425,7 @@ export const translations: Record<Language, Translations> = {
       tabRegister: 'Bagong Tindahan',
       emailLabel: 'Email Address',
       emailPlaceholder: 'Hal. nena.store@gmail.com',
-      passwordLabel: 'Password',
-      passwordPlaceholder: 'Minimum 6 characters',
-      pinLabel: 'Quick POS PIN',
-      pinPlaceholder: '4 hanggang 6 na numero',
+      ...sharedAuthFormTranslations.tl,
       usePinToggle: 'Gamit ang Quick PIN',
       usePasswordToggle: 'Gamit ang Password',
       loginSubmitBtn: 'Buksan ang Tindahan',
@@ -1462,6 +1514,8 @@ export const translations: Record<Language, Translations> = {
     login: {
       pageTitle: 'Pumasok sa Iyong Tindahan',
       pageSubtitle: 'Ilagay ang iyong email at password o Quick PIN upang buksan ang kaha.',
+      signUpPageTitle: 'Magrehistro ng Iyong Tindahan',
+      signUpPageSubtitle: 'Ilagay ang impormasyon ng iyong tindahan upang makapagsimula nang libre.',
       badgeText: '🇵🇭 Kaha ng Sari-Sari Store • 100% Offline-First',
       backToLanding: 'Tingnan ang Lahat ng Features at Presyo (Landing Page)',
       demoNote: 'Subukan ang kaha nang walang account gamit ang Pinoy sari-sari items',
@@ -2031,9 +2085,12 @@ export const translations: Record<Language, Translations> = {
       emailRequired: 'Valid email address is required.',
       emailInvalid: 'Invalid email address format.',
       passwordLabel: 'Password',
-      passwordPlaceholder: 'Minimum 6 characters',
-      passwordRequired: 'Password is required (minimum 6 characters).',
-      passwordMinLength: 'Password must be at least 6 characters.',
+      passwordPlaceholder: 'Minimum 8 characters',
+      passwordRequired: 'Password is required (minimum 8 characters with letters & numbers).',
+      passwordMinLength: 'Password must be at least 8 characters.',
+      passwordStrengthError: 'Password must be at least 8 characters and contain both letters and numbers.',
+      confirmPasswordRequired: 'Please confirm your password.',
+      passwordMismatch: 'Passwords do not match.',
       pinLabel: 'Quick POS PIN (Optional)',
       pinPlaceholder: '4 to 6 digits',
       pinHint: 'Used for quick till unlock without repeatedly typing your full password.',
@@ -2075,10 +2132,7 @@ export const translations: Record<Language, Translations> = {
       tabRegister: 'New Store',
       emailLabel: 'Email Address',
       emailPlaceholder: 'e.g. nena.store@gmail.com',
-      passwordLabel: 'Password',
-      passwordPlaceholder: 'Minimum 6 characters',
-      pinLabel: 'Quick POS PIN',
-      pinPlaceholder: '4 to 6 digits',
+      ...sharedAuthFormTranslations.en,
       usePinToggle: 'Use Quick PIN',
       usePasswordToggle: 'Use Password',
       loginSubmitBtn: 'Open My Store',
@@ -2167,6 +2221,8 @@ export const translations: Record<Language, Translations> = {
     login: {
       pageTitle: 'Sign In to Your Store',
       pageSubtitle: 'Enter your email and password or Quick PIN to unlock your POS counter.',
+      signUpPageTitle: 'Sign Up for Your Store',
+      signUpPageSubtitle: 'Enter your store details to create an account and unlock your POS counter.',
       badgeText: '🇵🇭 Sari-Sari Store POS • 100% Offline-First',
       backToLanding: 'Explore All Features and Pricing (Landing Page)',
       demoNote: 'Test-drive the register without an account using Pinoy sari-sari items',

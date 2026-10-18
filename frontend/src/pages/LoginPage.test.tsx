@@ -99,6 +99,7 @@ describe('LoginPage Component', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    window.history.replaceState(null, '', '/');
     vi.spyOn(useSubscriptionStore.getState(), 'refreshSubscription').mockResolvedValue();
     localStorage.clear();
     useLanguageStore.setState({ language: 'tl' });
@@ -259,6 +260,7 @@ describe('LoginPage Component', () => {
     fireEvent.change(screen.getByPlaceholderText(t.landing.storeNamePlaceholder), { target: { value: 'Tindahan ni Nanay' } });
     fireEvent.change(screen.getByPlaceholderText(t.landing.emailPlaceholder), { target: { value: 'nanay@tindahan.ph' } });
     fireEvent.change(screen.getByPlaceholderText(t.landing.passwordPlaceholder), { target: { value: 'nanay123' } });
+    fireEvent.change(screen.getByPlaceholderText(t.landing.confirmPasswordPlaceholder), { target: { value: 'nanay123' } });
 
     const submitBtn = screen.getByTestId('login-register-submit-btn');
     fireEvent.click(submitBtn);
@@ -298,6 +300,7 @@ describe('LoginPage Component', () => {
     fireEvent.change(screen.getByPlaceholderText(t.landing.storeNamePlaceholder), { target: { value: 'Malinis na Tindahan' } });
     fireEvent.change(screen.getByPlaceholderText(t.landing.emailPlaceholder), { target: { value: 'clean@tindahan.ph' } });
     fireEvent.change(screen.getByPlaceholderText(t.landing.passwordPlaceholder), { target: { value: 'clean123' } });
+    fireEvent.change(screen.getByPlaceholderText(t.landing.confirmPasswordPlaceholder), { target: { value: 'clean123' } });
 
     const submitBtn = screen.getByTestId('login-register-submit-btn');
     fireEvent.click(submitBtn);
@@ -461,6 +464,200 @@ describe('LoginPage Component', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.getByPlaceholderText(t.landing.passwordPlaceholder)).toBeInTheDocument();
     expect(screen.queryByPlaceholderText(t.landing.pinPlaceholder)).not.toBeInTheDocument();
+  });
+
+  it('shows all registration errors together with invalid fields highlighted (aria-invalid set)', async () => {
+    renderLoginPage();
+
+    const registerTab = screen.getByTestId('login-tab-register');
+    fireEvent.click(registerTab);
+
+    const storeInput = screen.getByPlaceholderText(t.landing.storeNamePlaceholder);
+    const emailInput = screen.getByPlaceholderText(t.landing.emailPlaceholder);
+    const passwordInput = screen.getByPlaceholderText(t.landing.passwordPlaceholder);
+    const pinInput = screen.getByPlaceholderText(t.landing.pinPlaceholder);
+    const submitBtn = screen.getByTestId('login-register-submit-btn');
+
+    // Fill in multiple invalid inputs: empty store name, invalid email (31234), short password, invalid PIN (< 4 digits)
+    fireEvent.change(storeInput, { target: { value: '' } });
+    fireEvent.change(emailInput, { target: { value: '31234' } });
+    fireEvent.change(passwordInput, { target: { value: '123' } });
+    fireEvent.change(pinInput, { target: { value: '12' } });
+
+    fireEvent.click(submitBtn);
+
+    // Verify all 4 errors are displayed together in the error banner
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent(t.onboarding.storeNameRequired);
+    expect(alert).toHaveTextContent(t.onboarding.emailInvalid);
+    expect(alert).toHaveTextContent(t.onboarding.passwordStrengthError);
+    expect(alert).toHaveTextContent(t.onboarding.pinInvalid);
+
+    // Verify invalid fields have aria-invalid="true"
+    expect(storeInput).toHaveAttribute('aria-invalid', 'true');
+    expect(emailInput).toHaveAttribute('aria-invalid', 'true');
+    expect(passwordInput).toHaveAttribute('aria-invalid', 'true');
+    expect(pinInput).toHaveAttribute('aria-invalid', 'true');
+
+    // Updating a field resets its aria-invalid attribute
+    fireEvent.change(storeInput, { target: { value: 'Valid Store' } });
+    expect(storeInput).toHaveAttribute('aria-invalid', 'false');
+  });
+
+  it('rejects a registration PIN over 6 digits with pinInvalid error and aria-invalid set', async () => {
+    renderLoginPage();
+
+    const registerTab = screen.getByTestId('login-tab-register');
+    fireEvent.click(registerTab);
+
+    const storeInput = screen.getByPlaceholderText(t.landing.storeNamePlaceholder);
+    const emailInput = screen.getByPlaceholderText(t.landing.emailPlaceholder);
+    const passwordInput = screen.getByPlaceholderText(t.landing.passwordPlaceholder);
+    const pinInput = screen.getByPlaceholderText(t.landing.pinPlaceholder);
+    const submitBtn = screen.getByTestId('login-register-submit-btn');
+
+    fireEvent.change(storeInput, { target: { value: 'Valid Store' } });
+    fireEvent.change(emailInput, { target: { value: 'valid@store.ph' } });
+    fireEvent.change(passwordInput, { target: { value: 'SecurePass123' } });
+    fireEvent.change(screen.getByPlaceholderText(t.landing.confirmPasswordPlaceholder), { target: { value: 'SecurePass123' } });
+    // 7-digit PIN (over 6 digits)
+    fireEvent.change(pinInput, { target: { value: '1234567' } });
+
+    fireEvent.click(submitBtn);
+
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent(t.onboarding.pinInvalid);
+    expect(pinInput).toHaveAttribute('aria-invalid', 'true');
+    expect(storeInput).toHaveAttribute('aria-invalid', 'false');
+    expect(emailInput).toHaveAttribute('aria-invalid', 'false');
+    expect(passwordInput).toHaveAttribute('aria-invalid', 'false');
+    expect(authService.registerStore).not.toHaveBeenCalled();
+  });
+
+  it('rejects a login Quick PIN over 6 digits with pinInvalid error and aria-invalid set', async () => {
+    renderLoginPage();
+
+    // Toggle to PIN mode
+    fireEvent.click(screen.getByTestId('login-toggle-mode-btn'));
+
+    const emailInput = screen.getByPlaceholderText(t.landing.emailPlaceholder);
+    const pinInput = screen.getByPlaceholderText(t.landing.pinPlaceholder);
+    const submitBtn = screen.getByTestId('login-submit-btn');
+
+    fireEvent.change(emailInput, { target: { value: 'owner@tindahan.ph' } });
+    // 8-digit PIN (over 6 digits)
+    fireEvent.change(pinInput, { target: { value: '12345678' } });
+
+    fireEvent.click(submitBtn);
+
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent(t.onboarding.pinInvalid);
+    expect(pinInput).toHaveAttribute('aria-invalid', 'true');
+    expect(emailInput).toHaveAttribute('aria-invalid', 'false');
+    expect(authService.loginPin).not.toHaveBeenCalled();
+  });
+
+  it('displays sign-up heading and updates URL to ?tab=signup when switching to register tab', async () => {
+    window.history.replaceState(null, '', '/');
+    renderLoginPage();
+
+    // Initially on login tab with sign-in heading
+    const heading = screen.getByRole('heading', { level: 1 });
+    expect(heading).toHaveTextContent(t.login.pageTitle);
+
+    // Click register tab ("New Store")
+    const registerTab = screen.getByTestId('login-tab-register');
+    fireEvent.click(registerTab);
+
+    // Heading reflects sign up
+    expect(heading).toHaveTextContent(t.login.signUpPageTitle);
+    expect(window.location.search).toBe('?tab=signup');
+
+    // Click login tab ("Log In")
+    const loginTab = screen.getByTestId('login-tab-login');
+    fireEvent.click(loginTab);
+
+    // Heading reflects sign in and URL reflects ?tab=login
+    expect(heading).toHaveTextContent(t.login.pageTitle);
+    expect(window.location.search).toBe('?tab=login');
+  });
+
+  it('renders sign-up heading initially when URL contains ?tab=signup', async () => {
+    window.history.replaceState(null, '', '/?tab=signup');
+    renderLoginPage();
+
+    const heading = screen.getByRole('heading', { level: 1 });
+    expect(heading).toHaveTextContent(t.login.signUpPageTitle);
+  });
+
+  it('rejects a registration password that fails the password strength rule and marks aria-invalid', async () => {
+    renderLoginPage();
+
+    fireEvent.click(screen.getByTestId('login-tab-register'));
+
+    const storeInput = screen.getByPlaceholderText(t.landing.storeNamePlaceholder);
+    const emailInput = screen.getByPlaceholderText(t.landing.emailPlaceholder);
+    const passwordInput = screen.getByPlaceholderText(t.landing.passwordPlaceholder);
+    const confirmInput = screen.getByPlaceholderText(t.landing.confirmPasswordPlaceholder);
+    const submitBtn = screen.getByTestId('login-register-submit-btn');
+
+    fireEvent.change(storeInput, { target: { value: 'Lakas Store' } });
+    fireEvent.change(emailInput, { target: { value: 'lakas@store.ph' } });
+    // Password with only letters (fails strength rule)
+    fireEvent.change(passwordInput, { target: { value: 'weakpassword' } });
+    fireEvent.change(confirmInput, { target: { value: 'weakpassword' } });
+
+    fireEvent.click(submitBtn);
+
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent(t.onboarding.passwordStrengthError);
+    expect(passwordInput).toHaveAttribute('aria-invalid', 'true');
+    expect(authService.registerStore).not.toHaveBeenCalled();
+  });
+
+  it('rejects registration when confirm-password does not match password to catch typos', async () => {
+    renderLoginPage();
+
+    fireEvent.click(screen.getByTestId('login-tab-register'));
+
+    const storeInput = screen.getByPlaceholderText(t.landing.storeNamePlaceholder);
+    const emailInput = screen.getByPlaceholderText(t.landing.emailPlaceholder);
+    const passwordInput = screen.getByPlaceholderText(t.landing.passwordPlaceholder);
+    const confirmInput = screen.getByPlaceholderText(t.landing.confirmPasswordPlaceholder);
+    const submitBtn = screen.getByTestId('login-register-submit-btn');
+
+    fireEvent.change(storeInput, { target: { value: 'Typo Store' } });
+    fireEvent.change(emailInput, { target: { value: 'typo@store.ph' } });
+    fireEvent.change(passwordInput, { target: { value: 'SecurePass123' } });
+    // Typo in confirm password
+    fireEvent.change(confirmInput, { target: { value: 'SecurePass999' } });
+
+    fireEvent.click(submitBtn);
+
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent(t.onboarding.passwordMismatch);
+    expect(confirmInput).toHaveAttribute('aria-invalid', 'true');
+    expect(passwordInput).toHaveAttribute('aria-invalid', 'false');
+    expect(authService.registerStore).not.toHaveBeenCalled();
+  });
+
+  it('displays real-time password strength indicator when typing password', async () => {
+    renderLoginPage();
+
+    fireEvent.click(screen.getByTestId('login-tab-register'));
+
+    const passwordInput = screen.getByPlaceholderText(t.landing.passwordPlaceholder);
+    expect(screen.queryByTestId('login-password-strength-indicator')).not.toBeInTheDocument();
+
+    // Type weak password
+    fireEvent.change(passwordInput, { target: { value: 'short' } });
+    const indicator = screen.getByTestId('login-password-strength-indicator');
+    expect(indicator).toBeInTheDocument();
+    expect(indicator).toHaveTextContent(t.landing.passwordStrengthWeak);
+
+    // Type strong password
+    fireEvent.change(passwordInput, { target: { value: 'VeryStrongPass123!' } });
+    expect(indicator).toHaveTextContent(t.landing.passwordStrengthStrong);
   });
 });
 
