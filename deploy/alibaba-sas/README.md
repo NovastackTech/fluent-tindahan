@@ -63,10 +63,10 @@ You enter the root SSH password once. The script packages the project (no `.git`
 
 ### Continuous Deployment (GitHub Actions)
 
-A GitHub Actions CD workflow is configured at [`.github/workflows/cd.yml`](file:///d:/Projects/fluent-tindahan/.github/workflows/cd.yml).
+A GitHub Actions CD workflow is configured at [`.github/workflows/cd.yml`](../../.github/workflows/cd.yml).
 - **Trigger**: Automatically runs on `push` to `main`, or on-demand via **Actions > CD (Alibaba Cloud SAS) > Run workflow**.
 - **Pipeline**: Runs frontend lint/tests/build and backend .NET unit tests. Upon validation, packages and streams the archive to `/opt/fluent-tindahan` over SSH, merges secrets, runs `install.sh`, and validates `https://tindahan-dev.novastack-inc.online/api/health`.
-- **Credentials**: Configured in GitHub Repository Secrets (`SAS_HOST`, `SAS_USER`, `SAS_PORT`, `SAS_SSH_KEY` or `SAS_PASSWORD`, `PAYMONGO_*`, `POSTGRES_*`).
+- **Credentials**: Configured in GitHub Repository Secrets (`SAS_HOST`, `SAS_USER`, `SAS_PORT`, `SAS_SSH_KEY` or `SAS_PASSWORD`, `PAYMONGO_*`).
 
 ## 4. Reverse proxy and HTTPS (automatic)
 
