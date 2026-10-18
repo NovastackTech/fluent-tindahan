@@ -36,6 +36,9 @@ export interface Translations {
     gcash: string;
     import: string;
     settings: string;
+    menuTitle: string;
+    expandMenu: string;
+    collapseMenu: string;
   };
   pos: {
     title: string;
@@ -578,6 +581,9 @@ export interface Translations {
     passwordPlaceholder: string;
     passwordRequired: string;
     passwordMinLength: string;
+    passwordStrengthError: string;
+    confirmPasswordRequired: string;
+    passwordMismatch: string;
     pinLabel: string;
     pinPlaceholder: string;
     pinHint: string;
@@ -621,6 +627,12 @@ export interface Translations {
     emailPlaceholder: string;
     passwordLabel: string;
     passwordPlaceholder: string;
+    confirmPasswordLabel: string;
+    confirmPasswordPlaceholder: string;
+    passwordStrengthHint: string;
+    passwordStrengthWeak: string;
+    passwordStrengthMedium: string;
+    passwordStrengthStrong: string;
     pinLabel: string;
     pinPlaceholder: string;
     usePinToggle: string;
@@ -634,6 +646,8 @@ export interface Translations {
     phoneLabel: string;
     phonePlaceholder: string;
     offerGcashLabel: string;
+    starterProductsLabel: string;
+    starterProductsDesc: string;
     demoStorePrompt: string;
     exploreDemoBtn: string;
     loggedInStatus: string;
@@ -709,6 +723,8 @@ export interface Translations {
   login: {
     pageTitle: string;
     pageSubtitle: string;
+    signUpPageTitle: string;
+    signUpPageSubtitle: string;
     badgeText: string;
     backToLanding: string;
     demoNote: string;
@@ -718,6 +734,88 @@ export interface Translations {
     switchModePin: string;
   };
 }
+
+type SharedProductFormTranslations = Pick<
+  Translations['inventory'],
+  | 'productNameLabel'
+  | 'productNameRequired'
+  | 'categoryLabel'
+  | 'costLabel'
+  | 'costCannotBeNegative'
+  | 'costExceedsMax'
+  | 'priceLabel'
+  | 'priceMustBePositive'
+  | 'priceExceedsMax'
+  | 'stockExceedsMax'
+>;
+
+const sharedProductFormTranslations: Record<Language, SharedProductFormTranslations> = {
+  tl: {
+    productNameLabel: 'Pangalan ng Produkto:*',
+    productNameRequired: 'Ilagay ang pangalan ng produkto.',
+    categoryLabel: 'Kategorya:*',
+    costLabel: 'Puhunan (Cost Price ₱):*',
+    costCannotBeNegative: 'Hindi maaaring negatibo ang puhunan.',
+    costExceedsMax: 'Hindi maaaring lumampas sa ₱999,999.99 ang puhunan.',
+    priceLabel: 'Presyo ng Tinda (SRP ₱):*',
+    priceMustBePositive: 'Dapat mas mataas sa ₱0 ang presyo ng tinda.',
+    priceExceedsMax: 'Hindi maaaring lumampas sa ₱999,999.99 ang presyo.',
+    stockExceedsMax: 'Hindi maaaring lumampas sa 999,999 ang dami ng stock.'
+  },
+  en: {
+    productNameLabel: 'Product Name:*',
+    productNameRequired: 'Enter a product name.',
+    categoryLabel: 'Category:*',
+    costLabel: 'Cost Price (₱):*',
+    costCannotBeNegative: 'Cost price cannot be negative.',
+    costExceedsMax: 'Cost price cannot exceed ₱999,999.99.',
+    priceLabel: 'Retail Price (SRP ₱):*',
+    priceMustBePositive: 'Retail price must be greater than ₱0.',
+    priceExceedsMax: 'Retail price cannot exceed ₱999,999.99.',
+    stockExceedsMax: 'Stock quantity cannot exceed 999,999.'
+  }
+};
+
+type SharedAuthFormTranslations = Pick<
+  Translations['landing'],
+  | 'passwordLabel'
+  | 'passwordPlaceholder'
+  | 'confirmPasswordLabel'
+  | 'confirmPasswordPlaceholder'
+  | 'passwordStrengthHint'
+  | 'passwordStrengthWeak'
+  | 'passwordStrengthMedium'
+  | 'passwordStrengthStrong'
+  | 'pinLabel'
+  | 'pinPlaceholder'
+>;
+
+const sharedAuthFormTranslations: Record<Language, SharedAuthFormTranslations> = {
+  tl: {
+    passwordLabel: 'Password',
+    passwordPlaceholder: 'Minimum 8 characters',
+    confirmPasswordLabel: 'Kumpirmahin ang Password',
+    confirmPasswordPlaceholder: 'Ulitin ang password',
+    passwordStrengthHint: 'Minimum 8 characters na may pinaghalong letra at numero',
+    passwordStrengthWeak: 'Mahina',
+    passwordStrengthMedium: 'Katamtaman',
+    passwordStrengthStrong: 'Malakas',
+    pinLabel: 'Quick POS PIN',
+    pinPlaceholder: '4 hanggang 6 na numero'
+  },
+  en: {
+    passwordLabel: 'Password',
+    passwordPlaceholder: 'Minimum 8 characters',
+    confirmPasswordLabel: 'Confirm Password',
+    confirmPasswordPlaceholder: 'Re-enter password',
+    passwordStrengthHint: 'Minimum 8 characters with letters & numbers',
+    passwordStrengthWeak: 'Weak',
+    passwordStrengthMedium: 'Medium',
+    passwordStrengthStrong: 'Strong',
+    pinLabel: 'Quick POS PIN',
+    pinPlaceholder: '4 to 6 digits'
+  }
+};
 
 export const translations: Record<Language, Translations> = {
   tl: {
@@ -755,7 +853,10 @@ export const translations: Record<Language, Translations> = {
       utang: 'Utang',
       gcash: 'GCash',
       import: 'Import',
-      settings: 'Sync'
+      settings: 'Sync',
+      menuTitle: 'Menu ng Tindahan',
+      expandMenu: 'Buksan ang menu',
+      collapseMenu: 'Itago ang menu'
     },
     pos: {
       title: 'Tindahan Point of Sale',
@@ -965,6 +1066,7 @@ export const translations: Record<Language, Translations> = {
       unnamed: '(Walang Pangalan)'
     },
     inventory: {
+      ...sharedProductFormTranslations.tl,
       title: 'Talaan ng Imbentaryo at Stocks',
       subtitle: 'Subaybayan ang dami ng paninda, baguhin ang presyo, suriin ang kita at margin, at mag-restock.',
       totalProducts: 'Kabuuang Paninda',
@@ -1004,18 +1106,8 @@ export const translations: Record<Language, Translations> = {
       saveSuccess: 'Matagumpay na nai-save ang produkto!',
       addModalTitle: 'Magdagdag ng Bagong Produkto',
       editModalTitle: 'Baguhin ang Detalye ng Produkto',
-      productNameLabel: 'Pangalan ng Produkto:*',
-      productNameRequired: 'Ilagay ang pangalan ng produkto.',
-      categoryLabel: 'Kategorya:*',
       barcodeLabel: 'Barcode (Opsyonal):',
-      costLabel: 'Puhunan (Cost Price ₱):*',
-      costCannotBeNegative: 'Hindi maaaring negatibo ang puhunan.',
-      costExceedsMax: 'Hindi maaaring lumampas sa ₱999,999.99 ang puhunan.',
-      priceLabel: 'Presyo ng Tinda (SRP ₱):*',
-      priceMustBePositive: 'Dapat mas mataas sa ₱0 ang presyo ng tinda.',
-      priceExceedsMax: 'Hindi maaaring lumampas sa ₱999,999.99 ang presyo.',
       stockLabel: 'Kasalukuyang Stock:*',
-      stockExceedsMax: 'Hindi maaaring lumampas sa 999,999 ang dami ng stock.',
       profitPreview: 'Tinatayang Kita bawat piraso:',
       marginPreview: 'Profit Margin:',
       noProductsFound: 'Walang natagpuang produkto na tumutugma sa filter.',
@@ -1025,6 +1117,7 @@ export const translations: Record<Language, Translations> = {
       customRestock: 'Magdagdag ng Stock'
     },
     barcode: {
+      ...sharedProductFormTranslations.tl,
       scannerTitle: 'Kamera Barcode Scanner',
       scannerDesc: 'Itapat ang barcode ng paninda sa loob ng kahon upang awtomatikong ma-scan.',
       openCamera: 'Buksan ang Scanner',
@@ -1040,17 +1133,7 @@ export const translations: Record<Language, Translations> = {
       registerModalTitle: 'Mabilisang Pagrehistro ng Produkto',
       registeredSuccess: 'Matagumpay na narehistro ang bagong produkto!',
       barcodeLabel: 'Nai-scan na Barcode:',
-      productNameLabel: 'Pangalan ng Produkto:*',
-      productNameRequired: 'Ilagay ang pangalan ng produkto.',
-      categoryLabel: 'Kategorya:*',
-      costLabel: 'Puhunan (Cost Price ₱):*',
-      costCannotBeNegative: 'Hindi maaaring negatibo ang puhunan.',
-      costExceedsMax: 'Hindi maaaring lumampas sa ₱999,999.99 ang puhunan.',
-      priceLabel: 'Presyo ng Tinda (SRP ₱):*',
-      priceMustBePositive: 'Dapat mas mataas sa ₱0 ang presyo ng tinda.',
-      priceExceedsMax: 'Hindi maaaring lumampas sa ₱999,999.99 ang presyo.',
       stockLabel: 'Panimulang Stock:*',
-      stockExceedsMax: 'Hindi maaaring lumampas sa 999,999 ang dami ng stock.',
       saveAndAddToCart: 'I-save at Idagdag sa Cart',
       saveProduct: 'I-save ang Produkto',
       addedToCart: 'Naidagdag na sa Cart!'
@@ -1255,8 +1338,8 @@ export const translations: Record<Language, Translations> = {
       phoneInvalid: 'Dapat ay wastong 11-digit Philippine mobile number (09XXXXXXXXX).',
       catalogSectionTitle: 'Panimulang Imbentaryo (Catalog)',
       catalogSectionDesc: 'Piliin kung nais mong i-load agad ang mga karaniwang paninda sa sari-sari store.',
-      catalogStandardTitle: 'I-load ang 50 Karaniwang Paninda',
-      catalogStandardDesc: 'Hanggang 50 panimulang produkto: Lucky Me, Kopiko, de-lata, kape, shampoo sachet, atbp.',
+      catalogStandardTitle: 'I-load ang 10 Karaniwang Paninda',
+      catalogStandardDesc: '10 panimulang produkto na handa nang gamitin sa POS: Lucky Me, Kopiko, de-lata, kape, shampoo sachet, atbp.',
       catalogEmptyTitle: 'Magsimula sa Malinis na Tindahan',
       catalogEmptyDesc: 'Walang paunang paninda; manu-manong i-encode o i-import via CSV ang iyong mga produkto.',
       gcashToggleTitle: 'Nag-aalok ng GCash Cash-In / Cash-Out',
@@ -1269,9 +1352,12 @@ export const translations: Record<Language, Translations> = {
       emailRequired: 'Kailangan ang wastong email address.',
       emailInvalid: 'Maling format ng email address.',
       passwordLabel: 'Password',
-      passwordPlaceholder: 'Minimum 6 characters',
-      passwordRequired: 'Kailangan ang password (minimum 6 characters).',
-      passwordMinLength: 'Dapat mayroong 6 o higit pang characters ang password.',
+      passwordPlaceholder: 'Minimum 8 characters',
+      passwordRequired: 'Kailangan ang password (minimum 8 characters na may letra at numero).',
+      passwordMinLength: 'Dapat mayroong 8 o higit pang characters ang password.',
+      passwordStrengthError: 'Dapat mayroong 8 o higit pang characters at may pinaghalong letra at numero ang password.',
+      confirmPasswordRequired: 'Kailangan kumpirmahin ang password.',
+      passwordMismatch: 'Hindi magkatugma ang password.',
       pinLabel: 'Quick POS PIN (Opsyonal)',
       pinPlaceholder: '4 hanggang 6 na numero',
       pinHint: 'Gamitin para sa mabilisang pag-unlock ng kaha / POS nang hindi paulit-ulit na nagta-type ng buong password.',
@@ -1339,10 +1425,7 @@ export const translations: Record<Language, Translations> = {
       tabRegister: 'Bagong Tindahan',
       emailLabel: 'Email Address',
       emailPlaceholder: 'Hal. nena.store@gmail.com',
-      passwordLabel: 'Password',
-      passwordPlaceholder: 'Minimum 6 characters',
-      pinLabel: 'Quick POS PIN',
-      pinPlaceholder: '4 hanggang 6 na numero',
+      ...sharedAuthFormTranslations.tl,
       usePinToggle: 'Gamit ang Quick PIN',
       usePasswordToggle: 'Gamit ang Password',
       loginSubmitBtn: 'Buksan ang Tindahan',
@@ -1354,6 +1437,8 @@ export const translations: Record<Language, Translations> = {
       phoneLabel: 'Mobile Number (GCash)',
       phonePlaceholder: '09171234567',
       offerGcashLabel: 'Nag-aalok ng GCash Cash-In / Cash-Out services',
+      starterProductsLabel: 'I-load ang 10 karaniwang paninda (starter products)',
+      starterProductsDesc: 'Maglagay ng 10 panimulang FMCG catalog (Pancit Canton, Kopiko, de-lata, shampoo sachet, atbp.) na handa sa POS.',
       demoStorePrompt: 'Nais mo bang subukan muna nang walang account?',
       exploreDemoBtn: 'Subukan gamit ang Demo Data',
       loggedInStatus: 'Kasalukuyang naka-log in bilang',
@@ -1399,7 +1484,7 @@ export const translations: Record<Language, Translations> = {
       pricingSubtitle: 'Magsimula nang libre habang buhay. Mag-upgrade lang kapag lumalaki na ang iyong tindahan.',
       planFreeTitle: 'Libre',
       planFreePrice: '₱0 / habang buhay',
-      planFreeDesc: 'Perpekto para sa bagong bukas o maliit na sari-sari store. Hanggang 50 produkto at 30 suki debtors.',
+      planFreeDesc: 'Perpekto para sa bagong bukas o maliit na sari-sari store. Hanggang 30 produkto at 30 suki debtors.',
       planProTitle: 'Tindahan Pro',
       planProPrice: '₱149 / buwan (o ₱49 / linggo)',
       planProDesc: 'Para sa lumalaking tindahan. Walang limitasyong produkto at utang, CSV import, at detalyadong profit analytics.',
@@ -1429,6 +1514,8 @@ export const translations: Record<Language, Translations> = {
     login: {
       pageTitle: 'Pumasok sa Iyong Tindahan',
       pageSubtitle: 'Ilagay ang iyong email at password o Quick PIN upang buksan ang kaha.',
+      signUpPageTitle: 'Magrehistro ng Iyong Tindahan',
+      signUpPageSubtitle: 'Ilagay ang impormasyon ng iyong tindahan upang makapagsimula nang libre.',
       badgeText: '🇵🇭 Kaha ng Sari-Sari Store • 100% Offline-First',
       backToLanding: 'Tingnan ang Lahat ng Features at Presyo (Landing Page)',
       demoNote: 'Subukan ang kaha nang walang account gamit ang Pinoy sari-sari items',
@@ -1473,7 +1560,10 @@ export const translations: Record<Language, Translations> = {
       utang: 'Credit Ledger',
       gcash: 'GCash Hub',
       import: 'Import CSV',
-      settings: 'Settings'
+      settings: 'Settings',
+      menuTitle: 'Store Menu',
+      expandMenu: 'Open menu',
+      collapseMenu: 'Close menu'
     },
     pos: {
       title: 'Point of Sale',
@@ -1683,6 +1773,7 @@ export const translations: Record<Language, Translations> = {
       unnamed: '(Unnamed)'
     },
     inventory: {
+      ...sharedProductFormTranslations.en,
       title: 'Inventory & Stock Management',
       subtitle: 'Monitor stock levels, edit prices, inspect profit margins, and restock supplies.',
       totalProducts: 'Total Products',
@@ -1722,18 +1813,8 @@ export const translations: Record<Language, Translations> = {
       saveSuccess: 'Product saved successfully!',
       addModalTitle: 'Add New Product',
       editModalTitle: 'Edit Product Details',
-      productNameLabel: 'Product Name:*',
-      productNameRequired: 'Enter a product name.',
-      categoryLabel: 'Category:*',
       barcodeLabel: 'Barcode (Optional):',
-      costLabel: 'Cost Price (₱):*',
-      costCannotBeNegative: 'Cost price cannot be negative.',
-      costExceedsMax: 'Cost price cannot exceed ₱999,999.99.',
-      priceLabel: 'Retail Price (SRP ₱):*',
-      priceMustBePositive: 'Retail price must be greater than ₱0.',
-      priceExceedsMax: 'Retail price cannot exceed ₱999,999.99.',
       stockLabel: 'Current Stock Qty:*',
-      stockExceedsMax: 'Stock quantity cannot exceed 999,999.',
       profitPreview: 'Estimated Profit per unit:',
       marginPreview: 'Profit Margin:',
       noProductsFound: 'No products found matching the criteria.',
@@ -1743,6 +1824,7 @@ export const translations: Record<Language, Translations> = {
       customRestock: 'Add Stock'
     },
     barcode: {
+      ...sharedProductFormTranslations.en,
       scannerTitle: 'Camera Barcode Scanner',
       scannerDesc: 'Point the product barcode inside the viewfinder box to scan automatically.',
       openCamera: 'Open Scanner',
@@ -1758,17 +1840,7 @@ export const translations: Record<Language, Translations> = {
       registerModalTitle: 'Quick Product Registration',
       registeredSuccess: 'Product successfully registered!',
       barcodeLabel: 'Scanned Barcode:',
-      productNameLabel: 'Product Name:*',
-      productNameRequired: 'Enter a product name.',
-      categoryLabel: 'Category:*',
-      costLabel: 'Cost Price (₱):*',
-      costCannotBeNegative: 'Cost price cannot be negative.',
-      costExceedsMax: 'Cost price cannot exceed ₱999,999.99.',
-      priceLabel: 'Retail Price (SRP ₱):*',
-      priceMustBePositive: 'Retail price must be greater than ₱0.',
-      priceExceedsMax: 'Retail price cannot exceed ₱999,999.99.',
       stockLabel: 'Initial Stock:*',
-      stockExceedsMax: 'Stock quantity cannot exceed 999,999.',
       saveAndAddToCart: 'Save & Add to Cart',
       saveProduct: 'Save Product',
       addedToCart: 'Added to Cart!'
@@ -1999,8 +2071,8 @@ export const translations: Record<Language, Translations> = {
       phoneInvalid: 'Must be a valid 11-digit Philippine mobile number (09XXXXXXXXX).',
       catalogSectionTitle: 'Initial Inventory Setup',
       catalogSectionDesc: 'Choose whether to pre-load standard sari-sari store FMCG goods.',
-      catalogStandardTitle: 'Pre-load 50 Standard Products',
-      catalogStandardDesc: 'Up to 50 starter products, including instant noodles, coffee mixes, canned goods, sachets, etc.',
+      catalogStandardTitle: 'Pre-load 10 Standard Products',
+      catalogStandardDesc: '10 starter products ready to use in POS, including instant noodles, coffee mixes, canned goods, sachets, etc.',
       catalogEmptyTitle: 'Start with Blank Store',
       catalogEmptyDesc: 'No pre-loaded items; enter your products manually or import via CSV.',
       gcashToggleTitle: 'Offers GCash Cash-In / Cash-Out',
@@ -2013,9 +2085,12 @@ export const translations: Record<Language, Translations> = {
       emailRequired: 'Valid email address is required.',
       emailInvalid: 'Invalid email address format.',
       passwordLabel: 'Password',
-      passwordPlaceholder: 'Minimum 6 characters',
-      passwordRequired: 'Password is required (minimum 6 characters).',
-      passwordMinLength: 'Password must be at least 6 characters.',
+      passwordPlaceholder: 'Minimum 8 characters',
+      passwordRequired: 'Password is required (minimum 8 characters with letters & numbers).',
+      passwordMinLength: 'Password must be at least 8 characters.',
+      passwordStrengthError: 'Password must be at least 8 characters and contain both letters and numbers.',
+      confirmPasswordRequired: 'Please confirm your password.',
+      passwordMismatch: 'Passwords do not match.',
       pinLabel: 'Quick POS PIN (Optional)',
       pinPlaceholder: '4 to 6 digits',
       pinHint: 'Used for quick till unlock without repeatedly typing your full password.',
@@ -2057,10 +2132,7 @@ export const translations: Record<Language, Translations> = {
       tabRegister: 'New Store',
       emailLabel: 'Email Address',
       emailPlaceholder: 'e.g. nena.store@gmail.com',
-      passwordLabel: 'Password',
-      passwordPlaceholder: 'Minimum 6 characters',
-      pinLabel: 'Quick POS PIN',
-      pinPlaceholder: '4 to 6 digits',
+      ...sharedAuthFormTranslations.en,
       usePinToggle: 'Use Quick PIN',
       usePasswordToggle: 'Use Password',
       loginSubmitBtn: 'Open My Store',
@@ -2072,6 +2144,8 @@ export const translations: Record<Language, Translations> = {
       phoneLabel: 'Mobile Number (GCash)',
       phonePlaceholder: '09171234567',
       offerGcashLabel: 'Offers GCash Cash-In / Cash-Out services',
+      starterProductsLabel: 'Pre-load 10 popular starter products',
+      starterProductsDesc: 'Seed 10 initial catalog items (Pancit Canton, Kopiko, canned goods, shampoo sachets, etc.) ready for POS.',
       demoStorePrompt: 'Want to test drive first without an account?',
       exploreDemoBtn: 'Explore with Sample Demo Data',
       loggedInStatus: 'Currently logged in as',
@@ -2117,7 +2191,7 @@ export const translations: Record<Language, Translations> = {
       pricingSubtitle: 'Start free forever. Upgrade only when your store outgrows entry limits.',
       planFreeTitle: 'Libre (Free)',
       planFreePrice: '₱0 / forever',
-      planFreeDesc: 'Perfect for new or small neighborhood sari-sari stores. Up to 50 products and 30 debtor profiles.',
+      planFreeDesc: 'Perfect for new or small neighborhood sari-sari stores. Up to 30 products and 30 debtor profiles.',
       planProTitle: 'Tindahan Pro',
       planProPrice: '₱149 / month (or ₱49 / week)',
       planProDesc: 'For growing retailers. Unlimited products & utang, bulk CSV import, and in-depth profit analytics.',
@@ -2147,6 +2221,8 @@ export const translations: Record<Language, Translations> = {
     login: {
       pageTitle: 'Sign In to Your Store',
       pageSubtitle: 'Enter your email and password or Quick PIN to unlock your POS counter.',
+      signUpPageTitle: 'Sign Up for Your Store',
+      signUpPageSubtitle: 'Enter your store details to create an account and unlock your POS counter.',
       badgeText: '🇵🇭 Sari-Sari Store POS • 100% Offline-First',
       backToLanding: 'Explore All Features and Pricing (Landing Page)',
       demoNote: 'Test-drive the register without an account using Pinoy sari-sari items',

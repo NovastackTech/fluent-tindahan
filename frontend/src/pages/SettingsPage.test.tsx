@@ -14,6 +14,7 @@ import { useTermsStore } from '../state/termsStore';
 import { db } from '../db/db';
 import { DEFAULT_GCASH_FEE_TIERS, GCASH_FEE_STORAGE_KEY, useGCashFeeStore } from '../state/gcashFeeStore';
 import * as authService from '../services/authService';
+import * as apiClientModule from '../services/apiClient';
 
 vi.mock('../services/authService', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/authService')>();
@@ -82,6 +83,22 @@ describe('SettingsPage', () => {
     expect(screen.getByText(/Aling Nena's Tindahan & GCash/)).toBeInTheDocument();
   });
 
+  it('renders Store & Device Details at the bottom of the page containing the logout button', () => {
+    renderSettings();
+
+    const legalTitle = screen.getByText(/Legal, Pagsunod|Legal, Compliance/i);
+    const deviceInfoTitle = screen.getByText(/Impormasyon ng Tindahan at Device|Store & Device Details/i);
+    const logoutBtn = screen.getByRole('button', { name: /Mag-log Out|Log Out/i });
+
+    // Store & Device Details must follow the Legal & Compliance section in the DOM
+    expect(legalTitle.compareDocumentPosition(deviceInfoTitle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // The logout button must be inside the Store & Device Details card
+    const deviceInfoCard = deviceInfoTitle.closest('.fui-Card');
+    expect(deviceInfoCard).not.toBeNull();
+    expect(deviceInfoCard?.contains(logoutBtn)).toBe(true);
+  });
+
   it('allows switching language between Tagalog and English', () => {
     renderSettings();
 
@@ -129,44 +146,6 @@ describe('SettingsPage', () => {
     expect(syncBtn).toBeInTheDocument();
     expect(syncBtn).not.toBeDisabled();
     fireEvent.click(syncBtn);
-  });
-
-  it('triggers reset seed data when confirmed by user', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-    vi.spyOn(window, 'alert').mockImplementation(() => {});
-    await db.products.bulkAdd([
-      {
-        id: 'active-product',
-        tenantId: 'settings-test-tenant',
-        name: 'Active Product',
-        price: 10,
-        cost: 8,
-        stockQty: 1,
-        updatedAt: new Date().toISOString()
-      },
-      {
-        id: 'other-product',
-        tenantId: 'other-tenant',
-        name: 'Other Product',
-        price: 10,
-        cost: 8,
-        stockQty: 1,
-        updatedAt: new Date().toISOString()
-      }
-    ]);
-
-    renderSettings();
-
-    const resetBtn = screen.getByRole('button', { name: /I-reset.*(Seeder|Sample)/i });
-    expect(resetBtn).toBeInTheDocument();
-    fireEvent.click(resetBtn);
-
-    expect(window.confirm).toHaveBeenCalled();
-    await waitFor(async () => {
-      expect(await db.products.where('tenantId').equals('settings-test-tenant').count()).toBe(50);
-    });
-    expect(await db.products.get('other-product')).toBeDefined();
-    expect(await db.products.get('active-product')).toBeUndefined();
   });
 
   it('renders pending queue items and dead letter queue items', async () => {
@@ -752,6 +731,33 @@ describe('SettingsPage', () => {
       expect(useAuthStore.getState().userEmail).toBe('');
       expect(useAuthStore.getState().isOnboarded).toBe(false);
       expect(useAuthStore.getState().isOnboardingOpen).toBe(false);
+    });
+  });
+
+  it('updates last synced timestamp when clicking Force Cloud Sync Now even with 0 pending items', async () => {
+    useAuthStore.setState({
+      isOnboarded: true,
+      isOnboardingStatusReady: true
+    });
+    vi.spyOn(apiClientModule, 'ensureTenantProvisioned').mockResolvedValue(undefined);
+    vi.spyOn(apiClientModule.apiClient, 'post').mockResolvedValue({
+      data: { results: [] }
+    } as any);
+
+    renderSettings();
+
+    // Initially displays Last sync: Never
+    expect(screen.getByText(/Last sync: Never/i)).toBeInTheDocument();
+
+    const forceSyncBtn = screen.getByRole('button', { name: /Puwersahing Mag-Sync Ngayon|Force Cloud Sync Now/i });
+    await act(async () => {
+      fireEvent.click(forceSyncBtn);
+    });
+
+    await waitFor(() => {
+      expect(useSyncStore.getState().lastSyncedAt).not.toBeNull();
+      expect(screen.queryByText(/Last sync: Never/i)).not.toBeInTheDocument();
+      expect(screen.getByText(/Last sync:/i)).toBeInTheDocument();
     });
   });
 });

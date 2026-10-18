@@ -344,7 +344,7 @@ public class BillingTests
         var subscription = await handler.Handle(new GetTenantSubscriptionQuery(), CancellationToken.None);
 
         subscription.Tier.Should().Be(PlanTier.Libre);
-        subscription.MaxProducts.Should().Be(50);
+        subscription.MaxProducts.Should().Be(30);
         subscription.MaxCustomers.Should().Be(30);
         subscription.MaxGCashTransactionsPerMonth.Should().Be(30);
         subscription.CanImportCsv.Should().BeFalse();
@@ -391,7 +391,7 @@ public class BillingTests
 
         subscription.Tier.Should().Be(PlanTier.Libre);
         subscription.IsActive.Should().BeFalse();
-        subscription.MaxProducts.Should().Be(50);
+        subscription.MaxProducts.Should().Be(30);
     }
 
     [Fact]
@@ -415,12 +415,12 @@ public class BillingTests
     }
 
     [Fact]
-    public async Task ProcessBatchSyncCommand_LibreTier_Enforces50ProductLimit()
+    public async Task ProcessBatchSyncCommand_LibreTier_Enforces30ProductLimit()
     {
         using var context = CreateInMemoryDbContext();
 
-        // Seed 50 products for test tenant
-        for (int i = 0; i < 50; i++)
+        // Seed 30 products for test tenant
+        for (int i = 0; i < 30; i++)
         {
             context.Products.Add(new Product
             {
@@ -441,14 +441,14 @@ public class BillingTests
 
         var op = new SyncOperationDto
         {
-            SyncId = "sync_prod_51",
+            SyncId = "sync_prod_31",
             Entity = "Product",
             Action = "Insert",
             Timestamp = DateTimeOffset.UtcNow,
             Payload = System.Text.Json.JsonDocument.Parse("""
             {
                 "id": "44444444-4444-4444-4444-444444444444",
-                "name": "Excess Product 51",
+                "name": "Excess Product 31",
                 "price": 20.0,
                 "cost": 15.0
             }
@@ -465,7 +465,7 @@ public class BillingTests
 
         result.Results.Should().HaveCount(1);
         result.Results[0].Status.Should().Be("Failed");
-        result.Results[0].Error.Should().Contain("Libre plan limit exceeded: Maximum 50 products allowed");
+        result.Results[0].Error.Should().Contain("Libre plan limit exceeded: Maximum 30 products allowed");
     }
 
     [Fact]
@@ -876,8 +876,8 @@ public class BillingTests
         using var context = CreateInMemoryDbContext();
         var tenantId = _currentUserServiceMock.Object.TenantId;
 
-        // Seed 50 products so Libre limit is reached
-        for (int i = 0; i < 50; i++)
+        // Seed 30 products so Libre limit is reached
+        for (int i = 0; i < 30; i++)
         {
             context.Products.Add(new Product
             {
@@ -898,14 +898,14 @@ public class BillingTests
         var rejectedProductId = Guid.NewGuid();
         var productOp = new SyncOperationDto
         {
-            SyncId = "sync_prod_51",
+            SyncId = "sync_prod_31",
             Entity = "Product",
             Action = "Insert",
             Timestamp = DateTimeOffset.UtcNow,
             Payload = System.Text.Json.JsonDocument.Parse($$"""
             {
                 "id": "{{rejectedProductId}}",
-                "name": "Excess Product 51",
+                "name": "Excess Product 31",
                 "price": 25.0
             }
             """).RootElement
@@ -946,7 +946,7 @@ public class BillingTests
         result.Results.Should().HaveCount(2);
         // Product failed due to Libre limit
         result.Results[0].Status.Should().Be("Failed");
-        result.Results[0].Error.Should().Contain("Libre plan limit exceeded: Maximum 50 products allowed");
+        result.Results[0].Error.Should().Contain("Libre plan limit exceeded: Maximum 30 products allowed");
 
         // Sale failed cleanly because the product was rejected in this batch
         result.Results[1].Status.Should().Be("Failed");
@@ -1309,10 +1309,10 @@ public class BillingTests
             IsDeleted = true,
             UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-10)
         };
-        // 48 other active products to reach 49 active products before batch
+        // 28 other active products to reach 29 active products before batch
         context.Products.Add(activeProd);
         context.Products.Add(placeholderProd);
-        for (int i = 0; i < 48; i++)
+        for (int i = 0; i < 28; i++)
         {
             context.Products.Add(new Product
             {
@@ -1379,7 +1379,7 @@ public class BillingTests
                     Timestamp = deleteTimestamp,
                     Payload = System.Text.Json.JsonDocument.Parse($$"""{ "id": "{{placeholderProductId}}" }""").RootElement
                 },
-                // Add a new product (succeeds as 50th product, then del_active decrements to 49, placeholder does not decrement to 48)
+                // Add a new product (succeeds as 30th product, then del_active decrements to 29, placeholder does not decrement to 28)
                 new SyncOperationDto
                 {
                     SyncId = "add_new",
@@ -1419,9 +1419,9 @@ public class BillingTests
         preservedSale!.Items.Should().HaveCount(1);
         preservedSale.Items.First().ProductId.Should().Be(activeProductId);
 
-        // Active products count in DB is exactly 49 now (48 initial + 1 added - 1 active deleted; placeholder was already deleted)
+        // Active products count in DB is exactly 29 now (28 initial + 1 added - 1 active deleted; placeholder was already deleted)
         var totalActive = await context.Products.CountAsync();
-        totalActive.Should().Be(49);
+        totalActive.Should().Be(29);
     }
 
     [Fact]
@@ -1431,8 +1431,8 @@ public class BillingTests
         var tenantId = _currentUserServiceMock.Object.TenantId;
 
         var placeholderId = Guid.NewGuid();
-        // Seed 50 active products (reaching Libre limit)
-        for (int i = 0; i < 50; i++)
+        // Seed 30 active products (reaching Libre limit)
+        for (int i = 0; i < 30; i++)
         {
             context.Products.Add(new Product
             {
@@ -1462,7 +1462,7 @@ public class BillingTests
             _currentUserServiceMock.Object,
             NullLogger<ProcessBatchSyncCommandHandler>.Instance);
 
-        // Attempting to restore the placeholder when at 50 products must fail
+        // Attempting to restore the placeholder when at 30 products must fail
         var restoreOp = new SyncOperationDto
         {
             SyncId = "sync_restore_placeholder",
@@ -1488,18 +1488,18 @@ public class BillingTests
 
         response1.Results.Should().HaveCount(1);
         response1.Results[0].Status.Should().Be("Failed");
-        response1.Results[0].Error.Should().Contain("Libre plan limit exceeded: Maximum 50 products allowed");
+        response1.Results[0].Error.Should().Contain("Libre plan limit exceeded: Maximum 30 products allowed");
 
         // Placeholder must still be soft-deleted
         var rawPlaceholder1 = await context.Products.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == placeholderId);
         rawPlaceholder1!.IsDeleted.Should().BeTrue();
 
-        // Now delete one active product to drop count to 49
+        // Now delete one active product to drop count to 29
         var activeToDelete = await context.Products.FirstAsync(p => !p.IsDeleted);
         activeToDelete.IsDeleted = true;
         await context.SaveChangesAsync();
 
-        // Restoring the placeholder now should succeed and increment the counter to 50
+        // Restoring the placeholder now should succeed and increment the counter to 30
         var response2 = await handler.Handle(
             new ProcessBatchSyncCommand(new BatchSyncRequestDto
             {
@@ -1515,9 +1515,9 @@ public class BillingTests
         rawPlaceholder2!.IsDeleted.Should().BeFalse();
         rawPlaceholder2.Name.Should().Be("Restored Real Product");
 
-        // Count of active products is back to 50
+        // Count of active products is back to 30
         var activeCount = await context.Products.CountAsync();
-        activeCount.Should().Be(50);
+        activeCount.Should().Be(30);
     }
 
     [Fact]
@@ -2174,12 +2174,12 @@ public class BillingTests
     [Fact]
     public void TierLimits_CanonicalValues_MatchPlanRules()
     {
-        TierLimits.LibreMaxProducts.Should().Be(50);
+        TierLimits.LibreMaxProducts.Should().Be(30);
         TierLimits.LibreMaxCustomers.Should().Be(30);
         TierLimits.LibreMaxGCashTransactionsPerMonth.Should().Be(30);
         TierLimits.Unlimited.Should().Be(-1);
 
-        TierLimits.GetMaxProducts(PlanTier.Libre).Should().Be(50);
+        TierLimits.GetMaxProducts(PlanTier.Libre).Should().Be(30);
         TierLimits.GetMaxProducts(PlanTier.TindahanPro).Should().Be(TierLimits.Unlimited);
         TierLimits.GetMaxProducts(PlanTier.NegosyoPlus).Should().Be(TierLimits.Unlimited);
 

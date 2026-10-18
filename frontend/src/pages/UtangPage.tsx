@@ -63,24 +63,17 @@ const useStyles = makeStyles({
   },
   timelineItem: {
     display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    ...shorthands.gap(tokens.spacingHorizontalM),
-    ...shorthands.padding(tokens.spacingVerticalS, '0'),
-    ...shorthands.borderBottom('1px', 'solid', tokens.colorNeutralStroke2)
-  },
-  timelineLeft: {
-    display: 'flex',
     flexDirection: 'column',
-    flexGrow: 1,
-    flexShrink: 1,
-    minWidth: 0
+    ...shorthands.padding(tokens.spacingVerticalS, '0'),
+    ...shorthands.borderBottom('1px', 'solid', tokens.colorNeutralStroke2),
+    width: '100%'
   },
-  timelineBadgeRow: {
+  timelineHeaderRow: {
     display: 'flex',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    ...shorthands.gap(tokens.spacingHorizontalXS),
-    minWidth: 0
+    width: '100%',
+    marginBottom: '2px'
   },
   timelineBadge: {
     whiteSpace: 'nowrap',
@@ -89,7 +82,8 @@ const useStyles = makeStyles({
   timelineNotes: {
     overflowWrap: 'break-word',
     wordBreak: 'break-word',
-    minWidth: 0
+    marginTop: '2px',
+    display: 'block'
   },
   timelineAmount: {
     whiteSpace: 'nowrap',
@@ -97,6 +91,28 @@ const useStyles = makeStyles({
     textAlign: 'right'
   }
 });
+
+const EMPTY_CUSTOMERS: CustomerRecord[] = [];
+const LEGACY_DEFAULT_NOTES = new Set(['Unang tala ng utang', 'Dagdag na utang', 'Bayad sa utang']);
+
+function createUtangLedgerRecord(
+  tenantId: string,
+  customerId: string,
+  amount: number,
+  type: 'Payment' | 'Credit',
+  date: string,
+  notes: string
+): UtangLedgerRecord {
+  return {
+    id: crypto.randomUUID(),
+    tenantId,
+    customerId,
+    amount,
+    type,
+    date,
+    notes
+  };
+}
 
 export const UtangPage: React.FC = () => {
   const styles = useStyles();
@@ -133,10 +149,11 @@ export const UtangPage: React.FC = () => {
   const tenantId = useAuthStore((s) => s.tenantId);
 
   // Live queries
-  const customers = useLiveQuery(
+  const customerResults = useLiveQuery(
     () => db.customers.where('tenantId').equals(tenantId).toArray(),
     [tenantId]
-  ) || [];
+  );
+  const customers = customerResults || EMPTY_CUSTOMERS;
   const selectedCustomerId = selectedCustomer?.id;
 
   const ledgerEntries = useLiveQuery(
@@ -226,7 +243,7 @@ export const UtangPage: React.FC = () => {
         amount: initBalance,
         type: 'Credit',
         date: now,
-        notes: 'Unang tala ng utang'
+        notes: ''
       };
       await db.utangLedger.add(ledgerRecord);
       await enqueueSync('UtangLedger', 'Insert', ledgerRecord);
@@ -264,15 +281,14 @@ export const UtangPage: React.FC = () => {
     setIsSaving(true);
     try {
       const now = new Date().toISOString();
-      const ledgerRecord: UtangLedgerRecord = {
-        id: crypto.randomUUID(),
+      const ledgerRecord = createUtangLedgerRecord(
         tenantId,
-        customerId: selectedCustomer.id,
+        selectedCustomer.id,
         amount,
-        type: 'Payment',
-        date: now,
-        notes: paymentNotes || 'Bayad sa utang'
-      };
+        'Payment',
+        now,
+        paymentNotes.trim()
+      );
 
       // Atomic read-check-write so concurrent submits cannot both pass the check
       const result = await db.transaction('rw', db.customers, db.utangLedger, db.syncQueue, async () => {
@@ -336,15 +352,14 @@ export const UtangPage: React.FC = () => {
     setIsSaving(true);
     try {
       const now = new Date().toISOString();
-      const ledgerRecord: UtangLedgerRecord = {
-        id: crypto.randomUUID(),
+      const ledgerRecord = createUtangLedgerRecord(
         tenantId,
-        customerId: selectedCustomer.id,
+        selectedCustomer.id,
         amount,
-        type: 'Credit',
-        date: now,
-        notes: creditNotes || 'Dagdag na utang'
-      };
+        'Credit',
+        now,
+        creditNotes.trim()
+      );
 
       const newBalance = await db.transaction('rw', db.customers, db.utangLedger, db.syncQueue, async () => {
         const fresh = await db.customers.get(selectedCustomer.id);
@@ -514,62 +529,66 @@ export const UtangPage: React.FC = () => {
           <DialogBody>
             {selectedCustomer && (
               <>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
-                    <DialogTitle>{selectedCustomer.name}</DialogTitle>
-                    <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-                      Tel: {selectedCustomer.phone || 'N/A'}
-                    </Text>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>{t.utang.currentDebt}</Text>
-                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: selectedCustomer.totalUtangBalance > 0 ? tokens.colorPaletteRedForeground1 : tokens.colorPaletteGreenForeground1 }}>
-                      {formatPeso(selectedCustomer.totalUtangBalance)}
+                <DialogTitle
+                  action={
+                    <div style={{ textAlign: 'right' }}>
+                      <Text size={100} style={{ color: tokens.colorNeutralForeground3, display: 'block' }}>{t.utang.currentDebt}</Text>
+                      <div style={{ fontSize: '24px', fontWeight: 'bold', color: selectedCustomer.totalUtangBalance > 0 ? tokens.colorPaletteRedForeground1 : tokens.colorPaletteGreenForeground1 }}>
+                        {formatPeso(selectedCustomer.totalUtangBalance)}
+                      </div>
                     </div>
+                  }
+                >
+                  <span style={{ display: 'block' }}>{selectedCustomer.name}</span>
+                  <span style={{ fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground3, fontWeight: 'normal', display: 'block' }}>
+                    Tel: {selectedCustomer.phone || 'N/A'}
+                  </span>
+                </DialogTitle>
+
+                <DialogContent>
+                  {/* Quick actions for this customer */}
+                  <div style={{ display: 'flex', gap: '8px', margin: '16px 0', flexWrap: 'wrap' }}>
+                    <Button
+                      appearance="primary"
+                      icon={<PaymentRegular />}
+                      style={{ flexGrow: 1 }}
+                      onClick={() => {
+                        setPaymentAmount(selectedCustomer.totalUtangBalance.toString());
+                        setIsPaymentOpen(true);
+                      }}
+                    >
+                      {t.utang.payButton}
+                    </Button>
+                    <Button
+                      appearance="secondary"
+                      icon={<AddRegular />}
+                      style={{ flexGrow: 1 }}
+                      onClick={() => setIsAddCreditOpen(true)}
+                    >
+                      {t.utang.addDebtButton}
+                    </Button>
                   </div>
-                </div>
 
-                {/* Quick actions for this customer */}
-                <div style={{ display: 'flex', gap: '8px', margin: '16px 0', flexWrap: 'wrap' }}>
-                  <Button
-                    appearance="primary"
-                    icon={<PaymentRegular />}
-                    style={{ flexGrow: 1 }}
-                    onClick={() => {
-                      setPaymentAmount(selectedCustomer.totalUtangBalance.toString());
-                      setIsPaymentOpen(true);
-                    }}
-                  >
-                    {t.utang.payButton}
-                  </Button>
-                  <Button
-                    appearance="secondary"
-                    icon={<AddRegular />}
-                    style={{ flexGrow: 1 }}
-                    onClick={() => setIsAddCreditOpen(true)}
-                  >
-                    {t.utang.addDebtButton}
-                  </Button>
-                </div>
+                  <Divider style={{ margin: '8px 0' }} />
 
-                <Divider style={{ margin: '8px 0' }} />
+                  <Text weight="semibold" size={300} style={{ marginBottom: '8px', display: 'block' }}>
+                    {t.utang.timelineTitle}
+                  </Text>
 
-                <Text weight="semibold" size={300} style={{ marginBottom: '8px', display: 'block' }}>
-                  {t.utang.timelineTitle}
-                </Text>
+                  <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                    {ledgerEntries.length === 0 ? (
+                      <Text size={200} style={{ color: tokens.colorNeutralForeground3, textAlign: 'center', display: 'block', padding: '12px' }}>
+                        {t.utang.noTransactions}
+                      </Text>
+                    ) : (
+                      ledgerEntries.map((entry) => {
+                        const isCredit = entry.type === 'Credit';
+                        const rawNotes = entry.notes?.trim() || '';
+                        const displayNotes = LEGACY_DEFAULT_NOTES.has(rawNotes) ? '' : rawNotes;
 
-                <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
-                  {ledgerEntries.length === 0 ? (
-                    <Text size={200} style={{ color: tokens.colorNeutralForeground3, textAlign: 'center', display: 'block', padding: '12px' }}>
-                      {t.utang.noTransactions}
-                    </Text>
-                  ) : (
-                    ledgerEntries.map((entry) => {
-                      const isCredit = entry.type === 'Credit';
-                      return (
-                        <div key={entry.id} className={styles.timelineItem}>
-                          <div className={styles.timelineLeft}>
-                            <div className={styles.timelineBadgeRow}>
+                        return (
+                          <div key={entry.id} className={styles.timelineItem}>
+                            <div className={styles.timelineHeaderRow}>
                               <Badge
                                 appearance="filled"
                                 color={isCredit ? 'danger' : 'success'}
@@ -578,27 +597,29 @@ export const UtangPage: React.FC = () => {
                               >
                                 {isCredit ? '+\u00A0UTANG' : '-\u00A0BAYAD'}
                               </Badge>
-                              <Text weight="semibold" size={200} className={styles.timelineNotes}>
-                                {entry.notes || (isCredit ? t.nav.utang : t.common.pesos)}
+                              <Text
+                                weight="bold"
+                                size={300}
+                                className={styles.timelineAmount}
+                                style={{ color: isCredit ? tokens.colorPaletteRedForeground1 : tokens.colorPaletteGreenForeground1 }}
+                              >
+                                {isCredit ? '+' : '-'}{formatPeso(entry.amount)}
                               </Text>
                             </div>
+                            {displayNotes && (
+                              <Text weight="semibold" size={200} className={styles.timelineNotes}>
+                                {displayNotes}
+                              </Text>
+                            )}
                             <Text size={100} style={{ color: tokens.colorNeutralForeground3, marginTop: '2px', display: 'block' }}>
                               {new Date(entry.date).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
                             </Text>
                           </div>
-                          <Text
-                            weight="bold"
-                            size={300}
-                            className={styles.timelineAmount}
-                            style={{ color: isCredit ? tokens.colorPaletteRedForeground1 : tokens.colorPaletteGreenForeground1 }}
-                          >
-                            {isCredit ? '+' : '-'}{formatPeso(entry.amount)}
-                          </Text>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </DialogContent>
               </>
             )}
 
