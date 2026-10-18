@@ -182,6 +182,10 @@ const useStyles = makeStyles({
   },
   dialogActions: {
     width: '100%',
+    gridColumnStart: 1,
+    gridColumnEnd: -1,
+    justifySelf: 'stretch',
+    boxSizing: 'border-box',
     marginTop: tokens.spacingVerticalM,
     ...shorthands.padding(tokens.spacingVerticalS, 0, 0, 0)
   },
@@ -189,29 +193,47 @@ const useStyles = makeStyles({
     display: 'flex',
     flexDirection: 'column',
     width: '100%',
-    ...shorthands.gap('8px')
+    boxSizing: 'border-box',
+    ...shorthands.gap('10px')
   },
   actionsPrimaryRow: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
     ...shorthands.gap('8px'),
-    width: '100%'
+    width: '100%',
+    boxSizing: 'border-box'
   },
   actionsSecondaryRow: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     width: '100%',
+    boxSizing: 'border-box',
     flexWrap: 'wrap',
     ...shorthands.gap('8px')
   },
   actionsUtilityGroup: {
     display: 'flex',
     alignItems: 'center',
+    flexWrap: 'nowrap',
     ...shorthands.gap('6px')
   },
   actionButton: {
-    width: '100%'
+    width: '100%',
+    whiteSpace: 'nowrap',
+    fontWeight: 600,
+    boxSizing: 'border-box'
+  },
+  utilityButton: {
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
+    boxSizing: 'border-box'
+  },
+  closeButton: {
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
+    fontWeight: 600,
+    boxSizing: 'border-box'
   }
 });
 
@@ -452,7 +474,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ open, onClose, data,
         </div>
       </DialogContent>
 
-      <DialogActions className={styles.dialogActions}>
+      <DialogActions fluid position="start" className={styles.dialogActions}>
         <div className={styles.actionsContainer}>
           <div className={styles.actionsPrimaryRow}>
             <Button
@@ -483,6 +505,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ open, onClose, data,
                 size="medium"
                 icon={copied ? <CheckmarkRegular /> : <CopyRegular />}
                 onClick={handleCopy}
+                className={styles.utilityButton}
               >
                 {copied ? t.receipt.copied : t.receipt.copyReceipt}
               </Button>
@@ -491,15 +514,17 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ open, onClose, data,
                 size="medium"
                 icon={<ShareRegular />}
                 onClick={handleShare}
+                className={styles.utilityButton}
               >
                 Share
               </Button>
             </div>
             <Button
-              appearance="subtle"
+              appearance="secondary"
               size="medium"
               icon={<DismissRegular />}
               onClick={onClose}
+              className={styles.closeButton}
             >
               {t.common.close}
             </Button>
