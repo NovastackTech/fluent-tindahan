@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import { FluentProvider } from '@fluentui/react-components';
 import { LoginPage } from './LoginPage';
 import { sariSariLightTheme } from '../theme/theme';
 import { useAuthStore } from '../state/authStore';
+import { useLanguageStore } from '../state/languageStore';
 import { translations } from '../i18n/translations';
 import * as authService from '../services/authService';
 import * as seedData from '../db/seedData';
@@ -62,6 +63,18 @@ vi.mock('../services/authService', async (importOriginal) => {
   };
 });
 
+import * as syncEngine from '../sync/syncEngine';
+
+vi.mock('../sync/syncEngine', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../sync/syncEngine')>();
+  return {
+    ...actual,
+    processSyncQueue: vi.fn().mockResolvedValue({ processed: 0, conflicts: 0, errors: 0 }),
+    kickSync: vi.fn().mockResolvedValue(undefined),
+    pullCatalogFromServer: vi.fn().mockResolvedValue(0)
+  };
+});
+
 vi.mock('../db/seedData', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../db/seedData')>();
   return {
@@ -88,6 +101,7 @@ describe('LoginPage Component', () => {
     vi.clearAllMocks();
     vi.spyOn(useSubscriptionStore.getState(), 'refreshSubscription').mockResolvedValue();
     localStorage.clear();
+    useLanguageStore.setState({ language: 'tl' });
     await db.syncQueue.clear();
     useAuthStore.setState({
       isOnboarded: false,
@@ -132,6 +146,7 @@ describe('LoginPage Component', () => {
       });
       expect(useAuthStore.getState().isOnboarded).toBe(true);
       expect(useAuthStore.getState().userEmail).toBe('owner@tindahan.ph');
+      expect(syncEngine.pullCatalogFromServer).toHaveBeenCalled();
       expect(onNavigate).toHaveBeenCalledWith('pos');
     });
   });
@@ -183,12 +198,63 @@ describe('LoginPage Component', () => {
     });
   });
 
-  it('allows registering a new store and navigating to pos', async () => {
+  it('displays only either TL or EN for bilingual error messages and updates on language toggle', async () => {
+    vi.mocked(authService.loginStore).mockRejectedValueOnce({
+      response: {
+        data: {
+          message:
+            'Naka-lockout ang iyong IP address dahil sa 5 sunod-sunod na maling pagsubok sa PIN. Maghintay nang 15 minuto. / IP address throttled for 15 minutes due to 5 failed PIN attempts.'
+        }
+      }
+    });
+
+    renderLoginPage();
+
+    const emailInput = screen.getByPlaceholderText(t.landing.emailPlaceholder);
+    const passwordInput = screen.getByPlaceholderText(t.landing.passwordPlaceholder);
+    const submitBtn = screen.getByTestId('login-submit-btn');
+
+    fireEvent.change(emailInput, { target: { value: 'throttled@tindahan.ph' } });
+    fireEvent.change(passwordInput, { target: { value: 'wrongpass' } });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      const alert = screen.getByRole('alert');
+      expect(alert).toHaveTextContent(
+        'Naka-lockout ang iyong IP address dahil sa 5 sunod-sunod na maling pagsubok sa PIN. Maghintay nang 15 minuto.'
+      );
+      expect(alert).not.toHaveTextContent(
+        'IP address throttled for 15 minutes due to 5 failed PIN attempts.'
+      );
+    });
+
+    act(() => {
+      useLanguageStore.setState({ language: 'en' });
+    });
+
+    await waitFor(() => {
+      const alert = screen.getByRole('alert');
+      expect(alert).toHaveTextContent(
+        'IP address throttled for 15 minutes due to 5 failed PIN attempts.'
+      );
+      expect(alert).not.toHaveTextContent(
+        'Naka-lockout ang iyong IP address dahil sa 5 sunod-sunod na maling pagsubok sa PIN. Maghintay nang 15 minuto.'
+      );
+    });
+  });
+
+  it('allows registering a new store and navigating to pos with starter products enabled by default', async () => {
     const { onNavigate } = renderLoginPage();
 
     // Switch to Register tab
     const registerTab = screen.getByTestId('login-tab-register');
     fireEvent.click(registerTab);
+
+    // Starter products checkbox should be present and checked by default
+    const starterCheckbox = screen.getByTestId('login-reg-starter-products');
+    expect(starterCheckbox).toBeInTheDocument();
+    const checkboxInput = starterCheckbox.querySelector('input') || starterCheckbox;
+    expect(checkboxInput).toBeChecked();
 
     fireEvent.change(screen.getByPlaceholderText(t.landing.storeNamePlaceholder), { target: { value: 'Tindahan ni Nanay' } });
     fireEvent.change(screen.getByPlaceholderText(t.landing.emailPlaceholder), { target: { value: 'nanay@tindahan.ph' } });
@@ -198,6 +264,12 @@ describe('LoginPage Component', () => {
     fireEvent.click(submitBtn);
 
     await waitFor(() => {
+      expect(seedData.seedDexieDatabaseIfNeeded).toHaveBeenCalledWith(
+        false,
+        expect.any(String),
+        false,
+        'Tindahan ni Nanay'
+      );
       expect(authService.registerStore).toHaveBeenCalledWith(
         expect.objectContaining({
           email: 'nanay@tindahan.ph',
@@ -206,6 +278,46 @@ describe('LoginPage Component', () => {
         })
       );
       expect(useAuthStore.getState().isOnboarded).toBe(true);
+      expect(syncEngine.kickSync).toHaveBeenCalled();
+      expect(onNavigate).toHaveBeenCalledWith('pos');
+    });
+  });
+
+  it('allows opting out of starter products when registering a new store', async () => {
+    const { onNavigate } = renderLoginPage();
+
+    const registerTab = screen.getByTestId('login-tab-register');
+    fireEvent.click(registerTab);
+
+    // Uncheck starter products checkbox
+    const starterCheckbox = screen.getByTestId('login-reg-starter-products');
+    const checkboxInput = starterCheckbox.querySelector('input') || starterCheckbox;
+    fireEvent.click(checkboxInput);
+    expect(checkboxInput).not.toBeChecked();
+
+    fireEvent.change(screen.getByPlaceholderText(t.landing.storeNamePlaceholder), { target: { value: 'Malinis na Tindahan' } });
+    fireEvent.change(screen.getByPlaceholderText(t.landing.emailPlaceholder), { target: { value: 'clean@tindahan.ph' } });
+    fireEvent.change(screen.getByPlaceholderText(t.landing.passwordPlaceholder), { target: { value: 'clean123' } });
+
+    const submitBtn = screen.getByTestId('login-register-submit-btn');
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(seedData.seedDexieDatabaseIfNeeded).toHaveBeenCalledWith(
+        false,
+        expect.any(String),
+        true,
+        'Malinis na Tindahan'
+      );
+      expect(authService.registerStore).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: 'clean@tindahan.ph',
+          password: 'clean123',
+          businessName: 'Malinis na Tindahan'
+        })
+      );
+      expect(useAuthStore.getState().isOnboarded).toBe(true);
+      expect(syncEngine.kickSync).toHaveBeenCalled();
       expect(onNavigate).toHaveBeenCalledWith('pos');
     });
   });
@@ -312,4 +424,43 @@ describe('LoginPage Component', () => {
     });
     expect(await db.syncQueue.count()).toBe(0);
   }, 15000);
+
+  it('provides a 1-click button to switch to password login when PIN attempt is throttled or fails', async () => {
+    vi.mocked(authService.loginPin).mockRejectedValueOnce({
+      response: {
+        status: 429,
+        data: {
+          message:
+            'Naka-lockout ang iyong IP address dahil sa sunod-sunod na maling pagsubok sa PIN. Mag-login gamit ang Password o maghintay nang 15 minuto. / IP address throttled due to repeated failed PIN attempts. Use password to log in or wait 15 minutes.'
+        }
+      }
+    });
+
+    renderLoginPage();
+
+    // Toggle to PIN mode
+    fireEvent.click(screen.getByTestId('login-toggle-mode-btn'));
+
+    const emailInput = screen.getByPlaceholderText(t.landing.emailPlaceholder);
+    const pinInput = screen.getByPlaceholderText(t.landing.pinPlaceholder);
+    const submitBtn = screen.getByTestId('login-submit-btn');
+
+    fireEvent.change(emailInput, { target: { value: 'pin@tindahan.ph' } });
+    fireEvent.change(pinInput, { target: { value: '9999' } });
+    fireEvent.click(submitBtn);
+
+    const switchBtn = await screen.findByTestId('login-switch-to-password-btn');
+    expect(switchBtn).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Naka-lockout ang iyong IP address dahil sa sunod-sunod na maling pagsubok sa PIN.'
+    );
+
+    // Clicking switch to password changes mode and clears error
+    fireEvent.click(switchBtn);
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText(t.landing.passwordPlaceholder)).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(t.landing.pinPlaceholder)).not.toBeInTheDocument();
+  });
 });
+

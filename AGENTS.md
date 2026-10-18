@@ -183,3 +183,13 @@ When implementing features, dialogs, or translations, use authentic terminology:
 - **Sukli**: Change returned to customer after cash payment.
 - **Cash-In**: Customer hands cash to store; store transfers GCash digital balance to customer.
 - **Cash-Out**: Customer transfers GCash balance to store; store hands cash to customer.
+
+<!-- Ponytail Minimalist Directives -->
+# Principles: Minimal Intervention & Zero Bloat
+- Make new code the last resort.
+- Priority order:
+  1. Reuse existing project functions, classes, and utilities (inspect codebase/graph first).
+  2. Use runtime/language native APIs and standard libraries.
+  3. Smallest possible diff that satisfies the requirement.
+- Do not add speculative abstractions, premature interfaces, helper wrappers, or scaffolding for future use.
+- Keep diffs tight, reviewable, and localized. Suppress conversational filler and post-change design justifications unless requested.

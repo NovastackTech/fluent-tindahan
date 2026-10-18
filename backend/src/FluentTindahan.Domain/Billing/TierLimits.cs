@@ -8,7 +8,7 @@ namespace FluentTindahan.Domain.Billing;
 /// </summary>
 public static class TierLimits
 {
-    public const int LibreMaxProducts = 50;
+    public const int LibreMaxProducts = 30;
     public const int LibreMaxCustomers = 30;
     public const int LibreMaxGCashTransactionsPerMonth = 30;
 

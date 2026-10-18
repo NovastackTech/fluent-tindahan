@@ -186,6 +186,53 @@ describe('syncEngine', () => {
     expect(useSyncStore.getState().lastSyncedAt).not.toBeNull();
   });
 
+  it('processSyncQueue without force returns immediately without calling server when queue is empty', async () => {
+    expect(useSyncStore.getState().lastSyncedAt).toBeNull();
+
+    const result = await processSyncQueue();
+
+    expect(result).toEqual({ processed: 0, conflicts: 0, errors: 0 });
+    expect(apiClient.post).not.toHaveBeenCalled();
+    expect(useSyncStore.getState().lastSyncedAt).toBeNull();
+  });
+
+  it('processSyncQueue with force: true pings server and updates lastSyncedAt even when queue is empty', async () => {
+    expect(useSyncStore.getState().lastSyncedAt).toBeNull();
+
+    (apiClient.post as any).mockResolvedValueOnce({
+      data: { results: [] }
+    });
+
+    const result = await processSyncQueue({ force: true });
+
+    expect(result).toEqual({ processed: 0, conflicts: 0, errors: 0 });
+    expect(apiClient.post).toHaveBeenCalledWith('/sync/batch', expect.objectContaining({
+      operations: []
+    }));
+    expect(useSyncStore.getState().lastSyncedAt).not.toBeNull();
+  });
+
+  it('processSyncQueue with force: true clears backoff and blocked session states before syncing', async () => {
+    useSyncStore.setState({
+      batchFailureCount: 3,
+      nextRetryAt: Date.now() + 60000,
+      authBlockedSessionKey: 'some-blocked-key',
+      lastErrorMessage: 'Some previous error'
+    });
+
+    (apiClient.post as any).mockResolvedValueOnce({
+      data: { results: [] }
+    });
+
+    await processSyncQueue({ force: true });
+
+    expect(useSyncStore.getState().batchFailureCount).toBe(0);
+    expect(useSyncStore.getState().nextRetryAt).toBeNull();
+    expect(useSyncStore.getState().authBlockedSessionKey).toBeNull();
+    expect(useSyncStore.getState().lastErrorMessage).toBeNull();
+    expect(useSyncStore.getState().lastSyncedAt).not.toBeNull();
+  });
+
   it('does not sync queued operations before onboarding is resolved', async () => {
     await enqueueSync('Customer', 'Insert', { id: 'c-pending', name: 'Pending Customer' });
     useAuthStore.setState({

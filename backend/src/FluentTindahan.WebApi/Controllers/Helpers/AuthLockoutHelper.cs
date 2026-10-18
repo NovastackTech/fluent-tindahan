@@ -228,8 +228,8 @@ public static class AuthLockoutHelper
         return new ObjectResult(new
         {
             message = isInitial
-                ? $"Naka-lockout ang iyong IP address dahil sa 5 sunod-sunod na maling pagsubok sa PIN. Maghintay nang {lockoutMinutes} minuto. / IP address throttled for 15 minutes due to 5 failed PIN attempts."
-                : $"Naka-lockout ang iyong IP address dahil sa sunod-sunod na maling pagsubok sa PIN. Maghintay nang {lockoutMinutes} minuto. / IP address throttled due to repeated failed PIN attempts. Wait {lockoutMinutes} minutes.",
+                ? $"Naka-lockout ang iyong IP address dahil sa 5 sunod-sunod na maling pagsubok sa PIN. Mag-login gamit ang Password o maghintay nang {lockoutMinutes} minuto. / IP address throttled for 15 minutes due to 5 failed PIN attempts. Use password to log in or wait {lockoutMinutes} minutes."
+                : $"Naka-lockout ang iyong IP address dahil sa sunod-sunod na maling pagsubok sa PIN. Mag-login gamit ang Password o maghintay nang {lockoutMinutes} minuto. / IP address throttled due to repeated failed PIN attempts. Use password to log in or wait {lockoutMinutes} minutes.",
             lockoutMinutes,
             ipThrottled = true
         })

@@ -21,7 +21,7 @@ export function playScanBeep() {
 
     osc.start();
     osc.stop(ctx.currentTime + 0.12);
-  } catch (err) {
+  } catch {
     // Non-fatal if browser blocks autoplay or audio context
   }
 

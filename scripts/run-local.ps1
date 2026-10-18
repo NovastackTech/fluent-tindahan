@@ -128,7 +128,7 @@ if (Test-Url 'http://127.0.0.1:5173') {
         Write-Step 'Installing frontend dependencies (npm ci)...'
         Push-Location $frontendDir
         try {
-            & npm ci
+            & npm ci --ignore-scripts
             if ($LASTEXITCODE -ne 0) { throw 'npm ci failed.' }
         } finally {
             Pop-Location

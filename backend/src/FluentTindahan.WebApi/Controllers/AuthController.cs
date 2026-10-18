@@ -396,6 +396,8 @@ public class AuthController : ControllerBase
             return Conflict(new { message = "May tindahan o user nang nakarehistro gamit ang ID na ito. / A store or user is already registered with this ID." });
         }
 
+        AuthLockoutHelper.ResetIpPinThrottle(AuthClaimsHelper.GetClientIpAddress(HttpContext));
+
         return Ok(AuthResponseBuilder.Build(
             user,
             tenant,
@@ -781,6 +783,9 @@ public class AuthController : ControllerBase
         [FromBody] LogoutRequest? request,
         CancellationToken cancellationToken)
     {
+        var clientIp = AuthClaimsHelper.GetClientIpAddress(HttpContext);
+        AuthLockoutHelper.ResetIpPinThrottle(clientIp);
+
         var userId = AuthClaimsHelper.ResolveUserId(_currentUserService, HttpContext?.User);
         string? targetFamilyId = null;
 

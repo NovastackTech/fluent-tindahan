@@ -964,6 +964,27 @@ describe('POSPage', () => {
     expect(cashTenderInput()).toHaveValue(20);
     expect(within(dialog).getByText('₱0.00')).toBeInTheDocument();
   });
+
+  it('renders low stock badge alongside stock count when product stock is 5 or below', async () => {
+    await db.products.add({
+      id: 'chippy-barbecue',
+      tenantId: 't-1',
+      name: 'Chippy Barbecue Corn Chips 110g',
+      price: 25,
+      cost: 20,
+      stockQty: 3,
+      category: 'Snacks',
+      updatedAt: new Date().toISOString()
+    });
+
+    renderPOS();
+
+    await waitFor(() => {
+      expect(screen.getByText('Chippy Barbecue Corn Chips 110g')).toBeInTheDocument();
+      expect(screen.getByText('Stock: 3')).toBeInTheDocument();
+      expect(screen.getByText('Mababa')).toBeInTheDocument();
+    });
+  });
 });
 
 

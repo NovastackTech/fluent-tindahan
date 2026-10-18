@@ -108,13 +108,14 @@ export const FixDlqProductDialog: React.FC<FixDlqProductDialogProps> = ({
     if (!isOpen || !item) return;
 
     let isMounted = true;
-    setGeneralError('');
-    setNameError('');
-    setCostError('');
-    setPriceError('');
-    setStockError('');
 
     const loadData = async () => {
+      setGeneralError('');
+      setNameError('');
+      setCostError('');
+      setPriceError('');
+      setStockError('');
+
       const payload = item.payload || {};
       let localProd: ProductRecord | undefined;
       if (payload.id) {
