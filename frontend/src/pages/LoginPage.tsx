@@ -1,13 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   makeStyles,
   tokens,
   shorthands,
   Card,
   Text,
-  Input,
   Button,
-  Field,
   TabList,
   Tab,
   Badge,
@@ -17,11 +15,6 @@ import {
 } from '@fluentui/react-components';
 import {
   KeyRegular,
-  LockClosedRegular,
-  MailRegular,
-  EyeRegular,
-  EyeOffRegular,
-  BuildingShopRegular,
   ArrowRightRegular,
   SparkleRegular,
   ArrowLeftRegular,
@@ -30,15 +23,21 @@ import {
 import type { NavTab } from '../components/Navigation';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
-import { processSyncQueue, kickSync, updateQueueCounts, pullCatalogFromServer } from '../sync/syncEngine';
+import { processSyncQueue } from '../sync/syncEngine';
 import { ConfirmUnsyncedLoginDialog } from '../components/ConfirmUnsyncedLoginDialog';
 import { useTranslation } from '../state/languageStore';
-import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
 import { useAuthStore } from '../state/authStore';
-import { useSubscriptionStore } from '../state/subscriptionStore';
-import { useGCashFeeStore, DEFAULT_GCASH_FEE_TIERS } from '../state/gcashFeeStore';
-import { registerStore, loginStore, loginPin, type AuthResponseDto } from '../services/authService';
-import { createClientUuid, seedDexieDatabaseIfNeeded, DEFAULT_TENANT_ID } from '../db/seedData';
+import type { AuthResponseDto } from '../services/authService';
+import { seedDexieDatabaseIfNeeded, DEFAULT_TENANT_ID } from '../db/seedData';
+import { RegistrationFormFields } from '../components/RegistrationFormFields';
+import { LoginFormFields } from '../components/LoginFormFields';
+import { AuthErrorBanner } from '../components/AuthErrorBanner';
+import { validateRegistrationInput, validateLoginInput } from '../utils/registrationValidation';
+import {
+  executeStoreRegistration,
+  executeStoreLogin,
+  finalizeSuccessfulLogin
+} from '../services/storeRegistration';
 
 export interface LoginPageProps {
   onNavigate: (tab: NavTab) => void;
@@ -115,16 +114,74 @@ const useStyles = makeStyles({
   }
 });
 
+
 export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   const styles = useStyles();
   const { t, language } = useTranslation();
   const { completeOnboarding, loginWithAuthPayload } = useAuthStore();
 
-  const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
+  const getInitialTab = (): 'login' | 'register' => {
+    if (typeof window === 'undefined') return 'login';
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab')?.toLowerCase();
+    if (tab === 'signup' || tab === 'register' || tab === 'newstore' || tab === 'new-store') {
+      return 'register';
+    }
+    const path = window.location.pathname.replace(/^\//, '').toLowerCase();
+    if (path === 'signup' || path === 'register') {
+      return 'register';
+    }
+    return 'login';
+  };
+
+  const [activeTab, setActiveTab] = useState<'login' | 'register'>(getInitialTab);
   const [loginMode, setLoginMode] = useState<'password' | 'pin'>('password');
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [authError, setAuthError] = useState<string>('');
+  const [authErrors, setAuthErrors] = useState<string[]>([]);
+  const [regFieldErrors, setRegFieldErrors] = useState<{
+    storeName?: boolean;
+    email?: boolean;
+    password?: boolean;
+    confirmPassword?: boolean;
+    pin?: boolean;
+  }>({});
+  const [loginFieldErrors, setLoginFieldErrors] = useState<{
+    email?: boolean;
+    password?: boolean;
+    pin?: boolean;
+  }>({});
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setActiveTab(getInitialTab());
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const handleTabSelect = (nextTab: 'login' | 'register') => {
+    setActiveTab(nextTab);
+    setAuthErrors([]);
+    setRegFieldErrors({});
+    setLoginFieldErrors({});
+    if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', nextTab === 'register' ? 'signup' : 'login');
+      window.history.replaceState(null, '', url.pathname + url.search);
+    }
+  };
+
+  const setAuthError = (err: string | string[]) => {
+    if (!err || (Array.isArray(err) && err.length === 0)) {
+      setAuthErrors([]);
+    } else if (Array.isArray(err)) {
+      setAuthErrors(err);
+    } else {
+      setAuthErrors([err]);
+    }
+  };
 
   // Login inputs
   const initialEmail = typeof window !== 'undefined'
@@ -138,6 +195,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   const [regStoreName, setRegStoreName] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
+  const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [regPin, setRegPin] = useState('');
   const [regOfferGcash, setRegOfferGcash] = useState(true);
   const [regIncludeStarterProducts, setRegIncludeStarterProducts] = useState(true);
@@ -162,12 +220,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
         pendingAuthPayload.localPin,
         true
       );
-      void useSubscriptionStore.getState().refreshSubscription();
-      const productCount = await db.products.where('tenantId').equals(pendingAuthPayload.payload.tenantId).count();
-      if (productCount === 0) {
-        void pullCatalogFromServer().then(() => updateQueueCounts()).catch(console.error);
-      }
-      void processSyncQueue().catch(console.error);
+      await finalizeSuccessfulLogin(pendingAuthPayload.payload.tenantId);
       onNavigate('pos');
     } finally {
       setIsSubmitting(false);
@@ -188,12 +241,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
           pendingAuthPayload.localPin,
           false
         );
-        void useSubscriptionStore.getState().refreshSubscription();
-        const productCount = await db.products.where('tenantId').equals(pendingAuthPayload.payload.tenantId).count();
-        if (productCount === 0) {
-          void pullCatalogFromServer().then(() => updateQueueCounts()).catch(console.error);
-        }
-        void processSyncQueue().catch(console.error);
+        await finalizeSuccessfulLogin(pendingAuthPayload.payload.tenantId);
         onNavigate('pos');
       }
     } catch (e) {
@@ -206,66 +254,45 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
-    setAuthError('');
+    setAuthErrors([]);
+    setLoginFieldErrors({});
 
-    const trimmedEmail = loginEmailVal.trim().toLowerCase();
-    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      setAuthError(t.onboarding.emailInvalid);
+    const validation = validateLoginInput(loginEmailVal, loginMode, loginPasswordVal, loginPinVal, t);
+    if (!validation.isValid) {
+      setAuthErrors(validation.errors);
+      setLoginFieldErrors(validation.fieldErrors);
       return;
     }
 
     setIsSubmitting(true);
     try {
-      let authResult;
-      if (loginMode === 'password') {
-        if (!loginPasswordVal) {
-          setAuthError(t.onboarding.passwordRequired);
-          setIsSubmitting(false);
-          return;
-        }
-        authResult = await loginStore({
-          email: trimmedEmail,
-          password: loginPasswordVal
-        });
-      } else {
-        if (!loginPinVal.trim() || !/^\d{4,6}$/.test(loginPinVal.trim())) {
-          setAuthError(t.onboarding.pinInvalid);
-          setIsSubmitting(false);
-          return;
-        }
-        authResult = await loginPin({
-          email: trimmedEmail,
-          pin: loginPinVal.trim()
-        });
-      }
+      const res = await executeStoreLogin({
+        email: validation.trimmedEmail,
+        loginMode,
+        password: loginPasswordVal,
+        pin: loginPinVal
+      });
 
-      const loginRes = await loginWithAuthPayload(
-        authResult,
-        loginMode === 'pin' ? loginPinVal.trim() : undefined,
-        false
-      );
-
-      if (!loginRes.success) {
+      if (!res.success && res.authResult) {
         setPendingAuthPayload({
-          payload: authResult,
-          localPin: loginMode === 'pin' ? loginPinVal.trim() : undefined
+          payload: res.authResult,
+          localPin: res.localPin
         });
-        setUnsyncedLoginCount(loginRes.unsyncedCount);
+        setUnsyncedLoginCount(res.unsyncedCount || 0);
         setIsUnsyncedDialogOpen(true);
         setIsSubmitting(false);
         return;
       }
 
-      void useSubscriptionStore.getState().refreshSubscription();
-      const productCount = await db.products.where('tenantId').equals(authResult.tenantId).count();
-      if (productCount === 0) {
-        void pullCatalogFromServer().then(() => updateQueueCounts()).catch(console.error);
-      }
-      void processSyncQueue().catch(console.error);
       onNavigate('pos');
     } catch (err: any) {
       const msg = err?.response?.data?.message || t.onboarding.loginFailed;
-      setAuthError(msg);
+      setAuthErrors([msg]);
+      if (loginMode === 'password') {
+        setLoginFieldErrors({ email: true, password: true });
+      } else {
+        setLoginFieldErrors({ email: true, pin: true });
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -274,94 +301,43 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
-    setAuthError('');
+    setAuthErrors([]);
+    setRegFieldErrors({});
 
-    const trimmedStore = regStoreName.trim();
-    const trimmedEmail = regEmail.trim().toLowerCase();
+    const validation = validateRegistrationInput(
+      regStoreName,
+      regEmail,
+      regPassword,
+      regConfirmPassword,
+      regPin,
+      t
+    );
 
-    if (!trimmedStore || trimmedStore.length < 2) {
-      setAuthError(t.onboarding.storeNameRequired);
+    if (!validation.isValid) {
+      setAuthErrors(validation.errors);
+      setRegFieldErrors(validation.fieldErrors);
       return;
     }
-    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      setAuthError(t.onboarding.emailInvalid);
-      return;
-    }
-    if (!regPassword || regPassword.length < 6) {
-      setAuthError(t.onboarding.passwordMinLength);
-      return;
-    }
-    if (regPin.trim() && !/^\d{4,6}$/.test(regPin.trim())) {
-      setAuthError(t.onboarding.pinInvalid);
-      return;
-    }
+
+    const { trimmedStore, trimmedEmail } = validation;
 
     setIsSubmitting(true);
     try {
-      const newTenantId = createClientUuid();
-      const newUserId = createClientUuid();
-
-      // 1. Seed local Dexie (Zero Network Block Guarantee)
-      await seedDexieDatabaseIfNeeded(
-        false,
-        newTenantId,
-        !regIncludeStarterProducts,
-        trimmedStore
-      );
-
-      // 2. Set GCash fees
-      try {
-        const fees = regOfferGcash ? DEFAULT_GCASH_FEE_TIERS : DEFAULT_GCASH_FEE_TIERS.map(() => 0);
-        fees.forEach((fee, idx) => {
-          useGCashFeeStore.getState().setFeeForTenant(newTenantId, idx, fee);
-        });
-      } catch (fErr) {
-        console.warn('Could not set GCash fees:', fErr);
-      }
-
-      let serverToken: string | undefined;
-      let registeredHasPin = Boolean(regPin.trim());
-
-      try {
-        const authResult = await registerStore({
-          tenantId: newTenantId,
-          userId: newUserId,
-          email: trimmedEmail,
-          password: regPassword,
-          pin: regPin.trim() || undefined,
-          businessName: trimmedStore
-        });
-        serverToken = authResult.token;
-        registeredHasPin = authResult.hasPin;
-      } catch (apiErr: any) {
-        if (apiErr?.response?.status === 409) {
-          setAuthError(t.onboarding.emailAlreadyExists);
-          setIsSubmitting(false);
-          return;
-        }
-        console.warn('Backend registration offline, proceeding locally:', apiErr);
-      }
-
-      completeOnboarding({
+      const result = await executeStoreRegistration({
         businessName: trimmedStore,
-        userEmail: trimmedEmail,
-        tenantId: newTenantId,
-        userId: newUserId,
-        hasPin: registeredHasPin,
-        localPin: regPin.trim() || undefined,
-        token: serverToken
+        email: trimmedEmail,
+        password: regPassword,
+        pin: regPin,
+        offerGcash: regOfferGcash,
+        includeStarterProducts: regIncludeStarterProducts
       });
 
-      useSubscriptionStore.setState({
-        tier: 'Libre',
-        subscriptionEndDate: null,
-        isActive: false,
-        daysRemaining: null
-      });
+      if (!result.success && result.emailAlreadyExists) {
+        setAuthErrors([t.onboarding.emailAlreadyExists]);
+        setRegFieldErrors({ email: true });
+        return;
+      }
 
-      void useSubscriptionStore.getState().refreshSubscription();
-      await updateQueueCounts();
-      void kickSync();
       onNavigate('pos');
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || t.onboarding.submitError;
@@ -405,18 +381,17 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
             </Badge>
           </div>
           <Text as="h1" size={500} weight="bold" style={{ display: 'block', marginBottom: '4px' }}>
-            {t.login.pageTitle}
+            {activeTab === 'register' ? t.login.signUpPageTitle : t.login.pageTitle}
           </Text>
           <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-            {t.login.pageSubtitle}
+            {activeTab === 'register' ? t.login.signUpPageSubtitle : t.login.pageSubtitle}
           </Text>
         </div>
 
         <TabList
           selectedValue={activeTab}
           onTabSelect={(_, data) => {
-            setActiveTab(data.value as 'login' | 'register');
-            setAuthError('');
+            handleTabSelect(data.value as 'login' | 'register');
           }}
           style={{ marginBottom: tokens.spacingVerticalM }}
         >
@@ -428,27 +403,19 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
           </Tab>
         </TabList>
 
-        {authError && (
-          <div className={styles.errorBanner} role="alert" data-testid="login-error-banner">
-            <Text weight="semibold">{getLocalizedSyncErrorMessage(authError, language) || authError}</Text>
-            {loginMode === 'pin' && (
-              <div style={{ marginTop: '8px' }}>
-                <Button
-                  appearance="subtle"
-                  size="small"
-                  icon={<LockClosedRegular />}
-                  onClick={() => {
-                    setLoginMode('password');
-                    setAuthError('');
-                  }}
-                  data-testid="login-switch-to-password-btn"
-                >
-                  {language === 'tl' ? 'Mag-login gamit ang Password' : 'Log in using Password'}
-                </Button>
-              </div>
-            )}
-          </div>
-        )}
+        <AuthErrorBanner
+          authErrors={authErrors}
+          language={language}
+          containerClassName={styles.errorBanner}
+          testId="login-error-banner"
+          showSwitchToPassword={activeTab === 'login' && loginMode === 'pin'}
+          onSwitchToPassword={() => {
+            setLoginMode('password');
+            setAuthErrors([]);
+            setLoginFieldErrors({});
+          }}
+          switchToPasswordTestId="login-switch-to-password-btn"
+        />
 
         {pendingSyncCount > 0 && (
           <div
@@ -474,79 +441,25 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
 
         {activeTab === 'login' ? (
           <form onSubmit={handleLoginSubmit} noValidate>
-            <Field label={t.landing.emailLabel} required style={{ marginBottom: tokens.spacingVerticalM }}>
-              <Input
-                type="email"
-                id="login-email"
-                name="email"
-                autoComplete="username"
-                enterKeyHint="next"
-                value={loginEmailVal}
-                onChange={(_, d) => setLoginEmailVal(d.value)}
-                placeholder={t.landing.emailPlaceholder}
-                contentBefore={<MailRegular />}
-                required
-              />
-            </Field>
-
-            {loginMode === 'password' ? (
-              <Field label={t.landing.passwordLabel} required style={{ marginBottom: tokens.spacingVerticalS }}>
-                <Input
-                  type={showPassword ? 'text' : 'password'}
-                  id="login-password"
-                  name="password"
-                  autoComplete="current-password"
-                  enterKeyHint="done"
-                  value={loginPasswordVal}
-                  onChange={(_, d) => setLoginPasswordVal(d.value)}
-                  placeholder={t.landing.passwordPlaceholder}
-                  contentBefore={<LockClosedRegular />}
-                  contentAfter={
-                    <Button
-                      appearance="subtle"
-                      size="small"
-                      icon={showPassword ? <EyeOffRegular /> : <EyeRegular />}
-                      onClick={() => setShowPassword(!showPassword)}
-                      type="button"
-                      aria-label="Toggle password visibility"
-                    />
-                  }
-                  required
-                />
-              </Field>
-            ) : (
-              <Field label={t.landing.pinLabel} hint="4–6 numeric digits" required style={{ marginBottom: tokens.spacingVerticalS }}>
-                <Input
-                  type="password"
-                  id="login-pin"
-                  name="pin"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  maxLength={6}
-                  enterKeyHint="done"
-                  value={loginPinVal}
-                  onChange={(_, d) => setLoginPinVal(d.value.replace(/\D/g, '').slice(0, 6))}
-                  placeholder={t.landing.pinPlaceholder}
-                  contentBefore={<KeyRegular />}
-                  required
-                />
-              </Field>
-            )}
-
-            <div className={styles.modeToggleRow}>
-              <Button
-                appearance="transparent"
-                size="small"
-                type="button"
-                onClick={() => {
-                  setLoginMode(loginMode === 'password' ? 'pin' : 'password');
-                  setAuthError('');
-                }}
-                data-testid="login-toggle-mode-btn"
-              >
-                {loginMode === 'password' ? t.landing.usePinToggle : t.landing.usePasswordToggle}
-              </Button>
-            </div>
+            <LoginFormFields
+              idPrefix="login"
+              loginEmailVal={loginEmailVal}
+              setLoginEmailVal={setLoginEmailVal}
+              loginPasswordVal={loginPasswordVal}
+              setLoginPasswordVal={setLoginPasswordVal}
+              loginPinVal={loginPinVal}
+              setLoginPinVal={setLoginPinVal}
+              loginMode={loginMode}
+              setLoginMode={setLoginMode}
+              showPassword={showPassword}
+              setShowPassword={setShowPassword}
+              loginFieldErrors={loginFieldErrors}
+              setLoginFieldErrors={setLoginFieldErrors}
+              setAuthErrors={setAuthErrors}
+              t={t}
+              toggleTestId="login-toggle-mode-btn"
+              toggleClassName={styles.modeToggleRow}
+            />
 
             <Button
               appearance="primary"
@@ -562,69 +475,26 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
           </form>
         ) : (
           <form onSubmit={handleRegisterSubmit} noValidate>
-            <Field label={t.landing.storeNameLabel} required style={{ marginBottom: tokens.spacingVerticalS }}>
-              <Input
-                id="login-reg-store"
-                name="businessName"
-                value={regStoreName}
-                onChange={(_, d) => setRegStoreName(d.value)}
-                placeholder={t.landing.storeNamePlaceholder}
-                contentBefore={<BuildingShopRegular />}
-                required
-              />
-            </Field>
-
-            <Field label={t.landing.emailLabel} required style={{ marginBottom: tokens.spacingVerticalS }}>
-              <Input
-                type="email"
-                id="login-reg-email"
-                name="email"
-                autoComplete="username"
-                value={regEmail}
-                onChange={(_, d) => setRegEmail(d.value)}
-                placeholder={t.landing.emailPlaceholder}
-                contentBefore={<MailRegular />}
-                required
-              />
-            </Field>
-
-            <Field label={t.landing.passwordLabel} required style={{ marginBottom: tokens.spacingVerticalS }}>
-              <Input
-                type={showPassword ? 'text' : 'password'}
-                id="login-reg-password"
-                name="new-password"
-                autoComplete="new-password"
-                value={regPassword}
-                onChange={(_, d) => setRegPassword(d.value)}
-                placeholder={t.landing.passwordPlaceholder}
-                contentBefore={<LockClosedRegular />}
-                contentAfter={
-                  <Button
-                    appearance="subtle"
-                    size="small"
-                    icon={showPassword ? <EyeOffRegular /> : <EyeRegular />}
-                    onClick={() => setShowPassword(!showPassword)}
-                    type="button"
-                    aria-label="Toggle password visibility"
-                  />
-                }
-                required
-              />
-            </Field>
-
-            <Field label={t.landing.pinLabel} style={{ marginBottom: tokens.spacingVerticalS }}>
-              <Input
-                type="password"
-                id="login-reg-pin"
-                name="pin"
-                inputMode="numeric"
-                maxLength={6}
-                value={regPin}
-                onChange={(_, d) => setRegPin(d.value.replace(/\D/g, '').slice(0, 6))}
-                placeholder={t.landing.pinPlaceholder}
-                contentBefore={<KeyRegular />}
-              />
-            </Field>
+            <RegistrationFormFields
+              idPrefix="login"
+              regStoreName={regStoreName}
+              setRegStoreName={setRegStoreName}
+              regEmail={regEmail}
+              setRegEmail={setRegEmail}
+              regPassword={regPassword}
+              setRegPassword={setRegPassword}
+              regConfirmPassword={regConfirmPassword}
+              setRegConfirmPassword={setRegConfirmPassword}
+              regPin={regPin}
+              setRegPin={setRegPin}
+              showPassword={showPassword}
+              setShowPassword={setShowPassword}
+              showConfirmPassword={showConfirmPassword}
+              setShowConfirmPassword={setShowConfirmPassword}
+              regFieldErrors={regFieldErrors}
+              setRegFieldErrors={setRegFieldErrors}
+              t={t}
+            />
 
             <Checkbox
               checked={regOfferGcash}

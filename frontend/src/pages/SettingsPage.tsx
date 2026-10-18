@@ -22,7 +22,6 @@ import {
   ArrowSyncRegular,
   DeleteRegular,
   ArrowClockwiseRegular,
-  CloudArrowDownRegular,
   DatabaseRegular,
   SignOutRegular,
   GlobeRegular,
@@ -63,14 +62,11 @@ import {
   useSyncStore,
   processSyncQueue,
   updateQueueCounts,
-  kickSync,
   retryDeadLetterItem,
   deleteDeadLetterItem,
-  clearDeadLetterQueue,
-  pullCatalogFromServer
+  clearDeadLetterQueue
 } from '../sync/syncEngine';
 import { useAuthStore } from '../state/authStore';
-import { seedDexieDatabaseIfNeeded } from '../db/seedData';
 import { useTranslation } from '../state/languageStore';
 import { SafeLogoutDialog } from '../components/SafeLogoutDialog';
 import { useSafeLogout } from '../components/useSafeLogout';
@@ -152,7 +148,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
   });
 
   const [printerMessage, setPrinterMessage] = useState<string | null>(null);
-  const [dataManagementMessage, setDataManagementMessage] = useState<string | null>(null);
   const [storageEstimate, setStorageEstimate] = useState<{ usage: number; quota: number } | null>(null);
   const [isPersisted, setIsPersisted] = useState<boolean | null>(null);
 
@@ -207,53 +202,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
 
   const handleForceSync = async () => {
     await processSyncQueue({ force: true });
-  };
-
-  const handlePullCatalog = async () => {
-    const count = await pullCatalogFromServer();
-    setDataManagementMessage(`${t.settings.pullSuccessAlert} (${count})`);
-  };
-
-  const handleResetSeed = async () => {
-    if (window.confirm(t.settings.resetSeedConfirm)) {
-      await db.transaction(
-        'rw',
-        [
-          db.products,
-          db.customers,
-          db.sales,
-          db.saleItems,
-          db.utangLedger,
-          db.gcashTxns,
-          db.gcashTxnResolutions,
-          db.syncQueue,
-          db.deadLetterQueue
-        ],
-        async () => {
-          await db.products.where('tenantId').equals(tenantId).delete();
-          await db.customers.where('tenantId').equals(tenantId).delete();
-          await db.sales.where('tenantId').equals(tenantId).delete();
-          await db.saleItems.where('tenantId').equals(tenantId).delete();
-          await db.utangLedger.where('tenantId').equals(tenantId).delete();
-          await db.gcashTxns.where('tenantId').equals(tenantId).delete();
-          await db.gcashTxnResolutions.where('tenantId').equals(tenantId).delete();
-
-          const syncQueue = await db.syncQueue.toArray();
-          await db.syncQueue.bulkDelete(syncQueue
-            .filter((item) => item.payload?.tenantId === tenantId)
-            .map((item) => item.id));
-
-          const deadLetters = await db.deadLetterQueue.toArray();
-          await db.deadLetterQueue.bulkDelete(deadLetters
-            .filter((item) => item.payload?.tenantId === tenantId)
-            .map((item) => item.id));
-        }
-      );
-      await seedDexieDatabaseIfNeeded(true, tenantId, false, businessName);
-      await updateQueueCounts();
-      void kickSync();
-      setDataManagementMessage(t.settings.resetSuccess);
-    }
   };
 
   const handleSavePin = async () => {
@@ -980,37 +928,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
           {t.settings.dataManagement}
         </Text>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <Button
-            appearance="secondary"
-            icon={<CloudArrowDownRegular />}
-            onClick={handlePullCatalog}
-          >
-            {t.settings.pullCatalogBtn}
-          </Button>
-
-          <Button
-            appearance="secondary"
-            icon={<ArrowClockwiseRegular />}
-            onClick={handleResetSeed}
-          >
-            {t.settings.resetSeedBtn}
-          </Button>
-
-          {dataManagementMessage && (
-            <Text
-              role="status"
-              size={200}
-              style={{
-                color: tokens.colorPaletteGreenForeground1,
-                display: 'block',
-                marginTop: '4px',
-                fontWeight: 600
-              }}
-            >
-              ✓ {dataManagementMessage}
-            </Text>
-          )}
-
           <Button
             appearance="subtle"
             style={{ color: tokens.colorPaletteRedForeground1 }}
