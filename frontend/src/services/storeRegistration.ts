@@ -1,4 +1,4 @@
-import { registerStore, loginStore, loginPin, type AuthResponseDto } from './authService';
+import { registerStore, loginStore, loginPin, authenticateWithGoogle, type AuthResponseDto } from './authService';
 import { createClientUuid, seedDexieDatabaseIfNeeded } from '../db/seedData';
 import { useGCashFeeStore, DEFAULT_GCASH_FEE_TIERS } from '../state/gcashFeeStore';
 import { useAuthStore } from '../state/authStore';
@@ -144,3 +144,66 @@ export async function executeStoreLogin(
   await finalizeSuccessfulLogin(authResult.tenantId);
   return { success: true };
 }
+
+export interface ExecuteGoogleAuthParams {
+  accessToken?: string;
+  idToken?: string;
+  businessName?: string;
+  pin?: string;
+  offerGcash?: boolean;
+  includeStarterProducts?: boolean;
+}
+
+export async function executeGoogleAuth(
+  params: ExecuteGoogleAuthParams
+): Promise<ExecuteStoreLoginResult> {
+  const newTenantId = createClientUuid();
+  const newUserId = createClientUuid();
+
+  const authResult = await authenticateWithGoogle({
+    accessToken: params.accessToken,
+    idToken: params.idToken,
+    tenantId: newTenantId,
+    userId: newUserId,
+    businessName: params.businessName?.trim() || undefined,
+    pin: params.pin?.trim() || undefined
+  });
+
+  const localPin = params.pin?.trim() || undefined;
+  const loginRes = await useAuthStore.getState().loginWithAuthPayload(
+    authResult,
+    localPin,
+    false
+  );
+
+  if (!loginRes.success) {
+    return {
+      success: false,
+      unsyncedCount: loginRes.unsyncedCount,
+      authResult,
+      localPin
+    };
+  }
+
+  if (authResult.isNewUser) {
+    await seedDexieDatabaseIfNeeded(
+      false,
+      authResult.tenantId,
+      params.includeStarterProducts === false,
+      authResult.businessName
+    );
+
+    try {
+      const fees = params.offerGcash !== false ? DEFAULT_GCASH_FEE_TIERS : DEFAULT_GCASH_FEE_TIERS.map(() => 0);
+      fees.forEach((fee, idx) => {
+        useGCashFeeStore.getState().setFeeForTenant(authResult.tenantId, idx, fee);
+      });
+    } catch (fErr) {
+      console.warn('Could not set GCash fees:', fErr);
+    }
+  }
+
+  await finalizeSuccessfulLogin(authResult.tenantId);
+  return { success: true, authResult };
+}
+

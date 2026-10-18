@@ -15,7 +15,8 @@ import {
   AccordionItem,
   AccordionHeader,
   AccordionPanel,
-  mergeClasses
+  mergeClasses,
+  Divider
 } from '@fluentui/react-components';
 import {
   ShoppingBagRegular,
@@ -50,8 +51,10 @@ import { validateRegistrationInput, validateLoginInput } from '../utils/registra
 import {
   executeStoreRegistration,
   executeStoreLogin,
+  executeGoogleAuth,
   finalizeSuccessfulLogin
 } from '../services/storeRegistration';
+import { GoogleAuthButton } from '../components/GoogleAuthButton';
 
 interface LandingPageProps {
   onNavigate: (tab: NavTab) => void;
@@ -547,6 +550,43 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
     }
   };
 
+  const handleGoogleSuccess = async (tokenResponse: { access_token: string }) => {
+    setIsSubmitting(true);
+    setAuthErrors([]);
+    try {
+      const res = await executeGoogleAuth({
+        accessToken: tokenResponse.access_token,
+        businessName: activeTab === 'register' ? regStoreName.trim() : undefined,
+        pin: activeTab === 'register' ? regPin.trim() || undefined : undefined,
+        offerGcash: activeTab === 'register' ? regOfferGcash : true,
+        includeStarterProducts: true,
+      });
+
+      if (!res.success && res.authResult) {
+        setPendingAuthPayload({
+          payload: res.authResult,
+          localPin: res.localPin
+        });
+        setUnsyncedLoginCount(res.unsyncedCount || 0);
+        setIsUnsyncedDialogOpen(true);
+        setIsSubmitting(false);
+        return;
+      }
+
+      onNavigate('pos');
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || t.login.googleAuthFailed;
+      setAuthErrors([msg]);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleGoogleError = (err: unknown) => {
+    console.warn('[LandingPage] Google sign-in cancelled or failed:', err);
+    setAuthErrors([t.login.googleAuthFailed]);
+  };
+
   const handleExploreDemo = async () => {
     setIsSubmitting(true);
     try {
@@ -881,6 +921,18 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                     >
                       {t.landing.loginSubmitBtn}
                     </Button>
+
+                    <Divider style={{ margin: `${tokens.spacingVerticalM} 0` }}>
+                      {t.login.orDivider}
+                    </Divider>
+
+                    <GoogleAuthButton
+                      mode="login"
+                      disabled={isSubmitting}
+                      onSuccess={handleGoogleSuccess}
+                      onError={handleGoogleError}
+                      dataTestId="landing-login-google-btn"
+                    />
                   </form>
                 ) : (
                   <form onSubmit={handleRegisterSubmit} noValidate>
@@ -923,6 +975,18 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                     >
                       {t.landing.registerSubmitBtn}
                     </Button>
+
+                    <Divider style={{ margin: `${tokens.spacingVerticalM} 0` }}>
+                      {t.login.orDivider}
+                    </Divider>
+
+                    <GoogleAuthButton
+                      mode="register"
+                      disabled={isSubmitting}
+                      onSuccess={handleGoogleSuccess}
+                      onError={handleGoogleError}
+                      dataTestId="landing-register-google-btn"
+                    />
                   </form>
                 )}
 

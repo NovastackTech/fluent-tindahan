@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   executeStoreRegistration,
   executeStoreLogin,
+  executeGoogleAuth,
   finalizeSuccessfulLogin
 } from './storeRegistration';
 import * as authService from './authService';
@@ -59,6 +60,22 @@ vi.mock('./authService', async (importOriginal) => {
       hasPin: true,
       token: 'mock-pin-token',
       expiresAt: '2028-01-01'
+    }),
+    authenticateWithGoogle: vi.fn().mockResolvedValue({
+      tenantId: 'mock-google-tenant',
+      userId: 'mock-google-user',
+      email: 'google@tindahan.ph',
+      businessName: 'Google Tindahan',
+      ownerName: 'Google User',
+      phone: '',
+      role: 'Owner',
+      tier: 'Libre',
+      planTier: 'Libre',
+      subscriptionEndDate: null,
+      hasPin: false,
+      token: 'mock-google-token',
+      expiresAt: '2028-01-01',
+      isNewUser: true
     })
   };
 });
@@ -210,6 +227,81 @@ describe('storeRegistration services', () => {
 
       expect(result.success).toBe(false);
       expect(result.unsyncedCount).toBe(5);
+      expect(result.authResult).toBeDefined();
+    });
+  });
+
+  describe('executeGoogleAuth', () => {
+    it('authenticates new Google user, seeds database and sets GCash fees', async () => {
+      const setFeeSpy = vi.spyOn(useGCashFeeStore.getState(), 'setFeeForTenant');
+
+      const result = await executeGoogleAuth({
+        accessToken: 'valid-google-access-token',
+        businessName: 'Google Store',
+        pin: '1234',
+        offerGcash: true,
+        includeStarterProducts: true
+      });
+
+      expect(result.success).toBe(true);
+      expect(authService.authenticateWithGoogle).toHaveBeenCalledWith(
+        expect.objectContaining({
+          accessToken: 'valid-google-access-token',
+          businessName: 'Google Store',
+          pin: '1234'
+        })
+      );
+      expect(seedData.seedDexieDatabaseIfNeeded).toHaveBeenCalledWith(
+        false,
+        'mock-google-tenant',
+        false,
+        'Google Tindahan'
+      );
+      expect(setFeeSpy).toHaveBeenCalled();
+      expect(syncEngine.restoreTenantDataFromServer).toHaveBeenCalled();
+      expect(useAuthStore.getState().isOnboarded).toBe(true);
+    });
+
+    it('authenticates existing Google user without reseeding Dexie database', async () => {
+      vi.mocked(authService.authenticateWithGoogle).mockResolvedValueOnce({
+        tenantId: 'existing-google-tenant',
+        userId: 'existing-google-user',
+        email: 'existing@google.ph',
+        businessName: 'Existing Google Store',
+        ownerName: 'Existing User',
+        phone: '',
+        role: 'Owner',
+        tier: 'Libre',
+        planTier: 'Libre',
+        subscriptionEndDate: null,
+        hasPin: true,
+        token: 'existing-token',
+        expiresAt: '2028-01-01',
+        isNewUser: false
+      });
+
+      const result = await executeGoogleAuth({
+        accessToken: 'existing-token'
+      });
+
+      expect(result.success).toBe(true);
+      expect(seedData.seedDexieDatabaseIfNeeded).not.toHaveBeenCalled();
+      expect(syncEngine.restoreTenantDataFromServer).toHaveBeenCalled();
+      expect(useAuthStore.getState().isOnboarded).toBe(true);
+    });
+
+    it('returns unsyncedCount when local unsynced mutations block login', async () => {
+      vi.spyOn(useAuthStore.getState(), 'loginWithAuthPayload').mockResolvedValueOnce({
+        success: false,
+        unsyncedCount: 3
+      });
+
+      const result = await executeGoogleAuth({
+        accessToken: 'valid-token'
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.unsyncedCount).toBe(3);
       expect(result.authResult).toBeDefined();
     });
   });

@@ -20,7 +20,8 @@ import {
   tokens,
   shorthands,
   Spinner,
-  mergeClasses
+  mergeClasses,
+  Divider
 } from '@fluentui/react-components';
 import {
   BuildingShopRegular,
@@ -55,6 +56,8 @@ import { processSyncQueue, updateQueueCounts, kickSync, pullCatalogFromServer } 
 import { ConfirmUnsyncedLoginDialog } from './ConfirmUnsyncedLoginDialog';
 import { registerStore, loginStore, loginPin, updateProfile, type AuthResponseDto } from '../services/authService';
 import { queuePendingProfileUpdate, clearPendingProfileUpdate } from '../services/profileSync';
+import { executeGoogleAuth } from '../services/storeRegistration';
+import { GoogleAuthButton } from './GoogleAuthButton';
 
 const useStyles = makeStyles({
   surface: {
@@ -778,6 +781,43 @@ export const OnboardingModal: React.FC = () => {
     }
   };
 
+  const handleGoogleSuccess = async (tokenResponse: { access_token: string }) => {
+    setIsSubmitting(true);
+    setSubmissionError('');
+    try {
+      const res = await executeGoogleAuth({
+        accessToken: tokenResponse.access_token,
+        businessName: activeTab === 'register' ? formBusinessName.trim() || undefined : undefined,
+        pin: activeTab === 'register' ? formPin.trim() || undefined : undefined,
+        offerGcash: activeTab === 'register' ? offersGcash : true,
+        includeStarterProducts: activeTab === 'register' ? catalogChoice !== 'empty' : true,
+      });
+
+      if (!res.success && res.authResult) {
+        setPendingAuthPayload({
+          payload: res.authResult,
+          localPin: res.localPin
+        });
+        setUnsyncedLoginCount(res.unsyncedCount || 0);
+        setIsUnsyncedDialogOpen(true);
+        setIsSubmitting(false);
+        return;
+      }
+
+      closeOnboarding();
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || t.login.googleAuthFailed;
+      setSubmissionError(msg);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleGoogleError = (err: unknown) => {
+    console.warn('[OnboardingModal] Google sign-in cancelled or failed:', err);
+    setSubmissionError(t.login.googleAuthFailed);
+  };
+
   return (
     <>
       <Dialog open={isOpen} onOpenChange={(_, data) => !data.open && isEditMode && closeOnboarding()}>
@@ -1044,6 +1084,18 @@ export const OnboardingModal: React.FC = () => {
                         />
                       </div>
 
+                      <Divider style={{ margin: `${tokens.spacingVerticalM} 0` }}>
+                        {t.login.orDivider}
+                      </Divider>
+
+                      <GoogleAuthButton
+                        mode="register"
+                        disabled={isSubmitting}
+                        onSuccess={handleGoogleSuccess}
+                        onError={handleGoogleError}
+                        dataTestId="onboarding-register-google-btn"
+                      />
+
                       <div className={styles.switchPrompt}>
                         <Button
                           appearance="transparent"
@@ -1131,6 +1183,18 @@ export const OnboardingModal: React.FC = () => {
                       />
                     </Field>
                   )}
+
+                  <Divider style={{ margin: `${tokens.spacingVerticalM} 0` }}>
+                    {t.login.orDivider}
+                  </Divider>
+
+                  <GoogleAuthButton
+                    mode="login"
+                    disabled={isSubmitting}
+                    onSuccess={handleGoogleSuccess}
+                    onError={handleGoogleError}
+                    dataTestId="onboarding-login-google-btn"
+                  />
 
                   <div className={styles.switchPrompt}>
                     <Button

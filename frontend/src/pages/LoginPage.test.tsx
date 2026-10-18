@@ -59,6 +59,22 @@ vi.mock('../services/authService', async (importOriginal) => {
       hasPin: true,
       token: 'mock-pin-token',
       expiresAt: '2028-01-01'
+    }),
+    authenticateWithGoogle: vi.fn().mockResolvedValue({
+      tenantId: 'login-test-google-tenant',
+      userId: 'login-test-google-user',
+      email: 'google@tindahan.ph',
+      businessName: 'Google Tindahan',
+      ownerName: 'Google User',
+      phone: '',
+      role: 'Owner',
+      tier: 'Libre',
+      planTier: 'Libre',
+      subscriptionEndDate: null,
+      hasPin: false,
+      token: 'mock-google-token',
+      expiresAt: '2028-01-01',
+      isNewUser: false
     })
   };
 });
@@ -659,6 +675,57 @@ describe('LoginPage Component', () => {
     // Type strong password
     fireEvent.change(passwordInput, { target: { value: 'VeryStrongPass123!' } });
     expect(indicator).toHaveTextContent(t.landing.passwordStrengthStrong);
+  });
+
+  it('renders Google sign-in button on login tab and handles successful sign-in', async () => {
+    const { onNavigate } = renderLoginPage();
+
+    const googleBtn = screen.getByTestId('login-google-btn');
+    expect(googleBtn).toBeInTheDocument();
+    expect(googleBtn).toHaveTextContent(t.login.continueWithGoogle);
+
+    fireEvent.click(googleBtn);
+
+    await waitFor(() => {
+      expect(authService.authenticateWithGoogle).toHaveBeenCalledWith(
+        expect.objectContaining({
+          accessToken: 'mock-google-access-token'
+        })
+      );
+      expect(useAuthStore.getState().isOnboarded).toBe(true);
+      expect(onNavigate).toHaveBeenCalledWith('pos');
+    });
+  });
+
+  it('renders Google sign-up button on register tab and handles successful registration', async () => {
+    const { onNavigate } = renderLoginPage();
+
+    const registerTab = screen.getByTestId('login-tab-register');
+    fireEvent.click(registerTab);
+
+    const googleBtn = screen.getByTestId('register-google-btn');
+    expect(googleBtn).toBeInTheDocument();
+    expect(googleBtn).toHaveTextContent(t.login.signUpWithGoogle);
+
+    const storeInput = screen.getByPlaceholderText(t.landing.storeNamePlaceholder);
+    const pinInput = screen.getByPlaceholderText(t.landing.pinPlaceholder);
+
+    fireEvent.change(storeInput, { target: { value: 'Google Sari-Sari Store' } });
+    fireEvent.change(pinInput, { target: { value: '4321' } });
+
+    fireEvent.click(googleBtn);
+
+    await waitFor(() => {
+      expect(authService.authenticateWithGoogle).toHaveBeenCalledWith(
+        expect.objectContaining({
+          accessToken: 'mock-google-access-token',
+          businessName: 'Google Sari-Sari Store',
+          pin: '4321'
+        })
+      );
+      expect(useAuthStore.getState().isOnboarded).toBe(true);
+      expect(onNavigate).toHaveBeenCalledWith('pos');
+    });
   });
 });
 

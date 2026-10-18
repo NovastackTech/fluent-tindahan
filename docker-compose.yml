@@ -42,6 +42,7 @@ services:
       ConnectionStrings__DefaultConnection: >-
         Host=db;Port=5432;Database=${POSTGRES_DB:-fluent_tindahan};Username=${POSTGRES_USER:-fluent};Password='${POSTGRES_PASSWORD:-fluent_dev_change_me}'
       Firebase__ProjectId: ${FIREBASE_PROJECT_ID:-fluent-tindahan-dev}
+      Google__ClientId: ${GOOGLE_CLIENT_ID:-}
       Jwt__SecretKey: ${JWT_SECRET_KEY:?set JWT_SECRET_KEY}
       PayMongo__SecretKey: ${PAYMONGO_SECRET_KEY:-}
       PayMongo__WebhookSecret: ${PAYMONGO_WEBHOOK_SECRET:-}
