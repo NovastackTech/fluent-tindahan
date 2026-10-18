@@ -1,4 +1,15 @@
-import { db, type SyncQueueRecord, type ProductRecord, type DeadLetterRecord } from '../db/db';
+import {
+  db,
+  normalizeRef,
+  type SyncQueueRecord,
+  type ProductRecord,
+  type CustomerRecord,
+  type UtangLedgerRecord,
+  type GCashTxnRecord,
+  type SaleRecord,
+  type SaleItemRecord,
+  type DeadLetterRecord
+} from '../db/db';
 import {
   MIN_PRODUCT_PRICE,
   MAX_PRODUCT_PRICE,
@@ -20,7 +31,6 @@ import { createClientUuid } from '../utils/uuid';
 import { create } from 'zustand';
 import { hasPendingProfileUpdate, syncPendingProfileUpdate } from '../services/profileSync';
 
-import { DEFAULT_TENANT_ID } from '../db/seedData';
 import { STORAGE_KEY_LAST_SYNCED, getSyncStorageKey } from '../constants/sync';
 export { STORAGE_KEY_LAST_SYNCED, getSyncStorageKey };
 
@@ -694,6 +704,144 @@ export async function pullCatalogFromServer(): Promise<number> {
   }
 }
 
+export async function pullCustomersFromServer(): Promise<number> {
+  try {
+    await ensureTenantProvisioned();
+    const response = await apiClient.get('/customers');
+    const customers = response.data;
+    if (Array.isArray(customers) && customers.length > 0) {
+      const records: CustomerRecord[] = customers.map((c: any) => ({
+        id: c.id,
+        tenantId: c.tenantId,
+        name: c.name,
+        phone: c.phone || '',
+        totalUtangBalance: Number(c.totalUtangBalance || 0),
+        updatedAt: c.updatedAt || new Date().toISOString()
+      }));
+      await db.customers.bulkPut(records);
+      return records.length;
+    }
+    return 0;
+  } catch (err) {
+    console.warn('Failed to pull customers from server:', err);
+    return 0;
+  }
+}
+
+export async function pullUtangFromServer(): Promise<number> {
+  try {
+    await ensureTenantProvisioned();
+    const response = await apiClient.get('/utang');
+    const entries = response.data;
+    if (Array.isArray(entries) && entries.length > 0) {
+      const records: UtangLedgerRecord[] = entries.map((u: any) => ({
+        id: u.id,
+        tenantId: u.tenantId,
+        customerId: u.customerId,
+        amount: Number(u.amount),
+        type: u.type,
+        date: u.date,
+        refSaleId: u.refSaleId || undefined,
+        notes: u.notes || undefined
+      }));
+      await db.utangLedger.bulkPut(records);
+      return records.length;
+    }
+    return 0;
+  } catch (err) {
+    console.warn('Failed to pull utang from server:', err);
+    return 0;
+  }
+}
+
+export async function pullGCashFromServer(): Promise<number> {
+  try {
+    await ensureTenantProvisioned();
+    const response = await apiClient.get('/gcash');
+    const txns = response.data;
+    if (Array.isArray(txns) && txns.length > 0) {
+      const records: GCashTxnRecord[] = txns.map((g: any) => ({
+        id: g.id,
+        tenantId: g.tenantId,
+        type: g.type,
+        amount: Number(g.amount),
+        fee: Number(g.fee),
+        refNo: g.refNo,
+        refNoNorm: normalizeRef(g.refNo),
+        customerPhone: g.customerPhone || undefined,
+        date: g.date,
+        notes: g.notes || undefined
+      }));
+      await db.gcashTxns.bulkPut(records);
+      return records.length;
+    }
+    return 0;
+  } catch (err) {
+    console.warn('Failed to pull gcash from server:', err);
+    return 0;
+  }
+}
+
+export async function pullSalesFromServer(): Promise<number> {
+  try {
+    await ensureTenantProvisioned();
+    const response = await apiClient.get('/sales');
+    const sales = response.data;
+    if (Array.isArray(sales) && sales.length > 0) {
+      const saleRecords: SaleRecord[] = [];
+      const saleItemRecords: SaleItemRecord[] = [];
+      for (const s of sales) {
+        saleRecords.push({
+          id: s.id,
+          tenantId: s.tenantId,
+          totalAmount: Number(s.totalAmount),
+          paymentMethod: s.paymentMethod,
+          date: s.date,
+          userId: s.userId,
+          cashReceived: s.cashReceived != null ? Number(s.cashReceived) : undefined,
+          changeGiven: s.changeGiven != null ? Number(s.changeGiven) : undefined,
+          customerId: s.customerId || undefined
+        });
+        if (Array.isArray(s.items)) {
+          for (const item of s.items) {
+            saleItemRecords.push({
+              id: item.id,
+              tenantId: s.tenantId,
+              saleId: s.id,
+              productId: item.productId,
+              qty: Number(item.qty),
+              unitPrice: Number(item.unitPrice),
+              subtotal: Number(item.subtotal)
+            });
+          }
+        }
+      }
+      await db.transaction('rw', db.sales, db.saleItems, async () => {
+        await db.sales.bulkPut(saleRecords);
+        if (saleItemRecords.length > 0) {
+          await db.saleItems.bulkPut(saleItemRecords);
+        }
+      });
+      return saleRecords.length;
+    }
+    return 0;
+  } catch (err) {
+    console.warn('Failed to pull sales from server:', err);
+    return 0;
+  }
+}
+
+export async function restoreTenantDataFromServer(): Promise<void> {
+  await Promise.all([
+    pullCatalogFromServer(),
+    pullCustomersFromServer(),
+    pullUtangFromServer(),
+    pullGCashFromServer(),
+    pullSalesFromServer()
+  ]);
+  await updateQueueCounts();
+}
+
 let isSyncEngineInitialized = false;
 
 // Setup network & sync listeners
@@ -713,12 +861,8 @@ export function initSyncEngine() {
     processSyncQueue().catch(console.error);
 
     const activeTenant = useAuthStore.getState().tenantId;
-    if (activeTenant && activeTenant !== DEFAULT_TENANT_ID) {
-      db.products.where('tenantId').equals(activeTenant).count().then((count) => {
-        if (count === 0) {
-          pullCatalogFromServer().then(() => updateQueueCounts()).catch(console.error);
-        }
-      }).catch(console.error);
+    if (activeTenant) {
+      restoreTenantDataFromServer().catch(console.error);
     }
   });
 

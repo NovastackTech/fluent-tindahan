@@ -767,6 +767,8 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
         utangId = crypto.randomUUID();
       }
 
+      const updatedProducts: ProductRecord[] = [];
+
       // Save directly to Dexie
       await db.transaction('rw', db.sales, db.saleItems, db.utangLedger, db.customers, db.products, async () => {
         // Atomic stock validation inside transaction if blocking and not overridden
@@ -792,9 +794,13 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
           const prod = await db.products.get(item.productId);
           if (prod && prod.stockQty !== undefined) {
             const nextStock = Math.max(0, prod.stockQty - item.qty);
-            await db.products.update(item.productId, {
-              stockQty: nextStock
-            });
+            const updated: ProductRecord = {
+              ...prod,
+              stockQty: nextStock,
+              updatedAt: now
+            };
+            await db.products.put(updated);
+            updatedProducts.push(updated);
           }
         }
 
@@ -821,6 +827,11 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
           }
         }
       });
+
+      // Sync updated product stocks to backend
+      for (const prod of updatedProducts) {
+        await enqueueSync('Product', 'Update', prod);
+      }
 
       // Sync UtangLedger if Utang sale
       if (utangId && customerId) {
