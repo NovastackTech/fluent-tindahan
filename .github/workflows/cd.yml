@@ -63,7 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: https://${{ secrets.PUBLIC_HOST || 'tindahan-dev.novastack-inc.online' }}
+      url: https://tindahan-dev.novastack-inc.online
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
