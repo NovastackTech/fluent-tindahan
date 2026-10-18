@@ -21,7 +21,6 @@ import {
   MailRegular,
   EyeRegular,
   EyeOffRegular,
-  BuildingShopRegular,
   ArrowRightRegular,
   SparkleRegular,
   ArrowLeftRegular,
@@ -39,7 +38,8 @@ import { useSubscriptionStore } from '../state/subscriptionStore';
 import { useGCashFeeStore, DEFAULT_GCASH_FEE_TIERS } from '../state/gcashFeeStore';
 import { registerStore, loginStore, loginPin, type AuthResponseDto } from '../services/authService';
 import { createClientUuid, seedDexieDatabaseIfNeeded, DEFAULT_TENANT_ID } from '../db/seedData';
-import { evaluatePasswordStrength } from '../utils/passwordStrength';
+import { RegistrationFormFields } from '../components/RegistrationFormFields';
+import { validateRegistrationInput } from '../utils/registrationValidation';
 
 export interface LoginPageProps {
   onNavigate: (tab: NavTab) => void;
@@ -202,8 +202,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   const [regOfferGcash, setRegOfferGcash] = useState(true);
   const [regIncludeStarterProducts, setRegIncludeStarterProducts] = useState(true);
 
-  const pwdStrength = evaluatePasswordStrength(regPassword);
-
   // Unsynced queue protection
   const [isUnsyncedDialogOpen, setIsUnsyncedDialogOpen] = useState(false);
   const [unsyncedLoginCount, setUnsyncedLoginCount] = useState(0);
@@ -356,51 +354,22 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
     setAuthErrors([]);
     setRegFieldErrors({});
 
-    const trimmedStore = regStoreName.trim();
-    const trimmedEmail = regEmail.trim().toLowerCase();
-    const errors: string[] = [];
-    const fieldErrors: {
-      storeName?: boolean;
-      email?: boolean;
-      password?: boolean;
-      confirmPassword?: boolean;
-      pin?: boolean;
-    } = {};
+    const validation = validateRegistrationInput(
+      regStoreName,
+      regEmail,
+      regPassword,
+      regConfirmPassword,
+      regPin,
+      t
+    );
 
-    if (!trimmedStore || trimmedStore.length < 2) {
-      errors.push(t.onboarding.storeNameRequired);
-      fieldErrors.storeName = true;
-    }
-    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      errors.push(t.onboarding.emailInvalid);
-      fieldErrors.email = true;
-    }
-    if (!regPassword) {
-      errors.push(t.onboarding.passwordRequired);
-      fieldErrors.password = true;
-    } else if (!evaluatePasswordStrength(regPassword).isValid) {
-      errors.push(t.onboarding.passwordStrengthError);
-      fieldErrors.password = true;
-    }
-
-    if (!regConfirmPassword) {
-      errors.push(t.onboarding.confirmPasswordRequired);
-      fieldErrors.confirmPassword = true;
-    } else if (regPassword !== regConfirmPassword) {
-      errors.push(t.onboarding.passwordMismatch);
-      fieldErrors.confirmPassword = true;
-    }
-
-    if (regPin.trim() && !/^\d{4,6}$/.test(regPin.trim())) {
-      errors.push(t.onboarding.pinInvalid);
-      fieldErrors.pin = true;
-    }
-
-    if (errors.length > 0) {
-      setAuthErrors(errors);
-      setRegFieldErrors(fieldErrors);
+    if (!validation.isValid) {
+      setAuthErrors(validation.errors);
+      setRegFieldErrors(validation.fieldErrors);
       return;
     }
+
+    const { trimmedStore, trimmedEmail } = validation;
 
     setIsSubmitting(true);
     try {
@@ -713,209 +682,26 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
           </form>
         ) : (
           <form onSubmit={handleRegisterSubmit} noValidate>
-            <Field
-              label={t.landing.storeNameLabel}
-              required
-              validationState={regFieldErrors.storeName ? 'error' : undefined}
-              style={{ marginBottom: tokens.spacingVerticalS }}
-            >
-              <Input
-                id="login-reg-store"
-                name="businessName"
-                value={regStoreName}
-                onChange={(_, d) => {
-                  setRegStoreName(d.value);
-                  if (regFieldErrors.storeName) {
-                    setRegFieldErrors(prev => ({ ...prev, storeName: false }));
-                  }
-                }}
-                aria-invalid={Boolean(regFieldErrors.storeName)}
-                placeholder={t.landing.storeNamePlaceholder}
-                contentBefore={<BuildingShopRegular />}
-                required
-              />
-            </Field>
-
-            <Field
-              label={t.landing.emailLabel}
-              required
-              validationState={regFieldErrors.email ? 'error' : undefined}
-              style={{ marginBottom: tokens.spacingVerticalS }}
-            >
-              <Input
-                type="email"
-                id="login-reg-email"
-                name="email"
-                autoComplete="username"
-                value={regEmail}
-                onChange={(_, d) => {
-                  setRegEmail(d.value);
-                  if (regFieldErrors.email) {
-                    setRegFieldErrors(prev => ({ ...prev, email: false }));
-                  }
-                }}
-                aria-invalid={Boolean(regFieldErrors.email)}
-                placeholder={t.landing.emailPlaceholder}
-                contentBefore={<MailRegular />}
-                required
-              />
-            </Field>
-
-            <Field
-              label={t.landing.passwordLabel}
-              required
-              validationState={regFieldErrors.password ? 'error' : undefined}
-              style={{ marginBottom: tokens.spacingVerticalS }}
-            >
-              <Input
-                type={showPassword ? 'text' : 'password'}
-                id="login-reg-password"
-                name="new-password"
-                autoComplete="new-password"
-                value={regPassword}
-                onChange={(_, d) => {
-                  setRegPassword(d.value);
-                  if (regFieldErrors.password) {
-                    setRegFieldErrors(prev => ({ ...prev, password: false }));
-                  }
-                }}
-                aria-invalid={Boolean(regFieldErrors.password)}
-                placeholder={t.landing.passwordPlaceholder}
-                contentBefore={<LockClosedRegular />}
-                contentAfter={
-                  <Button
-                    appearance="subtle"
-                    size="small"
-                    icon={showPassword ? <EyeOffRegular /> : <EyeRegular />}
-                    onClick={() => setShowPassword(!showPassword)}
-                    type="button"
-                    aria-label="Toggle password visibility"
-                  />
-                }
-                required
-              />
-            </Field>
-
-            {regPassword.length > 0 && (
-              <div style={{ marginBottom: tokens.spacingVerticalS, marginTop: '2px' }} data-testid="login-password-strength-indicator">
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                  <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>
-                    {t.landing.passwordStrengthHint}
-                  </Text>
-                  <Text
-                    size={100}
-                    weight="bold"
-                    style={{
-                      color:
-                        pwdStrength.score === 3
-                          ? tokens.colorPaletteGreenForeground1
-                          : pwdStrength.score === 2
-                          ? tokens.colorPaletteYellowForeground1
-                          : tokens.colorPaletteRedForeground1
-                    }}
-                  >
-                    {t.landing[pwdStrength.labelKey]}
-                  </Text>
-                </div>
-                <div style={{ display: 'flex', gap: '4px', height: '4px' }}>
-                  <div
-                    style={{
-                      flex: 1,
-                      borderRadius: '2px',
-                      backgroundColor:
-                        pwdStrength.score >= 1
-                          ? pwdStrength.score === 1
-                            ? tokens.colorPaletteRedBackground3
-                            : pwdStrength.score === 2
-                            ? tokens.colorPaletteYellowBackground3
-                            : tokens.colorPaletteGreenBackground3
-                          : tokens.colorNeutralStroke2
-                    }}
-                  />
-                  <div
-                    style={{
-                      flex: 1,
-                      borderRadius: '2px',
-                      backgroundColor:
-                        pwdStrength.score >= 2
-                          ? pwdStrength.score === 2
-                            ? tokens.colorPaletteYellowBackground3
-                            : tokens.colorPaletteGreenBackground3
-                          : tokens.colorNeutralStroke2
-                    }}
-                  />
-                  <div
-                    style={{
-                      flex: 1,
-                      borderRadius: '2px',
-                      backgroundColor:
-                        pwdStrength.score >= 3
-                          ? tokens.colorPaletteGreenBackground3
-                          : tokens.colorNeutralStroke2
-                    }}
-                  />
-                </div>
-              </div>
-            )}
-
-            <Field
-              label={t.landing.confirmPasswordLabel}
-              required
-              validationState={regFieldErrors.confirmPassword ? 'error' : undefined}
-              style={{ marginBottom: tokens.spacingVerticalS }}
-            >
-              <Input
-                type={showConfirmPassword ? 'text' : 'password'}
-                id="login-reg-confirm-password"
-                name="confirm-password"
-                autoComplete="new-password"
-                value={regConfirmPassword}
-                onChange={(_, d) => {
-                  setRegConfirmPassword(d.value);
-                  if (regFieldErrors.confirmPassword) {
-                    setRegFieldErrors(prev => ({ ...prev, confirmPassword: false }));
-                  }
-                }}
-                aria-invalid={Boolean(regFieldErrors.confirmPassword)}
-                placeholder={t.landing.confirmPasswordPlaceholder}
-                contentBefore={<LockClosedRegular />}
-                contentAfter={
-                  <Button
-                    appearance="subtle"
-                    size="small"
-                    icon={showConfirmPassword ? <EyeOffRegular /> : <EyeRegular />}
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    type="button"
-                    aria-label="Toggle confirm password visibility"
-                  />
-                }
-                required
-                data-testid="login-reg-confirm-password"
-              />
-            </Field>
-
-            <Field
-              label={t.landing.pinLabel}
-              validationState={regFieldErrors.pin ? 'error' : undefined}
-              style={{ marginBottom: tokens.spacingVerticalS }}
-            >
-              <Input
-                type="password"
-                id="login-reg-pin"
-                name="pin"
-                inputMode="numeric"
-                value={regPin}
-                onChange={(_, d) => {
-                  setRegPin(d.value);
-                  if (regFieldErrors.pin) {
-                    setRegFieldErrors(prev => ({ ...prev, pin: false }));
-                  }
-                }}
-                aria-invalid={Boolean(regFieldErrors.pin)}
-                placeholder={t.landing.pinPlaceholder}
-                contentBefore={<KeyRegular />}
-              />
-            </Field>
+            <RegistrationFormFields
+              idPrefix="login"
+              regStoreName={regStoreName}
+              setRegStoreName={setRegStoreName}
+              regEmail={regEmail}
+              setRegEmail={setRegEmail}
+              regPassword={regPassword}
+              setRegPassword={setRegPassword}
+              regConfirmPassword={regConfirmPassword}
+              setRegConfirmPassword={setRegConfirmPassword}
+              regPin={regPin}
+              setRegPin={setRegPin}
+              showPassword={showPassword}
+              setShowPassword={setShowPassword}
+              showConfirmPassword={showConfirmPassword}
+              setShowConfirmPassword={setShowConfirmPassword}
+              regFieldErrors={regFieldErrors}
+              setRegFieldErrors={setRegFieldErrors}
+              t={t}
+            />
 
             <Checkbox
               checked={regOfferGcash}

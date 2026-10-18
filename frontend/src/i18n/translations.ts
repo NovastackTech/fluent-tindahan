@@ -776,6 +776,47 @@ const sharedProductFormTranslations: Record<Language, SharedProductFormTranslati
   }
 };
 
+type SharedAuthFormTranslations = Pick<
+  Translations['landing'],
+  | 'passwordLabel'
+  | 'passwordPlaceholder'
+  | 'confirmPasswordLabel'
+  | 'confirmPasswordPlaceholder'
+  | 'passwordStrengthHint'
+  | 'passwordStrengthWeak'
+  | 'passwordStrengthMedium'
+  | 'passwordStrengthStrong'
+  | 'pinLabel'
+  | 'pinPlaceholder'
+>;
+
+const sharedAuthFormTranslations: Record<Language, SharedAuthFormTranslations> = {
+  tl: {
+    passwordLabel: 'Password',
+    passwordPlaceholder: 'Minimum 8 characters',
+    confirmPasswordLabel: 'Kumpirmahin ang Password',
+    confirmPasswordPlaceholder: 'Ulitin ang password',
+    passwordStrengthHint: 'Minimum 8 characters na may pinaghalong letra at numero',
+    passwordStrengthWeak: 'Mahina',
+    passwordStrengthMedium: 'Katamtaman',
+    passwordStrengthStrong: 'Malakas',
+    pinLabel: 'Quick POS PIN',
+    pinPlaceholder: '4 hanggang 6 na numero'
+  },
+  en: {
+    passwordLabel: 'Password',
+    passwordPlaceholder: 'Minimum 8 characters',
+    confirmPasswordLabel: 'Confirm Password',
+    confirmPasswordPlaceholder: 'Re-enter password',
+    passwordStrengthHint: 'Minimum 8 characters with letters & numbers',
+    passwordStrengthWeak: 'Weak',
+    passwordStrengthMedium: 'Medium',
+    passwordStrengthStrong: 'Strong',
+    pinLabel: 'Quick POS PIN',
+    pinPlaceholder: '4 to 6 digits'
+  }
+};
+
 export const translations: Record<Language, Translations> = {
   tl: {
     common: {
@@ -1384,16 +1425,7 @@ export const translations: Record<Language, Translations> = {
       tabRegister: 'Bagong Tindahan',
       emailLabel: 'Email Address',
       emailPlaceholder: 'Hal. nena.store@gmail.com',
-      passwordLabel: 'Password',
-      passwordPlaceholder: 'Minimum 8 characters',
-      confirmPasswordLabel: 'Kumpirmahin ang Password',
-      confirmPasswordPlaceholder: 'Ulitin ang password',
-      passwordStrengthHint: 'Minimum 8 characters na may pinaghalong letra at numero',
-      passwordStrengthWeak: 'Mahina',
-      passwordStrengthMedium: 'Katamtaman',
-      passwordStrengthStrong: 'Malakas',
-      pinLabel: 'Quick POS PIN',
-      pinPlaceholder: '4 hanggang 6 na numero',
+      ...sharedAuthFormTranslations.tl,
       usePinToggle: 'Gamit ang Quick PIN',
       usePasswordToggle: 'Gamit ang Password',
       loginSubmitBtn: 'Buksan ang Tindahan',
@@ -2100,16 +2132,7 @@ export const translations: Record<Language, Translations> = {
       tabRegister: 'New Store',
       emailLabel: 'Email Address',
       emailPlaceholder: 'e.g. nena.store@gmail.com',
-      passwordLabel: 'Password',
-      passwordPlaceholder: 'Minimum 8 characters',
-      confirmPasswordLabel: 'Confirm Password',
-      confirmPasswordPlaceholder: 'Re-enter password',
-      passwordStrengthHint: 'Minimum 8 characters with letters & numbers',
-      passwordStrengthWeak: 'Weak',
-      passwordStrengthMedium: 'Medium',
-      passwordStrengthStrong: 'Strong',
-      pinLabel: 'Quick POS PIN',
-      pinPlaceholder: '4 to 6 digits',
+      ...sharedAuthFormTranslations.en,
       usePinToggle: 'Use Quick PIN',
       usePasswordToggle: 'Use Password',
       loginSubmitBtn: 'Open My Store',
