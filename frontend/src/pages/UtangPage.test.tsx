@@ -543,5 +543,50 @@ describe('UtangPage', () => {
       expect(screen.queryByText('Bayad sa utang')).not.toBeInTheDocument();
     });
   });
+
+  it('derives running customer debt balance dynamically from UtangLedger and reconciles drifted customer balance', async () => {
+    // Simulate customer having an inflated/doubled totalUtangBalance in db.customers (e.g. 200)
+    // while UtangLedger contains the true single credit entry of 100.
+    await db.customers.add({
+      id: 'cust-mar100',
+      tenantId: 'tenant-1',
+      name: 'MAR100',
+      phone: '09876544534',
+      totalUtangBalance: 200,
+      updatedAt: new Date().toISOString()
+    });
+
+    await db.utangLedger.add({
+      id: 'ledger-mar100-1',
+      tenantId: 'tenant-1',
+      customerId: 'cust-mar100',
+      type: 'Credit',
+      amount: 100,
+      date: new Date().toISOString(),
+      notes: ''
+    });
+
+    renderUtang();
+
+    // The UI should display ₱100.00 (from UtangLedger), NOT ₱200.00
+    await waitFor(() => {
+      expect(screen.getByText('MAR100')).toBeInTheDocument();
+      expect(screen.getAllByText('₱100.00').length).toBeGreaterThanOrEqual(1);
+      expect(screen.queryByText('₱200.00')).not.toBeInTheDocument();
+    });
+
+    // Opening customer modal should also show ₱100.00
+    fireEvent.click(screen.getByText('MAR100'));
+    await waitFor(() => {
+      expect(screen.getByText('+₱100.00')).toBeInTheDocument();
+      expect(screen.queryByText('₱200.00')).not.toBeInTheDocument();
+    });
+
+    // Verify self-healing in local Dexie db.customers
+    await waitFor(async () => {
+      const reconciled = await db.customers.get('cust-mar100');
+      expect(reconciled?.totalUtangBalance).toBe(100);
+    });
+  });
 });
 

@@ -49,7 +49,8 @@ public static class DatabaseMigrator
                      FROM "UtangLedgers" u
                      WHERE u."CustomerId" = c."Id"),
                     0
-                )
+                ),
+                "UpdatedAt" = NOW()
                 WHERE EXISTS (SELECT 1 FROM "UtangLedgers" u WHERE u."CustomerId" = c."Id");
                 """, cancellationToken);
         }

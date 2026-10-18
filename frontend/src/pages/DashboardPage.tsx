@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   makeStyles,
   tokens,
@@ -118,6 +118,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   const customers = useLiveQuery(() => db.customers.where('tenantId').equals(tenantId).toArray(), [tenantId]);
   const gcashTxns = useLiveQuery(() => db.gcashTxns.where('tenantId').equals(tenantId).toArray(), [tenantId]);
   const gcashResolutions = useLiveQuery(() => db.gcashTxnResolutions.where('tenantId').equals(tenantId).toArray(), [tenantId]);
+  const utangLedger = useLiveQuery(() => db.utangLedger.where('tenantId').equals(tenantId).toArray(), [tenantId]);
   const products = useLiveQuery(() => db.products.where('tenantId').equals(tenantId).toArray(), [tenantId]) || [];
 
   const lowStockProducts = products.filter((p) => (p.stockQty ?? 0) <= 5);
@@ -128,8 +129,34 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   const todaySales = (sales || []).filter((s) => toLocalDateKey(s.date) === todayStr);
   const totalSalesAmount = todaySales.reduce((sum, s) => sum + s.totalAmount, 0);
 
-  const debtors = (customers || []).filter((c) => c.totalUtangBalance > 0);
-  const totalUtangAmount = debtors.reduce((sum, c) => sum + c.totalUtangBalance, 0);
+  const utangBalances = useMemo(() => {
+    if (!utangLedger) return new Map<string, number>();
+    const map = new Map<string, number>();
+    for (const entry of utangLedger) {
+      const current = map.get(entry.customerId) ?? 0;
+      const amt = Math.round(entry.amount * 100);
+      map.set(entry.customerId, entry.type === 'Credit' ? current + amt : current - amt);
+    }
+    const result = new Map<string, number>();
+    for (const [id, centavos] of map.entries()) {
+      result.set(id, Math.max(0, centavos) / 100);
+    }
+    return result;
+  }, [utangLedger]);
+
+  const debtors = useMemo(() => {
+    return (customers || []).filter((c) => {
+      const bal = utangBalances.has(c.id) ? utangBalances.get(c.id)! : (c.totalUtangBalance || 0);
+      return bal > 0;
+    });
+  }, [customers, utangBalances]);
+
+  const totalUtangAmount = useMemo(() => {
+    return debtors.reduce((sum, c) => {
+      const bal = utangBalances.has(c.id) ? utangBalances.get(c.id)! : (c.totalUtangBalance || 0);
+      return sum + bal;
+    }, 0);
+  }, [debtors, utangBalances]);
 
   const resolvedGCashIds = new Set((gcashResolutions || []).map((resolution) => resolution.gcashTxnId));
   const todayGCash = (gcashTxns || []).filter(
