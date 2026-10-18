@@ -728,6 +728,34 @@ describe('LoginPage Component', () => {
     });
   });
 
+  it('displays error in auth banner when store registration throws an error', async () => {
+    vi.spyOn(seedData, 'seedDexieDatabaseIfNeeded').mockRejectedValueOnce(
+      new Error('Database quota exceeded')
+    );
+
+    renderLoginPage();
+
+    const registerTab = screen.getByTestId('login-tab-register');
+    fireEvent.click(registerTab);
+
+    const storeInput = screen.getByPlaceholderText(t.landing.storeNamePlaceholder);
+    const emailInput = screen.getByPlaceholderText(t.landing.emailPlaceholder);
+    const passwordInput = screen.getByPlaceholderText(t.landing.passwordPlaceholder);
+    const confirmInput = screen.getByPlaceholderText(t.landing.confirmPasswordPlaceholder);
+    const submitBtn = screen.getByTestId('login-register-submit-btn');
+
+    fireEvent.change(storeInput, { target: { value: 'Quota Store' } });
+    fireEvent.change(emailInput, { target: { value: 'quota@store.ph' } });
+    fireEvent.change(passwordInput, { target: { value: 'Password123' } });
+    fireEvent.change(confirmInput, { target: { value: 'Password123' } });
+
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent('Database quota exceeded');
+    });
+  });
+
   it('opens ConfirmUnsyncedLoginDialog when switching tenant with pending sync queue items on PIN login, and preserves localPin on Force Wipe & Login', async () => {
     await db.syncQueue.add({
       id: 'unsynced-item-1',

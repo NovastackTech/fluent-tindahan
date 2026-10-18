@@ -251,6 +251,29 @@ describe('LandingPage Component', () => {
     });
   });
 
+  it('displays error message when store registration throws an error', async () => {
+    vi.spyOn(seedData, 'seedDexieDatabaseIfNeeded').mockRejectedValueOnce(
+      new Error('Disk write failed')
+    );
+
+    renderLandingPage();
+
+    const registerTab = screen.getByTestId('tab-register-btn');
+    fireEvent.click(registerTab);
+
+    fireEvent.change(screen.getByPlaceholderText(t.storeNamePlaceholder), { target: { value: 'Error Store' } });
+    fireEvent.change(screen.getByPlaceholderText(t.emailPlaceholder), { target: { value: 'error@store.ph' } });
+    fireEvent.change(screen.getByPlaceholderText(t.passwordPlaceholder), { target: { value: 'secret123' } });
+    fireEvent.change(screen.getByPlaceholderText(t.confirmPasswordPlaceholder), { target: { value: 'secret123' } });
+
+    const submitBtn = screen.getByTestId('landing-register-submit-btn');
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('Disk write failed')).toBeInTheDocument();
+    });
+  });
+
   it('renders logged-in banner when store is already authenticated', () => {
     useAuthStore.setState({
       isOnboarded: true,

@@ -418,10 +418,11 @@ public class AuthHelperTests
     #region AuthClaimsHelper Tests
 
     [Fact]
-    public void GetClientIpAddress_UsesForwardedForHeader_WhenPresent()
+    public void GetClientIpAddress_UsesRemoteIpAddress_AndIgnoresRawForwardedForHeader()
     {
         var httpContext = new DefaultHttpContext();
-        httpContext.Request.Headers["X-Forwarded-For"] = "203.0.113.195, 70.41.3.18";
+        httpContext.Connection.RemoteIpAddress = IPAddress.Parse("203.0.113.195");
+        httpContext.Request.Headers["X-Forwarded-For"] = "spoofed.ip.address, 70.41.3.18";
 
         var ip = AuthClaimsHelper.GetClientIpAddress(httpContext);
 
@@ -501,31 +502,31 @@ public class AuthHelperTests
     #region AuthClaimsHelper Tests
 
     [Fact]
-    public void GetClientIpAddress_WhenXForwardedForPresent_ReturnsFirstIp()
+    public void GetClientIpAddress_IgnoresSpoofedXForwardedForAndReturnsValidatedRemoteIp()
     {
         var context = new DefaultHttpContext();
-        context.Connection.RemoteIpAddress = IPAddress.Parse("127.0.0.1");
-        context.Request.Headers["X-Forwarded-For"] = "203.0.113.195, 70.41.3.18, 150.172.238.178";
+        context.Connection.RemoteIpAddress = IPAddress.Parse("203.0.113.10");
+        context.Request.Headers["X-Forwarded-For"] = "198.51.100.1, 70.41.3.18, 150.172.238.178";
 
         var ip = AuthClaimsHelper.GetClientIpAddress(context);
 
-        ip.Should().Be("203.0.113.195");
+        ip.Should().Be("203.0.113.10");
     }
 
     [Fact]
-    public void GetClientIpAddress_WhenXRealIpPresent_AndNoXForwardedFor_ReturnsXRealIp()
+    public void GetClientIpAddress_IgnoresSpoofedXRealIpAndReturnsValidatedRemoteIp()
     {
         var context = new DefaultHttpContext();
-        context.Connection.RemoteIpAddress = IPAddress.Parse("127.0.0.1");
+        context.Connection.RemoteIpAddress = IPAddress.Parse("203.0.113.10");
         context.Request.Headers["X-Real-IP"] = "198.51.100.42";
 
         var ip = AuthClaimsHelper.GetClientIpAddress(context);
 
-        ip.Should().Be("198.51.100.42");
+        ip.Should().Be("203.0.113.10");
     }
 
     [Fact]
-    public void GetClientIpAddress_WhenNoForwardedHeaders_ReturnsRemoteIpAddress()
+    public void GetClientIpAddress_WhenRemoteIpAddressPresent_ReturnsRemoteIpAddress()
     {
         var context = new DefaultHttpContext();
         context.Connection.RemoteIpAddress = IPAddress.Parse("192.168.1.50");

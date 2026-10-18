@@ -151,6 +151,9 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
         options?.onSuccess?.();
       }
       return result;
+    } catch (err: any) {
+      params.onError?.(err?.response?.data?.message || err?.message || t.onboarding.submitError);
+      return { success: false };
     } finally {
       setIsSubmitting(false);
     }
