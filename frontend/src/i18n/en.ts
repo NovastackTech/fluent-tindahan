@@ -93,6 +93,7 @@ export const en: Translations = {
       saleSuccess: 'Sale successfully recorded!',
       insufficientCash: 'Cash received is less than total amount!',
       itemAdded: 'Added to cart',
+      addToCart: 'Add to cart',
       receiptTitle: 'Store Receipt',
       printReceipt: 'Print Receipt',
       newSale: 'New Transaction',

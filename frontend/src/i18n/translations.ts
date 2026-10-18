@@ -63,6 +63,7 @@ export interface Translations {
     saleSuccess: string;
     insufficientCash: string;
     itemAdded: string;
+    addToCart: string;
     receiptTitle: string;
     printReceipt: string;
     newSale: string;
