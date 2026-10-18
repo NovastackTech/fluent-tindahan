@@ -539,5 +539,41 @@ describe('UtangPage', () => {
       expect(screen.queryByText('Bayad sa utang')).not.toBeInTheDocument();
     });
   });
+
+  it('exposes accessible names for customer creation, payment confirm, and credit save buttons', async () => {
+    renderUtang();
+
+    // 1. Add Customer button and Save Customer button
+    const addCustBtn = screen.getByRole('button', { name: /Magdagdag ng Bagong Suki|Add New Customer/i });
+    expect(addCustBtn).toHaveAttribute('aria-label');
+    fireEvent.click(addCustBtn);
+
+    const saveCustBtn = screen.getByRole('button', { name: /I-save ang Suki|Save Customer/i });
+    expect(saveCustBtn).toHaveAttribute('aria-label');
+    fireEvent.click(screen.getByRole('button', { name: /Kanselahin|Cancel/i }));
+
+    // Setup customer with balance
+    await db.customers.add({
+      id: 'cust-a11y',
+      tenantId: 'tenant-1',
+      name: 'A11y Test Suki',
+      phone: '09170009999',
+      totalUtangBalance: 200,
+      updatedAt: new Date().toISOString()
+    });
+
+    fireEvent.click(await screen.findByText('A11y Test Suki'));
+
+    // 2. Record Payment confirm button
+    fireEvent.click(await screen.findByRole('button', { name: /Magbayad|Pay/i }));
+    const confirmPayBtn = screen.getByRole('button', { name: /Kumpirmahin ang Bayad|Confirm Payment/i });
+    expect(confirmPayBtn).toHaveAttribute('aria-label');
+    fireEvent.click(screen.getByRole('button', { name: /Kanselahin|Cancel/i }));
+
+    // 3. Add Credit save button
+    fireEvent.click(await screen.findByRole('button', { name: /Dagdagan ng Utang|Add Debt/i }));
+    const saveCreditBtn = screen.getByRole('button', { name: /Itala ang Utang|Save Credit/i });
+    expect(saveCreditBtn).toHaveAttribute('aria-label');
+  });
 });
 

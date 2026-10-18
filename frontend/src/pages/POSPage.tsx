@@ -951,6 +951,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
           type="button"
           onClick={() => setIsScannerOpen(true)}
           title={t.barcode.openCamera}
+          aria-label={t.barcode.openCamera}
         >
           {t.barcode.openCamera}
         </Button>
@@ -1646,6 +1647,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
                           appearance="primary"
                           icon={<CheckmarkRegular />}
                           onClick={handleSaveNewDebtor}
+                          aria-label={t.pos.saveAndSelectDebtor}
                         >
                           {t.pos.saveAndSelectDebtor}
                         </Button>
@@ -1718,6 +1720,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
                 icon={<CheckmarkCircleRegular />}
                 onClick={handleCompleteSale}
                 disabled={!isTenderValid || !isStockAllowed}
+                aria-label={t.pos.completeSaleBtn}
               >
                 {t.pos.completeSaleBtn}
               </Button>

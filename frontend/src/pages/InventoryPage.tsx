@@ -754,6 +754,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                 appearance="secondary"
                 icon={<ArrowUploadRegular />}
                 onClick={() => onNavigate('import')}
+                aria-label={t.inventory.importCsvBtn}
               >
                 {t.inventory.importCsvBtn}
               </Button>
@@ -762,6 +763,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
               appearance="primary"
               icon={<AddRegular />}
               onClick={openAddModal}
+              aria-label={t.inventory.addProductBtn}
             >
               {t.inventory.addProductBtn}
             </Button>
@@ -872,6 +874,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                     appearance="subtle"
                     icon={<DismissRegular />}
                     onClick={() => setSearchQuery('')}
+                    aria-label={t.common.cancel}
                   />
                 ) : undefined
               }
@@ -882,6 +885,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
               icon={<BarcodeScannerRegular />}
               onClick={() => setIsSearchScannerOpen(true)}
               title={t.barcode.openCamera}
+              aria-label={t.barcode.openCamera}
             />
 
             {/* Category Dropdown */}
@@ -1359,6 +1363,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                       appearance="subtle"
                       icon={<BarcodeScannerRegular />}
                       title={t.barcode.openCamera}
+                      aria-label={t.barcode.openCamera}
                       onClick={() => setIsModalScannerOpen(true)}
                     />
                   </div>

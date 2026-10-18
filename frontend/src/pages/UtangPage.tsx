@@ -420,6 +420,7 @@ export const UtangPage: React.FC = () => {
             setNewCustLimitError(null);
             setIsNewCustomerOpen(true);
           }}
+          aria-label={t.utang.addNewCustomer}
         >
           {t.utang.addNewCustomer}
         </Button>
@@ -556,6 +557,7 @@ export const UtangPage: React.FC = () => {
                         setPaymentAmount(selectedCustomer.totalUtangBalance.toString());
                         setIsPaymentOpen(true);
                       }}
+                      aria-label={t.utang.payButton}
                     >
                       {t.utang.payButton}
                     </Button>
@@ -564,6 +566,7 @@ export const UtangPage: React.FC = () => {
                       icon={<AddRegular />}
                       style={{ flexGrow: 1 }}
                       onClick={() => setIsAddCreditOpen(true)}
+                      aria-label={t.utang.addDebtButton}
                     >
                       {t.utang.addDebtButton}
                     </Button>
@@ -667,6 +670,7 @@ export const UtangPage: React.FC = () => {
                   size="small"
                   appearance="subtle"
                   onClick={() => setPaymentAmount(selectedCustomer.totalUtangBalance.toString())}
+                  aria-label={`${t.utang.payAll} (${formatPeso(selectedCustomer.totalUtangBalance)})`}
                 >
                   {t.utang.payAll} ({formatPeso(selectedCustomer.totalUtangBalance)})
                 </Button>
@@ -688,7 +692,7 @@ export const UtangPage: React.FC = () => {
               <Button appearance="subtle" onClick={() => setIsPaymentOpen(false)}>
                 {t.common.cancel}
               </Button>
-              <Button appearance="primary" icon={<CheckmarkRegular />} onClick={handleRecordPayment} disabled={isSaving}>
+              <Button appearance="primary" icon={<CheckmarkRegular />} onClick={handleRecordPayment} disabled={isSaving} aria-label={t.utang.confirmPayment}>
                 {t.utang.confirmPayment}
               </Button>
             </DialogActions>
@@ -739,7 +743,7 @@ export const UtangPage: React.FC = () => {
               <Button appearance="subtle" onClick={() => setIsAddCreditOpen(false)}>
                 {t.common.cancel}
               </Button>
-              <Button appearance="primary" icon={<CheckmarkRegular />} onClick={handleAddCredit} disabled={isSaving}>
+              <Button appearance="primary" icon={<CheckmarkRegular />} onClick={handleAddCredit} disabled={isSaving} aria-label={t.utang.saveCredit}>
                 {t.utang.saveCredit}
               </Button>
             </DialogActions>
@@ -842,7 +846,7 @@ export const UtangPage: React.FC = () => {
               <Button appearance="subtle" onClick={() => setIsNewCustomerOpen(false)}>
                 {t.common.cancel}
               </Button>
-              <Button appearance="primary" icon={<CheckmarkRegular />} onClick={handleCreateCustomer}>
+              <Button appearance="primary" icon={<CheckmarkRegular />} onClick={handleCreateCustomer} aria-label={t.utang.saveCustomer}>
                 {t.utang.saveCustomer}
               </Button>
             </DialogActions>

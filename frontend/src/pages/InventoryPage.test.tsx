@@ -314,5 +314,18 @@ describe('InventoryPage', () => {
       expect(prods.find(p => p.id === 'inv-1')).toBeUndefined();
     });
   });
+
+  it('exposes accessible names for header and scanner buttons', async () => {
+    const onNavigateMock = vi.fn();
+    render(
+      <FluentProvider theme={sariSariLightTheme}>
+        <InventoryPage onNavigate={onNavigateMock} />
+      </FluentProvider>
+    );
+
+    expect(screen.getByRole('button', { name: /Magdagdag ng Produkto|Add Product/i })).toHaveAttribute('aria-label');
+    expect(screen.getByRole('button', { name: /Mag-import ng CSV|Import CSV/i })).toHaveAttribute('aria-label');
+    expect(screen.getByRole('button', { name: /Buksan ang Scanner|Open Scanner/i })).toHaveAttribute('aria-label');
+  });
 });
 
