@@ -677,6 +677,21 @@ export async function clearDeadLetterQueue() {
   await updateQueueCounts();
 }
 
+async function getPendingEntityIds(entity: 'Product' | 'Customer' | 'Sale' | 'UtangLedger' | 'GCashTxn'): Promise<Set<string>> {
+  const [pending, deadLetter] = await Promise.all([
+    db.syncQueue.where('entity').equals(entity).toArray(),
+    db.deadLetterQueue.where('entity').equals(entity).toArray()
+  ]);
+  const ids = new Set<string>();
+  for (const q of pending) {
+    if (q.payload?.id) ids.add(q.payload.id);
+  }
+  for (const d of deadLetter) {
+    if (d.payload?.id) ids.add(d.payload.id);
+  }
+  return ids;
+}
+
 export async function pullCatalogFromServer(): Promise<number> {
   try {
     await ensureTenantProvisioned();
@@ -694,8 +709,20 @@ export async function pullCatalogFromServer(): Promise<number> {
         stockQty: Number(p.stockQty),
         updatedAt: p.updatedAt || new Date().toISOString()
       }));
-      await db.products.bulkPut(formattedProducts);
-      return products.length;
+      const pendingIds = await getPendingEntityIds('Product');
+      const safe: ProductRecord[] = [];
+      for (const r of formattedProducts) {
+        if (pendingIds.has(r.id)) continue;
+        const local = await db.products.get(r.id);
+        if (local?.updatedAt && r.updatedAt && new Date(local.updatedAt) > new Date(r.updatedAt)) {
+          continue;
+        }
+        safe.push(r);
+      }
+      if (safe.length > 0) {
+        await db.products.bulkPut(safe);
+      }
+      return safe.length;
     }
     return 0;
   } catch (err) {
@@ -718,8 +745,32 @@ export async function pullCustomersFromServer(): Promise<number> {
         totalUtangBalance: Number(c.totalUtangBalance || 0),
         updatedAt: c.updatedAt || new Date().toISOString()
       }));
-      await db.customers.bulkPut(records);
-      return records.length;
+      const [pendingCustomers, pendingUtang, pendingCustDlq, pendingUtangDlq] = await Promise.all([
+        db.syncQueue.where('entity').equals('Customer').toArray(),
+        db.syncQueue.where('entity').equals('UtangLedger').toArray(),
+        db.deadLetterQueue.where('entity').equals('Customer').toArray(),
+        db.deadLetterQueue.where('entity').equals('UtangLedger').toArray()
+      ]);
+      const pendingCustIds = new Set<string>();
+      for (const q of [...pendingCustomers, ...pendingCustDlq]) {
+        if (q.payload?.id) pendingCustIds.add(q.payload.id);
+      }
+      for (const q of [...pendingUtang, ...pendingUtangDlq]) {
+        if (q.payload?.customerId) pendingCustIds.add(q.payload.customerId);
+      }
+      const safe: CustomerRecord[] = [];
+      for (const r of records) {
+        if (pendingCustIds.has(r.id)) continue;
+        const local = await db.customers.get(r.id);
+        if (local?.updatedAt && r.updatedAt && new Date(local.updatedAt) > new Date(r.updatedAt)) {
+          continue;
+        }
+        safe.push(r);
+      }
+      if (safe.length > 0) {
+        await db.customers.bulkPut(safe);
+      }
+      return safe.length;
     }
     return 0;
   } catch (err) {
@@ -744,8 +795,12 @@ export async function pullUtangFromServer(): Promise<number> {
         refSaleId: u.refSaleId || undefined,
         notes: u.notes || undefined
       }));
-      await db.utangLedger.bulkPut(records);
-      return records.length;
+      const pendingIds = await getPendingEntityIds('UtangLedger');
+      const safe = records.filter((r) => !pendingIds.has(r.id));
+      if (safe.length > 0) {
+        await db.utangLedger.bulkPut(safe);
+      }
+      return safe.length;
     }
     return 0;
   } catch (err) {
@@ -772,8 +827,12 @@ export async function pullGCashFromServer(): Promise<number> {
         date: g.date,
         notes: g.notes || undefined
       }));
-      await db.gcashTxns.bulkPut(records);
-      return records.length;
+      const pendingIds = await getPendingEntityIds('GCashTxn');
+      const safe = records.filter((r) => !pendingIds.has(r.id));
+      if (safe.length > 0) {
+        await db.gcashTxns.bulkPut(safe);
+      }
+      return safe.length;
     }
     return 0;
   } catch (err) {
@@ -816,13 +875,20 @@ export async function pullSalesFromServer(): Promise<number> {
           }
         }
       }
+      const pendingSaleIds = await getPendingEntityIds('Sale');
+      const safeSales = saleRecords.filter((s) => !pendingSaleIds.has(s.id));
+      const safeSaleIds = new Set(safeSales.map((s) => s.id));
+      const safeItems = saleItemRecords.filter((i) => safeSaleIds.has(i.saleId));
+
       await db.transaction('rw', db.sales, db.saleItems, async () => {
-        await db.sales.bulkPut(saleRecords);
-        if (saleItemRecords.length > 0) {
-          await db.saleItems.bulkPut(saleItemRecords);
+        if (safeSales.length > 0) {
+          await db.sales.bulkPut(safeSales);
+        }
+        if (safeItems.length > 0) {
+          await db.saleItems.bulkPut(safeItems);
         }
       });
-      return saleRecords.length;
+      return safeSales.length;
     }
     return 0;
   } catch (err) {
@@ -862,7 +928,16 @@ export function initSyncEngine() {
 
     const activeTenant = useAuthStore.getState().tenantId;
     if (activeTenant) {
-      restoreTenantDataFromServer().catch(console.error);
+      Promise.all([
+        db.products.where('tenantId').equals(activeTenant).count(),
+        db.customers.where('tenantId').equals(activeTenant).count(),
+        db.utangLedger.where('tenantId').equals(activeTenant).count(),
+        db.gcashTxns.where('tenantId').equals(activeTenant).count()
+      ]).then(([pCount, cCount, uCount, gCount]) => {
+        if (pCount === 0 && cCount === 0 && uCount === 0 && gCount === 0) {
+          restoreTenantDataFromServer().catch(console.error);
+        }
+      }).catch(console.error);
     }
   });
 

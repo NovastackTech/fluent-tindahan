@@ -1022,6 +1022,114 @@ describe('syncEngine', () => {
     expect(apiClient.get).toHaveBeenCalledWith('/sales');
   });
 
+  it('pullCatalogFromServer preserves local product edits that have pending syncQueue updates', async () => {
+    await db.products.put({
+      id: 'prod-local-edit',
+      tenantId: DEFAULT_TENANT_ID,
+      name: 'Local Edited Item',
+      price: 25,
+      cost: 15,
+      stockQty: 2,
+      updatedAt: '2026-10-18T10:00:00.000Z'
+    });
+
+    await db.syncQueue.add({
+      id: 'sync-prod-1',
+      entity: 'Product',
+      action: 'Update',
+      timestamp: new Date().toISOString(),
+      payload: { id: 'prod-local-edit', stockQty: 2 },
+      status: 'Pending',
+      retryCount: 0,
+      queueOrder: 1
+    });
+
+    (apiClient.get as any).mockResolvedValueOnce({
+      data: [
+        {
+          id: 'prod-local-edit',
+          tenantId: DEFAULT_TENANT_ID,
+          name: 'Server Stale Name',
+          price: 20,
+          cost: 10,
+          stockQty: 10,
+          updatedAt: '2026-10-18T09:00:00.000Z'
+        },
+        {
+          id: 'prod-unmodified',
+          tenantId: DEFAULT_TENANT_ID,
+          name: 'Server Item',
+          price: 30,
+          cost: 20,
+          stockQty: 5,
+          updatedAt: '2026-10-18T09:00:00.000Z'
+        }
+      ]
+    });
+
+    const count = await pullCatalogFromServer();
+    expect(count).toBe(1);
+
+    const preserved = await db.products.get('prod-local-edit');
+    expect(preserved?.stockQty).toBe(2);
+    expect(preserved?.name).toBe('Local Edited Item');
+
+    const imported = await db.products.get('prod-unmodified');
+    expect(imported?.stockQty).toBe(5);
+  });
+
+  it('pullCustomersFromServer preserves local customer balance when pending mutations or newer updatedAt exist', async () => {
+    await db.customers.put({
+      id: 'cust-local-edit',
+      tenantId: DEFAULT_TENANT_ID,
+      name: 'Ka Freddie',
+      phone: '09191234567',
+      totalUtangBalance: 150,
+      updatedAt: '2026-10-18T11:00:00.000Z'
+    });
+
+    await db.syncQueue.add({
+      id: 'sync-utang-1',
+      entity: 'UtangLedger',
+      action: 'Insert',
+      timestamp: new Date().toISOString(),
+      payload: { id: 'u-1', customerId: 'cust-local-edit', amount: 50 },
+      status: 'Pending',
+      retryCount: 0,
+      queueOrder: 1
+    });
+
+    (apiClient.get as any).mockResolvedValueOnce({
+      data: [
+        {
+          id: 'cust-local-edit',
+          tenantId: DEFAULT_TENANT_ID,
+          name: 'Ka Freddie',
+          phone: '09191234567',
+          totalUtangBalance: 100,
+          updatedAt: '2026-10-18T09:00:00.000Z'
+        },
+        {
+          id: 'cust-new',
+          tenantId: DEFAULT_TENANT_ID,
+          name: 'Ate Susan',
+          phone: '09181234567',
+          totalUtangBalance: 0,
+          updatedAt: '2026-10-18T09:00:00.000Z'
+        }
+      ]
+    });
+
+    const count = await pullCustomersFromServer();
+    expect(count).toBe(1);
+
+    const preserved = await db.customers.get('cust-local-edit');
+    expect(preserved?.totalUtangBalance).toBe(150);
+
+    const imported = await db.customers.get('cust-new');
+    expect(imported?.name).toBe('Ate Susan');
+  });
+
   it('initSyncEngine attaches online and offline event handlers', () => {
     expect(() => initSyncEngine()).not.toThrow();
 

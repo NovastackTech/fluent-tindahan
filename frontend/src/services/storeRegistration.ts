@@ -90,7 +90,7 @@ export async function executeStoreRegistration(
 
 export async function finalizeSuccessfulLogin(_tenantId: string): Promise<void> {
   void useSubscriptionStore.getState().refreshSubscription();
-  await restoreTenantDataFromServer();
+  void restoreTenantDataFromServer().catch(console.error);
   void processSyncQueue().catch(console.error);
 }
 

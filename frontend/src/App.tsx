@@ -222,7 +222,7 @@ export const App: React.FC = () => {
           db.utangLedger.where('tenantId').equals(activeTenantId).count(),
           db.gcashTxns.where('tenantId').equals(activeTenantId).count()
         ]);
-        if (prodCount === 0 || custCount === 0 || utangCount === 0 || gcashCount === 0) {
+        if (prodCount === 0 && custCount === 0 && utangCount === 0 && gcashCount === 0) {
           await restoreTenantDataFromServer();
         }
       }
