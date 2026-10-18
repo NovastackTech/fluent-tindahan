@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Linq;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using FluentTindahan.Domain.Entities;
@@ -14,13 +15,36 @@ public static class AuthLockoutHelper
     {
         public int FailedAttempts;
         public DateTimeOffset? LockoutEnd;
+        public DateTimeOffset LastAttemptAt;
+
+        public bool IsExpired(DateTimeOffset now)
+        {
+            if (LockoutEnd.HasValue)
+            {
+                return now >= LockoutEnd.Value;
+            }
+
+            return now >= LastAttemptAt.AddMinutes(LockoutDurationMinutes);
+        }
+    }
+
+    private sealed class UserLockEntry
+    {
+        public readonly SemaphoreSlim Semaphore = new(1, 1);
+        public DateTimeOffset LastAccessedAt;
     }
 
     private static readonly ConcurrentDictionary<string, IpPinThrottleInfo> _ipPinThrottles = new();
-    private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> _userPinLocks = new();
+    private static readonly ConcurrentDictionary<Guid, UserLockEntry> _userPinLocks = new();
+    private static int _ipWriteCounter;
+    private static int _userLockWriteCounter;
 
     public const int MaxFailedAttempts = 5;
     public const int LockoutDurationMinutes = 15;
+    public const int MaxTrackedIps = 5000;
+    public const int MaxTrackedUserLocks = 5000;
+    public const int SweepIntervalOperations = 50;
+    public static readonly TimeSpan DefaultLockIdleTimeout = TimeSpan.FromMinutes(5);
 
     public static void ResetAllIpPinThrottles()
     {
@@ -35,9 +59,126 @@ public static class AuthLockoutHelper
         }
     }
 
-    public static SemaphoreSlim GetUserPinLock(Guid userId)
+    public static int GetIpThrottleCount() => _ipPinThrottles.Count;
+    public static int GetUserPinLockCount() => _userPinLocks.Count;
+    public static bool HasUserPinLock(Guid userId) => _userPinLocks.ContainsKey(userId);
+
+    public static SemaphoreSlim GetUserPinLock(Guid userId, TimeProvider? timeProvider = null)
     {
-        return _userPinLocks.GetOrAdd(userId, _ => new SemaphoreSlim(1, 1));
+        var tp = timeProvider ?? TimeProvider.System;
+        var now = tp.GetUtcNow();
+
+        if (Interlocked.Increment(ref _userLockWriteCounter) % SweepIntervalOperations == 0 || _userPinLocks.Count > MaxTrackedUserLocks)
+        {
+            SweepIdleUserLocks(tp);
+        }
+
+        var entry = _userPinLocks.GetOrAdd(userId, _ => new UserLockEntry { LastAccessedAt = now });
+        lock (entry)
+        {
+            entry.LastAccessedAt = now;
+        }
+        return entry.Semaphore;
+    }
+
+    public static int SweepIdleUserLocks(TimeProvider? timeProvider = null, TimeSpan? idleTimeout = null)
+    {
+        var now = (timeProvider ?? TimeProvider.System).GetUtcNow();
+        var timeout = idleTimeout ?? DefaultLockIdleTimeout;
+        var prunedCount = 0;
+
+        foreach (var kvp in _userPinLocks)
+        {
+            var entry = kvp.Value;
+            lock (entry)
+            {
+                if (entry.Semaphore.CurrentCount == 1 && (now - entry.LastAccessedAt) >= timeout)
+                {
+                    if (_userPinLocks.TryRemove(new KeyValuePair<Guid, UserLockEntry>(kvp.Key, entry)))
+                    {
+                        prunedCount++;
+                    }
+                }
+            }
+        }
+
+        if (_userPinLocks.Count > MaxTrackedUserLocks)
+        {
+            var overflow = _userPinLocks
+                .Where(kv => kv.Value.Semaphore.CurrentCount == 1)
+                .OrderBy(kv => kv.Value.LastAccessedAt)
+                .Take(_userPinLocks.Count - MaxTrackedUserLocks);
+
+            foreach (var kvp in overflow)
+            {
+                lock (kvp.Value)
+                {
+                    if (kvp.Value.Semaphore.CurrentCount == 1)
+                    {
+                        if (_userPinLocks.TryRemove(new KeyValuePair<Guid, UserLockEntry>(kvp.Key, kvp.Value)))
+                        {
+                            prunedCount++;
+                        }
+                    }
+                }
+            }
+        }
+
+        return prunedCount;
+    }
+
+    public static void ResetAllUserPinLocks()
+    {
+        foreach (var kvp in _userPinLocks)
+        {
+            var entry = kvp.Value;
+            lock (entry)
+            {
+                if (entry.Semaphore.CurrentCount == 1)
+                {
+                    _userPinLocks.TryRemove(new KeyValuePair<Guid, UserLockEntry>(kvp.Key, entry));
+                }
+            }
+        }
+    }
+
+    public static int SweepExpiredThrottles(TimeProvider? timeProvider = null)
+    {
+        var now = (timeProvider ?? TimeProvider.System).GetUtcNow();
+        var prunedCount = 0;
+
+        foreach (var kvp in _ipPinThrottles)
+        {
+            var info = kvp.Value;
+            lock (info)
+            {
+                if (info.IsExpired(now))
+                {
+                    if (_ipPinThrottles.TryRemove(new KeyValuePair<string, IpPinThrottleInfo>(kvp.Key, info)))
+                    {
+                        prunedCount++;
+                    }
+                }
+            }
+        }
+
+        if (_ipPinThrottles.Count > MaxTrackedIps)
+        {
+            var overflow = _ipPinThrottles
+                .Where(kv => !kv.Value.LockoutEnd.HasValue)
+                .OrderBy(kv => kv.Value.LastAttemptAt)
+                .Take(_ipPinThrottles.Count - MaxTrackedIps);
+
+            foreach (var kvp in overflow)
+            {
+                if (_ipPinThrottles.TryRemove(new KeyValuePair<string, IpPinThrottleInfo>(kvp.Key, kvp.Value)))
+                {
+                    prunedCount++;
+                }
+            }
+        }
+
+        return prunedCount;
     }
 
     public static bool IsIpPinThrottled(string clientIp, TimeProvider timeProvider, out int remainingMinutes)
@@ -58,6 +199,14 @@ public static class AuthLockoutHelper
 
                     info.FailedAttempts = 0;
                     info.LockoutEnd = null;
+                    _ipPinThrottles.TryRemove(new KeyValuePair<string, IpPinThrottleInfo>(clientIp, info));
+                    return false;
+                }
+
+                if (now >= info.LastAttemptAt.AddMinutes(LockoutDurationMinutes))
+                {
+                    _ipPinThrottles.TryRemove(new KeyValuePair<string, IpPinThrottleInfo>(clientIp, info));
+                    return false;
                 }
             }
         }
@@ -66,10 +215,19 @@ public static class AuthLockoutHelper
 
     public static int RecordIpPinFailure(string clientIp, TimeProvider timeProvider, out bool isNowLockedOut, out int lockoutMinutes)
     {
-        var info = _ipPinThrottles.GetOrAdd(clientIp, _ => new IpPinThrottleInfo());
+        if (Interlocked.Increment(ref _ipWriteCounter) % SweepIntervalOperations == 0 || _ipPinThrottles.Count > MaxTrackedIps)
+        {
+            SweepExpiredThrottles(timeProvider);
+        }
+
+        var info = _ipPinThrottles.GetOrAdd(clientIp, _ => new IpPinThrottleInfo
+        {
+            LastAttemptAt = timeProvider.GetUtcNow()
+        });
         lock (info)
         {
             var now = timeProvider.GetUtcNow();
+            info.LastAttemptAt = now;
             if (info.LockoutEnd.HasValue && info.LockoutEnd.Value <= now)
             {
                 info.FailedAttempts = 0;

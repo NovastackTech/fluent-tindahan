@@ -16,20 +16,8 @@ public static class AuthClaimsHelper
 {
     public static string GetClientIpAddress(HttpContext? httpContext)
     {
-        var clientIp = httpContext?.Connection?.RemoteIpAddress?.ToString();
-        if (string.IsNullOrWhiteSpace(clientIp))
-        {
-            if (httpContext?.Request.Headers.TryGetValue("X-Forwarded-For", out var forwardedFor) == true &&
-                !string.IsNullOrWhiteSpace(forwardedFor))
-            {
-                clientIp = forwardedFor.ToString().Split(',')[0].Trim();
-            }
-            else
-            {
-                clientIp = "127.0.0.1";
-            }
-        }
-        return clientIp;
+        var remoteIp = httpContext?.Connection?.RemoteIpAddress?.ToString();
+        return string.IsNullOrWhiteSpace(remoteIp) ? "127.0.0.1" : remoteIp;
     }
 
     public static Guid? ResolveUserId(ICurrentUserService? currentUserService, ClaimsPrincipal? userPrincipal)

@@ -727,5 +727,148 @@ describe('LoginPage Component', () => {
       expect(onNavigate).toHaveBeenCalledWith('pos');
     });
   });
+
+  it('displays error in auth banner when store registration throws an error', async () => {
+    vi.spyOn(seedData, 'seedDexieDatabaseIfNeeded').mockRejectedValueOnce(
+      new Error('Database quota exceeded')
+    );
+
+    renderLoginPage();
+
+    const registerTab = screen.getByTestId('login-tab-register');
+    fireEvent.click(registerTab);
+
+    const storeInput = screen.getByPlaceholderText(t.landing.storeNamePlaceholder);
+    const emailInput = screen.getByPlaceholderText(t.landing.emailPlaceholder);
+    const passwordInput = screen.getByPlaceholderText(t.landing.passwordPlaceholder);
+    const confirmInput = screen.getByPlaceholderText(t.landing.confirmPasswordPlaceholder);
+    const submitBtn = screen.getByTestId('login-register-submit-btn');
+
+    fireEvent.change(storeInput, { target: { value: 'Quota Store' } });
+    fireEvent.change(emailInput, { target: { value: 'quota@store.ph' } });
+    fireEvent.change(passwordInput, { target: { value: 'Password123' } });
+    fireEvent.change(confirmInput, { target: { value: 'Password123' } });
+
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent('Database quota exceeded');
+    });
+  });
+
+  it('opens ConfirmUnsyncedLoginDialog when switching tenant with pending sync queue items on PIN login, and preserves localPin on Force Wipe & Login', async () => {
+    await db.syncQueue.add({
+      id: 'unsynced-item-1',
+      entity: 'Sale',
+      action: 'Insert',
+      payload: {},
+      timestamp: new Date().toISOString(),
+      status: 'Pending',
+      retryCount: 0
+    });
+
+    const { onNavigate } = renderLoginPage();
+
+    const toggleBtn = screen.getByTestId('login-toggle-mode-btn');
+    fireEvent.click(toggleBtn);
+
+    const emailInput = screen.getByPlaceholderText(t.landing.emailPlaceholder);
+    const pinInput = screen.getByPlaceholderText(t.landing.pinPlaceholder);
+    const submitBtn = screen.getByTestId('login-submit-btn');
+
+    fireEvent.change(emailInput, { target: { value: 'pin@tindahan.ph' } });
+    fireEvent.change(pinInput, { target: { value: '9876' } });
+
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('unsynced-dialog-wipe-btn')).toBeInTheDocument();
+      expect(screen.getByTestId('unsynced-dialog-sync-btn')).toBeInTheDocument();
+    });
+
+    // Should not have switched tenant yet
+    expect(useAuthStore.getState().tenantId).toBe('default-store');
+
+    const wipeBtn = screen.getByTestId('unsynced-dialog-wipe-btn');
+    fireEvent.click(wipeBtn);
+
+    await waitFor(() => {
+      expect(useAuthStore.getState().tenantId).toBe('login-test-pin-tenant');
+      expect(useAuthStore.getState().hasPin).toBe(true);
+      expect(useAuthStore.getState().localPinVerifier).toBeTruthy();
+      expect(onNavigate).toHaveBeenCalledWith('pos');
+    });
+  });
+
+  it('opens ConfirmUnsyncedLoginDialog on Google sign-up when sync queue has items, and preserves newUserPreferences and localPin on Sync First', async () => {
+    await db.syncQueue.add({
+      id: 'unsynced-item-2',
+      entity: 'Sale',
+      action: 'Insert',
+      payload: {},
+      timestamp: new Date().toISOString(),
+      status: 'Pending',
+      retryCount: 0
+    });
+
+    vi.mocked(authService.authenticateWithGoogle).mockResolvedValueOnce({
+      tenantId: 'google-sync-first-tenant',
+      userId: 'google-sync-first-user',
+      email: 'googlesync@tindahan.ph',
+      businessName: 'Google Super Store',
+      ownerName: 'Google Owner',
+      phone: '',
+      role: 'Owner',
+      tier: 'Libre',
+      planTier: 'Libre',
+      subscriptionEndDate: null,
+      hasPin: true,
+      token: 'mock-google-token',
+      expiresAt: '2028-01-01',
+      isNewUser: true
+    });
+
+    const { onNavigate } = renderLoginPage();
+
+    const registerTab = screen.getByTestId('login-tab-register');
+    fireEvent.click(registerTab);
+
+    const storeInput = screen.getByPlaceholderText(t.landing.storeNamePlaceholder);
+    const pinInput = screen.getByPlaceholderText(t.landing.pinPlaceholder);
+
+    fireEvent.change(storeInput, { target: { value: 'Google Super Store' } });
+    fireEvent.change(pinInput, { target: { value: '4321' } });
+
+    const googleBtn = screen.getByTestId('register-google-btn');
+    fireEvent.click(googleBtn);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('unsynced-dialog-sync-btn')).toBeInTheDocument();
+    });
+
+    expect(useAuthStore.getState().tenantId).toBe('default-store');
+
+    vi.mocked(syncEngine.processSyncQueue).mockImplementationOnce(async () => {
+      await db.syncQueue.clear();
+      return { processed: 1, conflicts: 0, errors: 0 };
+    });
+
+    const syncBtn = screen.getByTestId('unsynced-dialog-sync-btn');
+    fireEvent.click(syncBtn);
+
+    await waitFor(() => {
+      expect(syncEngine.processSyncQueue).toHaveBeenCalled();
+      expect(useAuthStore.getState().tenantId).toBe('google-sync-first-tenant');
+      expect(useAuthStore.getState().hasPin).toBe(true);
+      expect(useAuthStore.getState().localPinVerifier).toBeTruthy();
+      expect(seedData.seedDexieDatabaseIfNeeded).toHaveBeenCalledWith(
+        false,
+        'google-sync-first-tenant',
+        false,
+        'Google Super Store'
+      );
+      expect(onNavigate).toHaveBeenCalledWith('pos');
+    });
+  });
 });
 

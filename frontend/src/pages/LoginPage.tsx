@@ -23,22 +23,15 @@ import {
 import type { NavTab } from '../components/Navigation';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
-import { processSyncQueue } from '../sync/syncEngine';
+import { useStoreAuthFlow } from '../hooks/useStoreAuthFlow';
 import { ConfirmUnsyncedLoginDialog } from '../components/ConfirmUnsyncedLoginDialog';
 import { useTranslation } from '../state/languageStore';
 import { useAuthStore } from '../state/authStore';
-import type { AuthResponseDto } from '../services/authService';
 import { seedDexieDatabaseIfNeeded, DEFAULT_TENANT_ID } from '../db/seedData';
 import { RegistrationFormFields } from '../components/RegistrationFormFields';
 import { LoginFormFields } from '../components/LoginFormFields';
 import { AuthErrorBanner } from '../components/AuthErrorBanner';
 import { validateRegistrationInput, validateLoginInput } from '../utils/registrationValidation';
-import {
-  executeStoreRegistration,
-  executeStoreLogin,
-  processGoogleAuthFlow,
-  finalizeSuccessfulLogin
-} from '../services/storeRegistration';
 import { GoogleAuthButton } from '../components/GoogleAuthButton';
 
 export interface LoginPageProps {
@@ -120,7 +113,23 @@ const useStyles = makeStyles({
 export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   const styles = useStyles();
   const { t, language } = useTranslation();
-  const { completeOnboarding, loginWithAuthPayload } = useAuthStore();
+  const { completeOnboarding } = useAuthStore();
+
+  const {
+    isUnsyncedDialogOpen,
+    unsyncedLoginCount,
+    isSyncingFirst,
+    isSubmitting,
+    setIsSubmitting,
+    closeUnsyncedDialog,
+    handleConfirmWipeAndLogin,
+    handleSyncFirst,
+    handleStoreLogin,
+    handleStoreRegistration,
+    handleGoogleAuth
+  } = useStoreAuthFlow({
+    onSuccess: () => onNavigate('pos')
+  });
 
   const getInitialTab = (): 'login' | 'register' => {
     if (typeof window === 'undefined') return 'login';
@@ -140,7 +149,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   const [loginMode, setLoginMode] = useState<'password' | 'pin'>('password');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [authErrors, setAuthErrors] = useState<string[]>([]);
   const [regFieldErrors, setRegFieldErrors] = useState<{
     storeName?: boolean;
@@ -202,70 +210,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   const [regOfferGcash, setRegOfferGcash] = useState(true);
   const [regIncludeStarterProducts, setRegIncludeStarterProducts] = useState(true);
 
-  // Unsynced queue protection
-  const [isUnsyncedDialogOpen, setIsUnsyncedDialogOpen] = useState(false);
-  const [unsyncedLoginCount, setUnsyncedLoginCount] = useState(0);
-  const [pendingAuthPayload, setPendingAuthPayload] = useState<{
-    payload: AuthResponseDto;
-    localPin?: string;
-    newUserPreferences?: {
-      offerGcash?: boolean;
-      includeStarterProducts?: boolean;
-    };
-  } | null>(null);
-  const [isSyncingFirst, setIsSyncingFirst] = useState(false);
   const pendingSyncCount = useLiveQuery(() => db.syncQueue.count(), []) || 0;
-
-  const handleConfirmWipeAndLogin = async () => {
-    if (!pendingAuthPayload) return;
-    setIsUnsyncedDialogOpen(false);
-    setIsSubmitting(true);
-    try {
-      await loginWithAuthPayload(
-        pendingAuthPayload.payload,
-        pendingAuthPayload.localPin,
-        true
-      );
-      await finalizeSuccessfulLogin(pendingAuthPayload.payload.tenantId, {
-        isNewUser: pendingAuthPayload.payload.isNewUser,
-        businessName: pendingAuthPayload.payload.businessName,
-        offerGcash: pendingAuthPayload.newUserPreferences?.offerGcash,
-        includeStarterProducts: pendingAuthPayload.newUserPreferences?.includeStarterProducts
-      });
-      onNavigate('pos');
-    } finally {
-      setIsSubmitting(false);
-      setPendingAuthPayload(null);
-    }
-  };
-
-  const handleSyncFirst = async () => {
-    setIsSyncingFirst(true);
-    try {
-      await processSyncQueue();
-      const remaining = await db.syncQueue.count();
-      setUnsyncedLoginCount(remaining);
-      if (remaining === 0 && pendingAuthPayload) {
-        setIsUnsyncedDialogOpen(false);
-        await loginWithAuthPayload(
-          pendingAuthPayload.payload,
-          pendingAuthPayload.localPin,
-          false
-        );
-        await finalizeSuccessfulLogin(pendingAuthPayload.payload.tenantId, {
-          isNewUser: pendingAuthPayload.payload.isNewUser,
-          businessName: pendingAuthPayload.payload.businessName,
-          offerGcash: pendingAuthPayload.newUserPreferences?.offerGcash,
-          includeStarterProducts: pendingAuthPayload.newUserPreferences?.includeStarterProducts
-        });
-        onNavigate('pos');
-      }
-    } catch (e) {
-      console.warn('Sync attempt failed:', e);
-    } finally {
-      setIsSyncingFirst(false);
-    }
-  };
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -280,38 +225,20 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
       return;
     }
 
-    setIsSubmitting(true);
-    try {
-      const res = await executeStoreLogin({
-        email: validation.trimmedEmail,
-        loginMode,
-        password: loginPasswordVal,
-        pin: loginPinVal
-      });
-
-      if (!res.success && res.authResult) {
-        setPendingAuthPayload({
-          payload: res.authResult,
-          localPin: res.localPin
-        });
-        setUnsyncedLoginCount(res.unsyncedCount || 0);
-        setIsUnsyncedDialogOpen(true);
-        setIsSubmitting(false);
-        return;
+    await handleStoreLogin({
+      email: validation.trimmedEmail,
+      loginMode,
+      password: loginPasswordVal,
+      pin: loginPinVal,
+      onError: (msg) => {
+        setAuthErrors([msg]);
+        if (loginMode === 'password') {
+          setLoginFieldErrors({ email: true, password: true });
+        } else {
+          setLoginFieldErrors({ email: true, pin: true });
+        }
       }
-
-      onNavigate('pos');
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || t.onboarding.loginFailed;
-      setAuthErrors([msg]);
-      if (loginMode === 'password') {
-        setLoginFieldErrors({ email: true, password: true });
-      } else {
-        setLoginFieldErrors({ email: true, pin: true });
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
+    });
   };
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
@@ -337,30 +264,18 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
 
     const { trimmedStore, trimmedEmail } = validation;
 
-    setIsSubmitting(true);
-    try {
-      const result = await executeStoreRegistration({
-        businessName: trimmedStore,
-        email: trimmedEmail,
-        password: regPassword,
-        pin: regPin,
-        offerGcash: regOfferGcash,
-        includeStarterProducts: regIncludeStarterProducts
-      });
-
-      if (!result.success && result.emailAlreadyExists) {
-        setAuthErrors([t.onboarding.emailAlreadyExists]);
+    await handleStoreRegistration({
+      businessName: trimmedStore,
+      email: trimmedEmail,
+      password: regPassword,
+      pin: regPin,
+      offerGcash: regOfferGcash,
+      includeStarterProducts: regIncludeStarterProducts,
+      onError: (msg) => {
+        setAuthErrors([msg]);
         setRegFieldErrors({ email: true });
-        return;
       }
-
-      onNavigate('pos');
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.message || t.onboarding.submitError;
-      setAuthError(msg);
-    } finally {
-      setIsSubmitting(false);
-    }
+    });
   };
 
   const handleExploreDemo = async () => {
@@ -385,27 +300,16 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   };
 
   const handleGoogleSuccess = async (tokenResponse: { access_token: string }) => {
-    setIsSubmitting(true);
     setAuthErrors([]);
-    try {
-      await processGoogleAuthFlow({
-        accessToken: tokenResponse.access_token,
-        businessName: activeTab === 'register' ? regStoreName.trim() : undefined,
-        pin: activeTab === 'register' ? regPin.trim() || undefined : undefined,
-        offerGcash: activeTab === 'register' ? regOfferGcash : true,
-        includeStarterProducts: activeTab === 'register' ? regIncludeStarterProducts : true,
-        onSuccess: () => onNavigate('pos'),
-        onUnsyncedDetected: (count, payload, localPin, newUserPreferences) => {
-          setPendingAuthPayload({ payload, localPin, newUserPreferences });
-          setUnsyncedLoginCount(count);
-          setIsUnsyncedDialogOpen(true);
-        },
-        onError: (msg) => setAuthErrors([msg]),
-        defaultErrorMessage: t.login.googleAuthFailed,
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
+    await handleGoogleAuth({
+      accessToken: tokenResponse.access_token,
+      businessName: activeTab === 'register' ? regStoreName.trim() || undefined : undefined,
+      pin: activeTab === 'register' ? regPin.trim() || undefined : undefined,
+      offerGcash: activeTab === 'register' ? regOfferGcash : true,
+      includeStarterProducts: activeTab === 'register' ? regIncludeStarterProducts : true,
+      onError: (msg) => setAuthErrors([msg]),
+      defaultErrorMessage: t.login.googleAuthFailed
+    });
   };
 
   const handleGoogleError = (err: unknown) => {
@@ -640,10 +544,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
       <ConfirmUnsyncedLoginDialog
         isOpen={isUnsyncedDialogOpen}
         unsyncedCount={unsyncedLoginCount}
-        onClose={() => {
-          setIsUnsyncedDialogOpen(false);
-          setPendingAuthPayload(null);
-        }}
+        onClose={closeUnsyncedDialog}
         onConfirmWipeAndLogin={handleConfirmWipeAndLogin}
         onSyncFirst={handleSyncFirst}
         isSyncing={isSyncingFirst}

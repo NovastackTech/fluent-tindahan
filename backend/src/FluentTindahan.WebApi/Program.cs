@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -12,6 +13,7 @@ using FluentTindahan.Infrastructure.Persistence;
 using FluentTindahan.Infrastructure.Services;
 using FluentTindahan.WebApi;
 using FluentTindahan.WebApi.Authorization;
+using FluentTindahan.WebApi.Controllers.Helpers;
 using FluentTindahan.WebApi.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -22,11 +24,16 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
     options.KnownNetworks.Clear();
     options.KnownProxies.Clear();
+    options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(IPAddress.Loopback, 8));
+    options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(IPAddress.IPv6Loopback, 128));
+    options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(IPAddress.Parse("10.0.0.0"), 8));
+    options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(IPAddress.Parse("172.16.0.0"), 12));
+    options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(IPAddress.Parse("192.168.0.0"), 16));
 });
 
 // Add Clean Architecture layers
 builder.Services.AddApplication();
-builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddInfrastructure(builder.Configuration, builder.Environment);
 
 // Add Controllers & JSON options
 builder.Services.AddControllers()
@@ -108,7 +115,7 @@ builder.Services.AddRateLimiter(options =>
             return RateLimitPartition.GetNoLimiter("authenticated");
         }
 
-        var clientIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var clientIp = AuthClaimsHelper.GetClientIpAddress(context);
         return RateLimitPartition.GetFixedWindowLimiter(clientIp, _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = 10,
@@ -120,7 +127,7 @@ builder.Services.AddRateLimiter(options =>
 
     options.AddPolicy("AuthSensitive", context =>
     {
-        var clientIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var clientIp = AuthClaimsHelper.GetClientIpAddress(context);
         var userIdentifier = context.User.Identity?.IsAuthenticated == true
             ? (context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
                ?? context.User.FindFirst("sub")?.Value
@@ -140,7 +147,7 @@ builder.Services.AddRateLimiter(options =>
 
     options.AddPolicy("PinLogin", context =>
     {
-        var clientIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var clientIp = AuthClaimsHelper.GetClientIpAddress(context);
         return RateLimitPartition.GetFixedWindowLimiter(clientIp, _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = 5,
