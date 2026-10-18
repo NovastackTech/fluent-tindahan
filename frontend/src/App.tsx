@@ -11,6 +11,7 @@ import {
   Button
 } from '@fluentui/react-components';
 import { DismissRegular } from '@fluentui/react-icons';
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import { sariSariLightTheme, sariSariDarkTheme } from './theme/theme';
 import { useThemeStore } from './state/themeStore';
 import { Header } from './components/Header';
@@ -257,9 +258,12 @@ export const App: React.FC = () => {
     handleBillingReturn().catch(console.error);
   }, [isOnboarded, isOnboardingStatusReady]);
 
+const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string) || 'fluent-tindahan-dev.apps.googleusercontent.com';
+
   return (
-    <FluentProvider theme={isDarkMode ? sariSariDarkTheme : sariSariLightTheme}>
-      <div className={styles.appContainer}>
+    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+      <FluentProvider theme={isDarkMode ? sariSariDarkTheme : sariSariLightTheme}>
+        <div className={styles.appContainer}>
         <Header onNavigate={handleTabChange} activeTab={activeTab} />
         <PwaUpdateToast />
         <PwaInstallBanner />
@@ -310,6 +314,7 @@ export const App: React.FC = () => {
         <TermsModal />
       </div>
     </FluentProvider>
+  </GoogleOAuthProvider>
   );
 };
 

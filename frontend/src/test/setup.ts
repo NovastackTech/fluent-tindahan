@@ -145,6 +145,16 @@ class MockResizeObserver {
 (window as any).ResizeObserver = MockResizeObserver;
 (globalThis as any).ResizeObserver = MockResizeObserver;
 
+// Mock @react-oauth/google to prevent external script injection in jsdom
+vi.mock('@react-oauth/google', () => ({
+  GoogleOAuthProvider: ({ children }: { children: React.ReactNode }) => children,
+  useGoogleLogin: vi.fn((options: { onSuccess?: (res: { access_token: string }) => void; onError?: (err: unknown) => void }) => {
+    return () => {
+      options.onSuccess?.({ access_token: 'mock-google-access-token' });
+    };
+  }),
+}));
+
 // Clear storages and mocks before each test
 beforeEach(() => {
   localStorage.clear();

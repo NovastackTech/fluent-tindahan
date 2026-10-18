@@ -36,8 +36,10 @@ import { validateRegistrationInput, validateLoginInput } from '../utils/registra
 import {
   executeStoreRegistration,
   executeStoreLogin,
+  processGoogleAuthFlow,
   finalizeSuccessfulLogin
 } from '../services/storeRegistration';
+import { GoogleAuthButton } from '../components/GoogleAuthButton';
 
 export interface LoginPageProps {
   onNavigate: (tab: NavTab) => void;
@@ -206,6 +208,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   const [pendingAuthPayload, setPendingAuthPayload] = useState<{
     payload: AuthResponseDto;
     localPin?: string;
+    newUserPreferences?: {
+      offerGcash?: boolean;
+      includeStarterProducts?: boolean;
+    };
   } | null>(null);
   const [isSyncingFirst, setIsSyncingFirst] = useState(false);
   const pendingSyncCount = useLiveQuery(() => db.syncQueue.count(), []) || 0;
@@ -220,7 +226,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
         pendingAuthPayload.localPin,
         true
       );
-      await finalizeSuccessfulLogin(pendingAuthPayload.payload.tenantId);
+      await finalizeSuccessfulLogin(pendingAuthPayload.payload.tenantId, {
+        isNewUser: pendingAuthPayload.payload.isNewUser,
+        businessName: pendingAuthPayload.payload.businessName,
+        offerGcash: pendingAuthPayload.newUserPreferences?.offerGcash,
+        includeStarterProducts: pendingAuthPayload.newUserPreferences?.includeStarterProducts
+      });
       onNavigate('pos');
     } finally {
       setIsSubmitting(false);
@@ -241,7 +252,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
           pendingAuthPayload.localPin,
           false
         );
-        await finalizeSuccessfulLogin(pendingAuthPayload.payload.tenantId);
+        await finalizeSuccessfulLogin(pendingAuthPayload.payload.tenantId, {
+          isNewUser: pendingAuthPayload.payload.isNewUser,
+          businessName: pendingAuthPayload.payload.businessName,
+          offerGcash: pendingAuthPayload.newUserPreferences?.offerGcash,
+          includeStarterProducts: pendingAuthPayload.newUserPreferences?.includeStarterProducts
+        });
         onNavigate('pos');
       }
     } catch (e) {
@@ -368,6 +384,35 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
     }
   };
 
+  const handleGoogleSuccess = async (tokenResponse: { access_token: string }) => {
+    setIsSubmitting(true);
+    setAuthErrors([]);
+    try {
+      await processGoogleAuthFlow({
+        accessToken: tokenResponse.access_token,
+        businessName: activeTab === 'register' ? regStoreName.trim() : undefined,
+        pin: activeTab === 'register' ? regPin.trim() || undefined : undefined,
+        offerGcash: activeTab === 'register' ? regOfferGcash : true,
+        includeStarterProducts: activeTab === 'register' ? regIncludeStarterProducts : true,
+        onSuccess: () => onNavigate('pos'),
+        onUnsyncedDetected: (count, payload, localPin, newUserPreferences) => {
+          setPendingAuthPayload({ payload, localPin, newUserPreferences });
+          setUnsyncedLoginCount(count);
+          setIsUnsyncedDialogOpen(true);
+        },
+        onError: (msg) => setAuthErrors([msg]),
+        defaultErrorMessage: t.login.googleAuthFailed,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleGoogleError = (err: unknown) => {
+    console.warn('[LoginPage] Google sign-in cancelled or failed:', err);
+    setAuthErrors([t.login.googleAuthFailed]);
+  };
+
   return (
     <div className={styles.pageRoot} id="login-page-root">
       <Card className={styles.card}>
@@ -472,6 +517,18 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
             >
               {t.landing.loginSubmitBtn}
             </Button>
+
+            <Divider style={{ margin: `${tokens.spacingVerticalM} 0` }}>
+              {t.login.orDivider}
+            </Divider>
+
+            <GoogleAuthButton
+              mode="login"
+              disabled={isSubmitting}
+              onSuccess={handleGoogleSuccess}
+              onError={handleGoogleError}
+              dataTestId="login-google-btn"
+            />
           </form>
         ) : (
           <form onSubmit={handleRegisterSubmit} noValidate>
@@ -531,6 +588,18 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
             >
               {t.landing.registerSubmitBtn}
             </Button>
+
+            <Divider style={{ margin: `${tokens.spacingVerticalM} 0` }}>
+              {t.login.orDivider}
+            </Divider>
+
+            <GoogleAuthButton
+              mode="register"
+              disabled={isSubmitting}
+              onSuccess={handleGoogleSuccess}
+              onError={handleGoogleError}
+              dataTestId="register-google-btn"
+            />
           </form>
         )}
 

@@ -732,6 +732,10 @@ export interface Translations {
     hasAccountText: string;
     switchModePassword: string;
     switchModePin: string;
+    continueWithGoogle: string;
+    signUpWithGoogle: string;
+    orDivider: string;
+    googleAuthFailed: string;
   };
 }
 
@@ -1522,7 +1526,11 @@ export const translations: Record<Language, Translations> = {
       noAccountText: 'Wala ka pang rehistradong tindahan?',
       hasAccountText: 'May account ka na ba?',
       switchModePassword: 'Mag-login gamit ang Password',
-      switchModePin: 'Mag-login gamit ang 4-digit PIN'
+      switchModePin: 'Mag-login gamit ang 4-digit PIN',
+      continueWithGoogle: 'Magpatuloy gamit ang Google',
+      signUpWithGoogle: 'Mag-sign up gamit ang Google',
+      orDivider: 'o kaya',
+      googleAuthFailed: 'Nabigo ang pag-sign in sa Google. Pakisubukan muli.'
     }
   },
   en: {
@@ -2229,7 +2237,11 @@ export const translations: Record<Language, Translations> = {
       noAccountText: "Don't have a registered store yet?",
       hasAccountText: 'Already have an account?',
       switchModePassword: 'Log in with Password',
-      switchModePin: 'Log in with 4-digit PIN'
+      switchModePin: 'Log in with 4-digit PIN',
+      continueWithGoogle: 'Continue with Google',
+      signUpWithGoogle: 'Sign up with Google',
+      orDivider: 'or',
+      googleAuthFailed: 'Google sign-in failed. Please try again.'
     }
   }
 };

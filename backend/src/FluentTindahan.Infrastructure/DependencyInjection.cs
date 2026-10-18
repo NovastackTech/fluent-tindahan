@@ -33,6 +33,7 @@ public static class DependencyInjection
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<IJwtTokenService, JwtTokenService>();
         services.AddHttpClient<IPaymentGatewayService, PayMongoPaymentGatewayService>();
+        services.AddHttpClient<IGoogleAuthService, GoogleAuthService>();
         services.AddHostedService<SubscriptionMonitorService>();
 
         return services;

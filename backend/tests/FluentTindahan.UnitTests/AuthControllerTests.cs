@@ -84,9 +84,10 @@ public class AuthControllerTests
         AppDbContext context,
         IJwtTokenService? jwtService = null,
         ICurrentUserService? currentUserService = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IGoogleAuthService? googleAuthService = null)
     {
-        return new AuthController(context, jwtService ?? DefaultJwtService, currentUserService, timeProvider);
+        return new AuthController(context, jwtService ?? DefaultJwtService, currentUserService, timeProvider, googleAuthService);
     }
 
     private static void SetAuthenticatedUser(
@@ -3163,6 +3164,268 @@ public class AuthControllerTests
             Email = ""
         }, CancellationToken.None);
         badEmailResult.Result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
+    public async Task GoogleAuth_MissingToken_ReturnsBadRequest()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        var result = await controller.GoogleAuth(new AuthController.GoogleAuthRequest(), CancellationToken.None);
+
+        result.Result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
+    public async Task GoogleAuth_InvalidOrUnverifiedToken_ReturnsUnauthorized()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var googleServiceMock = new Mock<IGoogleAuthService>();
+        googleServiceMock
+            .Setup(g => g.VerifyGoogleTokenAsync("invalid-token", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((GoogleUserInfo?)null);
+
+        var controller = CreateController(context, googleAuthService: googleServiceMock.Object);
+
+        var result = await controller.GoogleAuth(new AuthController.GoogleAuthRequest
+        {
+            AccessToken = "invalid-token"
+        }, CancellationToken.None);
+
+        result.Result.Should().BeOfType<UnauthorizedObjectResult>();
+    }
+
+    [Fact]
+    public async Task GoogleAuth_NewUser_ProvisionsTenantAndUserWithClientUuids()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var clientTenantId = Guid.NewGuid();
+        var clientUserId = Guid.NewGuid();
+
+        var googleServiceMock = new Mock<IGoogleAuthService>();
+        googleServiceMock
+            .Setup(g => g.VerifyGoogleTokenAsync("valid-token", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GoogleUserInfo("11223344", "maria.santos@gmail.com", true, "Maria Santos", "Maria"));
+
+        var controller = CreateController(context, googleAuthService: googleServiceMock.Object);
+
+        var result = await controller.GoogleAuth(new AuthController.GoogleAuthRequest
+        {
+            AccessToken = "valid-token",
+            TenantId = clientTenantId,
+            UserId = clientUserId,
+            BusinessName = "Maria's Sari-Sari Store",
+            Pin = "1234"
+        }, CancellationToken.None);
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = okResult.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        dto.TenantId.Should().Be(clientTenantId);
+        dto.UserId.Should().Be(clientUserId);
+        dto.Email.Should().Be("maria.santos@gmail.com");
+        dto.BusinessName.Should().Be("Maria's Sari-Sari Store");
+        dto.OwnerName.Should().Be("Maria Santos");
+        dto.HasPin.Should().BeTrue();
+        dto.IsNewUser.Should().BeTrue();
+        dto.Token.Should().NotBeNullOrWhiteSpace();
+
+        var savedUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == clientUserId);
+        savedUser.FirebaseUid.Should().Be("google:11223344");
+        savedUser.PasswordHash.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GoogleAuth_NewUserWithoutBusinessName_DefaultsToOwnerNameTindahan()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var googleServiceMock = new Mock<IGoogleAuthService>();
+        googleServiceMock
+            .Setup(g => g.VerifyGoogleTokenAsync("valid-token", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GoogleUserInfo("55667788", "juan.delacruz@gmail.com", true, "Juan Dela Cruz", "Juan"));
+
+        var controller = CreateController(context, googleAuthService: googleServiceMock.Object);
+
+        var result = await controller.GoogleAuth(new AuthController.GoogleAuthRequest
+        {
+            AccessToken = "valid-token"
+        }, CancellationToken.None);
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = okResult.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        dto.BusinessName.Should().Be("Juan's Tindahan");
+        dto.IsNewUser.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GoogleAuth_ExistingPasswordUser_LinksFirebaseUidAndLogsIn()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var existingTenantId = Guid.NewGuid();
+        var existingUserId = Guid.NewGuid();
+
+        var tenant = new Tenant
+        {
+            Id = existingTenantId,
+            BusinessName = "Pre-existing Negosyo",
+            Tier = PlanTier.Libre,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        var hasher = new PasswordHasher<User>();
+        var user = new User
+        {
+            Id = existingUserId,
+            TenantId = existingTenantId,
+            Email = "suki@gmail.com",
+            NormalizedEmail = "suki@gmail.com",
+            FirebaseUid = string.Empty,
+            Role = "Owner",
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        user.PasswordHash = hasher.HashPassword(user, "Password123!");
+        context.Tenants.Add(tenant);
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        var googleServiceMock = new Mock<IGoogleAuthService>();
+        googleServiceMock
+            .Setup(g => g.VerifyGoogleTokenAsync("valid-token", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GoogleUserInfo("99887766", "suki@gmail.com", true, "Suki Owner", "Suki"));
+
+        var controller = CreateController(context, googleAuthService: googleServiceMock.Object);
+
+        var result = await controller.GoogleAuth(new AuthController.GoogleAuthRequest
+        {
+            AccessToken = "valid-token"
+        }, CancellationToken.None);
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = okResult.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        dto.TenantId.Should().Be(existingTenantId);
+        dto.UserId.Should().Be(existingUserId);
+        dto.IsNewUser.Should().BeFalse();
+
+        var updatedUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == existingUserId);
+        updatedUser.FirebaseUid.Should().Be("google:99887766");
+    }
+
+    [Fact]
+    public async Task GoogleAuth_ExistingGoogleUser_LogsInAndIssuesTokens()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var existingTenantId = Guid.NewGuid();
+        var existingUserId = Guid.NewGuid();
+
+        var tenant = new Tenant
+        {
+            Id = existingTenantId,
+            BusinessName = "Aling Nena's Tindahan",
+            Tier = PlanTier.TindahanPro,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        var user = new User
+        {
+            Id = existingUserId,
+            TenantId = existingTenantId,
+            Email = "nena@gmail.com",
+            NormalizedEmail = "nena@gmail.com",
+            FirebaseUid = "google:sub-nena-123",
+            PasswordHash = string.Empty,
+            Role = "Owner",
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        context.Tenants.Add(tenant);
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        var googleServiceMock = new Mock<IGoogleAuthService>();
+        googleServiceMock
+            .Setup(g => g.VerifyGoogleTokenAsync("valid-token", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GoogleUserInfo("sub-nena-123", "nena@gmail.com", true, "Aling Nena", "Nena"));
+
+        var controller = CreateController(context, googleAuthService: googleServiceMock.Object);
+
+        var result = await controller.GoogleAuth(new AuthController.GoogleAuthRequest
+        {
+            AccessToken = "valid-token"
+        }, CancellationToken.None);
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = okResult.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        dto.TenantId.Should().Be(existingTenantId);
+        dto.UserId.Should().Be(existingUserId);
+        dto.PlanTier.Should().Be("TindahanPro");
+        dto.IsNewUser.Should().BeFalse();
+        dto.Token.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task UpdatePin_GoogleUserWithoutPassword_AllowsInitialPinAndRequiresOldPinForUpdate()
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var tenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        userMock.Setup(u => u.TenantId).Returns(tenantId);
+        userMock.Setup(u => u.UserId).Returns(userId);
+
+        var tenant = new Tenant
+        {
+            Id = tenantId,
+            BusinessName = "Google Store",
+            Tier = PlanTier.Libre,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        var user = new User
+        {
+            Id = userId,
+            TenantId = tenantId,
+            Email = "googleuser@gmail.com",
+            NormalizedEmail = "googleuser@gmail.com",
+            FirebaseUid = "google:user-999",
+            PasswordHash = string.Empty,
+            Role = "Owner",
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        context.Tenants.Add(tenant);
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        var controller = CreateController(context, currentUserService: userMock.Object);
+        SetAuthenticatedUser(controller, userId, tenantId, email: "googleuser@gmail.com");
+
+        // 1. Initial PIN set without password
+        var initialPinResult = await controller.UpdatePin(new AuthController.UpdatePinRequest
+        {
+            Password = "any",
+            Pin = "2468"
+        }, CancellationToken.None);
+
+        initialPinResult.Should().BeOfType<OkObjectResult>();
+
+        var updatedUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
+        updatedUser.PinHash.Should().NotBeNullOrEmpty();
+
+        // 2. Updating PIN with wrong previous PIN fails
+        var failResult = await controller.UpdatePin(new AuthController.UpdatePinRequest
+        {
+            Password = "9999",
+            Pin = "1357"
+        }, CancellationToken.None);
+
+        failResult.Should().BeOfType<UnauthorizedObjectResult>();
+
+        // 3. Updating PIN with correct current PIN succeeds
+        var successResult = await controller.UpdatePin(new AuthController.UpdatePinRequest
+        {
+            Password = "2468",
+            Pin = "1357"
+        }, CancellationToken.None);
+
+        successResult.Should().BeOfType<OkObjectResult>();
     }
 }
 

@@ -16,6 +16,17 @@ export interface AuthResponseDto {
   token: string;
   expiresAt: string;
   refreshToken?: string;
+  isNewUser?: boolean;
+}
+
+export interface GoogleAuthRequestPayload {
+  accessToken?: string;
+  idToken?: string;
+  businessName?: string;
+  pin?: string;
+  tenantId?: string;
+  userId?: string;
+  refreshToken?: string;
 }
 
 export interface RegisterRequestPayload {
@@ -193,6 +204,18 @@ export async function updateProfile(payload: UpdateProfileRequestPayload): Promi
 
 export async function refreshAuthToken(refreshToken: string): Promise<AuthResponseDto> {
   const response = await apiClient.post<AuthResponseDto>('/auth/refresh', { refreshToken });
+  return response.data;
+}
+
+export async function authenticateWithGoogle(payload: GoogleAuthRequestPayload): Promise<AuthResponseDto> {
+  const storedRefreshToken = typeof localStorage !== 'undefined'
+    ? localStorage.getItem('fluent_tindahan_refresh_token_v1')
+    : null;
+  const requestPayload: GoogleAuthRequestPayload = {
+    ...payload,
+    refreshToken: payload.refreshToken || storedRefreshToken || undefined
+  };
+  const response = await apiClient.post<AuthResponseDto>('/auth/google', requestPayload);
   return response.data;
 }
 

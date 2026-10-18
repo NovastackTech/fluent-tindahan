@@ -13,7 +13,8 @@ public static class AuthResponseBuilder
         Tenant? tenant,
         (string Token, DateTimeOffset ExpiresAt) access,
         string? refreshToken = null,
-        string? ownerName = null)
+        string? ownerName = null,
+        bool isNewUser = false)
     {
         var resolvedTenant = tenant ?? user.Tenant;
         var tier = resolvedTenant?.Tier ?? PlanTier.Libre;
@@ -32,7 +33,8 @@ public static class AuthResponseBuilder
             !string.IsNullOrEmpty(user.PinHash),
             access.Token,
             access.ExpiresAt,
-            refreshToken
+            refreshToken,
+            isNewUser
         );
     }
 }
