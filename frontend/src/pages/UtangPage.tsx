@@ -345,7 +345,10 @@ export const UtangPage: React.FC = () => {
       // Atomic read-check-write so concurrent submits cannot both pass the check
       const result = await db.transaction('rw', db.customers, db.utangLedger, db.syncQueue, async () => {
         const fresh = await db.customers.get(selectedCustomer.id);
-        const latestBalance = fresh ? getCustomerBalance(fresh) : currentBalance;
+        const entries = await db.utangLedger.where('tenantId').equals(tenantId).filter((e) => e.customerId === selectedCustomer.id).toArray();
+        const latestBalance = entries.length > 0
+          ? Math.max(0, entries.reduce((s, e) => s + (e.type === 'Credit' ? 1 : -1) * Math.round(e.amount * 100), 0)) / 100
+          : (fresh?.totalUtangBalance ?? 0);
         if (Math.round(amount * 100) > Math.round(latestBalance * 100)) {
           return { ok: false as const, currentBalance: latestBalance };
         }
