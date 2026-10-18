@@ -45,19 +45,17 @@ import {
   STORAGE_KEY_LAST_EMAIL,
   useAuthStore
 } from '../state/authStore';
-import { useSubscriptionStore } from '../state/subscriptionStore';
 import { useTranslation } from '../state/languageStore';
 import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
-import { createClientUuid, seedDexieDatabaseIfNeeded } from '../db/seedData';
+import { createClientUuid } from '../db/seedData';
 import { db } from '../db/db';
 import { normalizePhilippineMobile } from '../utils/philippineMobile';
-import { DEFAULT_GCASH_FEE_TIERS, useGCashFeeStore } from '../state/gcashFeeStore';
-import { processSyncQueue, updateQueueCounts, kickSync, pullCatalogFromServer } from '../sync/syncEngine';
+import { updateQueueCounts } from '../sync/syncEngine';
 import { ConfirmUnsyncedLoginDialog } from './ConfirmUnsyncedLoginDialog';
-import { registerStore, loginStore, loginPin, updateProfile, type AuthResponseDto } from '../services/authService';
+import { updateProfile } from '../services/authService';
 import { queuePendingProfileUpdate, clearPendingProfileUpdate } from '../services/profileSync';
-import { processGoogleAuthFlow } from '../services/storeRegistration';
 import { GoogleAuthButton } from './GoogleAuthButton';
+import { useStoreAuthFlow } from '../hooks/useStoreAuthFlow';
 
 const useStyles = makeStyles({
   surface: {
@@ -255,13 +253,30 @@ export const OnboardingModal: React.FC = () => {
     isOnboardingOpen,
     onboardingMode,
     closeOnboarding,
-    completeOnboarding,
     updateStoreProfile,
     loginWithAuthPayload
   } = useAuthStore();
 
   const isOpen = isOnboardingOpen && consentAccepted;
   const isEditMode = onboardingMode === 'edit' && isOnboarded;
+
+  const {
+    isUnsyncedDialogOpen,
+    unsyncedLoginCount,
+    isSyncingFirst,
+    isSubmitting,
+    setIsSubmitting,
+    closeUnsyncedDialog,
+    handleConfirmWipeAndLogin,
+    handleSyncFirst,
+    handleStoreLogin,
+    handleStoreRegistration,
+    handleGoogleAuth
+  } = useStoreAuthFlow({
+    onSuccess: closeOnboarding
+  });
+
+  const [submissionError, setSubmissionError] = useState('');
 
   const [activeTab, setActiveTab] = useState<'register' | 'login'>('register');
 
@@ -292,9 +307,7 @@ export const OnboardingModal: React.FC = () => {
   const [emailError, setEmailError] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [pinError, setPinError] = useState('');
-  const [submissionError, setSubmissionError] = useState('');
   const [offlineNotice, setOfflineNotice] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const submissionInFlight = useRef(false);
   const onboardingIds = useRef<{ tenantId: string; userId: string } | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -307,19 +320,6 @@ export const OnboardingModal: React.FC = () => {
     };
   }, []);
 
-  // Unsynced queue protection
-  const [isUnsyncedDialogOpen, setIsUnsyncedDialogOpen] = useState(false);
-  const [unsyncedLoginCount, setUnsyncedLoginCount] = useState(0);
-  const [pendingAuthPayload, setPendingAuthPayload] = useState<{
-    payload: AuthResponseDto;
-    localPin?: string;
-    newUserPreferences?: {
-      offerGcash?: boolean;
-      includeStarterProducts?: boolean;
-    };
-  } | null>(null);
-  const [isSyncingFirst, setIsSyncingFirst] = useState(false);
-
   const clearValidationErrors = () => {
     setBusinessNameError('');
     setPhoneError('');
@@ -329,85 +329,6 @@ export const OnboardingModal: React.FC = () => {
     setCurrentPasswordError('');
     setSubmissionError('');
     setOfflineNotice('');
-  };
-
-  const finishLogin = async (
-    payload: AuthResponseDto,
-    newUserPreferences?: {
-      offerGcash?: boolean;
-      includeStarterProducts?: boolean;
-    }
-  ) => {
-    useSubscriptionStore.setState({
-      tier: payload.tier,
-      subscriptionEndDate: payload.subscriptionEndDate,
-      isActive: payload.tier !== 'Libre'
-    });
-    void useSubscriptionStore.getState().refreshSubscription();
-
-    if (payload.isNewUser) {
-      await seedDexieDatabaseIfNeeded(
-        false,
-        payload.tenantId,
-        newUserPreferences?.includeStarterProducts === false,
-        payload.businessName
-      );
-      try {
-        const fees = newUserPreferences?.offerGcash !== false ? DEFAULT_GCASH_FEE_TIERS : DEFAULT_GCASH_FEE_TIERS.map(() => 0);
-        fees.forEach((fee, idx) => {
-          useGCashFeeStore.getState().setFeeForTenant(payload.tenantId, idx, fee);
-        });
-      } catch (fErr) {
-        console.warn('Could not set GCash fees:', fErr);
-      }
-    } else {
-      const productCount = await db.products.where('tenantId').equals(payload.tenantId).count();
-      if (productCount === 0) {
-        void pullCatalogFromServer().then(() => updateQueueCounts()).catch(console.error);
-      }
-    }
-
-    void processSyncQueue().catch(console.error);
-    closeOnboarding();
-  };
-
-  const handleConfirmWipeAndLogin = async () => {
-    if (!pendingAuthPayload) return;
-    setIsUnsyncedDialogOpen(false);
-    setIsSubmitting(true);
-    try {
-      await loginWithAuthPayload(
-        pendingAuthPayload.payload,
-        pendingAuthPayload.localPin,
-        true
-      );
-      await finishLogin(pendingAuthPayload.payload, pendingAuthPayload.newUserPreferences);
-    } finally {
-      setIsSubmitting(false);
-      setPendingAuthPayload(null);
-    }
-  };
-
-  const handleSyncFirst = async () => {
-    setIsSyncingFirst(true);
-    try {
-      await processSyncQueue();
-      const remaining = await db.syncQueue.count();
-      setUnsyncedLoginCount(remaining);
-      if (remaining === 0 && pendingAuthPayload) {
-        setIsUnsyncedDialogOpen(false);
-        await loginWithAuthPayload(
-          pendingAuthPayload.payload,
-          pendingAuthPayload.localPin,
-          false
-        );
-        await finishLogin(pendingAuthPayload.payload, pendingAuthPayload.newUserPreferences);
-      }
-    } catch (e) {
-      console.warn('Sync attempt failed:', e);
-    } finally {
-      setIsSyncingFirst(false);
-    }
   };
 
   useEffect(() => {
@@ -437,7 +358,7 @@ export const OnboardingModal: React.FC = () => {
     } else {
       onboardingIds.current = null;
     }
-  }, [isOpen, isEditMode, isOnboarded, businessName, ownerName, userPhone, userEmail]);
+  }, [isOpen, isEditMode, isOnboarded, businessName, ownerName, userPhone, userEmail, setIsSubmitting]);
   /* oxlint-enable react/set-state-in-effect */
 
   if (!isOpen) {
@@ -666,79 +587,20 @@ export const OnboardingModal: React.FC = () => {
       }
       const { tenantId: newTenantId, userId: newUserId } = onboardingIds.current;
 
-      // 1. Seed Dexie first (Zero Network Block / Local-First guarantee)
-      await seedDexieDatabaseIfNeeded(
-        false,
-        newTenantId,
-        catalogChoice === 'empty',
-        trimmedBusinessName
-      );
-
-      try {
-        const fees = offersGcash
-          ? DEFAULT_GCASH_FEE_TIERS
-          : DEFAULT_GCASH_FEE_TIERS.map(() => 0);
-        fees.forEach((fee, tierIndex) => {
-          useGCashFeeStore.getState().setFeeForTenant(newTenantId, tierIndex, fee);
-        });
-      } catch (feeError) {
-        console.warn('[OnboardingModal] Could not save GCash fees:', feeError);
-      }
-
-      // 2. Attempt online registration with server
-      let serverToken: string | undefined;
-      let registeredHasPin = Boolean(formPin.trim());
-
-      try {
-        const authResult = await registerStore({
-          tenantId: newTenantId,
-          userId: newUserId,
-          email: trimmedEmail,
-          password: formPassword,
-          pin: formPin.trim() || undefined,
-          businessName: trimmedBusinessName,
-          ownerName: trimmedOwnerName,
-          phone: normalizedPhone
-        });
-        serverToken = authResult.token;
-        registeredHasPin = authResult.hasPin;
-      } catch (apiErr: any) {
-        const status = apiErr?.response?.status;
-        if (status === 409) {
-          setSubmissionError(t.onboarding.emailAlreadyExists);
-          setIsSubmitting(false);
-          submissionInFlight.current = false;
-          return;
-        }
-
-        // Offline / network failure: allow local onboarding to proceed gracefully
-        console.warn('[OnboardingModal] Server registration offline or failed, continuing locally:', apiErr);
-        setOfflineNotice(t.onboarding.offlineRegisterNotice);
-      }
-
-      completeOnboarding({
+      await handleStoreRegistration({
         businessName: trimmedBusinessName,
         ownerName: trimmedOwnerName,
-        userPhone: normalizedPhone,
-        userEmail: trimmedEmail,
+        phone: normalizedPhone,
+        email: trimmedEmail,
+        password: formPassword,
+        pin: formPin.trim() || undefined,
+        offersGcash,
+        includeStarterProducts: catalogChoice !== 'empty',
         tenantId: newTenantId,
         userId: newUserId,
-        hasPin: registeredHasPin,
-        localPin: formPin.trim() || undefined,
-        token: serverToken
+        onError: setSubmissionError,
+        onOfflineNotice: () => setOfflineNotice(t.onboarding.offlineRegisterNotice)
       });
-
-      useSubscriptionStore.setState({
-        tier: 'Libre',
-        subscriptionEndDate: null,
-        isActive: false,
-        daysRemaining: null
-      });
-
-      void useSubscriptionStore.getState().refreshSubscription();
-      await updateQueueCounts();
-      void kickSync();
-      closeOnboarding();
     } catch (err) {
       console.error('[OnboardingModal] Failed to complete registration:', err);
       setSubmissionError(t.onboarding.submitError);
@@ -754,84 +616,29 @@ export const OnboardingModal: React.FC = () => {
     if (!validateLogin()) return;
 
     submissionInFlight.current = true;
-    setSubmissionError('');
-    setIsSubmitting(true);
-
     try {
-      const trimmedEmail = loginEmail.trim().toLowerCase();
-      let authResult;
-
-      if (loginMode === 'password') {
-        authResult = await loginStore({
-          email: trimmedEmail,
-          password: loginPassword
-        });
-      } else {
-        authResult = await loginPin({
-          email: trimmedEmail,
-          pin: loginPinVal.trim()
-        });
-      }
-
-      const loginRes = await loginWithAuthPayload(
-        authResult,
-        loginMode === 'pin' ? loginPinVal.trim() : undefined,
-        false
-      );
-
-      if (!loginRes.success) {
-        setPendingAuthPayload({
-          payload: authResult,
-          localPin: loginMode === 'pin' ? loginPinVal.trim() : undefined
-        });
-        setUnsyncedLoginCount(loginRes.unsyncedCount);
-        setIsUnsyncedDialogOpen(true);
-        setIsSubmitting(false);
-        return;
-      }
-
-      await finishLogin(authResult);
-    } catch (apiErr: any) {
-      const status = apiErr?.response?.status;
-      const responseData = apiErr?.response?.data;
-
-      if (status === 429) {
-        setSubmissionError(responseData?.message || t.settings.invalidPinOrPassword);
-      } else if (status === 401) {
-        setSubmissionError(responseData?.message || t.onboarding.loginFailed);
-      } else if (!navigator.onLine || apiErr?.code === 'ERR_NETWORK') {
-        setSubmissionError(t.banner.offlineDesc);
-      } else {
-        setSubmissionError(responseData?.message || t.onboarding.loginFailed);
-      }
+      await handleStoreLogin({
+        email: loginEmail,
+        password: loginMode === 'password' ? loginPassword : '',
+        pin: loginMode === 'pin' ? loginPinVal : '',
+        loginMode,
+        onError: setSubmissionError
+      });
     } finally {
       submissionInFlight.current = false;
-      setIsSubmitting(false);
     }
   };
 
   const handleGoogleSuccess = async (tokenResponse: { access_token: string }) => {
-    setIsSubmitting(true);
-    setSubmissionError('');
-    try {
-      await processGoogleAuthFlow({
-        accessToken: tokenResponse.access_token,
-        businessName: activeTab === 'register' ? formBusinessName.trim() || undefined : undefined,
-        pin: activeTab === 'register' ? formPin.trim() || undefined : undefined,
-        offerGcash: activeTab === 'register' ? offersGcash : true,
-        includeStarterProducts: activeTab === 'register' ? catalogChoice !== 'empty' : true,
-        onSuccess: closeOnboarding,
-        onUnsyncedDetected: (count, payload, localPin, newUserPreferences) => {
-          setPendingAuthPayload({ payload, localPin, newUserPreferences });
-          setUnsyncedLoginCount(count);
-          setIsUnsyncedDialogOpen(true);
-        },
-        onError: setSubmissionError,
-        defaultErrorMessage: t.login.googleAuthFailed,
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
+    await handleGoogleAuth({
+      accessToken: tokenResponse.access_token,
+      businessName: activeTab === 'register' ? formBusinessName.trim() || undefined : undefined,
+      pin: activeTab === 'register' ? formPin.trim() || undefined : undefined,
+      offerGcash: activeTab === 'register' ? offersGcash : true,
+      includeStarterProducts: activeTab === 'register' ? catalogChoice !== 'empty' : true,
+      defaultErrorMessage: t.login.googleAuthFailed,
+      onError: setSubmissionError
+    });
   };
 
   const handleGoogleError = (err: unknown) => {
@@ -1265,10 +1072,7 @@ export const OnboardingModal: React.FC = () => {
     <ConfirmUnsyncedLoginDialog
       isOpen={isUnsyncedDialogOpen}
       unsyncedCount={unsyncedLoginCount}
-      onClose={() => {
-        setIsUnsyncedDialogOpen(false);
-        setPendingAuthPayload(null);
-      }}
+      onClose={closeUnsyncedDialog}
       onConfirmWipeAndLogin={handleConfirmWipeAndLogin}
       onSyncFirst={handleSyncFirst}
       isSyncing={isSyncingFirst}

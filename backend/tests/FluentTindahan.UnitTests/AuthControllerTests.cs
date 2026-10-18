@@ -3364,6 +3364,218 @@ public class AuthControllerTests
     }
 
     [Fact]
+    public async Task GoogleAuth_LegacyUserLinking_UpdatesFirebaseUidAndBackfillsEmail()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var tenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+
+        var tenant = new Tenant
+        {
+            Id = tenantId,
+            BusinessName = "Legacy Tindahan",
+            Tier = PlanTier.Libre,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        var user = new User
+        {
+            Id = userId,
+            TenantId = tenantId,
+            Email = "",
+            NormalizedEmail = "legacy@gmail.com",
+            FirebaseUid = "demo-firebase-uid",
+            OwnerName = "Old Owner Name",
+            Role = "Owner",
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        context.Tenants.Add(tenant);
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        var googleServiceMock = new Mock<IGoogleAuthService>();
+        googleServiceMock
+            .Setup(g => g.VerifyGoogleTokenAsync("valid-token", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GoogleUserInfo("google-sub-777", "legacy@gmail.com", true, "New Google Name", "New"));
+
+        var controller = CreateController(context, googleAuthService: googleServiceMock.Object);
+
+        var result = await controller.GoogleAuth(new AuthController.GoogleAuthRequest
+        {
+            AccessToken = "valid-token"
+        }, CancellationToken.None);
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = okResult.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        dto.IsNewUser.Should().BeFalse();
+        dto.UserId.Should().Be(userId);
+        dto.TenantId.Should().Be(tenantId);
+        dto.OwnerName.Should().Be("Old Owner Name");
+
+        var updatedUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
+        updatedUser.FirebaseUid.Should().Be("google:google-sub-777");
+        updatedUser.Email.Should().Be("legacy@gmail.com");
+        updatedUser.NormalizedEmail.Should().Be("legacy@gmail.com");
+    }
+
+    [Fact]
+    public async Task GoogleAuth_LegacyUserWithoutTenant_ProvisionsMissingTenantAndSucceeds()
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var tempTenantId = Guid.NewGuid();
+        userMock.Setup(u => u.TenantId).Returns(tempTenantId);
+        var userId = Guid.NewGuid();
+
+        var user = new User
+        {
+            Id = userId,
+            TenantId = tempTenantId,
+            Email = "notenant@gmail.com",
+            NormalizedEmail = "notenant@gmail.com",
+            FirebaseUid = "demo-firebase-uid",
+            Role = "Owner",
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        // Mutate legacy user to have Guid.Empty TenantId (legacy unlinked state)
+        user.TenantId = Guid.Empty;
+        await context.SaveChangesAsync();
+
+        // Anonymous unauthenticated caller
+        userMock.Setup(u => u.TenantId).Returns(Guid.Empty);
+
+        var googleServiceMock = new Mock<IGoogleAuthService>();
+        googleServiceMock
+            .Setup(g => g.VerifyGoogleTokenAsync("valid-token", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GoogleUserInfo("google-sub-888", "notenant@gmail.com", true, "Recovered Owner", "Recovered"));
+
+        var controller = CreateController(context, googleAuthService: googleServiceMock.Object);
+
+        var result = await controller.GoogleAuth(new AuthController.GoogleAuthRequest
+        {
+            AccessToken = "valid-token"
+        }, CancellationToken.None);
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = okResult.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        dto.IsNewUser.Should().BeFalse();
+        dto.UserId.Should().Be(userId);
+        dto.TenantId.Should().NotBe(Guid.Empty);
+
+        var updatedUser = await context.Users.IgnoreQueryFilters().Include(u => u.Tenant).FirstAsync(u => u.Id == userId);
+        updatedUser.TenantId.Should().NotBe(Guid.Empty);
+        updatedUser.Tenant.Should().NotBeNull();
+        updatedUser.Tenant!.Id.Should().Be(updatedUser.TenantId);
+        updatedUser.FirebaseUid.Should().Be("google:google-sub-888");
+
+        var tokenRecord = await context.UserRefreshTokens.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.UserId == userId);
+        tokenRecord.Should().NotBeNull();
+        tokenRecord!.TenantId.Should().Be(updatedUser.TenantId);
+    }
+
+    [Fact]
+    public async Task GoogleAuth_LegacyUserOrphanedTenant_ProvisionsTenantWithExistingTenantId()
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        userMock.Setup(u => u.TenantId).Returns(Guid.Empty);
+        var orphanedTenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+
+        var user = new User
+        {
+            Id = userId,
+            TenantId = orphanedTenantId,
+            Email = "orphaned@gmail.com",
+            NormalizedEmail = "orphaned@gmail.com",
+            FirebaseUid = "google:orphaned-sub",
+            Role = "Owner",
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        var googleServiceMock = new Mock<IGoogleAuthService>();
+        googleServiceMock
+            .Setup(g => g.VerifyGoogleTokenAsync("valid-token", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GoogleUserInfo("orphaned-sub", "orphaned@gmail.com", true, "Orphaned Suki", "Orphaned"));
+
+        var controller = CreateController(context, googleAuthService: googleServiceMock.Object);
+
+        var result = await controller.GoogleAuth(new AuthController.GoogleAuthRequest
+        {
+            AccessToken = "valid-token"
+        }, CancellationToken.None);
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = okResult.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        dto.IsNewUser.Should().BeFalse();
+        dto.TenantId.Should().Be(orphanedTenantId);
+
+        var provisionedTenant = await context.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == orphanedTenantId);
+        provisionedTenant.Should().NotBeNull();
+        provisionedTenant!.BusinessName.Should().Contain("Orphaned Suki");
+    }
+
+    [Fact]
+    public async Task GoogleAuth_LongOwnerNameAndSubject_TruncatesToMaxLengths()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var tenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+
+        var tenant = new Tenant
+        {
+            Id = tenantId,
+            BusinessName = "Tindahan",
+            Tier = PlanTier.Libre,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        var user = new User
+        {
+            Id = userId,
+            TenantId = tenantId,
+            Email = "longfields@gmail.com",
+            NormalizedEmail = "longfields@gmail.com",
+            FirebaseUid = "",
+            OwnerName = null,
+            Role = "Owner",
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        context.Tenants.Add(tenant);
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        var longFullName = new string('A', 150);
+        var longSubject = new string('9', 150);
+
+        var googleServiceMock = new Mock<IGoogleAuthService>();
+        googleServiceMock
+            .Setup(g => g.VerifyGoogleTokenAsync("valid-token", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GoogleUserInfo(longSubject, "longfields@gmail.com", true, longFullName, "A"));
+
+        var controller = CreateController(context, googleAuthService: googleServiceMock.Object);
+
+        var result = await controller.GoogleAuth(new AuthController.GoogleAuthRequest
+        {
+            AccessToken = "valid-token"
+        }, CancellationToken.None);
+
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = okResult.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        dto.OwnerName.Should().HaveLength(100).And.Be(new string('A', 100));
+
+        var updatedUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
+        updatedUser.OwnerName.Should().HaveLength(100).And.Be(new string('A', 100));
+        var expectedSubject = $"google:{longSubject}"[..128];
+        updatedUser.FirebaseUid.Should().HaveLength(128).And.Be(expectedSubject);
+    }
+
+    [Fact]
     public async Task UpdatePin_GoogleUserWithoutPassword_AllowsInitialPinAndRequiresOldPinForUpdate()
     {
         var (context, userMock) = CreateInMemoryContext();

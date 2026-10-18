@@ -1,3 +1,4 @@
+using System.Net;
 using System.Security.Claims;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
@@ -141,6 +142,187 @@ public class AuthHelperTests
 
         AuthLockoutHelper.ResetIpPinThrottle(clientIp);
         AuthLockoutHelper.IsIpPinThrottled(clientIp, timeProvider, out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void IpPinThrottle_SweepExpiredThrottles_PrunesExpiredEntries()
+    {
+        AuthLockoutHelper.ResetAllIpPinThrottles();
+        var timeProvider = new MutableTimeProvider(DateTimeOffset.UtcNow);
+
+        // IP1: 1 failure at T0 (failure window 15m)
+        AuthLockoutHelper.RecordIpPinFailure("10.0.0.1", timeProvider, out _, out _);
+
+        // IP2: 5 failures at T0 (lockout until T0 + 15m)
+        for (int i = 0; i < 5; i++)
+        {
+            AuthLockoutHelper.RecordIpPinFailure("10.0.0.2", timeProvider, out _, out _);
+        }
+
+        // Advance 10m
+        timeProvider.Advance(TimeSpan.FromMinutes(10));
+
+        // IP3: 1 failure at T0 + 10m (valid until T0 + 25m)
+        AuthLockoutHelper.RecordIpPinFailure("10.0.0.3", timeProvider, out _, out _);
+
+        AuthLockoutHelper.GetIpThrottleCount().Should().Be(3);
+
+        // Advance another 6m (now at T0 + 16m)
+        timeProvider.Advance(TimeSpan.FromMinutes(6));
+
+        // Sweep expired throttles: IP1 and IP2 expired (> 15m), IP3 has 9m left
+        var pruned = AuthLockoutHelper.SweepExpiredThrottles(timeProvider);
+        pruned.Should().Be(2);
+
+        AuthLockoutHelper.GetIpThrottleCount().Should().Be(1);
+        AuthLockoutHelper.IsIpPinThrottled("10.0.0.3", timeProvider, out _).Should().BeFalse();
+
+        // Second failure for IP3 records as attempt 2
+        var ip3Attempts = AuthLockoutHelper.RecordIpPinFailure("10.0.0.3", timeProvider, out _, out _);
+        ip3Attempts.Should().Be(2);
+    }
+
+    [Fact]
+    public void IpPinThrottle_IsIpPinThrottled_PrunesExpiredEntryOnAccess()
+    {
+        AuthLockoutHelper.ResetAllIpPinThrottles();
+        var timeProvider = new MutableTimeProvider(DateTimeOffset.UtcNow);
+
+        for (int i = 0; i < 5; i++)
+        {
+            AuthLockoutHelper.RecordIpPinFailure("10.0.0.99", timeProvider, out _, out _);
+        }
+
+        AuthLockoutHelper.IsIpPinThrottled("10.0.0.99", timeProvider, out var remaining).Should().BeTrue();
+        remaining.Should().Be(15);
+        AuthLockoutHelper.GetIpThrottleCount().Should().Be(1);
+
+        // Advance past 15m lockout
+        timeProvider.Advance(TimeSpan.FromMinutes(16));
+
+        // On read, the expired entry should be pruned
+        AuthLockoutHelper.IsIpPinThrottled("10.0.0.99", timeProvider, out _).Should().BeFalse();
+        AuthLockoutHelper.GetIpThrottleCount().Should().Be(0);
+    }
+
+    [Fact]
+    public async Task IpPinThrottle_ResetAllIpPinThrottles_ConcurrentAccess_IsRaceFree()
+    {
+        AuthLockoutHelper.ResetAllIpPinThrottles();
+        var timeProvider = new MutableTimeProvider(DateTimeOffset.UtcNow);
+
+        var tasks = Enumerable.Range(0, 30).Select(async taskId =>
+        {
+            for (int i = 0; i < 50; i++)
+            {
+                var ip = $"192.168.0.{taskId % 5}";
+                if (i % 5 == 0)
+                {
+                    AuthLockoutHelper.ResetAllIpPinThrottles();
+                }
+                else if (i % 3 == 0)
+                {
+                    AuthLockoutHelper.ResetIpPinThrottle(ip);
+                }
+                else if (i % 2 == 0)
+                {
+                    AuthLockoutHelper.RecordIpPinFailure(ip, timeProvider, out _, out _);
+                }
+                else
+                {
+                    AuthLockoutHelper.IsIpPinThrottled(ip, timeProvider, out _);
+                }
+
+                await Task.Yield();
+            }
+        });
+
+        Func<Task> act = async () => await Task.WhenAll(tasks);
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task UserPinLock_SweepIdleUserLocks_PrunesIdleLocksAndPreservesActiveLocks()
+    {
+        AuthLockoutHelper.ResetAllUserPinLocks();
+        var timeProvider = new MutableTimeProvider(DateTimeOffset.UtcNow);
+
+        var user1 = Guid.NewGuid();
+        var user2 = Guid.NewGuid();
+        var user3 = Guid.NewGuid();
+
+        // User 1 gets lock but doesn't hold it
+        var lock1 = AuthLockoutHelper.GetUserPinLock(user1, timeProvider);
+        lock1.CurrentCount.Should().Be(1);
+
+        // User 2 gets lock and holds it
+        var lock2 = AuthLockoutHelper.GetUserPinLock(user2, timeProvider);
+        await lock2.WaitAsync();
+
+        // Advance 10m
+        timeProvider.Advance(TimeSpan.FromMinutes(10));
+
+        // User 3 accessed now (fresh)
+        var lock3 = AuthLockoutHelper.GetUserPinLock(user3, timeProvider);
+
+        AuthLockoutHelper.GetUserPinLockCount().Should().Be(3);
+
+        // Sweep with 5m timeout:
+        // user1: idle for 10m, CurrentCount == 1 -> pruned
+        // user2: accessed 10m ago, but CurrentCount == 0 (held) -> NOT pruned
+        // user3: accessed 0m ago -> NOT pruned
+        var pruned = AuthLockoutHelper.SweepIdleUserLocks(timeProvider, TimeSpan.FromMinutes(5));
+        pruned.Should().Be(1);
+        AuthLockoutHelper.GetUserPinLockCount().Should().Be(2);
+
+        lock2.Release();
+    }
+
+    [Fact]
+    public async Task UserPinLock_ConcurrentLockAcquisition_IsRaceFreeAndEnforcesMutualExclusion()
+    {
+        AuthLockoutHelper.ResetAllUserPinLocks();
+        var timeProvider = new MutableTimeProvider(DateTimeOffset.UtcNow);
+        var userId = Guid.NewGuid();
+
+        var concurrentHolderCount = 0;
+        var maxObservedConcurrency = 0;
+        var iterations = 25;
+
+        var tasks = Enumerable.Range(0, 10).Select(async _ =>
+        {
+            for (int i = 0; i < iterations; i++)
+            {
+                var userLock = AuthLockoutHelper.GetUserPinLock(userId, timeProvider);
+                await userLock.WaitAsync();
+                try
+                {
+                    var current = Interlocked.Increment(ref concurrentHolderCount);
+                    if (current > maxObservedConcurrency)
+                    {
+                        Interlocked.Exchange(ref maxObservedConcurrency, current);
+                    }
+
+                    await Task.Delay(2);
+                    Interlocked.Decrement(ref concurrentHolderCount);
+                }
+                finally
+                {
+                    userLock.Release();
+                }
+
+                // Randomly trigger sweeps concurrently
+                if (i % 5 == 0)
+                {
+                    AuthLockoutHelper.SweepIdleUserLocks(timeProvider, TimeSpan.Zero);
+                }
+            }
+        });
+
+        await Task.WhenAll(tasks);
+
+        maxObservedConcurrency.Should().Be(1);
+        concurrentHolderCount.Should().Be(0);
     }
 
     #endregion
@@ -312,6 +494,63 @@ public class AuthHelperTests
         dto.Token.Should().Be("token123");
         dto.ExpiresAt.Should().Be(expiresAt);
         dto.RefreshToken.Should().Be("refreshToken456");
+    }
+
+    #endregion
+
+    #region AuthClaimsHelper Tests
+
+    [Fact]
+    public void GetClientIpAddress_WhenXForwardedForPresent_ReturnsFirstIp()
+    {
+        var context = new DefaultHttpContext();
+        context.Connection.RemoteIpAddress = IPAddress.Parse("127.0.0.1");
+        context.Request.Headers["X-Forwarded-For"] = "203.0.113.195, 70.41.3.18, 150.172.238.178";
+
+        var ip = AuthClaimsHelper.GetClientIpAddress(context);
+
+        ip.Should().Be("203.0.113.195");
+    }
+
+    [Fact]
+    public void GetClientIpAddress_WhenXRealIpPresent_AndNoXForwardedFor_ReturnsXRealIp()
+    {
+        var context = new DefaultHttpContext();
+        context.Connection.RemoteIpAddress = IPAddress.Parse("127.0.0.1");
+        context.Request.Headers["X-Real-IP"] = "198.51.100.42";
+
+        var ip = AuthClaimsHelper.GetClientIpAddress(context);
+
+        ip.Should().Be("198.51.100.42");
+    }
+
+    [Fact]
+    public void GetClientIpAddress_WhenNoForwardedHeaders_ReturnsRemoteIpAddress()
+    {
+        var context = new DefaultHttpContext();
+        context.Connection.RemoteIpAddress = IPAddress.Parse("192.168.1.50");
+
+        var ip = AuthClaimsHelper.GetClientIpAddress(context);
+
+        ip.Should().Be("192.168.1.50");
+    }
+
+    [Fact]
+    public void GetClientIpAddress_WhenNoHeadersAndNoRemoteIp_ReturnsDefaultLocalhost()
+    {
+        var context = new DefaultHttpContext();
+
+        var ip = AuthClaimsHelper.GetClientIpAddress(context);
+
+        ip.Should().Be("127.0.0.1");
+    }
+
+    [Fact]
+    public void GetClientIpAddress_WhenHttpContextNull_ReturnsDefaultLocalhost()
+    {
+        var ip = AuthClaimsHelper.GetClientIpAddress(null);
+
+        ip.Should().Be("127.0.0.1");
     }
 
     #endregion

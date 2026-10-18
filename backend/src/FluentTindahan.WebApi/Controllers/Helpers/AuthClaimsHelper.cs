@@ -16,20 +16,38 @@ public static class AuthClaimsHelper
 {
     public static string GetClientIpAddress(HttpContext? httpContext)
     {
-        var clientIp = httpContext?.Connection?.RemoteIpAddress?.ToString();
-        if (string.IsNullOrWhiteSpace(clientIp))
+        if (httpContext == null)
         {
-            if (httpContext?.Request.Headers.TryGetValue("X-Forwarded-For", out var forwardedFor) == true &&
-                !string.IsNullOrWhiteSpace(forwardedFor))
+            return "127.0.0.1";
+        }
+
+        if (httpContext.Request.Headers.TryGetValue("X-Forwarded-For", out var forwardedFor) &&
+            !string.IsNullOrWhiteSpace(forwardedFor))
+        {
+            var clientIp = forwardedFor.ToString().Split(',')[0].Trim();
+            if (!string.IsNullOrWhiteSpace(clientIp))
             {
-                clientIp = forwardedFor.ToString().Split(',')[0].Trim();
-            }
-            else
-            {
-                clientIp = "127.0.0.1";
+                return clientIp;
             }
         }
-        return clientIp;
+
+        if (httpContext.Request.Headers.TryGetValue("X-Real-IP", out var realIp) &&
+            !string.IsNullOrWhiteSpace(realIp))
+        {
+            var clientIp = realIp.ToString().Trim();
+            if (!string.IsNullOrWhiteSpace(clientIp))
+            {
+                return clientIp;
+            }
+        }
+
+        var remoteIp = httpContext.Connection?.RemoteIpAddress?.ToString();
+        if (!string.IsNullOrWhiteSpace(remoteIp))
+        {
+            return remoteIp;
+        }
+
+        return "127.0.0.1";
     }
 
     public static Guid? ResolveUserId(ICurrentUserService? currentUserService, ClaimsPrincipal? userPrincipal)

@@ -92,39 +92,66 @@ public class GoogleAuthService : IGoogleAuthService
             }
 
             var tokenInfoUrl = $"https://oauth2.googleapis.com/tokeninfo?access_token={Uri.EscapeDataString(accessToken)}";
-            using var infoResp = await _httpClient.GetAsync(tokenInfoUrl, cancellationToken);
-            if (!infoResp.IsSuccessStatusCode)
-            {
-                _logger.LogWarning("Google tokeninfo verification failed with status {StatusCode}", infoResp.StatusCode);
-                return null;
-            }
-
-            var infoJson = await infoResp.Content.ReadAsStringAsync(cancellationToken);
-            using var infoDoc = JsonDocument.Parse(infoJson);
-            var infoRoot = infoDoc.RootElement;
-
-            var aud = infoRoot.TryGetProperty("aud", out var audProp) ? audProp.GetString() : null;
-            var azp = infoRoot.TryGetProperty("azp", out var azpProp) ? azpProp.GetString() : null;
-            if (!string.Equals(aud, expectedClientId, StringComparison.Ordinal) &&
-                !string.Equals(azp, expectedClientId, StringComparison.Ordinal))
-            {
-                _logger.LogWarning("Google access token audience {Aud} / azp {Azp} did not match expected client id", aud, azp);
-                return null;
-            }
+            var tokenInfoTask = _httpClient.GetAsync(tokenInfoUrl, cancellationToken);
 
             using var request = new HttpRequestMessage(HttpMethod.Get, "https://www.googleapis.com/oauth2/v3/userinfo");
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+            var userInfoTask = _httpClient.SendAsync(request, cancellationToken);
 
-            using var response = await _httpClient.SendAsync(request, cancellationToken);
-            if (!response.IsSuccessStatusCode)
+            HttpResponseMessage? infoResp = null;
+            HttpResponseMessage? response = null;
+
+            try
             {
-                _logger.LogWarning("Google userinfo verification failed with status {StatusCode}", response.StatusCode);
-                return null;
+                await Task.WhenAll(tokenInfoTask, userInfoTask);
+                infoResp = await tokenInfoTask;
+                response = await userInfoTask;
+            }
+            catch
+            {
+                if (tokenInfoTask.IsCompletedSuccessfully)
+                {
+                    tokenInfoTask.Result.Dispose();
+                }
+                if (userInfoTask.IsCompletedSuccessfully)
+                {
+                    userInfoTask.Result.Dispose();
+                }
+                throw;
             }
 
-            var json = await response.Content.ReadAsStringAsync(cancellationToken);
-            using var doc = JsonDocument.Parse(json);
-            return ExtractGoogleUserInfo(doc.RootElement);
+            using (infoResp)
+            using (response)
+            {
+                if (!infoResp.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("Google tokeninfo verification failed with status {StatusCode}", infoResp.StatusCode);
+                    return null;
+                }
+
+                var infoJson = await infoResp.Content.ReadAsStringAsync(cancellationToken);
+                using var infoDoc = JsonDocument.Parse(infoJson);
+                var infoRoot = infoDoc.RootElement;
+
+                var aud = infoRoot.TryGetProperty("aud", out var audProp) ? audProp.GetString() : null;
+                var azp = infoRoot.TryGetProperty("azp", out var azpProp) ? azpProp.GetString() : null;
+                if (!string.Equals(aud, expectedClientId, StringComparison.Ordinal) &&
+                    !string.Equals(azp, expectedClientId, StringComparison.Ordinal))
+                {
+                    _logger.LogWarning("Google access token audience {Aud} / azp {Azp} did not match expected client id", aud, azp);
+                    return null;
+                }
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("Google userinfo verification failed with status {StatusCode}", response.StatusCode);
+                    return null;
+                }
+
+                var json = await response.Content.ReadAsStringAsync(cancellationToken);
+                using var doc = JsonDocument.Parse(json);
+                return ExtractGoogleUserInfo(doc.RootElement);
+            }
         }
         catch (Exception ex)
         {

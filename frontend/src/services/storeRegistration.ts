@@ -8,10 +8,17 @@ import { updateQueueCounts, kickSync, restoreTenantDataFromServer, processSyncQu
 export interface ExecuteStoreRegistrationParams {
   businessName: string;
   email: string;
-  password: string;
+  password?: string;
   pin?: string;
+  ownerName?: string;
+  phone?: string;
   offerGcash?: boolean;
+  offersGcash?: boolean;
   includeStarterProducts?: boolean;
+  tenantId?: string;
+  userId?: string;
+  onError?: (msg: string) => void;
+  onOfflineNotice?: () => void;
 }
 
 export interface ExecuteStoreRegistrationResult {
@@ -22,8 +29,8 @@ export interface ExecuteStoreRegistrationResult {
 export async function executeStoreRegistration(
   params: ExecuteStoreRegistrationParams
 ): Promise<ExecuteStoreRegistrationResult> {
-  const newTenantId = createClientUuid();
-  const newUserId = createClientUuid();
+  const newTenantId = params.tenantId || createClientUuid();
+  const newUserId = params.userId || createClientUuid();
 
   // 1. Seed Dexie first (Zero Network Block Guarantee)
   await seedDexieDatabaseIfNeeded(
@@ -35,7 +42,10 @@ export async function executeStoreRegistration(
 
   // 2. Save initial GCash fees
   try {
-    const fees = params.offerGcash !== false ? DEFAULT_GCASH_FEE_TIERS : DEFAULT_GCASH_FEE_TIERS.map(() => 0);
+    const isOfferingGcash = params.offersGcash !== undefined
+      ? params.offersGcash
+      : params.offerGcash !== false;
+    const fees = isOfferingGcash ? DEFAULT_GCASH_FEE_TIERS : DEFAULT_GCASH_FEE_TIERS.map(() => 0);
     fees.forEach((fee, idx) => {
       useGCashFeeStore.getState().setFeeForTenant(newTenantId, idx, fee);
     });
@@ -51,21 +61,27 @@ export async function executeStoreRegistration(
       tenantId: newTenantId,
       userId: newUserId,
       email: params.email,
-      password: params.password,
+      password: params.password || '',
       pin: params.pin?.trim() || undefined,
-      businessName: params.businessName
+      businessName: params.businessName,
+      ownerName: params.ownerName?.trim() || undefined,
+      phone: params.phone?.trim() || undefined
     });
     serverToken = authResult.token;
     registeredHasPin = authResult.hasPin;
   } catch (apiErr: any) {
     if (apiErr?.response?.status === 409) {
+      params.onError?.(apiErr?.response?.data?.message || 'Email already exists');
       return { success: false, emailAlreadyExists: true };
     }
     console.warn('Backend registration offline, proceeding locally:', apiErr);
+    params.onOfflineNotice?.();
   }
 
   useAuthStore.getState().completeOnboarding({
     businessName: params.businessName,
+    ownerName: params.ownerName?.trim() || undefined,
+    userPhone: params.phone?.trim() || undefined,
     userEmail: params.email,
     tenantId: newTenantId,
     userId: newUserId,
@@ -127,6 +143,7 @@ export interface ExecuteStoreLoginParams {
   loginMode: 'password' | 'pin';
   password?: string;
   pin?: string;
+  onError?: (msg: string) => void;
 }
 
 export interface ExecuteStoreLoginResult {
@@ -173,8 +190,11 @@ export async function executeStoreLogin(
     };
   }
 
-  await finalizeSuccessfulLogin(authResult.tenantId);
-  return { success: true };
+  await finalizeSuccessfulLogin(authResult.tenantId, {
+    isNewUser: authResult.isNewUser,
+    businessName: authResult.businessName
+  });
+  return { success: true, authResult };
 }
 
 export interface ExecuteGoogleAuthParams {

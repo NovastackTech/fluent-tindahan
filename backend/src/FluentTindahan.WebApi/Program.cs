@@ -12,6 +12,7 @@ using FluentTindahan.Infrastructure.Persistence;
 using FluentTindahan.Infrastructure.Services;
 using FluentTindahan.WebApi;
 using FluentTindahan.WebApi.Authorization;
+using FluentTindahan.WebApi.Controllers.Helpers;
 using FluentTindahan.WebApi.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -26,7 +27,7 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 
 // Add Clean Architecture layers
 builder.Services.AddApplication();
-builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddInfrastructure(builder.Configuration, builder.Environment);
 
 // Add Controllers & JSON options
 builder.Services.AddControllers()
@@ -108,7 +109,7 @@ builder.Services.AddRateLimiter(options =>
             return RateLimitPartition.GetNoLimiter("authenticated");
         }
 
-        var clientIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var clientIp = AuthClaimsHelper.GetClientIpAddress(context);
         return RateLimitPartition.GetFixedWindowLimiter(clientIp, _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = 10,
@@ -120,7 +121,7 @@ builder.Services.AddRateLimiter(options =>
 
     options.AddPolicy("AuthSensitive", context =>
     {
-        var clientIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var clientIp = AuthClaimsHelper.GetClientIpAddress(context);
         var userIdentifier = context.User.Identity?.IsAuthenticated == true
             ? (context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
                ?? context.User.FindFirst("sub")?.Value
@@ -140,7 +141,7 @@ builder.Services.AddRateLimiter(options =>
 
     options.AddPolicy("PinLogin", context =>
     {
-        var clientIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var clientIp = AuthClaimsHelper.GetClientIpAddress(context);
         return RateLimitPartition.GetFixedWindowLimiter(clientIp, _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = 5,

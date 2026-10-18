@@ -4,7 +4,6 @@ import {
   tokens,
   shorthands,
   Text,
-  Input,
   Button,
   Card,
   Badge,
@@ -14,9 +13,7 @@ import {
   DialogTitle,
   DialogBody,
   DialogContent,
-  DialogActions,
-  Field,
-  Spinner
+  DialogActions
 } from '@fluentui/react-components';
 import {
   ArrowSyncRegular,
@@ -39,8 +36,6 @@ import {
   BoxRegular,
   KeyRegular,
   LockClosedRegular,
-  EyeRegular,
-  EyeOffRegular,
   OpenRegular
 } from '@fluentui/react-icons';
 import type { NavTab } from '../components/Navigation';
@@ -50,9 +45,7 @@ import { FixDlqProductDialog } from '../components/FixDlqProductDialog';
 import { ConfirmDismissDlqDialog } from '../components/ConfirmDismissDlqDialog';
 import { useThemeStore } from '../state/themeStore';
 import { usePrinterStore } from '../state/printerStore';
-import { updatePin, generateLocalPinVerifier } from '../services/authService';
 import { usePosSettingsStore } from '../state/posSettingsStore';
-import { DEFAULT_GCASH_FEE_TIERS, GCASH_FEE_BRACKETS, useGCashFeeStore } from '../state/gcashFeeStore';
 import { usePwaStore } from '../state/pwaStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
 import { useDisclaimerStore } from '../state/disclaimerStore';
@@ -70,7 +63,8 @@ import { useAuthStore } from '../state/authStore';
 import { useTranslation } from '../state/languageStore';
 import { SafeLogoutDialog } from '../components/SafeLogoutDialog';
 import { useSafeLogout } from '../components/useSafeLogout';
-import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
+import { PinManagementDialog } from '../components/PinManagementDialog';
+import { GCashFeeSettingsCard } from '../components/GCashFeeSettingsCard';
 
 const useStyles = makeStyles({
   container: {
@@ -116,8 +110,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
     userPhone,
     userEmail,
     hasPin,
-    setHasPin,
-    setLocalPinVerifier,
     setIsSessionLocked,
     openOnboarding,
     role
@@ -126,9 +118,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
   const { themeMode, setThemeMode } = useThemeStore();
   const { paperWidth, setPaperWidth } = usePrinterStore();
   const { stockValidationPolicy, setStockValidationPolicy } = usePosSettingsStore();
-  const gcashFees = useGCashFeeStore((state) => state.feesByTenant[tenantId] || DEFAULT_GCASH_FEE_TIERS);
-  const setGcashFee = useGCashFeeStore((state) => state.setFeeForTenant);
-  const [gcashFeeDrafts, setGcashFeeDrafts] = useState<Record<string, string>>({});
   const { isStandalone, isInstalled, isInstallable, isIos, promptInstall } = usePwaStore();
   const { tier, subscriptionEndDate, daysRemaining, openUpgradeModal } = useSubscriptionStore();
   const {
@@ -178,12 +167,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
   const [isClearDlqConfirmOpen, setIsClearDlqConfirmOpen] = useState(false);
 
   const [isPinDialogOpen, setIsPinDialogOpen] = useState(false);
-  const [pinDialogPassword, setPinDialogPassword] = useState('');
-  const [pinDialogNewPin, setPinDialogNewPin] = useState('');
-  const [showPinPassword, setShowPinPassword] = useState(false);
-  const [pinDialogError, setPinDialogError] = useState('');
-  const [pinDialogSuccess, setPinDialogSuccess] = useState('');
-  const [isPinDialogSubmitting, setIsPinDialogSubmitting] = useState(false);
 
   useEffect(() => {
     updateQueueCounts().catch(console.error);
@@ -204,48 +187,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
     await processSyncQueue({ force: true });
   };
 
-  const handleSavePin = async () => {
-    if (!pinDialogPassword) {
-      setPinDialogError(t.onboarding.passwordRequired);
-      return;
-    }
-    if (pinDialogNewPin.trim() && !/^\d{4,6}$/.test(pinDialogNewPin.trim())) {
-      setPinDialogError(t.onboarding.pinInvalid);
-      return;
-    }
 
-    setIsPinDialogSubmitting(true);
-    setPinDialogError('');
-    setPinDialogSuccess('');
-
-    try {
-      const result = await updatePin({
-        email: userEmail,
-        password: pinDialogPassword,
-        pin: pinDialogNewPin.trim() || null
-      });
-      setHasPin(result.hasPin);
-      if (result.hasPin && pinDialogNewPin.trim()) {
-        const verifier = await generateLocalPinVerifier(pinDialogNewPin.trim());
-        setLocalPinVerifier(verifier);
-        useAuthStore.getState().resetOfflinePinFailures();
-      } else {
-        setLocalPinVerifier(null);
-        useAuthStore.getState().resetOfflinePinFailures();
-      }
-      setPinDialogSuccess(t.settings.pinUpdatedSuccess);
-      setTimeout(() => {
-        setIsPinDialogOpen(false);
-        setPinDialogPassword('');
-        setPinDialogNewPin('');
-        setPinDialogSuccess('');
-      }, 1000);
-    } catch (err: any) {
-      setPinDialogError(err?.response?.data?.message || t.onboarding.loginFailed);
-    } finally {
-      setIsPinDialogSubmitting(false);
-    }
-  };
 
   return (
     <div className={styles.container}>
@@ -401,73 +343,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
       </Card>
 
       {/* GCash Transaction Fee Settings */}
-      {role === 'Owner' && (
-      <Card className={styles.card}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-          <PhoneLaptopRegular fontSize={20} />
-          <Text weight="bold" size={400}>{t.settings.gcashFeeSection}</Text>
-        </div>
-        <Text size={200} style={{ color: tokens.colorNeutralForeground3, marginBottom: '12px', display: 'block' }}>
-          {t.settings.gcashFeeDesc}
-        </Text>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr>
-              <th style={{ textAlign: 'left', padding: '8px 4px', borderBottom: `1px solid ${tokens.colorNeutralStroke2}` }}>
-                {t.settings.gcashFeeRange}
-              </th>
-              <th style={{ textAlign: 'left', padding: '8px 4px', borderBottom: `1px solid ${tokens.colorNeutralStroke2}` }}>
-                {t.settings.gcashFixedFee}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {GCASH_FEE_BRACKETS.map((bracket, index) => {
-              const draftKey = `${tenantId}:${index}`;
-              return (
-                <tr key={bracket.label}>
-                  <td style={{ padding: '6px 4px', borderBottom: `1px solid ${tokens.colorNeutralStroke2}` }}>
-                    {bracket.label}
-                  </td>
-                  <td style={{ padding: '6px 4px', borderBottom: `1px solid ${tokens.colorNeutralStroke2}` }}>
-                    <Input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      aria-label={`${t.settings.gcashFixedFee} ${bracket.label}`}
-                      contentBefore="₱"
-                      value={gcashFeeDrafts[draftKey] ?? String(gcashFees[index])}
-                      onChange={(_, data) => {
-                        setGcashFeeDrafts((drafts) => ({ ...drafts, [draftKey]: data.value }));
-                        const fee = Number(data.value);
-                        if (data.value.trim() !== '' && Number.isFinite(fee) && fee >= 0 && fee <= 100000) {
-                          setGcashFee(tenantId, index, fee);
-                        }
-                      }}
-                      onBlur={() => {
-                        const draft = gcashFeeDrafts[draftKey];
-                        if (draft !== undefined) {
-                          const fee = Number(draft);
-                          if (draft.trim() !== '' && Number.isFinite(fee) && fee >= 0 && fee <= 100000) {
-                            setGcashFee(tenantId, index, fee);
-                          }
-                          setGcashFeeDrafts((drafts) => {
-                            const nextDrafts = { ...drafts };
-                            delete nextDrafts[draftKey];
-                            return nextDrafts;
-                          });
-                        }
-                      }}
-                      style={{ width: '120px' }}
-                    />
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </Card>
-      )}
+      <GCashFeeSettingsCard className={styles.card} role={role} tenantId={tenantId} />
 
       {/* SaaS Subscription & Plan Management */}
       <Card className={styles.card}>
@@ -879,13 +755,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
               appearance="subtle"
               icon={<KeyRegular />}
               style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
-              onClick={() => {
-                setPinDialogPassword('');
-                setPinDialogNewPin('');
-                setPinDialogError('');
-                setPinDialogSuccess('');
-                setIsPinDialogOpen(true);
-              }}
+              onClick={() => setIsPinDialogOpen(true)}
             >
               {hasPin ? t.settings.changePinBtn : t.settings.setPinBtn}
             </Button>
@@ -1005,87 +875,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
       </Dialog>
 
       {/* Quick PIN Dialog */}
-      <Dialog
+      <PinManagementDialog
         open={isPinDialogOpen}
-        onOpenChange={(_, data) => !data.open && setIsPinDialogOpen(false)}
-      >
-        <DialogSurface>
-          <DialogBody>
-            <DialogTitle>{t.settings.pinDialogTitle}</DialogTitle>
-            <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: tokens.spacingVerticalM, marginTop: tokens.spacingVerticalS }}>
-              <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-                {t.settings.pinDialogDesc}
-              </Text>
-
-              {pinDialogError && (
-                <Text role="alert" size={200} style={{ color: tokens.colorPaletteRedForeground1 }}>
-                  {getLocalizedSyncErrorMessage(pinDialogError, language) || pinDialogError}
-                </Text>
-              )}
-              {pinDialogSuccess && (
-                <Text size={200} style={{ color: tokens.colorPaletteGreenForeground1 }}>
-                  {pinDialogSuccess}
-                </Text>
-              )}
-
-              <Field label={t.settings.currentPasswordLabel} required>
-                <Input
-                  type={showPinPassword ? 'text' : 'password'}
-                  value={pinDialogPassword}
-                  onChange={(_, data) => setPinDialogPassword(data.value)}
-                  placeholder="••••••••"
-                  contentAfter={
-                    <Button
-                      appearance="subtle"
-                      size="small"
-                      icon={showPinPassword ? <EyeOffRegular /> : <EyeRegular />}
-                      onClick={() => setShowPinPassword(!showPinPassword)}
-                      type="button"
-                    />
-                  }
-                  autoFocus
-                />
-              </Field>
-
-              <Field label={t.settings.newPinLabel} hint={t.onboarding.pinHint}>
-                <Input
-                  type="password"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  maxLength={6}
-                  value={pinDialogNewPin}
-                  onChange={(_, data) => setPinDialogNewPin(data.value.replace(/\D/g, '').slice(0, 6))}
-                  placeholder="4-6 digits"
-                />
-              </Field>
-            </DialogContent>
-            <DialogActions
-              fluid
-              style={{
-                gridColumn: '1 / -1',
-                display: 'flex',
-                flexWrap: 'wrap',
-                justifyContent: 'flex-end',
-                alignItems: 'center',
-                gap: '8px'
-              }}
-            >
-              <Button appearance="secondary" style={{ whiteSpace: 'nowrap' }} onClick={() => setIsPinDialogOpen(false)}>
-                {t.common.cancel}
-              </Button>
-              <Button
-                appearance="primary"
-                style={{ whiteSpace: 'nowrap' }}
-                disabled={isPinDialogSubmitting || !pinDialogPassword}
-                icon={isPinDialogSubmitting ? <Spinner size="extra-tiny" /> : undefined}
-                onClick={handleSavePin}
-              >
-                {t.common.save}
-              </Button>
-            </DialogActions>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
+        onOpenChange={setIsPinDialogOpen}
+      />
 
       <SafeLogoutDialog
         open={isLogoutConfirmOpen}

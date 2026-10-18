@@ -174,9 +174,7 @@ export async function clearAllLocalDexieTables(): Promise<void> {
     db.tenants
   ];
   await db.transaction('rw', tables, async () => {
-    for (const table of tables) {
-      await table.clear();
-    }
+    await Promise.all(tables.map((table) => table.clear()));
   });
 }
 
