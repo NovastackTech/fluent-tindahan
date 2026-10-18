@@ -1282,7 +1282,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
           }
         }}
       >
-        <DialogSurface ref={checkoutDialogRef}>
+        <DialogSurface ref={checkoutDialogRef} style={{ maxWidth: '520px', width: '100%' }}>
           {receiptData ? (
             <ReceiptModal
               embedded
