@@ -175,8 +175,8 @@ describe('QuickRegisterProductDialog', () => {
     expect(saved?.price).toBe(25);
   });
 
-  it('allows the active tenant to add a product when another tenant has 50', async () => {
-    await db.products.bulkAdd(Array.from({ length: 50 }, (_, index) => ({
+  it('allows the active tenant to add a product when another tenant has 30', async () => {
+    await db.products.bulkAdd(Array.from({ length: 30 }, (_, index) => ({
       id: `other-product-${index}`,
       tenantId: 'other-tenant',
       name: `Other Product ${index}`,

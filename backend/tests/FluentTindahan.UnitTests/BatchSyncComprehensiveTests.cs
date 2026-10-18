@@ -708,8 +708,8 @@ public class BatchSyncComprehensiveTests
             CreatedAt = DateTimeOffset.UtcNow
         });
 
-        // Seed 50 active products (Libre capacity limit)
-        for (int i = 0; i < 50; i++)
+        // Seed 30 active products (Libre capacity limit)
+        for (int i = 0; i < 30; i++)
         {
             context.Products.Add(new Product
             {
@@ -763,7 +763,7 @@ public class BatchSyncComprehensiveTests
 
         response.Results.Should().HaveCount(1);
         response.Results[0].Status.Should().Be("Failed");
-        response.Results[0].Error.Should().Contain("Libre plan limit exceeded: Maximum 50 products allowed");
+        response.Results[0].Error.Should().Contain("Libre plan limit exceeded: Maximum 30 products allowed");
 
         // Placeholder must remain soft-deleted
         var rawPlaceholder = await context.Products.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == placeholderId);

@@ -1,12 +1,13 @@
 import { StrictMode } from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { FluentProvider } from '@fluentui/react-components';
 import { SubscriptionModal } from './SubscriptionModal';
 import { sariSariLightTheme } from '../theme/theme';
 import { SUBSCRIPTION_REFRESH_ERROR, useSubscriptionStore } from '../state/subscriptionStore';
 import { useAuthStore } from '../state/authStore';
 import { useLanguageStore } from '../state/languageStore';
+import { translations } from '../i18n/translations';
 import { db } from '../db/db';
 import { apiClient } from '../services/apiClient';
 import { DEFAULT_TENANT_ID } from '../db/seedData';
@@ -131,4 +132,27 @@ describe('SubscriptionModal', () => {
       expect(localStorage.getItem('fluent_tindahan_tier_v1')).toBe('TindahanPro');
     });
   });
+
+  it('switches embedded sync error text dynamically when language is toggled from Tagalog to English', () => {
+    act(() => {
+      useLanguageStore.setState({ language: 'tl' });
+      useSubscriptionStore.setState({
+        isUpgradeModalOpen: true,
+        error: translations.tl.common.differentAccountSyncBlocked
+      });
+    });
+
+    renderModal();
+
+    expect(screen.getByText('Mga Plano at Subscription ng Tindahan')).toBeInTheDocument();
+    expect(screen.getByText(translations.tl.common.differentAccountSyncBlocked)).toBeInTheDocument();
+
+    act(() => {
+      useLanguageStore.getState().toggleLanguage();
+    });
+
+    expect(screen.getByText('Tindahan Subscription Plans')).toBeInTheDocument();
+    expect(screen.getByText(translations.en.common.differentAccountSyncBlocked)).toBeInTheDocument();
+  });
 });
+

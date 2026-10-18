@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   makeStyles,
   tokens,
@@ -341,6 +341,8 @@ const useStyles = makeStyles({
   }
 });
 
+const EMPTY_PRODUCTS: ProductRecord[] = [];
+
 export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
   const styles = useStyles();
   const { t, language } = useTranslation();
@@ -348,10 +350,11 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
   const { tier, canAddProduct, openUpgradeModal } = useSubscriptionStore();
 
   // Live Query from local Dexie database
-  const products = useLiveQuery(
+  const productsResult = useLiveQuery(
     () => db.products.where('tenantId').equals(tenantId).toArray(),
     [tenantId]
-  ) || [];
+  );
+  const products = productsResult || EMPTY_PRODUCTS;
 
   // Filtering states
   const [searchQuery, setSearchQuery] = useState('');
@@ -435,7 +438,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
         set.add(p.category.trim());
       }
     });
-    return Array.from(set).sort();
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [products]);
 
   // Overall Inventory KPI Metrics
@@ -513,7 +516,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
   }, [products, searchQuery, selectedCategory, stockFilter]);
 
   // Quick Restock Handler (+6, +12, +24)
-  const handleQuickRestock = async (product: ProductRecord, increment: number) => {
+  const handleQuickRestock = useCallback(async (product: ProductRecord, increment: number) => {
     try {
       const newStock = Math.max(0, (product.stockQty || 0) + increment);
       const nowIso = new Date().toISOString();
@@ -532,15 +535,15 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
     } catch (err) {
       console.error('Failed to quick restock:', err);
     }
-  };
+  }, [t.inventory.restockSuccess]);
 
   // Open Add Product Modal
   const openAddModal = () => {
     if (!canAddProduct(products.length)) {
       setLimitBanner(
         language === 'tl'
-          ? 'Naabot na ang limitasyon ng Libreng plano (50 produkto). Mag-upgrade sa Tindahan Pro o Negosyo Plus upang magdagdag pa.'
-          : 'Limit reached for Libre plan (50 products maximum). Please upgrade to Tindahan Pro or Negosyo Plus to add more products.'
+          ? 'Naabot na ang limitasyon ng Libreng plano (30 produkto). Mag-upgrade sa Tindahan Pro o Negosyo Plus upang magdagdag pa.'
+          : 'Limit reached for Libre plan (30 products maximum). Please upgrade to Tindahan Pro or Negosyo Plus to add more products.'
       );
       openUpgradeModal();
       return;
@@ -631,8 +634,8 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
         if (!canAddProduct(products.length)) {
           setModalGeneralError(
             language === 'tl'
-              ? 'Naabot na ang limitasyon ng Libreng plano (50 produkto). Mag-upgrade sa Tindahan Pro o Negosyo Plus upang magdagdag pa.'
-              : 'Limit reached for Libre plan (50 products maximum). Please upgrade to Tindahan Pro or Negosyo Plus to add more products.'
+              ? 'Naabot na ang limitasyon ng Libreng plano (30 produkto). Mag-upgrade sa Tindahan Pro o Negosyo Plus upang magdagdag pa.'
+              : 'Limit reached for Libre plan (30 products maximum). Please upgrade to Tindahan Pro or Negosyo Plus to add more products.'
           );
           openUpgradeModal();
           return;
@@ -779,12 +782,12 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
               <div className={styles.metricValue}>
                 {metrics.totalProducts}
                 {tier === 'Libre' && (
-                  <span style={{ fontSize: '14px', fontWeight: 'normal', color: tokens.colorNeutralForeground3 }}> / 50</span>
+                  <span style={{ fontSize: '14px', fontWeight: 'normal', color: tokens.colorNeutralForeground3 }}> / 30</span>
                 )}
               </div>
-              {tier === 'Libre' && metrics.totalProducts >= 45 && (
+              {tier === 'Libre' && metrics.totalProducts >= 25 && (
                 <Badge appearance="tint" color="warning" size="small" data-testid="product-cap-badge">
-                  {metrics.totalProducts >= 50 ? t.inventory.fullCapacityBadge : t.inventory.nearCapacityBadge}
+                  {metrics.totalProducts >= 30 ? t.inventory.fullCapacityBadge : t.inventory.nearCapacityBadge}
                 </Badge>
               )}
             </div>

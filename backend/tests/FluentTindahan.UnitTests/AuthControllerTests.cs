@@ -889,6 +889,54 @@ public class AuthControllerTests
     }
 
     [Fact]
+    public async Task Logout_ClearsIpThrottleForStoreOwner()
+    {
+        AuthController.ResetAllIpPinThrottles();
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "logout.reset@tindahan.ph",
+            Password = "OwnerPassword123!",
+            Pin = "4321",
+            BusinessName = "Logout Test Store"
+        }, CancellationToken.None);
+
+        var storeIp = "192.168.1.101";
+        SetClientIp(controller, storeIp);
+
+        // 5 failed PIN attempts trigger IP lockout
+        for (int i = 0; i < 5; i++)
+        {
+            await controller.LoginPin(new AuthController.LoginPinRequest
+            {
+                Email = "logout.reset@tindahan.ph",
+                Pin = "0000"
+            }, CancellationToken.None);
+        }
+
+        // 6th attempt is throttled with 429 and includes password guidance
+        var blockedPin = await controller.LoginPin(new AuthController.LoginPinRequest
+        {
+            Email = "logout.reset@tindahan.ph",
+            Pin = "4321"
+        }, CancellationToken.None);
+        blockedPin.Result.Should().BeOfType<ObjectResult>();
+        var blockedObj = (ObjectResult)blockedPin.Result!;
+        blockedObj.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+        var blockedJson = JsonSerializer.Serialize(blockedObj.Value);
+        blockedJson.Should().Contain("Password");
+
+        // User logs out from this IP
+        var logoutResult = await controller.Logout(null, CancellationToken.None);
+        logoutResult.Should().BeOfType<OkObjectResult>();
+
+        // IP throttle is cleared so IP is no longer locked out
+        AuthLockoutHelper.IsIpPinThrottled(storeIp, TimeProvider.System, out _).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task LoginPin_UnknownEmail_RecordsIpFailureAndThrottlesAfterFive()
     {
         AuthController.ResetAllIpPinThrottles();

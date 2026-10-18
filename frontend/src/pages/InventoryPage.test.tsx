@@ -72,13 +72,13 @@ describe('InventoryPage', () => {
       stockQty: 6,
       updatedAt: new Date().toISOString()
     }));
-    await db.products.bulkAdd(makeProducts(43, 0));
+    await db.products.bulkAdd(makeProducts(23, 0));
     renderInventory();
 
     expect(await screen.findByText('Halos puno')).toBeInTheDocument();
     expect(screen.getByText('≤ 5 piraso ang natitira')).toBeInTheDocument();
 
-    await db.products.bulkAdd(makeProducts(5, 43));
+    await db.products.bulkAdd(makeProducts(5, 23));
     await waitFor(() => expect(screen.getByText('Puno na')).toBeInTheDocument());
 
     act(() => {

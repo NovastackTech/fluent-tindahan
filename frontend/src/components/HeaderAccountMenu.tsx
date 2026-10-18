@@ -17,11 +17,15 @@ const useStyles = makeStyles({
   root: {
     display: 'flex',
     alignItems: 'center',
-    maxWidth: '46vw'
+    minWidth: 0,
+    maxWidth: '180px',
+    '@media (max-width: 400px)': {
+      maxWidth: '140px'
+    }
   },
   trigger: {
-    minWidth: 'auto',
-    maxWidth: '46vw',
+    minWidth: 0,
+    maxWidth: '180px',
     height: 'auto',
     minHeight: '32px',
     ...shorthands.padding('0px', '2px', '0px', '0px'),
@@ -29,15 +33,22 @@ const useStyles = makeStyles({
     color: tokens.colorNeutralForeground3,
     fontWeight: tokens.fontWeightRegular,
     fontSize: tokens.fontSizeBase200,
-    columnGap: '2px'
+    columnGap: '2px',
+    '@media (max-width: 400px)': {
+      maxWidth: '140px'
+    }
   },
   storeName: {
+    display: 'block',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
-    maxWidth: '34vw',
+    maxWidth: '180px',
     fontSize: tokens.fontSizeBase200,
-    color: tokens.colorNeutralForeground3
+    color: tokens.colorNeutralForeground3,
+    '@media (max-width: 400px)': {
+      maxWidth: '120px'
+    }
   },
   logoutItem: {
     color: tokens.colorPaletteRedForeground1

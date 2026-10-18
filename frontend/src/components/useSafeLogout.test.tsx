@@ -134,7 +134,7 @@ describe('useSafeLogout', () => {
     });
 
     await waitFor(() => {
-      expect(syncSpy).toHaveBeenCalledTimes(1);
+      expect(syncSpy).toHaveBeenCalledWith({ force: true });
     });
     expect(onLoggedOut).not.toHaveBeenCalled();
     expect(useAuthStore.getState().isOnboarded).toBe(true);

@@ -65,14 +65,30 @@ export const SafeLogoutDialog: React.FC<SafeLogoutDialogProps> = ({
               <Text size={300}>{t.settings.logoutConfirmDesc}</Text>
             )}
           </DialogContent>
-          <DialogActions>
-            <Button appearance="secondary" onClick={onDismiss} data-testid="safe-logout-cancel-btn">
+          <DialogActions
+            fluid
+            style={{
+              gridColumn: '1 / -1',
+              display: 'flex',
+              flexWrap: 'wrap',
+              justifyContent: 'flex-end',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            <Button
+              appearance="secondary"
+              style={{ whiteSpace: 'nowrap' }}
+              onClick={onDismiss}
+              data-testid="safe-logout-cancel-btn"
+            >
               {t.common.cancel}
             </Button>
             {hasUnsynced && (
               <Button
                 appearance="primary"
                 icon={<ArrowSyncRegular />}
+                style={{ whiteSpace: 'nowrap' }}
                 onClick={() => {
                   void onSyncFirst();
                 }}
@@ -85,7 +101,8 @@ export const SafeLogoutDialog: React.FC<SafeLogoutDialogProps> = ({
               appearance={hasUnsynced ? 'secondary' : 'primary'}
               style={{
                 color: tokens.colorPaletteRedForeground1,
-                borderColor: tokens.colorPaletteRedBorder1
+                borderColor: tokens.colorPaletteRedBorder1,
+                whiteSpace: 'nowrap'
               }}
               onClick={() => {
                 void onConfirmLogout();

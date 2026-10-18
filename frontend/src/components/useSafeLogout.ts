@@ -49,7 +49,7 @@ export function useSafeLogout(options?: UseSafeLogoutOptions) {
 
   const syncFirst = useCallback(async () => {
     setIsLogoutConfirmOpen(false);
-    await processSyncQueue();
+    await processSyncQueue({ force: true });
   }, []);
 
   const confirmLogout = useCallback(async () => {

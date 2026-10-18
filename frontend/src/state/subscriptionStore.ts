@@ -7,6 +7,8 @@ import {
 } from '../services/apiClient';
 import { db, type PlanTier } from '../db/db';
 import { useAuthStore } from './authStore';
+import { useLanguageStore } from './languageStore';
+import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
 
 export type BillingCycle = 'Weekly' | 'Monthly';
 export const SUBSCRIPTION_REFRESH_ERROR = 'SUBSCRIPTION_REFRESH_ERROR';
@@ -80,7 +82,7 @@ export const getTierLimits = (tier: PlanTier): TierLimits => {
     case 'Libre':
     default:
       return {
-        maxProducts: 50,
+        maxProducts: 30,
         maxCustomers: 30,
         maxGCashTransactionsPerMonth: 30,
         maxUsers: 1,
@@ -92,6 +94,49 @@ export const getTierLimits = (tier: PlanTier): TierLimits => {
       };
   }
 };
+
+interface SubscriptionSyncPayload {
+  tierName?: PlanTier;
+  tier?: number;
+  subscriptionEndDate?: string | null;
+  businessName?: string;
+  isActive?: boolean;
+  daysRemaining?: number | null;
+}
+
+async function persistAndApplySubscriptionState(
+  data: SubscriptionSyncPayload,
+  set: (state: Partial<SubscriptionState>) => void
+): Promise<PlanTier> {
+  const effectiveTier: PlanTier = data.tierName || (data.tier === 1 ? 'TindahanPro' : data.tier === 2 ? 'NegosyoPlus' : 'Libre');
+  const endDate = data.subscriptionEndDate || null;
+
+  useAuthStore.getState().setSubscription(effectiveTier, endDate);
+
+  const tenantId = useAuthStore.getState().tenantId;
+  if (tenantId) {
+    try {
+      await db.tenants.update(tenantId, {
+        businessName: data.businessName || useAuthStore.getState().businessName,
+        tier: effectiveTier,
+        subscriptionEndDate: endDate || undefined,
+        updatedAt: new Date().toISOString()
+      });
+    } catch (err) {
+      console.error('[Subscription] Failed to persist subscription state to local database:', err);
+    }
+  }
+
+  set({
+    tier: effectiveTier,
+    subscriptionEndDate: endDate,
+    isActive: data.isActive,
+    daysRemaining: data.daysRemaining,
+    isLoading: false
+  });
+
+  return effectiveTier;
+}
 
 export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
   const currentTier = useAuthStore.getState().tier || 'Libre';
@@ -134,32 +179,7 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
       try {
         await ensureTenantProvisioned();
         const response = await apiClient.get('/billing/subscription');
-        const data = response.data;
-
-        const effectiveTier: PlanTier = data.tierName || (data.tier === 1 ? 'TindahanPro' : data.tier === 2 ? 'NegosyoPlus' : 'Libre');
-        const endDate = data.subscriptionEndDate || null;
-
-        // Update authStore & localStorage
-        useAuthStore.getState().setSubscription(effectiveTier, endDate);
-
-        // Update Dexie tenant table
-        const tenantId = useAuthStore.getState().tenantId;
-        if (tenantId) {
-          await db.tenants.update(tenantId, {
-            businessName: data.businessName || useAuthStore.getState().businessName,
-            tier: effectiveTier,
-            subscriptionEndDate: endDate || undefined,
-            updatedAt: new Date().toISOString()
-          });
-        }
-
-        set({
-          tier: effectiveTier,
-          subscriptionEndDate: endDate,
-          isActive: data.isActive,
-          daysRemaining: data.daysRemaining,
-          isLoading: false
-        });
+        await persistAndApplySubscriptionState(response.data, set);
       } catch (err) {
         if (err instanceof TenantAccountMismatchError || err instanceof TenantProvisioningError) {
           set({
@@ -201,9 +221,7 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
           sessionId: storedSessionId || undefined
         });
 
-        const data = response.data;
-        const effectiveTier: PlanTier = data.tierName || (data.tier === 1 ? 'TindahanPro' : data.tier === 2 ? 'NegosyoPlus' : 'Libre');
-        const endDate = data.subscriptionEndDate || null;
+        const effectiveTier = await persistAndApplySubscriptionState(response.data, set);
 
         if (effectiveTier !== 'Libre' && typeof window !== 'undefined') {
           try {
@@ -213,28 +231,9 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
           }
         }
 
-        useAuthStore.getState().setSubscription(effectiveTier, endDate);
-
-        const tenantId = useAuthStore.getState().tenantId;
-        if (tenantId) {
-          await db.tenants.update(tenantId, {
-            businessName: data.businessName || useAuthStore.getState().businessName,
-            tier: effectiveTier,
-            subscriptionEndDate: endDate || undefined,
-            updatedAt: new Date().toISOString()
-          });
-        }
-
-        set({
-          tier: effectiveTier,
-          subscriptionEndDate: endDate,
-          isActive: data.isActive,
-          daysRemaining: data.daysRemaining,
-          isLoading: false
-        });
-
         return effectiveTier !== 'Libre';
-      } catch (err: any) {
+      } catch (err) {
+        console.error('[Subscription] Failed to confirm checkout session:', err);
         set({ isLoading: false });
         return false;
       }
@@ -322,4 +321,16 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
       }
     }
   };
+});
+
+useLanguageStore.subscribe((langState, prevLangState) => {
+  if (langState.language !== prevLangState?.language) {
+    const currentError = useSubscriptionStore.getState().error;
+    if (currentError && currentError !== SUBSCRIPTION_REFRESH_ERROR) {
+      const localized = getLocalizedSyncErrorMessage(currentError, langState.language);
+      if (localized && localized !== currentError) {
+        useSubscriptionStore.setState({ error: localized });
+      }
+    }
+  }
 });
