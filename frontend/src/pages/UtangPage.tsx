@@ -684,9 +684,6 @@ export const UtangPage: React.FC = () => {
                 {t.common.close}
               </Button>
             </DialogActions>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
 
       {/* Record Payment Dialog */}
       <Dialog open={isPaymentOpen} onOpenChange={(_, data) => setIsPaymentOpen(data.open)}>
@@ -728,80 +725,94 @@ export const UtangPage: React.FC = () => {
                 </Button>
               )}
 
-              <div style={{ margin: '12px 0' }}>
-                <Text size={200} weight="semibold">{t.utang.paymentNotesLabel}</Text>
-                <Input
-                  aria-label={t.utang.paymentNotesLabel}
-                  style={{ width: '100%', marginTop: '4px' }}
-                  value={paymentNotes}
-                  onChange={(_, data) => setPaymentNotes(data.value)}
-                  placeholder={t.utang.paymentNotesPlaceholder}
-                />
-              </div>
-            </DialogContent>
+                    {selectedCustomer && selectedCustomer.totalUtangBalance > 0 && (
+                      <Button
+                        size="small"
+                        appearance="subtle"
+                        onClick={() => setPaymentAmount(selectedCustomer.totalUtangBalance.toString())}
+                      >
+                        {t.utang.payAll} ({formatPeso(selectedCustomer.totalUtangBalance)})
+                      </Button>
+                    )}
 
-            <DialogActions>
-              <Button appearance="subtle" onClick={() => setIsPaymentOpen(false)}>
-                {t.common.cancel}
-              </Button>
-              <Button appearance="primary" icon={<CheckmarkRegular />} onClick={handleRecordPayment} disabled={isSaving}>
-                {t.utang.confirmPayment}
-              </Button>
-            </DialogActions>
+                    <div style={{ margin: '12px 0' }}>
+                      <Text size={200} weight="semibold">{t.utang.paymentNotesLabel}</Text>
+                      <Input
+                        aria-label={t.utang.paymentNotesLabel}
+                        style={{ width: '100%', marginTop: '4px' }}
+                        value={paymentNotes}
+                        onChange={(_, data) => setPaymentNotes(data.value)}
+                        placeholder={t.utang.paymentNotesPlaceholder}
+                      />
+                    </div>
+                  </DialogContent>
+
+                  <DialogActions>
+                    <Button appearance="subtle" onClick={() => setIsPaymentOpen(false)}>
+                      {t.common.cancel}
+                    </Button>
+                    <Button appearance="primary" icon={<CheckmarkRegular />} onClick={handleRecordPayment} disabled={isSaving}>
+                      {t.utang.confirmPayment}
+                    </Button>
+                  </DialogActions>
+                </DialogBody>
+              </DialogSurface>
+            </Dialog>
+
+            {/* Add Credit Dialog */}
+            <Dialog open={isAddCreditOpen} onOpenChange={(_, data) => setIsAddCreditOpen(data.open)}>
+              <DialogSurface>
+                <DialogBody>
+                  <DialogTitle>{t.utang.addCreditTitle} {selectedCustomer?.name}</DialogTitle>
+                  <DialogContent>
+                    <div style={{ margin: '8px 0' }}>
+                      <Text size={200} weight="semibold">{t.utang.creditAmountLabel}</Text>
+                      <Input
+                        type="number"
+                        aria-invalid={!!creditAmountError}
+                        style={{ width: '100%', marginTop: '4px' }}
+                        value={creditAmount}
+                        onChange={(_, data) => {
+                          setCreditAmount(data.value);
+                          if (creditAmountError) setCreditAmountError('');
+                        }}
+                        placeholder="0.00"
+                        contentBefore="₱"
+                      />
+                      {creditAmountError && (
+                        <Text role="alert" size={200} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
+                          {creditAmountError}
+                        </Text>
+                      )}
+                    </div>
+
+                    <div style={{ margin: '12px 0' }}>
+                      <Text size={200} weight="semibold">{t.utang.creditNotesLabel}</Text>
+                      <Input
+                        aria-label={t.utang.customerNameLabel}
+                        style={{ width: '100%', marginTop: '4px' }}
+                        value={creditNotes}
+                        onChange={(_, data) => setCreditNotes(data.value)}
+                        placeholder={t.utang.creditNotesPlaceholder}
+                      />
+                    </div>
+                  </DialogContent>
+
+                  <DialogActions>
+                    <Button appearance="subtle" onClick={() => setIsAddCreditOpen(false)}>
+                      {t.common.cancel}
+                    </Button>
+                    <Button appearance="primary" icon={<CheckmarkRegular />} onClick={handleAddCredit} disabled={isSaving}>
+                      {t.utang.saveCredit}
+                    </Button>
+                  </DialogActions>
+                </DialogBody>
+              </DialogSurface>
+            </Dialog>
           </DialogBody>
         </DialogSurface>
       </Dialog>
 
-      {/* Add Credit Dialog */}
-      <Dialog open={isAddCreditOpen} onOpenChange={(_, data) => setIsAddCreditOpen(data.open)}>
-        <DialogSurface>
-          <DialogBody>
-            <DialogTitle>{t.utang.addCreditTitle} {selectedCustomer?.name}</DialogTitle>
-            <DialogContent>
-              <div style={{ margin: '8px 0' }}>
-                <Text size={200} weight="semibold">{t.utang.creditAmountLabel}</Text>
-                <Input
-                  type="number"
-                  aria-invalid={!!creditAmountError}
-                  style={{ width: '100%', marginTop: '4px' }}
-                  value={creditAmount}
-                  onChange={(_, data) => {
-                    setCreditAmount(data.value);
-                    if (creditAmountError) setCreditAmountError('');
-                  }}
-                  placeholder="0.00"
-                  contentBefore="₱"
-                />
-                {creditAmountError && (
-                  <Text role="alert" size={200} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
-                    {creditAmountError}
-                  </Text>
-                )}
-              </div>
-
-              <div style={{ margin: '12px 0' }}>
-                <Text size={200} weight="semibold">{t.utang.creditNotesLabel}</Text>
-                <Input
-                  aria-label={t.utang.customerNameLabel}
-                  style={{ width: '100%', marginTop: '4px' }}
-                  value={creditNotes}
-                  onChange={(_, data) => setCreditNotes(data.value)}
-                  placeholder={t.utang.creditNotesPlaceholder}
-                />
-              </div>
-            </DialogContent>
-
-            <DialogActions>
-              <Button appearance="subtle" onClick={() => setIsAddCreditOpen(false)}>
-                {t.common.cancel}
-              </Button>
-              <Button appearance="primary" icon={<CheckmarkRegular />} onClick={handleAddCredit} disabled={isSaving}>
-                {t.utang.saveCredit}
-              </Button>
-            </DialogActions>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
 
       {/* Create New Customer Dialog */}
       <Dialog open={isNewCustomerOpen} onOpenChange={(_, data) => {

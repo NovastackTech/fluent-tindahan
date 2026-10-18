@@ -89,6 +89,24 @@ describe('POSPage', () => {
     expect(useCartStore.getState().getTotalAmount()).toBe(16);
   });
 
+  it('has accessible action name on the product card add button describing action rather than past tense', async () => {
+    const { unmount } = renderPOS();
+    await waitFor(() => {
+      expect(screen.getByText('Lucky Me Pancit Canton Kalamansi')).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole('button', { name: 'Idagdag sa basket: Lucky Me Pancit Canton Kalamansi' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Naidagdag sa basket: Lucky Me Pancit Canton Kalamansi' })).not.toBeInTheDocument();
+
+    unmount();
+    useLanguageStore.setState({ language: 'en' });
+    renderPOS();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Add to cart: Lucky Me Pancit Canton Kalamansi' })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('button', { name: 'Added to cart: Lucky Me Pancit Canton Kalamansi' })).not.toBeInTheDocument();
+  });
+
   it('filters products when searching by name', async () => {
     await db.products.add({
       id: 'p-2',

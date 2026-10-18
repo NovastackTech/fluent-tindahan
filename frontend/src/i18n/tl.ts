@@ -93,6 +93,7 @@ export const tl: Translations = {
       saleSuccess: 'Benta matagumpay na naitala!',
       insufficientCash: 'Kulang ang ibinayad na pera!',
       itemAdded: 'Naidagdag sa basket',
+      addToCart: 'Idagdag sa basket',
       receiptTitle: 'Resibo ng Tindahan',
       printReceipt: 'I-print ang Resibo',
       newSale: 'Bagong Transaksyon',

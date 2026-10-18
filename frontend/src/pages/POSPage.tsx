@@ -1109,7 +1109,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
                     e.stopPropagation();
                     handleAddProductToCart(p);
                   }}
-                  aria-label={`${t.pos.itemAdded}: ${p.name}`}
+                  aria-label={`${t.pos.addToCart}: ${p.name}`}
                 />
               </div>
             </Card>
