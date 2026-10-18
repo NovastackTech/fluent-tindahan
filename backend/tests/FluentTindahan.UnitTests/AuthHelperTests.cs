@@ -17,6 +17,7 @@ using Xunit;
 
 namespace FluentTindahan.UnitTests;
 
+[Collection("AuthLockout")]
 public class AuthHelperTests
 {
     private sealed class MutableTimeProvider : TimeProvider
@@ -265,15 +266,19 @@ public class AuthHelperTests
         // User 3 accessed now (fresh)
         var lock3 = AuthLockoutHelper.GetUserPinLock(user3, timeProvider);
 
-        AuthLockoutHelper.GetUserPinLockCount().Should().Be(3);
+        AuthLockoutHelper.HasUserPinLock(user1).Should().BeTrue();
+        AuthLockoutHelper.HasUserPinLock(user2).Should().BeTrue();
+        AuthLockoutHelper.HasUserPinLock(user3).Should().BeTrue();
 
         // Sweep with 5m timeout:
         // user1: idle for 10m, CurrentCount == 1 -> pruned
         // user2: accessed 10m ago, but CurrentCount == 0 (held) -> NOT pruned
         // user3: accessed 0m ago -> NOT pruned
         var pruned = AuthLockoutHelper.SweepIdleUserLocks(timeProvider, TimeSpan.FromMinutes(5));
-        pruned.Should().Be(1);
-        AuthLockoutHelper.GetUserPinLockCount().Should().Be(2);
+        pruned.Should().BeGreaterThanOrEqualTo(1);
+        AuthLockoutHelper.HasUserPinLock(user1).Should().BeFalse();
+        AuthLockoutHelper.HasUserPinLock(user2).Should().BeTrue();
+        AuthLockoutHelper.HasUserPinLock(user3).Should().BeTrue();
 
         lock2.Release();
     }

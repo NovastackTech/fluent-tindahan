@@ -61,6 +61,7 @@ public static class AuthLockoutHelper
 
     public static int GetIpThrottleCount() => _ipPinThrottles.Count;
     public static int GetUserPinLockCount() => _userPinLocks.Count;
+    public static bool HasUserPinLock(Guid userId) => _userPinLocks.ContainsKey(userId);
 
     public static SemaphoreSlim GetUserPinLock(Guid userId, TimeProvider? timeProvider = null)
     {

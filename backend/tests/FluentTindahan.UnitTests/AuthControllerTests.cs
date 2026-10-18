@@ -24,6 +24,7 @@ using Xunit;
 
 namespace FluentTindahan.UnitTests;
 
+[Collection("AuthLockout")]
 public class AuthControllerTests
 {
     public const string TestJwtSecret = "UnitTesting_SuperSecretSigningKey_Minimum32Chars!";
