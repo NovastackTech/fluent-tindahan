@@ -37,17 +37,21 @@ import type { NavTab } from '../components/Navigation';
 import { useTranslation } from '../state/languageStore';
 import { useAuthStore } from '../state/authStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
-import { useGCashFeeStore, DEFAULT_GCASH_FEE_TIERS } from '../state/gcashFeeStore';
 import { db } from '../db/db';
-import { processSyncQueue, updateQueueCounts, kickSync } from '../sync/syncEngine';
+import { processSyncQueue, updateQueueCounts } from '../sync/syncEngine';
 import { ConfirmUnsyncedLoginDialog } from '../components/ConfirmUnsyncedLoginDialog';
-import { registerStore, loginStore, loginPin, type AuthResponseDto } from '../services/authService';
-import { createClientUuid, seedDexieDatabaseIfNeeded, DEFAULT_TENANT_ID } from '../db/seedData';
+import type { AuthResponseDto } from '../services/authService';
+import { seedDexieDatabaseIfNeeded, DEFAULT_TENANT_ID } from '../db/seedData';
 import { formatPeso } from '../utils/currency';
 import { RegistrationFormFields } from '../components/RegistrationFormFields';
 import { LoginFormFields } from '../components/LoginFormFields';
 import { AuthErrorBanner } from '../components/AuthErrorBanner';
 import { validateRegistrationInput, validateLoginInput } from '../utils/registrationValidation';
+import {
+  executeStoreRegistration,
+  executeStoreLogin,
+  finalizeSuccessfulLogin
+} from '../services/storeRegistration';
 
 interface LandingPageProps {
   onNavigate: (tab: NavTab) => void;
@@ -417,7 +421,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
         pendingAuthPayload.localPin,
         true
       );
-      void useSubscriptionStore.getState().refreshSubscription();
+      await finalizeSuccessfulLogin(pendingAuthPayload.payload.tenantId);
       onNavigate('pos');
     } finally {
       setIsSubmitting(false);
@@ -438,7 +442,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
           pendingAuthPayload.localPin,
           false
         );
-        void useSubscriptionStore.getState().refreshSubscription();
+        await finalizeSuccessfulLogin(pendingAuthPayload.payload.tenantId);
         onNavigate('pos');
       }
     } catch (e) {
@@ -461,41 +465,26 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
       return;
     }
 
-    const trimmedEmail = validation.trimmedEmail;
-
     setIsSubmitting(true);
     try {
-      let authResult;
-      if (loginMode === 'password') {
-        authResult = await loginStore({
-          email: trimmedEmail,
-          password: loginPasswordVal
-        });
-      } else {
-        authResult = await loginPin({
-          email: trimmedEmail,
-          pin: loginPinVal.trim()
-        });
-      }
+      const res = await executeStoreLogin({
+        email: validation.trimmedEmail,
+        loginMode,
+        password: loginPasswordVal,
+        pin: loginPinVal
+      });
 
-      const loginRes = await loginWithAuthPayload(
-        authResult,
-        loginMode === 'pin' ? loginPinVal.trim() : undefined,
-        false
-      );
-
-      if (!loginRes.success) {
+      if (!res.success && res.authResult) {
         setPendingAuthPayload({
-          payload: authResult,
-          localPin: loginMode === 'pin' ? loginPinVal.trim() : undefined
+          payload: res.authResult,
+          localPin: res.localPin
         });
-        setUnsyncedLoginCount(loginRes.unsyncedCount);
+        setUnsyncedLoginCount(res.unsyncedCount || 0);
         setIsUnsyncedDialogOpen(true);
         setIsSubmitting(false);
         return;
       }
 
-      void useSubscriptionStore.getState().refreshSubscription();
       onNavigate('pos');
     } catch (err: any) {
       const msg = err?.response?.data?.message || t.onboarding.loginFailed;
@@ -535,66 +524,21 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
 
     setIsSubmitting(true);
     try {
-      const newTenantId = createClientUuid();
-      const newUserId = createClientUuid();
-
-      // 1. Seed Dexie first (Zero Network Block Guarantee)
-      await seedDexieDatabaseIfNeeded(false, newTenantId, false, trimmedStore);
-
-      // Save initial GCash fees
-      try {
-        const fees = regOfferGcash ? DEFAULT_GCASH_FEE_TIERS : DEFAULT_GCASH_FEE_TIERS.map(() => 0);
-        fees.forEach((fee, idx) => {
-          useGCashFeeStore.getState().setFeeForTenant(newTenantId, idx, fee);
-        });
-      } catch (fErr) {
-        console.warn('Could not set GCash fees:', fErr);
-      }
-
-      let serverToken: string | undefined;
-      let registeredHasPin = Boolean(regPin.trim());
-
-      try {
-        const authResult = await registerStore({
-          tenantId: newTenantId,
-          userId: newUserId,
-          email: trimmedEmail,
-          password: regPassword,
-          pin: regPin.trim() || undefined,
-          businessName: trimmedStore
-        });
-        serverToken = authResult.token;
-        registeredHasPin = authResult.hasPin;
-      } catch (apiErr: any) {
-        if (apiErr?.response?.status === 409) {
-          setAuthErrors([t.onboarding.emailAlreadyExists]);
-          setRegFieldErrors({ email: true });
-          setIsSubmitting(false);
-          return;
-        }
-        console.warn('Backend registration offline, proceeding locally:', apiErr);
-      }
-
-      completeOnboarding({
+      const result = await executeStoreRegistration({
         businessName: trimmedStore,
-        userEmail: trimmedEmail,
-        tenantId: newTenantId,
-        userId: newUserId,
-        hasPin: registeredHasPin,
-        localPin: regPin.trim() || undefined,
-        token: serverToken
+        email: trimmedEmail,
+        password: regPassword,
+        pin: regPin,
+        offerGcash: regOfferGcash,
+        includeStarterProducts: true
       });
 
-      useSubscriptionStore.setState({
-        tier: 'Libre',
-        subscriptionEndDate: null,
-        isActive: false,
-        daysRemaining: null
-      });
+      if (!result.success && result.emailAlreadyExists) {
+        setAuthErrors([t.onboarding.emailAlreadyExists]);
+        setRegFieldErrors({ email: true });
+        return;
+      }
 
-      void useSubscriptionStore.getState().refreshSubscription();
-      await updateQueueCounts();
-      void kickSync();
       onNavigate('pos');
     } catch (err: any) {
       setAuthError(err?.message || t.onboarding.submitError);
@@ -635,6 +579,138 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
       el.scrollIntoView({ behavior: 'smooth' });
     }
   };
+
+  const scrollToLogin = () => {
+    const el = document.getElementById('login-section');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+  const features = [
+    { icon: <ShoppingBagRegular />, title: t.landing.feat1Title, desc: t.landing.feat1Desc },
+    { icon: <NotebookRegular />, title: t.landing.feat2Title, desc: t.landing.feat2Desc },
+    { icon: <PhoneRegular />, title: t.landing.feat3Title, desc: t.landing.feat3Desc },
+    { icon: <BoxRegular />, title: t.landing.feat4Title, desc: t.landing.feat4Desc },
+    { icon: <PrintRegular />, title: t.landing.feat5Title, desc: t.landing.feat5Desc },
+    { icon: <CloudCheckmarkRegular />, title: t.landing.feat6Title, desc: t.landing.feat6Desc }
+  ];
+
+  const compareOldItems = [
+    t.landing.compareOldItem1,
+    t.landing.compareOldItem2,
+    t.landing.compareOldItem3,
+    t.landing.compareOldItem4
+  ];
+
+  const compareNewItems = [
+    t.landing.compareNewItem1,
+    t.landing.compareNewItem2,
+    t.landing.compareNewItem3,
+    t.landing.compareNewItem4
+  ];
+
+  const testimonials = [
+    {
+      quote: '"Dati puro punit-punit na kuwaderno ang listahan ng pautang. Ngayon, isang pindot lang sa phone, alam agad ni kumare kung magkano ang bayarin niya nang walang samaan ng loob!"',
+      initials: 'NS',
+      name: 'Aling Nena Santos',
+      store: 'Nena’s Store • Tondo, Maynila'
+    },
+    {
+      quote: '"Napakalaking tulong ng GCash fee calculator! Hindi na ako nalulugi sa bawas ng digital balance, at tugma lagi ang kaha ko sa gabi kapag nagbibilang ng cash."',
+      initials: 'JM',
+      name: 'Kuya Jun Morales',
+      store: 'JM Sari-Sari & Remittance • Cavite'
+    },
+    {
+      quote: '"Kahit brownout at walang internet sa barangay namin, tuloy-tuloy ang pagtitinda gamit ang lumang tablet. Pagbalik ng kuryente, kusa nang nag-sync sa cloud!"',
+      initials: 'MR',
+      name: 'Ate Maria Rodriguez',
+      store: 'Maria’s Mart • Mandaue City, Cebu'
+    }
+  ];
+
+  const heroPerks = [
+    '100% Offline-First sa IndexedDB — Hindi mababagal sa mahinang signal',
+    'Integer Centavo Math — Walang floating point rounding drift sa kaha',
+    'Libre Magpakailanman — Hanggang 30 paninda at 30 debtors'
+  ];
+
+  const calcStats = [
+    {
+      label: t.landing.calcMonthlyProfit,
+      value: formatPeso(monthlyRetailProfit),
+      color: tokens.colorPaletteGreenForeground1
+    },
+    {
+      label: t.landing.calcGcashProfit,
+      value: `+${formatPeso(monthlyGcashProfit)}`,
+      color: tokens.colorPaletteGreenForeground1
+    },
+    {
+      label: t.landing.calcUtangRecovered,
+      value: `~${formatPeso(monthlyUtangRecovered)}`,
+      color: tokens.colorPaletteBlueForeground2
+    },
+    {
+      label: t.landing.calcHoursSaved,
+      value: `~${monthlyHoursSaved} oras`,
+      color: tokens.colorPaletteDarkOrangeForeground1
+    }
+  ];
+
+  const pricingPlans = [
+    {
+      title: t.landing.planFreeTitle,
+      price: t.landing.planFreePrice,
+      desc: t.landing.planFreeDesc,
+      features: [
+        '✓ Hanggang 30 Produkto',
+        '✓ Hanggang 30 Utang Debtors',
+        '✓ 30 GCash Txns bawat buwan',
+        '✓ 100% Offline POS & Kaha'
+      ],
+      highlighted: false,
+      btnAppearance: 'secondary' as const
+    },
+    {
+      title: t.landing.planProTitle,
+      price: t.landing.planProPrice,
+      desc: t.landing.planProDesc,
+      features: [
+        '✓ Walang Limitasyong Produkto',
+        '✓ Walang Limitasyong Utang Debtors',
+        '✓ Walang Limitasyong GCash Txns',
+        '✓ Detalyadong Profit & Margin Analytics',
+        '✓ Resibong walang watermark',
+        '✓ CSV Bulk Catalog Import'
+      ],
+      highlighted: true,
+      btnAppearance: 'primary' as const
+    },
+    {
+      title: t.landing.planPlusTitle,
+      price: t.landing.planPlusPrice,
+      desc: t.landing.planPlusDesc,
+      features: [
+        '✓ Lahat ng nasa Tindahan Pro',
+        '✓ Hanggang 5 Staff Cashiers na may PIN',
+        '✓ Sabay-sabay na 4 Devices',
+        '✓ Buong Staff Audit Trail Logs',
+        '✓ Priority Cloud Database Backup'
+      ],
+      highlighted: false,
+      btnAppearance: 'secondary' as const
+    }
+  ];
+
+  const faqs = [
+    { value: 'faq-1', q: t.landing.faq1Q, a: t.landing.faq1A },
+    { value: 'faq-2', q: t.landing.faq2Q, a: t.landing.faq2A },
+    { value: 'faq-3', q: t.landing.faq3Q, a: t.landing.faq3A },
+    { value: 'faq-4', q: t.landing.faq4Q, a: t.landing.faq4A }
+  ];
 
   return (
     <div className={styles.container} id="landing-page-root">
@@ -683,18 +759,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
           </div>
 
           <div className={styles.heroPerks}>
-            <div className={styles.perkItem}>
-              <CheckmarkCircleRegular primaryFill={tokens.colorPaletteGreenForeground1} />
-              <span>100% Offline-First sa IndexedDB — Hindi mababagal sa mahinang signal</span>
-            </div>
-            <div className={styles.perkItem}>
-              <CheckmarkCircleRegular primaryFill={tokens.colorPaletteGreenForeground1} />
-              <span>Integer Centavo Math — Walang floating point rounding drift sa kaha</span>
-            </div>
-            <div className={styles.perkItem}>
-              <CheckmarkCircleRegular primaryFill={tokens.colorPaletteGreenForeground1} />
-              <span>Libre Magpakailanman — Hanggang 30 paninda at 30 debtors</span>
-            </div>
+            {heroPerks.map((perk, idx) => (
+              <div key={idx} className={styles.perkItem}>
+                <CheckmarkCircleRegular primaryFill={tokens.colorPaletteGreenForeground1} />
+                <span>{perk}</span>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -949,89 +1019,21 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
         </div>
 
         <div className={styles.featuresGrid}>
-          <Card className={styles.featureCard}>
-            <div className={styles.featureIconWrapper}>
-              <ShoppingBagRegular />
-            </div>
-            <div>
-              <Text weight="bold" size={400} style={{ display: 'block', marginBottom: '4px' }}>
-                {t.landing.feat1Title}
-              </Text>
-              <Text size={300} style={{ color: tokens.colorNeutralForeground3 }}>
-                {t.landing.feat1Desc}
-              </Text>
-            </div>
-          </Card>
-
-          <Card className={styles.featureCard}>
-            <div className={styles.featureIconWrapper}>
-              <NotebookRegular />
-            </div>
-            <div>
-              <Text weight="bold" size={400} style={{ display: 'block', marginBottom: '4px' }}>
-                {t.landing.feat2Title}
-              </Text>
-              <Text size={300} style={{ color: tokens.colorNeutralForeground3 }}>
-                {t.landing.feat2Desc}
-              </Text>
-            </div>
-          </Card>
-
-          <Card className={styles.featureCard}>
-            <div className={styles.featureIconWrapper}>
-              <PhoneRegular />
-            </div>
-            <div>
-              <Text weight="bold" size={400} style={{ display: 'block', marginBottom: '4px' }}>
-                {t.landing.feat3Title}
-              </Text>
-              <Text size={300} style={{ color: tokens.colorNeutralForeground3 }}>
-                {t.landing.feat3Desc}
-              </Text>
-            </div>
-          </Card>
-
-          <Card className={styles.featureCard}>
-            <div className={styles.featureIconWrapper}>
-              <BoxRegular />
-            </div>
-            <div>
-              <Text weight="bold" size={400} style={{ display: 'block', marginBottom: '4px' }}>
-                {t.landing.feat4Title}
-              </Text>
-              <Text size={300} style={{ color: tokens.colorNeutralForeground3 }}>
-                {t.landing.feat4Desc}
-              </Text>
-            </div>
-          </Card>
-
-          <Card className={styles.featureCard}>
-            <div className={styles.featureIconWrapper}>
-              <PrintRegular />
-            </div>
-            <div>
-              <Text weight="bold" size={400} style={{ display: 'block', marginBottom: '4px' }}>
-                {t.landing.feat5Title}
-              </Text>
-              <Text size={300} style={{ color: tokens.colorNeutralForeground3 }}>
-                {t.landing.feat5Desc}
-              </Text>
-            </div>
-          </Card>
-
-          <Card className={styles.featureCard}>
-            <div className={styles.featureIconWrapper}>
-              <CloudCheckmarkRegular />
-            </div>
-            <div>
-              <Text weight="bold" size={400} style={{ display: 'block', marginBottom: '4px' }}>
-                {t.landing.feat6Title}
-              </Text>
-              <Text size={300} style={{ color: tokens.colorNeutralForeground3 }}>
-                {t.landing.feat6Desc}
-              </Text>
-            </div>
-          </Card>
+          {features.map((feat, idx) => (
+            <Card key={idx} className={styles.featureCard}>
+              <div className={styles.featureIconWrapper}>
+                {feat.icon}
+              </div>
+              <div>
+                <Text weight="bold" size={400} style={{ display: 'block', marginBottom: '4px' }}>
+                  {feat.title}
+                </Text>
+                <Text size={300} style={{ color: tokens.colorNeutralForeground3 }}>
+                  {feat.desc}
+                </Text>
+              </div>
+            </Card>
+          ))}
         </div>
       </section>
 
@@ -1108,33 +1110,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
 
           {/* Computed Output Cards */}
           <div className={styles.calcOutputGrid}>
-            <div className={styles.calcStatCard}>
-              <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>{t.landing.calcMonthlyProfit}</Text>
-              <Text size={600} weight="bold" style={{ color: tokens.colorPaletteGreenForeground1 }}>
-                {formatPeso(monthlyRetailProfit)}
-              </Text>
-            </div>
-
-            <div className={styles.calcStatCard}>
-              <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>{t.landing.calcGcashProfit}</Text>
-              <Text size={600} weight="bold" style={{ color: tokens.colorPaletteGreenForeground1 }}>
-                +{formatPeso(monthlyGcashProfit)}
-              </Text>
-            </div>
-
-            <div className={styles.calcStatCard}>
-              <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>{t.landing.calcUtangRecovered}</Text>
-              <Text size={600} weight="bold" style={{ color: tokens.colorPaletteBlueForeground2 }}>
-                ~{formatPeso(monthlyUtangRecovered)}
-              </Text>
-            </div>
-
-            <div className={styles.calcStatCard}>
-              <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>{t.landing.calcHoursSaved}</Text>
-              <Text size={600} weight="bold" style={{ color: tokens.colorPaletteDarkOrangeForeground1 }}>
-                ~{monthlyHoursSaved} oras
-              </Text>
-            </div>
+            {calcStats.map((stat, idx) => (
+              <div key={idx} className={styles.calcStatCard}>
+                <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>{stat.label}</Text>
+                <Text size={600} weight="bold" style={{ color: stat.color }}>
+                  {stat.value}
+                </Text>
+              </div>
+            ))}
           </div>
         </div>
       </section>
@@ -1153,22 +1136,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
               <Text size={500} weight="bold">{t.landing.compareOldTitle}</Text>
             </div>
             <div className={styles.compareList}>
-              <div className={styles.compareItem}>
-                <DismissCircleRegular primaryFill={tokens.colorPaletteRedForeground1} />
-                <Text size={300}>{t.landing.compareOldItem1}</Text>
-              </div>
-              <div className={styles.compareItem}>
-                <DismissCircleRegular primaryFill={tokens.colorPaletteRedForeground1} />
-                <Text size={300}>{t.landing.compareOldItem2}</Text>
-              </div>
-              <div className={styles.compareItem}>
-                <DismissCircleRegular primaryFill={tokens.colorPaletteRedForeground1} />
-                <Text size={300}>{t.landing.compareOldItem3}</Text>
-              </div>
-              <div className={styles.compareItem}>
-                <DismissCircleRegular primaryFill={tokens.colorPaletteRedForeground1} />
-                <Text size={300}>{t.landing.compareOldItem4}</Text>
-              </div>
+              {compareOldItems.map((item, idx) => (
+                <div key={idx} className={styles.compareItem}>
+                  <DismissCircleRegular primaryFill={tokens.colorPaletteRedForeground1} />
+                  <Text size={300}>{item}</Text>
+                </div>
+              ))}
             </div>
           </Card>
 
@@ -1180,22 +1153,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
               </Text>
             </div>
             <div className={styles.compareList}>
-              <div className={styles.compareItem}>
-                <CheckmarkCircleRegular primaryFill={tokens.colorPaletteGreenForeground1} />
-                <Text size={300}>{t.landing.compareNewItem1}</Text>
-              </div>
-              <div className={styles.compareItem}>
-                <CheckmarkCircleRegular primaryFill={tokens.colorPaletteGreenForeground1} />
-                <Text size={300}>{t.landing.compareNewItem2}</Text>
-              </div>
-              <div className={styles.compareItem}>
-                <CheckmarkCircleRegular primaryFill={tokens.colorPaletteGreenForeground1} />
-                <Text size={300}>{t.landing.compareNewItem3}</Text>
-              </div>
-              <div className={styles.compareItem}>
-                <CheckmarkCircleRegular primaryFill={tokens.colorPaletteGreenForeground1} />
-                <Text size={300}>{t.landing.compareNewItem4}</Text>
-              </div>
+              {compareNewItems.map((item, idx) => (
+                <div key={idx} className={styles.compareItem}>
+                  <CheckmarkCircleRegular primaryFill={tokens.colorPaletteGreenForeground1} />
+                  <Text size={300}>{item}</Text>
+                </div>
+              ))}
             </div>
           </Card>
         </div>
@@ -1209,109 +1172,50 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
         </div>
 
         <div className={styles.pricingGrid}>
-          <Card className={styles.pricingCard}>
-            <div>
-              <Text size={500} weight="bold" style={{ display: 'block', marginBottom: '4px' }}>
-                {t.landing.planFreeTitle}
-              </Text>
-              <Text size={600} weight="bold" style={{ color: tokens.colorBrandForeground1, display: 'block', marginBottom: '8px' }}>
-                {t.landing.planFreePrice}
-              </Text>
-              <Text size={200} style={{ color: tokens.colorNeutralForeground3, display: 'block', marginBottom: '16px' }}>
-                {t.landing.planFreeDesc}
-              </Text>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px' }}>
-                <div>✓ Hanggang 30 Produkto</div>
-                <div>✓ Hanggang 30 Utang Debtors</div>
-                <div>✓ 30 GCash Txns bawat buwan</div>
-                <div>✓ 100% Offline POS & Kaha</div>
+          {pricingPlans.map((plan, idx) => (
+            <Card
+              key={idx}
+              className={mergeClasses(
+                styles.pricingCard,
+                plan.highlighted && styles.pricingCardHighlighted
+              )}
+              style={{ overflow: 'visible' }}
+            >
+              {plan.highlighted && (
+                <Badge
+                  appearance="filled"
+                  color="warning"
+                  icon={<StarFilled />}
+                  className={styles.popularBadge}
+                >
+                  {t.subscription.popularBadge}
+                </Badge>
+              )}
+              <div>
+                <Text size={500} weight="bold" style={{ display: 'block', marginBottom: '4px' }}>
+                  {plan.title}
+                </Text>
+                <Text size={600} weight="bold" style={{ color: tokens.colorBrandForeground1, display: 'block', marginBottom: '8px' }}>
+                  {plan.price}
+                </Text>
+                <Text size={200} style={{ color: tokens.colorNeutralForeground3, display: 'block', marginBottom: '16px' }}>
+                  {plan.desc}
+                </Text>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px' }}>
+                  {plan.features.map((feat, fIdx) => (
+                    <div key={fIdx}>{feat}</div>
+                  ))}
+                </div>
               </div>
-            </div>
-            <Button
-              appearance="secondary"
-              onClick={() => {
-                const el = document.getElementById('login-section');
-                if (el) el.scrollIntoView({ behavior: 'smooth' });
-              }}
-              style={{ marginTop: '20px' }}
-            >
-              {t.landing.startNowBtn}
-            </Button>
-          </Card>
-
-          <Card
-            className={mergeClasses(styles.pricingCard, styles.pricingCardHighlighted)}
-            style={{ overflow: 'visible' }}
-          >
-            <Badge
-              appearance="filled"
-              color="warning"
-              icon={<StarFilled />}
-              className={styles.popularBadge}
-            >
-              {t.subscription.popularBadge}
-            </Badge>
-            <div>
-              <Text size={500} weight="bold" style={{ display: 'block', marginBottom: '4px' }}>
-                {t.landing.planProTitle}
-              </Text>
-              <Text size={600} weight="bold" style={{ color: tokens.colorBrandForeground1, display: 'block', marginBottom: '8px' }}>
-                {t.landing.planProPrice}
-              </Text>
-              <Text size={200} style={{ color: tokens.colorNeutralForeground3, display: 'block', marginBottom: '16px' }}>
-                {t.landing.planProDesc}
-              </Text>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px' }}>
-                <div>✓ Walang Limitasyong Produkto</div>
-                <div>✓ Walang Limitasyong Utang Debtors</div>
-                <div>✓ Walang Limitasyong GCash Txns</div>
-                <div>✓ Detalyadong Profit & Margin Analytics</div>
-                <div>✓ Resibong walang watermark</div>
-                <div>✓ CSV Bulk Catalog Import</div>
-              </div>
-            </div>
-            <Button
-              appearance="primary"
-              onClick={() => {
-                const el = document.getElementById('login-section');
-                if (el) el.scrollIntoView({ behavior: 'smooth' });
-              }}
-              style={{ marginTop: '20px' }}
-            >
-              {t.landing.startNowBtn}
-            </Button>
-          </Card>
-
-          <Card className={styles.pricingCard}>
-            <div>
-              <Text size={500} weight="bold" style={{ display: 'block', marginBottom: '4px' }}>
-                {t.landing.planPlusTitle}
-              </Text>
-              <Text size={600} weight="bold" style={{ color: tokens.colorBrandForeground1, display: 'block', marginBottom: '8px' }}>
-                {t.landing.planPlusPrice}
-              </Text>
-              <Text size={200} style={{ color: tokens.colorNeutralForeground3, display: 'block', marginBottom: '16px' }}>
-                {t.landing.planPlusDesc}
-              </Text>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px' }}>
-                <div>✓ Lahat ng nasa Tindahan Pro</div>
-                <div>✓ Hanggang 5 Staff Cashiers na may PIN</div>
-                <div>✓ Sabay-sabay na 4 Devices</div>
-                <div>✓ Buong Staff Audit Trail Logs</div>
-                <div>✓ Priority Cloud Database Backup</div>
-              </div>
-            </div>
-            <Button
-              appearance="secondary"
-              onClick={() => {
-                const el = document.getElementById('login-section');
-                if (el) el.scrollIntoView({ behavior: 'smooth' });
-              }}
-              style={{ marginTop: '20px' }}
-            >
-              {t.landing.startNowBtn}
-            </Button>
-          </Card>
+              <Button
+                appearance={plan.btnAppearance}
+                onClick={scrollToLogin}
+                style={{ marginTop: '20px' }}
+              >
+                {t.landing.startNowBtn}
+              </Button>
+            </Card>
+          ))}
         </div>
       </section>
 
@@ -1323,59 +1227,25 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
         </div>
 
         <div className={styles.testimonialsGrid}>
-          <Card className={styles.testimonialCard}>
-            <div style={{ display: 'flex', gap: '4px', color: tokens.colorPaletteGoldForeground2 }}>
-              <StarFilled /><StarFilled /><StarFilled /><StarFilled /><StarFilled />
-            </div>
-            <Text size={300} style={{ fontStyle: 'italic', color: tokens.colorNeutralForeground2 }}>
-              "Dati puro punit-punit na kuwaderno ang listahan ng pautang. Ngayon, isang pindot lang sa phone, alam agad ni kumare kung magkano ang bayarin niya nang walang samaan ng loob!"
-            </Text>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: tokens.colorBrandBackground2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
-                NS
+          {testimonials.map((tItem, idx) => (
+            <Card key={idx} className={styles.testimonialCard}>
+              <div style={{ display: 'flex', gap: '4px', color: tokens.colorPaletteGoldForeground2 }}>
+                <StarFilled /><StarFilled /><StarFilled /><StarFilled /><StarFilled />
               </div>
-              <div>
-                <Text weight="bold" size={300} style={{ display: 'block' }}>Aling Nena Santos</Text>
-                <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>Nena’s Store • Tondo, Maynila</Text>
+              <Text size={300} style={{ fontStyle: 'italic', color: tokens.colorNeutralForeground2 }}>
+                {tItem.quote}
+              </Text>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: tokens.colorBrandBackground2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
+                  {tItem.initials}
+                </div>
+                <div>
+                  <Text weight="bold" size={300} style={{ display: 'block' }}>{tItem.name}</Text>
+                  <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>{tItem.store}</Text>
+                </div>
               </div>
-            </div>
-          </Card>
-
-          <Card className={styles.testimonialCard}>
-            <div style={{ display: 'flex', gap: '4px', color: tokens.colorPaletteGoldForeground2 }}>
-              <StarFilled /><StarFilled /><StarFilled /><StarFilled /><StarFilled />
-            </div>
-            <Text size={300} style={{ fontStyle: 'italic', color: tokens.colorNeutralForeground2 }}>
-              "Napakalaking tulong ng GCash fee calculator! Hindi na ako nalulugi sa bawas ng digital balance, at tugma lagi ang kaha ko sa gabi kapag nagbibilang ng cash."
-            </Text>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: tokens.colorBrandBackground2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
-                JM
-              </div>
-              <div>
-                <Text weight="bold" size={300} style={{ display: 'block' }}>Kuya Jun Morales</Text>
-                <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>JM Sari-Sari & Remittance • Cavite</Text>
-              </div>
-            </div>
-          </Card>
-
-          <Card className={styles.testimonialCard}>
-            <div style={{ display: 'flex', gap: '4px', color: tokens.colorPaletteGoldForeground2 }}>
-              <StarFilled /><StarFilled /><StarFilled /><StarFilled /><StarFilled />
-            </div>
-            <Text size={300} style={{ fontStyle: 'italic', color: tokens.colorNeutralForeground2 }}>
-              "Kahit brownout at walang internet sa barangay namin, tuloy-tuloy ang pagtitinda gamit ang lumang tablet. Pagbalik ng kuryente, kusa nang nag-sync sa cloud!"
-            </Text>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: tokens.colorBrandBackground2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
-                MR
-              </div>
-              <div>
-                <Text weight="bold" size={300} style={{ display: 'block' }}>Ate Maria Rodriguez</Text>
-                <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>Maria’s Mart • Mandaue City, Cebu</Text>
-              </div>
-            </div>
-          </Card>
+            </Card>
+          ))}
         </div>
       </section>
 
@@ -1390,30 +1260,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
         </div>
 
         <Accordion collapsible defaultOpenItems={['faq-1', 'faq-2']}>
-          <AccordionItem value="faq-1">
-            <AccordionHeader>{t.landing.faq1Q}</AccordionHeader>
-            <AccordionPanel>
-              <Text size={300} style={{ color: tokens.colorNeutralForeground2 }}>{t.landing.faq1A}</Text>
-            </AccordionPanel>
-          </AccordionItem>
-          <AccordionItem value="faq-2">
-            <AccordionHeader>{t.landing.faq2Q}</AccordionHeader>
-            <AccordionPanel>
-              <Text size={300} style={{ color: tokens.colorNeutralForeground2 }}>{t.landing.faq2A}</Text>
-            </AccordionPanel>
-          </AccordionItem>
-          <AccordionItem value="faq-3">
-            <AccordionHeader>{t.landing.faq3Q}</AccordionHeader>
-            <AccordionPanel>
-              <Text size={300} style={{ color: tokens.colorNeutralForeground2 }}>{t.landing.faq3A}</Text>
-            </AccordionPanel>
-          </AccordionItem>
-          <AccordionItem value="faq-4">
-            <AccordionHeader>{t.landing.faq4Q}</AccordionHeader>
-            <AccordionPanel>
-              <Text size={300} style={{ color: tokens.colorNeutralForeground2 }}>{t.landing.faq4A}</Text>
-            </AccordionPanel>
-          </AccordionItem>
+          {faqs.map((faq) => (
+            <AccordionItem key={faq.value} value={faq.value}>
+              <AccordionHeader>{faq.q}</AccordionHeader>
+              <AccordionPanel>
+                <Text size={300} style={{ color: tokens.colorNeutralForeground2 }}>{faq.a}</Text>
+              </AccordionPanel>
+            </AccordionItem>
+          ))}
         </Accordion>
       </section>
 
@@ -1429,10 +1283,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
           appearance="primary"
           size="large"
           style={{ backgroundColor: tokens.colorNeutralBackground1, color: tokens.colorBrandForeground1, fontWeight: 'bold' }}
-          onClick={() => {
-            const el = document.getElementById('login-section');
-            if (el) el.scrollIntoView({ behavior: 'smooth' });
-          }}
+          onClick={scrollToLogin}
         >
           {t.landing.ctaBtn}
         </Button>

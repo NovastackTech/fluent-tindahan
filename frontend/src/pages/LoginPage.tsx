@@ -23,18 +23,21 @@ import {
 import type { NavTab } from '../components/Navigation';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
-import { processSyncQueue, kickSync, updateQueueCounts, pullCatalogFromServer } from '../sync/syncEngine';
+import { processSyncQueue } from '../sync/syncEngine';
 import { ConfirmUnsyncedLoginDialog } from '../components/ConfirmUnsyncedLoginDialog';
 import { useTranslation } from '../state/languageStore';
 import { useAuthStore } from '../state/authStore';
-import { useSubscriptionStore } from '../state/subscriptionStore';
-import { useGCashFeeStore, DEFAULT_GCASH_FEE_TIERS } from '../state/gcashFeeStore';
-import { registerStore, loginStore, loginPin, type AuthResponseDto } from '../services/authService';
-import { createClientUuid, seedDexieDatabaseIfNeeded, DEFAULT_TENANT_ID } from '../db/seedData';
+import type { AuthResponseDto } from '../services/authService';
+import { seedDexieDatabaseIfNeeded, DEFAULT_TENANT_ID } from '../db/seedData';
 import { RegistrationFormFields } from '../components/RegistrationFormFields';
 import { LoginFormFields } from '../components/LoginFormFields';
 import { AuthErrorBanner } from '../components/AuthErrorBanner';
 import { validateRegistrationInput, validateLoginInput } from '../utils/registrationValidation';
+import {
+  executeStoreRegistration,
+  executeStoreLogin,
+  finalizeSuccessfulLogin
+} from '../services/storeRegistration';
 
 export interface LoginPageProps {
   onNavigate: (tab: NavTab) => void;
@@ -217,12 +220,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
         pendingAuthPayload.localPin,
         true
       );
-      void useSubscriptionStore.getState().refreshSubscription();
-      const productCount = await db.products.where('tenantId').equals(pendingAuthPayload.payload.tenantId).count();
-      if (productCount === 0) {
-        void pullCatalogFromServer().then(() => updateQueueCounts()).catch(console.error);
-      }
-      void processSyncQueue().catch(console.error);
+      await finalizeSuccessfulLogin(pendingAuthPayload.payload.tenantId);
       onNavigate('pos');
     } finally {
       setIsSubmitting(false);
@@ -243,12 +241,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
           pendingAuthPayload.localPin,
           false
         );
-        void useSubscriptionStore.getState().refreshSubscription();
-        const productCount = await db.products.where('tenantId').equals(pendingAuthPayload.payload.tenantId).count();
-        if (productCount === 0) {
-          void pullCatalogFromServer().then(() => updateQueueCounts()).catch(console.error);
-        }
-        void processSyncQueue().catch(console.error);
+        await finalizeSuccessfulLogin(pendingAuthPayload.payload.tenantId);
         onNavigate('pos');
       }
     } catch (e) {
@@ -271,46 +264,26 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
       return;
     }
 
-    const trimmedEmail = validation.trimmedEmail;
-
     setIsSubmitting(true);
     try {
-      let authResult;
-      if (loginMode === 'password') {
-        authResult = await loginStore({
-          email: trimmedEmail,
-          password: loginPasswordVal
-        });
-      } else {
-        authResult = await loginPin({
-          email: trimmedEmail,
-          pin: loginPinVal.trim()
-        });
-      }
+      const res = await executeStoreLogin({
+        email: validation.trimmedEmail,
+        loginMode,
+        password: loginPasswordVal,
+        pin: loginPinVal
+      });
 
-      const loginRes = await loginWithAuthPayload(
-        authResult,
-        loginMode === 'pin' ? loginPinVal.trim() : undefined,
-        false
-      );
-
-      if (!loginRes.success) {
+      if (!res.success && res.authResult) {
         setPendingAuthPayload({
-          payload: authResult,
-          localPin: loginMode === 'pin' ? loginPinVal.trim() : undefined
+          payload: res.authResult,
+          localPin: res.localPin
         });
-        setUnsyncedLoginCount(loginRes.unsyncedCount);
+        setUnsyncedLoginCount(res.unsyncedCount || 0);
         setIsUnsyncedDialogOpen(true);
         setIsSubmitting(false);
         return;
       }
 
-      void useSubscriptionStore.getState().refreshSubscription();
-      const productCount = await db.products.where('tenantId').equals(authResult.tenantId).count();
-      if (productCount === 0) {
-        void pullCatalogFromServer().then(() => updateQueueCounts()).catch(console.error);
-      }
-      void processSyncQueue().catch(console.error);
       onNavigate('pos');
     } catch (err: any) {
       const msg = err?.response?.data?.message || t.onboarding.loginFailed;
@@ -350,71 +323,21 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
 
     setIsSubmitting(true);
     try {
-      const newTenantId = createClientUuid();
-      const newUserId = createClientUuid();
-
-      // 1. Seed local Dexie (Zero Network Block Guarantee)
-      await seedDexieDatabaseIfNeeded(
-        false,
-        newTenantId,
-        !regIncludeStarterProducts,
-        trimmedStore
-      );
-
-      // 2. Set GCash fees
-      try {
-        const fees = regOfferGcash ? DEFAULT_GCASH_FEE_TIERS : DEFAULT_GCASH_FEE_TIERS.map(() => 0);
-        fees.forEach((fee, idx) => {
-          useGCashFeeStore.getState().setFeeForTenant(newTenantId, idx, fee);
-        });
-      } catch (fErr) {
-        console.warn('Could not set GCash fees:', fErr);
-      }
-
-      let serverToken: string | undefined;
-      let registeredHasPin = Boolean(regPin.trim());
-
-      try {
-        const authResult = await registerStore({
-          tenantId: newTenantId,
-          userId: newUserId,
-          email: trimmedEmail,
-          password: regPassword,
-          pin: regPin.trim() || undefined,
-          businessName: trimmedStore
-        });
-        serverToken = authResult.token;
-        registeredHasPin = authResult.hasPin;
-      } catch (apiErr: any) {
-        if (apiErr?.response?.status === 409) {
-          setAuthErrors([t.onboarding.emailAlreadyExists]);
-          setRegFieldErrors({ email: true });
-          setIsSubmitting(false);
-          return;
-        }
-        console.warn('Backend registration offline, proceeding locally:', apiErr);
-      }
-
-      completeOnboarding({
+      const result = await executeStoreRegistration({
         businessName: trimmedStore,
-        userEmail: trimmedEmail,
-        tenantId: newTenantId,
-        userId: newUserId,
-        hasPin: registeredHasPin,
-        localPin: regPin.trim() || undefined,
-        token: serverToken
+        email: trimmedEmail,
+        password: regPassword,
+        pin: regPin,
+        offerGcash: regOfferGcash,
+        includeStarterProducts: regIncludeStarterProducts
       });
 
-      useSubscriptionStore.setState({
-        tier: 'Libre',
-        subscriptionEndDate: null,
-        isActive: false,
-        daysRemaining: null
-      });
+      if (!result.success && result.emailAlreadyExists) {
+        setAuthErrors([t.onboarding.emailAlreadyExists]);
+        setRegFieldErrors({ email: true });
+        return;
+      }
 
-      void useSubscriptionStore.getState().refreshSubscription();
-      await updateQueueCounts();
-      void kickSync();
       onNavigate('pos');
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || t.onboarding.submitError;
