@@ -378,15 +378,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
     if (!regPassword) {
       errors.push(t.onboarding.passwordRequired);
       fieldErrors.password = true;
-    } else {
-      if (regPassword.length < 6) {
-        errors.push(t.onboarding.passwordMinLength);
-      }
-      const strength = evaluatePasswordStrength(regPassword);
-      if (!strength.isValid) {
-        errors.push(t.onboarding.passwordStrengthError);
-        fieldErrors.password = true;
-      }
+    } else if (!evaluatePasswordStrength(regPassword).isValid) {
+      errors.push(t.onboarding.passwordStrengthError);
+      fieldErrors.password = true;
     }
 
     if (!regConfirmPassword) {

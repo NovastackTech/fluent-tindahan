@@ -352,12 +352,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
   } = useAuthStore();
 
   // Auth Card State
-  const [activeTab, setActiveTab] = useState<'login' | 'register'>(() => {
-    if (typeof window === 'undefined') return 'login';
-    const params = new URLSearchParams(window.location.search);
-    const tab = params.get('tab')?.toLowerCase();
-    return (tab === 'signup' || tab === 'register' || tab === 'newstore' || tab === 'new-store') ? 'register' : 'login';
-  });
+  const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
   const [loginMode, setLoginMode] = useState<'password' | 'pin'>('password');
   const [loginEmailVal, setLoginEmailVal] = useState('');
   const [loginPasswordVal, setLoginPasswordVal] = useState('');
@@ -566,15 +561,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
     if (!regPassword) {
       errors.push(t.onboarding.passwordRequired);
       fieldErrors.password = true;
-    } else {
-      if (regPassword.length < 6) {
-        errors.push(t.onboarding.passwordMinLength);
-      }
-      const strength = evaluatePasswordStrength(regPassword);
-      if (!strength.isValid) {
-        errors.push(t.onboarding.passwordStrengthError);
-        fieldErrors.password = true;
-      }
+    } else if (!evaluatePasswordStrength(regPassword).isValid) {
+      errors.push(t.onboarding.passwordStrengthError);
+      fieldErrors.password = true;
     }
 
     if (!regConfirmPassword) {
@@ -823,11 +812,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                     setAuthErrors([]);
                     setRegFieldErrors({});
                     setLoginFieldErrors({});
-                    if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
-                      const url = new URL(window.location.href);
-                      url.searchParams.set('tab', nextTab === 'register' ? 'signup' : 'login');
-                      window.history.replaceState(null, '', url.pathname + url.search);
-                    }
                   }}
                   style={{ marginBottom: tokens.spacingVerticalM }}
                 >

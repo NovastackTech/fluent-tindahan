@@ -114,7 +114,7 @@ describe('OnboardingModal', () => {
   const fillRegistrationCredentials = (email = 'test.owner@gmail.com', password = 'Password123!', pin = '') => {
     const emailInput = screen.getByPlaceholderText(/Hal. nena.store@gmail.com|e.g. nena.store@gmail.com/i);
     fireEvent.change(emailInput, { target: { value: email } });
-    const passwordInput = screen.getByPlaceholderText(/Minimum 6 characters/i);
+    const passwordInput = screen.getByPlaceholderText(/Minimum [68] characters/i);
     fireEvent.change(passwordInput, { target: { value: password } });
     if (pin) {
       const pinInput = screen.getByPlaceholderText(/4 hanggang 6 na numero|4 to 6 digits/i);
@@ -164,7 +164,7 @@ describe('OnboardingModal', () => {
     const storeInput = screen.getByPlaceholderText(/Hal. Tindahan ni Aling Maria|e.g. Maria's Sari-Sari Store/i);
     fireEvent.change(storeInput, { target: { value: 'Tindahan ni Maria' } });
 
-    const passwordInput = screen.getByPlaceholderText(/Minimum 6 characters/i);
+    const passwordInput = screen.getByPlaceholderText(/Minimum [68] characters/i);
     fireEvent.change(passwordInput, { target: { value: 'Password123!' } });
 
     const submitBtn = screen.getByRole('button', { name: /Simulan ang Aking Tindahan|Launch My Store/i });
@@ -196,7 +196,7 @@ describe('OnboardingModal', () => {
     fireEvent.click(submitBtn);
 
     await waitFor(() => {
-      expect(screen.getByText(/Dapat mayroong 6 o higit pang characters|Password must be at least 6 characters/i)).toBeInTheDocument();
+      expect(screen.getByText(/Dapat mayroong [68] o higit pang characters|Password must be at least [68] characters/i)).toBeInTheDocument();
     });
   });
 
@@ -332,7 +332,7 @@ describe('OnboardingModal', () => {
     const emailInput = screen.getByPlaceholderText(/Hal. nena.store@gmail.com|e.g. nena.store@gmail.com/i);
     fireEvent.change(emailInput, { target: { value: 'suki@tindahan.ph' } });
 
-    const passwordInput = screen.getByPlaceholderText(/Minimum 6 characters/i);
+    const passwordInput = screen.getByPlaceholderText(/Minimum [68] characters/i);
     fireEvent.change(passwordInput, { target: { value: 'Password123!' } });
 
     const loginBtn = screen.getByRole('button', { name: /Pumasok sa Tindahan|Log In to Store/i });

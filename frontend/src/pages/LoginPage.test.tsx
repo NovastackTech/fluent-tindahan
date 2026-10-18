@@ -490,7 +490,7 @@ describe('LoginPage Component', () => {
     const alert = screen.getByRole('alert');
     expect(alert).toHaveTextContent(t.onboarding.storeNameRequired);
     expect(alert).toHaveTextContent(t.onboarding.emailInvalid);
-    expect(alert).toHaveTextContent(t.onboarding.passwordMinLength);
+    expect(alert).toHaveTextContent(t.onboarding.passwordStrengthError);
     expect(alert).toHaveTextContent(t.onboarding.pinInvalid);
 
     // Verify invalid fields have aria-invalid="true"
