@@ -27,6 +27,7 @@ import {
   ChevronUpRegular
 } from '@fluentui/react-icons';
 import type { NavTab } from './Navigation';
+import { resolveHeaderLogoDestination } from './headerLogoDestination';
 import { useThemeStore } from '../state/themeStore';
 import { useSyncStore, processSyncQueue } from '../sync/syncEngine';
 import { useAuthStore } from '../state/authStore';
@@ -266,6 +267,19 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
   const isLoggedOut = !isOnboarded || activeTab === 'login';
   const showStoreInfo = !isLoggedOut && Boolean(businessName);
   const showSyncIndicators = !isLoggedOut;
+  const logoDestination = resolveHeaderLogoDestination(activeTab, isOnboarded);
+  let logoTitle = t.landing.exploreTitle;
+  if (logoDestination === 'dashboard') {
+    logoTitle = t.nav.dashboard;
+  } else if (logoDestination === 'login') {
+    logoTitle = t.landing.tabLogin;
+  }
+
+  const handleLogoClick = () => {
+    if (onNavigate) {
+      onNavigate(logoDestination);
+    }
+  };
 
   // Reusable action components
   const handleToggleLanding = () => {
@@ -484,9 +498,10 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
       <div className={styles.headerInner} ref={headerInnerRef}>
         <div
           className={styles.titleGroup}
-          onClick={handleToggleLanding}
+          onClick={handleLogoClick}
           style={{ cursor: onNavigate ? 'pointer' : 'default' }}
-          title={activeTab === 'landing' ? (isOnboarded ? t.nav.dashboard : t.landing.tabLogin) : t.landing.exploreTitle}
+          title={logoTitle}
+          data-testid="header-logo"
         >
           <div className={styles.logoIcon}>FT</div>
           <div style={{ minWidth: 0 }}>
