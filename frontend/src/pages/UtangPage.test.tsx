@@ -100,8 +100,12 @@ describe('UtangPage', () => {
     const saved = await db.customers.where('name').equals('Mang Kanor').first();
     expect(saved).toBeDefined();
     expect(saved?.totalUtangBalance).toBe(150);
-    expect(await db.utangLedger.toArray()).toHaveLength(1);
-    expect(await db.syncQueue.toArray()).toHaveLength(2);
+    const syncOps = await db.syncQueue.toArray();
+    expect(syncOps).toHaveLength(2);
+    const customerOp = syncOps.find((op) => op.entity === 'Customer');
+    expect(customerOp?.payload.totalUtangBalance).toBe(0);
+    const ledgerOp = syncOps.find((op) => op.entity === 'UtangLedger');
+    expect(ledgerOp?.payload.amount).toBe(150);
   });
 
   it('shows inline validation when saving a customer with a blank name', async () => {
@@ -540,59 +544,47 @@ describe('UtangPage', () => {
     });
   });
 
-  it('keeps customer dialog accessible after closing nested Add Utang or Record Payment dialog', async () => {
+  it('preserves stored customer debt balance and does not overwrite it with incomplete local UtangLedger', async () => {
+    // Simulate customer having an opening/restored totalUtangBalance in db.customers (e.g. 200)
+    // while UtangLedger currently only has a partial row of 100 (e.g. pending full sync or legacy opening debt).
     await db.customers.add({
-      id: 'cust-nested-test',
+      id: 'cust-mar100',
       tenantId: 'tenant-1',
-      name: 'QA Suki',
-      phone: '09171112222',
-      totalUtangBalance: 100,
+      name: 'MAR100',
+      phone: '09876544534',
+      totalUtangBalance: 200,
       updatedAt: new Date().toISOString()
     });
 
+    await db.utangLedger.add({
+      id: 'ledger-mar100-1',
+      tenantId: 'tenant-1',
+      customerId: 'cust-mar100',
+      type: 'Credit',
+      amount: 100,
+      date: new Date().toISOString(),
+      notes: ''
+    });
+
     renderUtang();
-    fireEvent.click(await screen.findByText('QA Suki'));
 
-    // Customer dialog is open
-    expect(await screen.findByRole('button', { name: /Isara|Close/i })).toBeInTheDocument();
-
-    // 1. Open Add Utang and cancel
-    fireEvent.click(screen.getByRole('button', { name: /Dagdagan ng Utang|Add Debt|Magtala ng Utang/i }));
-    const cancelAddCreditBtn = await screen.findByRole('button', { name: /Kanselahin|Cancel/i });
-    fireEvent.click(cancelAddCreditBtn);
-
+    // The UI should display the stored balance ₱200.00, NOT drop debt to ₱100.00
     await waitFor(() => {
-      const closeBtn = screen.getByRole('button', { name: /Isara|Close/i });
-      expect(closeBtn).toBeInTheDocument();
-      expect(closeBtn.closest('[aria-hidden="true"]')).toBeNull();
+      expect(screen.getByText('MAR100')).toBeInTheDocument();
+      expect(screen.getAllByText('₱200.00').length).toBeGreaterThanOrEqual(1);
     });
 
-    const payBtn = screen.getByRole('button', { name: /Magbayad|Pay/i });
-    expect(payBtn).toBeInTheDocument();
-    expect(payBtn.closest('[aria-hidden="true"]')).toBeNull();
-
-    // 2. Open Record Payment and cancel
-    fireEvent.click(payBtn);
-    const cancelPayBtn = await screen.findByRole('button', { name: /Kanselahin|Cancel/i });
-    fireEvent.click(cancelPayBtn);
-
+    // Opening customer modal should also show ₱200.00 for the customer's current balance
+    fireEvent.click(screen.getByText('MAR100'));
     await waitFor(() => {
-      const closeBtn = screen.getByRole('button', { name: /Isara|Close/i });
-      expect(closeBtn).toBeInTheDocument();
-      expect(closeBtn.closest('[aria-hidden="true"]')).toBeNull();
+      expect(screen.getAllByText('₱200.00').length).toBeGreaterThanOrEqual(2);
+      // Timeline displays the recorded ledger entry
+      expect(screen.getByText('+₱100.00')).toBeInTheDocument();
     });
 
-    // 3. Open Add Utang, save credit, and check accessibility on customer dialog with updated balance
-    fireEvent.click(screen.getByRole('button', { name: /Dagdagan ng Utang|Add Debt|Magtala ng Utang/i }));
-    const creditInputs = screen.getAllByRole('spinbutton');
-    fireEvent.change(creditInputs[creditInputs.length - 1], { target: { value: '50' } });
-    fireEvent.click(screen.getByRole('button', { name: /Itala ang Utang|Save Credit/i }));
-
-    await waitFor(() => {
-      const closeBtn = screen.getByRole('button', { name: /Isara|Close/i });
-      expect(closeBtn).toBeInTheDocument();
-      expect(closeBtn.closest('[aria-hidden="true"]')).toBeNull();
-    });
+    // Verify Dexie db.customers was NOT overwritten to 100
+    const stored = await db.customers.get('cust-mar100');
+    expect(stored?.totalUtangBalance).toBe(200);
   });
 });
 

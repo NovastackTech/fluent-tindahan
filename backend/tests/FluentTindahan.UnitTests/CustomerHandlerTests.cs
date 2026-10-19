@@ -122,4 +122,59 @@ public class CustomerHandlerTests
         result[0].Name.Should().Be("Aling Marites");
         result[1].Name.Should().Be("Tito Boy");
     }
+
+    [Fact]
+    public async Task GetCustomers_CalculatesBalanceFromUtangLedger_PreventsDoubleCountingOnRestore()
+    {
+        // Issue #107 regression: customer restored from server must reflect Sum(Credit) - Sum(Payment)
+        var (context, _) = CreateInMemoryContext();
+        var customerId = Guid.NewGuid();
+        context.Customers.Add(new Customer
+        {
+            Id = customerId,
+            TenantId = _testTenantId,
+            Name = "QA-TEST Juan",
+            Phone = "09171234567",
+            TotalUtangBalance = 190m, // Intentionally inflated column value
+            UpdatedAt = DateTimeOffset.UtcNow
+        });
+
+        // True timeline entries: Initial 100, Charge 50, Payment 60 => Balance 90
+        context.UtangLedgers.AddRange(
+            new UtangLedger
+            {
+                Id = Guid.NewGuid(),
+                TenantId = _testTenantId,
+                CustomerId = customerId,
+                Amount = 100m,
+                Type = "Credit",
+                Date = DateTimeOffset.UtcNow.AddMinutes(-30)
+            },
+            new UtangLedger
+            {
+                Id = Guid.NewGuid(),
+                TenantId = _testTenantId,
+                CustomerId = customerId,
+                Amount = 50m,
+                Type = "Credit",
+                Date = DateTimeOffset.UtcNow.AddMinutes(-20)
+            },
+            new UtangLedger
+            {
+                Id = Guid.NewGuid(),
+                TenantId = _testTenantId,
+                CustomerId = customerId,
+                Amount = 60m,
+                Type = "Payment",
+                Date = DateTimeOffset.UtcNow.AddMinutes(-10)
+            }
+        );
+        await context.SaveChangesAsync();
+
+        var handler = new GetCustomersQueryHandler(context);
+        var result = await handler.Handle(new GetCustomersQuery(), CancellationToken.None);
+
+        result.Should().ContainSingle(c => c.Id == customerId);
+        result.Single(c => c.Id == customerId).TotalUtangBalance.Should().Be(90m);
+    }
 }
