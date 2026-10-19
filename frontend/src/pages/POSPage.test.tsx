@@ -1217,7 +1217,46 @@ describe('POSPage', () => {
       expect(screen.getByText('Mababa')).toBeInTheDocument();
     });
   });
+
+  it('exposes accessible names on search barcode scanner and disabled Complete Sale button', async () => {
+    await db.products.add({
+      id: 'prod-accessible-test',
+      tenantId: 't-1',
+      name: 'Accessible Test Item',
+      price: 50,
+      cost: 40,
+      stockQty: 10,
+      category: 'General',
+      updatedAt: new Date().toISOString()
+    });
+
+    renderPOS();
+
+    // 1. Search barcode scanner button has non-empty accessible name
+    const scannerBtn = screen.getByRole('button', { name: /Buksan ang Scanner|Scan Barcode|Open Camera/i });
+    expect(scannerBtn).toBeInTheDocument();
+
+    // Add item to cart
+    fireEvent.click(await screen.findByText('Accessible Test Item'));
+
+    // Open checkout
+    const payBtn = await screen.findByRole('button', { name: /Bayad|Pay/i });
+    fireEvent.click(payBtn);
+
+    // 2. Disabled Complete Sale button has accessible name when tender is invalid / short
+    const completeBtn = await screen.findByRole('button', { name: /Kumpletuhin ang Benta|Complete Sale/i });
+    expect(completeBtn).toBeInTheDocument();
+
+    const tenderInput = screen.getByLabelText(/Cash received|Tinanggap/i);
+    fireEvent.change(tenderInput, { target: { value: '10' } }); // Total is 50, short tender disables button
+    expect(completeBtn).toBeDisabled();
+    expect(completeBtn).toHaveAttribute('aria-label', expect.stringMatching(/Kumpletuhin ang Benta|Complete Sale/i));
+
+    useCartStore.getState().clearCart();
+  });
 });
+
+
 
 
 

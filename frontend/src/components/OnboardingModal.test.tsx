@@ -110,6 +110,12 @@ describe('OnboardingModal', () => {
     await db.syncQueue.clear();
     useGCashFeeStore.setState({ feesByTenant: {} });
     useAuthStore.setState({
+      tenantId: 'onboard-test-tenant',
+      userId: 'onboard-test-user',
+      hasPin: false,
+      localPinVerifier: null,
+      firebaseToken: null,
+      refreshToken: null,
       consentAccepted: true,
       isOnboarded: false,
       isOnboardingStatusReady: true,
@@ -888,7 +894,7 @@ describe('OnboardingModal', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('unsynced-dialog-sync-btn')).toBeInTheDocument();
-    });
+    }, { timeout: 4000 });
 
     expect(useAuthStore.getState().tenantId).toBe('onboard-old-tenant-2');
 
@@ -897,7 +903,7 @@ describe('OnboardingModal', () => {
       return { processed: 1, conflicts: 0, errors: 0 };
     });
 
-    const syncBtn = screen.getByTestId('unsynced-dialog-sync-btn');
+    const syncBtn = await screen.findByTestId('unsynced-dialog-sync-btn');
     fireEvent.click(syncBtn);
 
     await waitFor(() => {

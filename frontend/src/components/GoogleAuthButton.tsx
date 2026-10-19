@@ -97,6 +97,7 @@ export const GoogleAuthButton: React.FC<GoogleAuthButtonProps> = ({
 
   return (
     <Button
+      type="button"
       appearance="outline"
       size={size}
       className={styles.button}

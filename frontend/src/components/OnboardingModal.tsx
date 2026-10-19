@@ -647,8 +647,7 @@ export const OnboardingModal: React.FC = () => {
   };
 
   return (
-    <>
-      <Dialog open={isOpen} onOpenChange={(_, data) => !data.open && isEditMode && closeOnboarding()}>
+    <Dialog open={isOpen} onOpenChange={(_, data) => !data.open && isEditMode && closeOnboarding()}>
       <DialogSurface className={styles.surface} aria-label={isEditMode ? t.onboarding.editTitle : t.onboarding.welcomeTitle}>
         <DialogBody>
           <div className={styles.headerRow}>
@@ -1065,18 +1064,17 @@ export const OnboardingModal: React.FC = () => {
                   : t.onboarding.loginBtn}
             </Button>
           </DialogActions>
+
+          <ConfirmUnsyncedLoginDialog
+            isOpen={isUnsyncedDialogOpen}
+            unsyncedCount={unsyncedLoginCount}
+            onClose={closeUnsyncedDialog}
+            onConfirmWipeAndLogin={handleConfirmWipeAndLogin}
+            onSyncFirst={handleSyncFirst}
+            isSyncing={isSyncingFirst}
+          />
         </DialogBody>
       </DialogSurface>
     </Dialog>
-
-    <ConfirmUnsyncedLoginDialog
-      isOpen={isUnsyncedDialogOpen}
-      unsyncedCount={unsyncedLoginCount}
-      onClose={closeUnsyncedDialog}
-      onConfirmWipeAndLogin={handleConfirmWipeAndLogin}
-      onSyncFirst={handleSyncFirst}
-      isSyncing={isSyncingFirst}
-    />
-  </>
   );
 };
