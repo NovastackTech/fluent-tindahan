@@ -32,7 +32,7 @@ The API refuses to start in Production without PayMongo keys. Before the first d
 
 ```powershell
 copy deploy\alibaba-sas\secrets.env.example deploy\alibaba-sas\secrets.env
-# fill PAYMONGO_SECRET_KEY and PAYMONGO_WEBHOOK_SECRET
+# fill PAYMONGO_SECRET_KEY, PAYMONGO_WEBHOOK_SECRET, and optionally GOOGLE_CLIENT_ID
 ```
 
 `install.sh` generates `/opt/fluent-tindahan/.env` (random `POSTGRES_PASSWORD`), merges `secrets.env` into it and deletes the uploaded copy. Later deploys keep the server `.env`; ship `secrets.env` again only to rotate keys. Reference: `tindahan.env.example`.
@@ -66,7 +66,7 @@ You enter the root SSH password once. The script packages the project (no `.git`
 A GitHub Actions CD workflow is configured at [`.github/workflows/cd.yml`](../../.github/workflows/cd.yml).
 - **Trigger**: Automatically runs on `push` to `main`, or on-demand via **Actions > CD (Alibaba Cloud SAS) > Run workflow**.
 - **Pipeline**: Runs frontend lint/tests/build and backend .NET unit tests. Upon validation, packages and streams the archive to `/opt/fluent-tindahan` over SSH, merges secrets, runs `install.sh`, and validates `https://tindahan-dev.novastack-inc.online/api/health`.
-- **Credentials**: Configured in GitHub Repository Secrets (`SAS_HOST`, `SAS_USER`, `SAS_PORT`, `SAS_SSH_KEY` or `SAS_PASSWORD`, `PAYMONGO_*`).
+- **Credentials**: Configured in GitHub Repository Secrets (`SAS_HOST`, `SAS_USER`, `SAS_PORT`, `SAS_SSH_KEY` or `SAS_PASSWORD`, `PAYMONGO_*`, `GOOGLE_CLIENT_ID`).
 
 ## 4. Reverse proxy and HTTPS (automatic)
 
