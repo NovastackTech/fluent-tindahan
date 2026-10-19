@@ -43,6 +43,12 @@ import { BarcodeScannerModal } from '../components/BarcodeScannerModal';
 import { QuickRegisterProductDialog } from '../components/QuickRegisterProductDialog';
 import { playScanBeep } from '../utils/sound';
 import { useSubscriptionStore } from '../state/subscriptionStore';
+import {
+  getCatalog,
+  findCatalogByName,
+  findCatalogByBarcode,
+  type CatalogItem
+} from '../db/catalog';
 import type { NavTab } from '../components/Navigation';
 import { formatPeso } from '../utils/currency';
 
@@ -388,6 +394,13 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
   const [unrecognizedBarcode, setUnrecognizedBarcode] = useState<string | null>(null);
   const [isQuickRegOpen, setIsQuickRegOpen] = useState(false);
 
+  // Catalog autocomplete tracking states
+  const [autoFilledBarcode, setAutoFilledBarcode] = useState<string | null>(null);
+  const [autoFilledName, setAutoFilledName] = useState<string | null>(null);
+  const [autoFilledCost, setAutoFilledCost] = useState<number | null>(null);
+  const [autoFilledPrice, setAutoFilledPrice] = useState<number | null>(null);
+  const [autoFilledCategory, setAutoFilledCategory] = useState<string | null>(null);
+
   // Toast feedback
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [limitBanner, setLimitBanner] = useState<string | null>(null);
@@ -398,6 +411,73 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
     setTimeout(() => {
       setToastMessage(null);
     }, 3200);
+  };
+
+  const applyCatalogItem = useCallback(
+    (item: CatalogItem, source: 'name' | 'barcode') => {
+      if (source === 'name') {
+        setFormName(item.name);
+        if (formNameError) setFormNameError('');
+        if (!formBarcode.trim() || formBarcode === autoFilledBarcode) {
+          setFormBarcode(item.barcode);
+          setAutoFilledBarcode(item.barcode);
+        }
+      } else {
+        setFormBarcode(item.barcode);
+        if (!formName.trim() || formName === autoFilledName) {
+          setFormName(item.name);
+          setAutoFilledName(item.name);
+          if (formNameError) setFormNameError('');
+        }
+      }
+
+      if (!formCategory.trim() || formCategory === autoFilledCategory) {
+        setFormCategory(item.category);
+        setAutoFilledCategory(item.category);
+      }
+
+      if (formCost === '' || formCost === 0 || formCost === autoFilledCost) {
+        setFormCost(item.cost);
+        setAutoFilledCost(item.cost);
+        setFormCostError('');
+      }
+
+      if (formPrice === '' || formPrice === 0 || formPrice === autoFilledPrice) {
+        setFormPrice(item.price);
+        setAutoFilledPrice(item.price);
+        setFormPriceError('');
+      }
+    },
+    [
+      formBarcode,
+      autoFilledBarcode,
+      formName,
+      autoFilledName,
+      formCategory,
+      autoFilledCategory,
+      formCost,
+      autoFilledCost,
+      formPrice,
+      autoFilledPrice,
+      formNameError
+    ]
+  );
+
+  const handleFormNameChange = (val: string) => {
+    setFormName(val);
+    if (formNameError) setFormNameError('');
+    const match = findCatalogByName(val);
+    if (match) {
+      applyCatalogItem(match, 'name');
+    }
+  };
+
+  const handleFormBarcodeChange = (val: string) => {
+    setFormBarcode(val);
+    const match = findCatalogByBarcode(val);
+    if (match) {
+      applyCatalogItem(match, 'barcode');
+    }
   };
 
   const handleSearchBarcodeScan = (scannedCode: string) => {
@@ -425,10 +505,26 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
   };
 
   const handleModalBarcodeScan = (scannedCode: string) => {
-    setFormBarcode(scannedCode.trim());
+    const code = scannedCode.trim();
+    setFormBarcode(code);
     playScanBeep();
-    showToast(`Barcode: ${scannedCode.trim()}`);
+    const match = findCatalogByBarcode(code);
+    if (match) {
+      applyCatalogItem(match, 'barcode');
+      showToast(`${match.name} (₱${match.price.toFixed(2)})`);
+    } else {
+      showToast(`Barcode: ${code}`);
+    }
   };
+
+  // Autocomplete suggestions memoized from catalog - loads all items from the catalog CSV
+  const catalogNameSuggestions = useMemo(() => {
+    return getCatalog();
+  }, []);
+
+  const catalogBarcodeSuggestions = useMemo(() => {
+    return getCatalog().filter((item) => Boolean(item.barcode));
+  }, []);
 
   // Distinct categories
   const categories = useMemo(() => {
@@ -440,6 +536,14 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [products]);
+
+  const formCategorySuggestions = useMemo(() => {
+    const set = new Set(categories);
+    getCatalog().forEach((c) => {
+      if (c.category) set.add(c.category);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [categories]);
 
   // Overall Inventory KPI Metrics
   const metrics = useMemo(() => {
@@ -562,6 +666,11 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
     setFormPriceError('');
     setFormStock(10);
     setFormStockError('');
+    setAutoFilledBarcode(null);
+    setAutoFilledName(null);
+    setAutoFilledCost(null);
+    setAutoFilledPrice(null);
+    setAutoFilledCategory(null);
     setIsModalOpen(true);
   };
 
@@ -579,6 +688,11 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
     setFormPriceError('');
     setFormStock(product.stockQty);
     setFormStockError('');
+    setAutoFilledBarcode(null);
+    setAutoFilledName(null);
+    setAutoFilledCost(null);
+    setAutoFilledPrice(null);
+    setAutoFilledCategory(null);
     setIsModalOpen(true);
   };
 
@@ -1303,17 +1417,23 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                     {t.inventory.productNameLabel}
                   </Text>
                   <Input
+                    role="textbox"
                     aria-label={t.inventory.productNameLabel}
                     aria-invalid={Boolean(formNameError)}
                     aria-describedby={formNameError ? 'inventory-product-name-error' : undefined}
                     style={{ width: '100%' }}
                     placeholder="e.g. Lucky Me Pancit Canton Kalamansi"
+                    list="catalog-product-names-list"
                     value={formName}
-                    onChange={(_, data) => {
-                      setFormName(data.value);
-                      if (formNameError) setFormNameError('');
-                    }}
+                    onChange={(_, data) => handleFormNameChange(data.value)}
                   />
+                  <datalist id="catalog-product-names-list">
+                    {catalogNameSuggestions.map((item) => (
+                      <option key={`${item.barcode || item.name}`} value={item.name}>
+                        {item.barcode ? `${item.barcode} • ` : ''}₱{item.price.toFixed(2)} ({item.category})
+                      </option>
+                    ))}
+                  </datalist>
                   {formNameError && (
                     <Text
                       id="inventory-product-name-error"
@@ -1340,7 +1460,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                     onChange={(_, data) => setFormCategory(data.value)}
                   />
                   <datalist id="categories-list">
-                    {categories.map((c) => (
+                    {formCategorySuggestions.map((c) => (
                       <option key={c} value={c} />
                     ))}
                   </datalist>
@@ -1353,12 +1473,21 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                   </Text>
                   <div style={{ display: 'flex', gap: '4px' }}>
                     <Input
+                      role="textbox"
                       aria-label={t.inventory.barcodeLabel}
                       style={{ flex: 1 }}
                       placeholder="e.g. 4800016644810"
+                      list="catalog-barcodes-list"
                       value={formBarcode}
-                      onChange={(_, data) => setFormBarcode(data.value)}
+                      onChange={(_, data) => handleFormBarcodeChange(data.value)}
                     />
+                    <datalist id="catalog-barcodes-list">
+                      {catalogBarcodeSuggestions.map((item) => (
+                        <option key={item.barcode} value={item.barcode}>
+                          {item.name} • ₱{item.price.toFixed(2)}
+                        </option>
+                      ))}
+                    </datalist>
                     <Button
                       appearance="subtle"
                       icon={<BarcodeScannerRegular />}
