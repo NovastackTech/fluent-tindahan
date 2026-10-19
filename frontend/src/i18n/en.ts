@@ -447,7 +447,25 @@ export const en: Translations = {
       sessionLockedDesc: 'Enter your PIN or Password to unlock your store.',
       unlockBtn: 'Unlock Till',
       invalidPinOrPassword: 'Invalid PIN or Password.',
-      pinLockedError: 'Too many failed attempts. PIN locked for {minutes} minutes. Please use your password.'
+      pinLockedError: 'Too many failed attempts. PIN locked for {minutes} minutes. Please use your password.',
+      deleteAccountBtn: 'Deactivate / Delete Account',
+      deleteAccountTitle: 'Deactivate or Delete Account',
+      deleteAccountDesc: 'Choose whether to temporarily deactivate your store account with a 30-day recovery window or permanently delete and anonymize your personal data.',
+      deleteModeGraceTitle: 'Deactivate Account (30-Day Grace Period — Recommended)',
+      deleteModeGraceDesc: 'Immediately signs out all devices and hides your account. You can restore your store anytime within 30 days simply by signing back in.',
+      deleteModeImmediateTitle: 'Delete Permanently Now (Irreversible)',
+      deleteModeImmediateDesc: 'Immediately scrubs your email, name, phone number, and customer PII, soft-deletes your catalog, and permanently closes the account.',
+      deleteRetentionNotice: 'Data Privacy & Retention Notice (RA 10173): Personal identifiers (email, owner name, phone, customer names/phones) are permanently scrubbed. Append-only financial ledger amounts (Sales, Utang totals, GCash logs) are retained in anonymized form for statutory tax and audit compliance.',
+      deleteSubWarning: 'Active Paid Plan Detected ({tier}): Deleting or deactivating your account does not automatically refund active billing cycles. Manage or cancel external recurring billing if applicable.',
+      deleteUtangWarning: 'Uncollected Utang Alert: Your store has {amount} in unpaid customer credit across {count} suki debtor(s). Export your backup before proceeding if you still need to collect.',
+      deleteUnsyncedWarning: 'You have {count} unsynced transaction(s) on this device. Sync first so you do not lose recent records.',
+      deleteReauthLabel: 'Confirm your identity to proceed:',
+      deleteReauthPasswordPlaceholder: 'Enter your current password',
+      deleteReauthPinPlaceholder: 'Enter your 4–6 digit PIN',
+      deleteConfirmDeactivateBtn: 'Deactivate for 30 Days',
+      deleteConfirmImmediateBtn: 'Permanently Delete Account',
+      deleteSuccessGrace: 'Your account has been deactivated and scheduled for deletion in 30 days. Sign in anytime within 30 days to restore it.',
+      deleteSuccessImmediate: 'Your account and personal data have been permanently deleted and anonymized.'
     },
     receipt: {
       watermark: 'NOT AN OFFICIAL RECEIPT\nFOR ACKNOWLEDGMENT ONLY',
@@ -753,6 +771,12 @@ export const en: Translations = {
       continueWithGoogle: 'Continue with Google',
       signUpWithGoogle: 'Sign up with Google',
       orDivider: 'or',
-      googleAuthFailed: 'Google sign-in failed. Please try again.'
+      googleAuthFailed: 'Google sign-in failed. Please try again.',
+      pendingDeletionTitle: 'Account Scheduled for Deletion',
+      pendingDeletionDesc: 'This store account is currently deactivated and scheduled for permanent deletion on {date}. Would you like to restore your account and cancel deletion?',
+      restoreAccountBtn: 'Restore My Account & Sign In',
+      cancelRestoreBtn: 'Keep Deactivated',
+      webDeleteAccountPrompt: 'Need to delete your account via the web? Sign in to go directly to Account Deletion settings.',
+      webDeleteIntentBanner: 'Sign in to verify your identity and continue to Account Deactivation / Deletion.'
     }
 };

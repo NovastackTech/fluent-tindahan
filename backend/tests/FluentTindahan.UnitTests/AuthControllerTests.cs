@@ -3937,6 +3937,231 @@ public class AuthControllerTests
         }, CancellationToken.None);
         loginPinResult.Result.Should().BeOfType<UnauthorizedObjectResult>();
     }
+
+    [Fact]
+    public async Task DeleteAccount_30DayDeactivation_BlocksLoginUntilRestored()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var (authController, userId, tenantId) = await SetupAuthenticatedTestStoreAsync(
+            context,
+            email: "deactivate@tindahan.ph",
+            businessName: "Deactivate Store",
+            password: "Password123!",
+            pin: "1234");
+
+        // 1. Wrong password fails re-authentication
+        var wrongPwdResult = await authController.DeleteAccount(new AuthController.DeleteAccountRequest
+        {
+            Password = "WrongPassword!",
+            Immediate = false
+        }, CancellationToken.None);
+        wrongPwdResult.Result.Should().BeOfType<UnauthorizedObjectResult>();
+
+        // 2. Valid password schedules 30-day deletion and revokes sessions
+        var deleteResult = await authController.DeleteAccount(new AuthController.DeleteAccountRequest
+        {
+            Password = "Password123!",
+            Immediate = false
+        }, CancellationToken.None);
+
+        var okDelete = deleteResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = okDelete.Value.Should().BeOfType<AuthController.DeleteAccountResponseDto>().Subject;
+        dto.Status.Should().Be(User.StatusPendingDeletion);
+        dto.DeletionScheduledAt.Should().NotBeNull();
+
+        var dbUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
+        dbUser.AccountStatus.Should().Be(User.StatusPendingDeletion);
+        dbUser.DeletionScheduledAt.Should().NotBeNull();
+
+        // 3. Login without RestoreAccount returns 409 Conflict with pendingDeletion = true
+        var publicController = CreateController(context);
+        var loginBlocked = await publicController.Login(new AuthController.LoginRequest
+        {
+            Email = "deactivate@tindahan.ph",
+            Password = "Password123!"
+        }, CancellationToken.None);
+
+        var conflict = loginBlocked.Result.Should().BeOfType<ConflictObjectResult>().Subject;
+        var conflictJson = JsonSerializer.Serialize(conflict.Value);
+        conflictJson.Should().Contain("pendingDeletion");
+
+        // 4. Login with RestoreAccount = true restores account to ACTIVE and returns tokens
+        var loginRestore = await publicController.Login(new AuthController.LoginRequest
+        {
+            Email = "deactivate@tindahan.ph",
+            Password = "Password123!",
+            RestoreAccount = true
+        }, CancellationToken.None);
+
+        loginRestore.Result.Should().BeOfType<OkObjectResult>();
+        var restoredUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
+        restoredUser.AccountStatus.Should().Be(User.StatusActive);
+        restoredUser.DeletionScheduledAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task DeleteAccount_ImmediateAnonymization_ScrubsPiiAndRetainsFinancialLedgers()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var (authController, userId, tenantId) = await SetupAuthenticatedTestStoreAsync(
+            context,
+            email: "immediate@tindahan.ph",
+            businessName: "Immediate Delete Store",
+            ownerName: "Juan Dela Cruz",
+            phone: "09171234567",
+            password: "Password123!",
+            pin: "4321");
+
+        var customerId = Guid.NewGuid();
+        context.Customers.Add(new Customer
+        {
+            Id = customerId,
+            TenantId = tenantId,
+            Name = "Suki Pedro",
+            Phone = "09189998877",
+            UpdatedAt = DateTimeOffset.UtcNow
+        });
+
+        var productId = Guid.NewGuid();
+        context.Products.Add(new Product
+        {
+            Id = productId,
+            TenantId = tenantId,
+            Name = "Lucky Me Pancit Canton",
+            Price = 15m,
+            UpdatedAt = DateTimeOffset.UtcNow
+        });
+
+        var saleId = Guid.NewGuid();
+        context.Sales.Add(new Sale
+        {
+            Id = saleId,
+            TenantId = tenantId,
+            TotalAmount = 30m,
+            PaymentMethod = "Cash"
+        });
+
+        var utangId = Guid.NewGuid();
+        context.UtangLedgers.Add(new UtangLedger
+        {
+            Id = utangId,
+            TenantId = tenantId,
+            CustomerId = customerId,
+            Amount = 50m,
+            Type = "Credit"
+        });
+
+        await context.SaveChangesAsync();
+
+        // Immediate deletion using PIN re-authentication
+        var deleteResult = await authController.DeleteAccount(new AuthController.DeleteAccountRequest
+        {
+            Pin = "4321",
+            Immediate = true
+        }, CancellationToken.None);
+
+        var okDelete = deleteResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = okDelete.Value.Should().BeOfType<AuthController.DeleteAccountResponseDto>().Subject;
+        dto.Status.Should().Be(User.StatusDeleted);
+        dto.DeletionScheduledAt.Should().BeNull();
+
+        // Verify PII scrubbed on User, Tenant, Customer and Product soft-deleted
+        var dbUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
+        dbUser.AccountStatus.Should().Be(User.StatusDeleted);
+        dbUser.Email.Should().EndWith("@anonymized.local");
+        dbUser.OwnerName.Should().Be("Deleted User");
+        dbUser.Phone.Should().BeEmpty();
+        dbUser.PasswordHash.Should().BeEmpty();
+        dbUser.PinHash.Should().BeNull();
+
+        var dbTenant = await context.Tenants.IgnoreQueryFilters().FirstAsync(t => t.Id == tenantId);
+        dbTenant.BusinessName.Should().Be("Deleted Store");
+        dbTenant.Tier.Should().Be(FluentTindahan.Domain.Enums.PlanTier.Libre);
+
+        var dbCustomer = await context.Customers.IgnoreQueryFilters().FirstAsync(c => c.Id == customerId);
+        dbCustomer.Name.Should().Be("Deleted Customer");
+        dbCustomer.Phone.Should().BeEmpty();
+        dbCustomer.IsDeleted.Should().BeTrue();
+
+        var dbProduct = await context.Products.IgnoreQueryFilters().FirstAsync(p => p.Id == productId);
+        dbProduct.IsDeleted.Should().BeTrue();
+
+        // Verify append-only financial ledgers (Sale, UtangLedger) remain intact per Rule 4
+        var dbSale = await context.Sales.IgnoreQueryFilters().FirstOrDefaultAsync(s => s.Id == saleId);
+        dbSale.Should().NotBeNull();
+        dbSale!.TotalAmount.Should().Be(30m);
+
+        var dbUtang = await context.UtangLedgers.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == utangId);
+        dbUtang.Should().NotBeNull();
+        dbUtang!.Amount.Should().Be(50m);
+
+        // Verify original email is freed for new registration
+        var publicController = CreateController(context);
+        var reRegister = await publicController.Register(new AuthController.RegisterRequest
+        {
+            Email = "immediate@tindahan.ph",
+            Password = "NewPassword123!",
+            BusinessName = "Fresh Tindahan"
+        }, CancellationToken.None);
+        reRegister.Result.Should().BeOfType<OkObjectResult>();
+    }
+
+    [Fact]
+    public async Task SubscriptionMonitorService_ProcessExpiredAccountDeletions_AnonymizesExpiredAccountsOnly()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var now = DateTimeOffset.UtcNow;
+
+        var (_, expiredUserId, expiredTenantId) = await SetupAuthenticatedTestStoreAsync(
+            context,
+            email: "expired@tindahan.ph",
+            businessName: "Expired Grace Store",
+            password: "Password123!");
+
+        var (_, activeGraceUserId, _) = await SetupAuthenticatedTestStoreAsync(
+            context,
+            email: "activegrace@tindahan.ph",
+            businessName: "Active Grace Store",
+            password: "Password123!");
+
+        var expiredUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == expiredUserId);
+        expiredUser.AccountStatus = User.StatusPendingDeletion;
+        expiredUser.DeletionScheduledAt = now.AddDays(-1);
+
+        var activeGraceUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == activeGraceUserId);
+        activeGraceUser.AccountStatus = User.StatusPendingDeletion;
+        activeGraceUser.DeletionScheduledAt = now.AddDays(15);
+
+        await context.SaveChangesAsync();
+
+        var serviceProviderMock = new Mock<IServiceProvider>();
+        serviceProviderMock.Setup(sp => sp.GetService(typeof(AppDbContext))).Returns(context);
+
+        var scopeMock = new Mock<Microsoft.Extensions.DependencyInjection.IServiceScope>();
+        scopeMock.Setup(s => s.ServiceProvider).Returns(serviceProviderMock.Object);
+
+        var scopeFactoryMock = new Mock<Microsoft.Extensions.DependencyInjection.IServiceScopeFactory>();
+        scopeFactoryMock.Setup(f => f.CreateScope()).Returns(scopeMock.Object);
+
+        var config = new ConfigurationBuilder().Build();
+        var monitor = new SubscriptionMonitorService(
+            scopeFactoryMock.Object,
+            config,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<SubscriptionMonitorService>.Instance);
+
+        await monitor.ProcessExpiredAccountDeletionsAsync(CancellationToken.None);
+
+        var updatedExpired = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == expiredUserId);
+        updatedExpired.AccountStatus.Should().Be(User.StatusDeleted);
+        updatedExpired.Email.Should().EndWith("@anonymized.local");
+
+        var updatedTenant = await context.Tenants.IgnoreQueryFilters().FirstAsync(t => t.Id == expiredTenantId);
+        updatedTenant.BusinessName.Should().Be("Deleted Store");
+
+        var updatedActiveGrace = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == activeGraceUserId);
+        updatedActiveGrace.AccountStatus.Should().Be(User.StatusPendingDeletion);
+        updatedActiveGrace.Email.Should().Be("activegrace@tindahan.ph");
+    }
 }
 
 

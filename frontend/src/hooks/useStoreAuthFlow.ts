@@ -47,6 +47,12 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
   const [isSyncingFirst, setIsSyncingFirst] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pendingOtpEmail, setPendingOtpEmail] = useState<string | null>(null);
+  const [pendingDeletionInfo, setPendingDeletionInfo] = useState<{
+    scheduledAt: string | null;
+    retryWithRestore: () => Promise<boolean>;
+  } | null>(null);
+
+  const clearPendingDeletionInfo = () => setPendingDeletionInfo(null);
 
   const closeUnsyncedDialog = () => {
     setIsUnsyncedDialogOpen(false);
@@ -120,6 +126,7 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
     setIsSubmitting(true);
     try {
       const res = await executeStoreLogin(params);
+      setPendingDeletionInfo(null);
       if (!res.success && res.authResult) {
         setPendingAuthPayload({
           payload: res.authResult,
@@ -139,6 +146,13 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
     } catch (apiErr: any) {
       const status = apiErr?.response?.status;
       const responseData = apiErr?.response?.data;
+      if (status === 409 && responseData?.pendingDeletion) {
+        setPendingDeletionInfo({
+          scheduledAt: responseData?.deletionScheduledAt || null,
+          retryWithRestore: () => handleStoreLogin({ ...params, restoreAccount: true })
+        });
+        return false;
+      }
       if (status === 429) {
         params.onError?.(responseData?.message || t.settings.invalidPinOrPassword);
       } else if (status === 401) {
@@ -267,6 +281,8 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
     setIsSubmitting,
     pendingOtpEmail,
     setPendingOtpEmail,
+    pendingDeletionInfo,
+    clearPendingDeletionInfo,
     closeUnsyncedDialog,
     handleConfirmWipeAndLogin,
     handleSyncFirst,

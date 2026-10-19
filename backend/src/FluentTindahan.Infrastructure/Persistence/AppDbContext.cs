@@ -92,9 +92,12 @@ public class AppDbContext : DbContext, IApplicationDbContext
             builder.Property(u => u.EmailOtpExpiresAt);
             builder.Property(u => u.EmailOtpSentAt);
             builder.Property(u => u.SessionsInvalidatedAt);
+            builder.Property(u => u.AccountStatus).IsRequired().HasMaxLength(32).HasDefaultValue(User.StatusActive);
+            builder.Property(u => u.DeletionScheduledAt);
 
             builder.HasIndex(u => u.TenantId);
             builder.HasIndex(u => u.FirebaseUid);
+            builder.HasIndex(u => new { u.AccountStatus, u.DeletionScheduledAt });
             builder.HasIndex(u => u.NormalizedEmail)
                 .HasDatabaseName(User.NormalizedEmailUniqueIndexName)
                 .IsUnique()

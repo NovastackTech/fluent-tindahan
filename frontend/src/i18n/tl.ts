@@ -447,7 +447,25 @@ export const tl: Translations = {
       sessionLockedDesc: 'Ipasok ang iyong PIN o Password para buksan muli ang tindahan.',
       unlockBtn: 'I-unlock ang Kaha',
       invalidPinOrPassword: 'Maling PIN o Password.',
-      pinLockedError: 'Masyadong maraming maling pagsubok. Naka-lockout ang PIN nang {minutes} minuto. Gamitin ang password.'
+      pinLockedError: 'Masyadong maraming maling pagsubok. Naka-lockout ang PIN nang {minutes} minuto. Gamitin ang password.',
+      deleteAccountBtn: 'I-deactivate / Burahin ang Account',
+      deleteAccountTitle: 'I-deactivate o Burahin ang Account',
+      deleteAccountDesc: 'Piliin kung nais mong pansamantalang i-deactivate ang account ng tindahan sa loob ng 30 araw o permanenteng burahin at i-anonymize ang iyong personal na datos.',
+      deleteModeGraceTitle: 'I-deactivate ang Account (30-Araw na Grace Period — Inirerekomenda)',
+      deleteModeGraceDesc: 'Agad na ila-log out ang lahat ng device at itatago ang iyong account. Maaari mong ibalik ang iyong tindahan anumang oras sa loob ng 30 araw sa pamamagitan ng muling pag-sign in.',
+      deleteModeImmediateTitle: 'Permanenteng Burahin Ngayon (Hindi Na Maibabalik)',
+      deleteModeImmediateDesc: 'Agad na buburahin ang iyong email, pangalan, telepono, at PII ng mga suki, isasara ang imbentaryo, at permanenteng buburahin ang account.',
+      deleteRetentionNotice: 'Paunawa sa Pagkapribado at Pagpapanatili ng Datos (RA 10173): Ang mga personal na pagkakakilanlan (email, pangalan ng may-ari, telepono, pangalan/telepono ng suki) ay permanenteng buburahin. Ang mga halaga sa append-only financial ledgers (Benta, Utang, GCash logs) ay pananatilihin sa anonymized na anyo para sa pagsunod sa batas at buwis.',
+      deleteSubWarning: 'May Aktibong Bayad na Plano ({tier}): Ang pagbura o pag-deactivate ng account ay hindi awtomatikong nagre-refund ng aktibong billing cycle. Kanselahin muna ang recurring billing kung kinakailangan.',
+      deleteUtangWarning: 'Paalala sa Hindi Pa Nasisigil na Utang: May {amount} pang utang mula sa {count} suki. Mag-export muna ng backup kung kailangan mo pa ang listahan sa paniningil.',
+      deleteUnsyncedWarning: 'May {count} transaksyon na hindi pa nai-sync sa device na ito. I-sync muna upang hindi mawala ang mga kamakailang tala.',
+      deleteReauthLabel: 'Kumpirmahin ang iyong pagkakakilanlan upang magpatuloy:',
+      deleteReauthPasswordPlaceholder: 'Ipasok ang kasalukuyang password',
+      deleteReauthPinPlaceholder: 'Ipasok ang 4–6 digit PIN',
+      deleteConfirmDeactivateBtn: 'I-deactivate sa Loob ng 30 Araw',
+      deleteConfirmImmediateBtn: 'Permanenteng Burahin ang Account',
+      deleteSuccessGrace: 'Na-deactivate na ang iyong account at nakatakdang burahin sa loob ng 30 araw. Mag-sign in lamang sa loob ng 30 araw kung nais mo itong ibalik.',
+      deleteSuccessImmediate: 'Permanenteng nabura at na-anonymize na ang iyong account at personal na datos.'
     },
     receipt: {
       watermark: 'HINDI OPISYAL NA RESIBO\nPARA SA PAGKILALA LAMANG',
@@ -753,6 +771,12 @@ export const tl: Translations = {
       continueWithGoogle: 'Magpatuloy gamit ang Google',
       signUpWithGoogle: 'Mag-sign up gamit ang Google',
       orDivider: 'o kaya',
-      googleAuthFailed: 'Nabigo ang pag-sign in sa Google. Pakisubukan muli.'
+      googleAuthFailed: 'Nabigo ang pag-sign in sa Google. Pakisubukan muli.',
+      pendingDeletionTitle: 'Nakatakdang Burahin ang Account',
+      pendingDeletionDesc: 'Kasalukuyang naka-deactivate ang account ng tindahang ito at nakatakdang permanenteng burahin sa {date}. Nais mo bang ibalik ang iyong account at kanselahin ang pagbura?',
+      restoreAccountBtn: 'Ibalik ang Account at Mag-sign In',
+      cancelRestoreBtn: 'Panatilihing Naka-deactivate',
+      webDeleteAccountPrompt: 'Kailangan bang burahin ang iyong account sa web? Mag-sign in upang direktang pumunta sa Account Deletion settings.',
+      webDeleteIntentBanner: 'Mag-sign in upang i-verify ang iyong pagkakakilanlan at magpatuloy sa Pag-deactivate / Pagbura ng Account.'
     }
 };

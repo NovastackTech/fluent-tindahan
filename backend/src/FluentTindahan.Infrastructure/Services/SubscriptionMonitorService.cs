@@ -37,6 +37,7 @@ public class SubscriptionMonitorService : BackgroundService
             try
             {
                 await CheckAndDowngradeExpiredSubscriptionsAsync(stoppingToken);
+                await ProcessExpiredAccountDeletionsAsync(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -58,6 +59,35 @@ public class SubscriptionMonitorService : BackgroundService
         }
 
         _logger.LogInformation("SubscriptionMonitorService stopping.");
+    }
+
+    public async Task<int> ProcessExpiredAccountDeletionsAsync(CancellationToken cancellationToken = default)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var now = DateTimeOffset.UtcNow;
+
+        var expiredUsers = await db.Users
+            .IgnoreQueryFilters()
+            .Include(u => u.Tenant)
+            .Where(u => u.AccountStatus == Domain.Entities.User.StatusPendingDeletion &&
+                        u.DeletionScheduledAt.HasValue &&
+                        u.DeletionScheduledAt.Value <= now)
+            .ToListAsync(cancellationToken);
+
+        if (expiredUsers.Count == 0)
+        {
+            return 0;
+        }
+
+        foreach (var user in expiredUsers)
+        {
+            await AccountDeletionHelper.AnonymizeUserAndTenantAsync(db, user, user.Tenant, now, cancellationToken);
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        _logger.LogInformation("Anonymized {Count} accounts whose 30-day deletion grace period expired.", expiredUsers.Count);
+        return expiredUsers.Count;
     }
 
     public async Task<int> CheckAndDowngradeExpiredSubscriptionsAsync(CancellationToken cancellationToken = default)

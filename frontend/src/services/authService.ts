@@ -29,6 +29,7 @@ export interface GoogleAuthRequestPayload {
   tenantId?: string;
   userId?: string;
   refreshToken?: string;
+  restoreAccount?: boolean;
 }
 
 export interface RegisterRequestPayload {
@@ -46,11 +47,27 @@ export interface RegisterRequestPayload {
 export interface LoginRequestPayload {
   email: string;
   password: string;
+  restoreAccount?: boolean;
 }
 
 export interface LoginPinRequestPayload {
   email: string;
   pin: string;
+  restoreAccount?: boolean;
+}
+
+export interface DeleteAccountRequestPayload {
+  password?: string;
+  pin?: string;
+  googleAccessToken?: string;
+  googleIdToken?: string;
+  immediate?: boolean;
+}
+
+export interface DeleteAccountResponseDto {
+  status: 'PENDING_DELETION' | 'DELETED' | string;
+  deletionScheduledAt?: string | null;
+  message: string;
 }
 
 export interface UpdateProfileRequestPayload {
@@ -237,6 +254,11 @@ export async function verifyEmailOtp(payload: { email?: string; otp: string }): 
 
 export async function resendEmailOtp(payload?: { email?: string }): Promise<{ message: string }> {
   const response = await apiClient.post<{ message: string }>('/auth/resend-email-otp', payload ?? {});
+  return response.data;
+}
+
+export async function deleteAccount(payload: DeleteAccountRequestPayload): Promise<DeleteAccountResponseDto> {
+  const response = await apiClient.post<DeleteAccountResponseDto>('/auth/delete-account', payload);
   return response.data;
 }
 

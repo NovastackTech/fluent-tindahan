@@ -5,6 +5,9 @@ namespace FluentTindahan.Domain.Entities;
 public class User : IMustHaveTenant
 {
     public const string NormalizedEmailUniqueIndexName = "IX_Users_NormalizedEmail";
+    public const string StatusActive = "ACTIVE";
+    public const string StatusPendingDeletion = "PENDING_DELETION";
+    public const string StatusDeleted = "DELETED";
 
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid TenantId { get; set; }
@@ -46,6 +49,8 @@ public class User : IMustHaveTenant
     /// Access tokens issued before this instant are rejected (forced session invalidation).
     /// </summary>
     public DateTimeOffset? SessionsInvalidatedAt { get; set; }
+    public string AccountStatus { get; set; } = StatusActive;
+    public DateTimeOffset? DeletionScheduledAt { get; set; }
 
     public Tenant? Tenant { get; set; }
 }

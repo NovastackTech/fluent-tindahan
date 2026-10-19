@@ -103,18 +103,27 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 if (Guid.TryParse(userIdStr, out var userId))
                 {
                     var db = context.HttpContext.RequestServices.GetRequiredService<FluentTindahan.Application.Common.Interfaces.IApplicationDbContext>();
-                    var invalidatedAt = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(
+                    var userState = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(
                         Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Users)
                             .Where(u => u.Id == userId)
-                            .Select(u => u.SessionsInvalidatedAt),
+                            .Select(u => new { u.SessionsInvalidatedAt, u.AccountStatus }),
                         context.HttpContext.RequestAborted);
 
-                    if (invalidatedAt.HasValue && context.SecurityToken != null)
+                    if (userState != null)
                     {
-                        var issuedAt = new DateTimeOffset(context.SecurityToken.ValidFrom, TimeSpan.Zero);
-                        if (issuedAt < invalidatedAt.Value.AddSeconds(-1))
+                        if (!string.Equals(userState.AccountStatus, FluentTindahan.Domain.Entities.User.StatusActive, StringComparison.OrdinalIgnoreCase))
                         {
-                            context.Fail("Session has been invalidated.");
+                            context.Fail("Account is deactivated or deleted.");
+                            return;
+                        }
+
+                        if (userState.SessionsInvalidatedAt.HasValue && context.SecurityToken != null)
+                        {
+                            var issuedAt = new DateTimeOffset(context.SecurityToken.ValidFrom, TimeSpan.Zero);
+                            if (issuedAt < userState.SessionsInvalidatedAt.Value.AddSeconds(-1))
+                            {
+                                context.Fail("Session has been invalidated.");
+                            }
                         }
                     }
                 }

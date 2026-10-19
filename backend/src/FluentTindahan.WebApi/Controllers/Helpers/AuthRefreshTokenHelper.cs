@@ -252,6 +252,14 @@ public static class AuthRefreshTokenHelper
             }));
         }
 
+        if (!string.Equals(user.AccountStatus, User.StatusActive, StringComparison.OrdinalIgnoreCase))
+        {
+            return RefreshRotationResult.Failure(new UnauthorizedObjectResult(new
+            {
+                message = "Naka-deactivate o burado na ang account. / Account is deactivated or deleted."
+            }));
+        }
+
         var now = timeProvider.GetUtcNow();
         var incomingTokenHash = jwtTokenService.HashTokenId(tokenId);
 

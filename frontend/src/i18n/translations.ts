@@ -436,6 +436,24 @@ export interface Translations {
     unlockBtn: string;
     invalidPinOrPassword: string;
     pinLockedError: string;
+    deleteAccountBtn: string;
+    deleteAccountTitle: string;
+    deleteAccountDesc: string;
+    deleteModeGraceTitle: string;
+    deleteModeGraceDesc: string;
+    deleteModeImmediateTitle: string;
+    deleteModeImmediateDesc: string;
+    deleteRetentionNotice: string;
+    deleteSubWarning: string;
+    deleteUtangWarning: string;
+    deleteUnsyncedWarning: string;
+    deleteReauthLabel: string;
+    deleteReauthPasswordPlaceholder: string;
+    deleteReauthPinPlaceholder: string;
+    deleteConfirmDeactivateBtn: string;
+    deleteConfirmImmediateBtn: string;
+    deleteSuccessGrace: string;
+    deleteSuccessImmediate: string;
   };
   receipt: {
     watermark: string;
@@ -751,6 +769,12 @@ export interface Translations {
     signUpWithGoogle: string;
     orDivider: string;
     googleAuthFailed: string;
+    pendingDeletionTitle: string;
+    pendingDeletionDesc: string;
+    restoreAccountBtn: string;
+    cancelRestoreBtn: string;
+    webDeleteAccountPrompt: string;
+    webDeleteIntentBanner: string;
   };
 }
 

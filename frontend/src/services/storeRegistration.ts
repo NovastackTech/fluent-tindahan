@@ -154,6 +154,7 @@ export interface ExecuteStoreLoginParams {
   loginMode: 'password' | 'pin';
   password?: string;
   pin?: string;
+  restoreAccount?: boolean;
   onError?: (msg: string) => void;
 }
 
@@ -176,12 +177,14 @@ export async function executeStoreLogin(
   if (params.loginMode === 'password') {
     authResult = await loginStore({
       email: trimmedEmail,
-      password: params.password || ''
+      password: params.password || '',
+      restoreAccount: params.restoreAccount
     });
   } else {
     authResult = await loginPin({
       email: trimmedEmail,
-      pin: (params.pin || '').trim()
+      pin: (params.pin || '').trim(),
+      restoreAccount: params.restoreAccount
     });
   }
 
@@ -215,6 +218,7 @@ export interface ExecuteGoogleAuthParams {
   pin?: string;
   offerGcash?: boolean;
   includeStarterProducts?: boolean;
+  restoreAccount?: boolean;
 }
 
 export async function executeGoogleAuth(
@@ -229,7 +233,8 @@ export async function executeGoogleAuth(
     tenantId: newTenantId,
     userId: newUserId,
     businessName: params.businessName?.trim() || undefined,
-    pin: params.pin?.trim() || undefined
+    pin: params.pin?.trim() || undefined,
+    restoreAccount: params.restoreAccount
   });
 
   const localPin = params.pin?.trim() || undefined;

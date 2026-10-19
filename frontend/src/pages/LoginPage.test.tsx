@@ -870,5 +870,64 @@ describe('LoginPage Component', () => {
       expect(onNavigate).toHaveBeenCalledWith('pos');
     });
   });
+
+  it('prompts to restore account when login returns 409 pendingDeletion and restores on confirmation', async () => {
+    vi.mocked(authService.loginStore).mockRejectedValueOnce({
+      response: {
+        status: 409,
+        data: {
+          message: 'Your account is deactivated and scheduled for deletion.',
+          pendingDeletion: true,
+          deletionScheduledAt: '2026-11-20T00:00:00Z'
+        }
+      }
+    });
+
+    const { onNavigate } = renderLoginPage();
+
+    const emailInput = screen.getByPlaceholderText(t.landing.emailPlaceholder);
+    const passwordInput = screen.getByPlaceholderText(t.landing.passwordPlaceholder);
+    const submitBtn = screen.getByTestId('login-submit-btn');
+
+    fireEvent.change(emailInput, { target: { value: 'owner@tindahan.ph' } });
+    fireEvent.change(passwordInput, { target: { value: 'password123' } });
+    fireEvent.click(submitBtn);
+
+    const banner = await screen.findByTestId('login-pending-deletion-banner');
+    expect(banner).toBeInTheDocument();
+
+    const restoreBtn = screen.getByTestId('login-restore-account-btn');
+    fireEvent.click(restoreBtn);
+
+    await waitFor(() => {
+      expect(authService.loginStore).toHaveBeenLastCalledWith({
+        email: 'owner@tindahan.ph',
+        password: 'password123',
+        restoreAccount: true
+      });
+      expect(onNavigate).toHaveBeenCalledWith('pos');
+    });
+  });
+
+  it('routes to settings after sign-in when web delete-account link is activated', async () => {
+    const { onNavigate } = renderLoginPage();
+
+    const webDeleteLink = screen.getByTestId('login-web-delete-link');
+    fireEvent.click(webDeleteLink);
+
+    expect(screen.getByTestId('login-delete-intent-banner')).toBeInTheDocument();
+
+    const emailInput = screen.getByPlaceholderText(t.landing.emailPlaceholder);
+    const passwordInput = screen.getByPlaceholderText(t.landing.passwordPlaceholder);
+    const submitBtn = screen.getByTestId('login-submit-btn');
+
+    fireEvent.change(emailInput, { target: { value: 'owner@tindahan.ph' } });
+    fireEvent.change(passwordInput, { target: { value: 'password123' } });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(onNavigate).toHaveBeenCalledWith('settings');
+    });
+  });
 });
 

@@ -8,6 +8,7 @@ using FluentTindahan.Application.Common.Interfaces;
 using FluentTindahan.Domain.Entities;
 using FluentTindahan.Domain.Enums;
 using FluentTindahan.Domain.Interfaces;
+using FluentTindahan.Infrastructure.Services;
 using FluentTindahan.WebApi.Authorization;
 using FluentTindahan.WebApi.Controllers.Helpers;
 
@@ -90,6 +91,8 @@ public class AuthController : ControllerBase
 
         [Required]
         public string Password { get; init; } = string.Empty;
+
+        public bool? RestoreAccount { get; init; }
     }
 
     public sealed record LoginPinRequest
@@ -99,6 +102,8 @@ public class AuthController : ControllerBase
 
         [Required, RegularExpression(@"^\d{4,6}$", ErrorMessage = "PIN must be between 4 and 6 digits.")]
         public string Pin { get; init; } = string.Empty;
+
+        public bool? RestoreAccount { get; init; }
     }
 
     public sealed record UpdatePinRequest
@@ -170,7 +175,27 @@ public class AuthController : ControllerBase
         public Guid? TenantId { get; init; }
         public Guid? UserId { get; init; }
         public string? RefreshToken { get; init; }
+        public bool? RestoreAccount { get; init; }
     }
+
+    public sealed record DeleteAccountRequest
+    {
+        [StringLength(128)]
+        public string? Password { get; init; }
+
+        [RegularExpression(@"^\d{4,6}$", ErrorMessage = "PIN must be between 4 and 6 digits.")]
+        public string? Pin { get; init; }
+
+        public string? GoogleAccessToken { get; init; }
+        public string? GoogleIdToken { get; init; }
+        public bool Immediate { get; init; }
+    }
+
+    public sealed record DeleteAccountResponseDto(
+        string Status,
+        DateTimeOffset? DeletionScheduledAt,
+        string Message
+    );
 
     public sealed record VerifyEmailOtpRequest
     {
@@ -559,6 +584,12 @@ public class AuthController : ControllerBase
                     .FirstOrDefaultAsync(t => t.Id == existingUser.TenantId, cancellationToken);
             }
 
+            var googleStatusCheck = await CheckAndHandleAccountStatusOnLoginAsync(existingUser, request.RestoreAccount, cancellationToken);
+            if (googleStatusCheck != null)
+            {
+                return googleStatusCheck;
+            }
+
             var now = _timeProvider.GetUtcNow();
 
             // Never auto-merge unverified accounts: overwrite credentials and invalidate active sessions
@@ -769,6 +800,12 @@ public class AuthController : ControllerBase
                 $"Maling email o password. May natitira ka pang {remainingAttempts} pagsubok bago mag-lockout. / Invalid email or password. {remainingAttempts} attempts remaining.");
         }
 
+        var loginStatusCheck = await CheckAndHandleAccountStatusOnLoginAsync(user, request.RestoreAccount, cancellationToken);
+        if (loginStatusCheck != null)
+        {
+            return loginStatusCheck;
+        }
+
         if (verifyResult == PasswordVerificationResult.SuccessRehashNeeded)
         {
             user.PasswordHash = _passwordHasher.HashPassword(user, request.Password);
@@ -898,6 +935,12 @@ public class AuthController : ControllerBase
                 }
 
                 return AuthLockoutHelper.PinFailedResult(remainingAttempts);
+            }
+
+            var pinStatusCheck = await CheckAndHandleAccountStatusOnLoginAsync(freshUser, request.RestoreAccount, cancellationToken);
+            if (pinStatusCheck != null)
+            {
+                return pinStatusCheck;
             }
 
             AuthLockoutHelper.ResetIpPinThrottle(clientIp);
@@ -1597,5 +1640,205 @@ public class AuthController : ControllerBase
         return await _context.Users.IgnoreQueryFilters()
             .Include(u => u.Tenant)
             .FirstOrDefaultAsync(u => u.NormalizedEmail == normalizedEmail, cancellationToken);
+    }
+
+    /// <summary>
+    /// Initiates self-service account deactivation (30-day grace period) or immediate permanent anonymization.
+    /// Requires step-up re-authentication via current password, PIN, or Google ID token.
+    /// Immediately revokes all active sessions and refresh tokens.
+    /// </summary>
+    [Authorize]
+    [EnableRateLimiting("AuthSensitive")]
+    [HttpPost("delete-account")]
+    [Route("/auth/delete-account")]
+    [ProducesResponseType(typeof(DeleteAccountResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    public async Task<ActionResult<DeleteAccountResponseDto>> DeleteAccount(
+        [FromBody] DeleteAccountRequest? request,
+        CancellationToken cancellationToken)
+    {
+        if (request == null)
+        {
+            return BadRequest(new { message = "Kailangan ng kumpirmasyon upang burahin ang account. / Confirmation is required to delete the account." });
+        }
+
+        var userId = AuthClaimsHelper.ResolveUserId(_currentUserService, HttpContext?.User);
+        if (!userId.HasValue || userId == Guid.Empty)
+        {
+            return Unauthorized(new { message = "User is not authenticated." });
+        }
+
+        var user = await _context.Users.IgnoreQueryFilters()
+            .Include(u => u.Tenant)
+            .FirstOrDefaultAsync(u => u.Id == userId.Value, cancellationToken);
+
+        if (user == null || string.Equals(user.AccountStatus, Domain.Entities.User.StatusDeleted, StringComparison.OrdinalIgnoreCase))
+        {
+            return Unauthorized(new { message = "Hindi natagpuan ang account. / User account not found." });
+        }
+
+        var verified = false;
+        var hasPassword = !string.IsNullOrEmpty(user.PasswordHash);
+        var hasPin = !string.IsNullOrEmpty(user.PinHash);
+        var hasGoogle = !string.IsNullOrEmpty(user.FirebaseUid);
+
+        if (!string.IsNullOrWhiteSpace(request.Password))
+        {
+            if (!hasPassword)
+            {
+                return BadRequest(new { message = "Walang naka-set na password ang account. / Account has no password configured." });
+            }
+
+            if (AuthLockoutHelper.CheckPasswordLockout(user, _timeProvider, out var lockoutMinutes))
+            {
+                return AuthLockoutHelper.PasswordLockedOutResult(lockoutMinutes);
+            }
+
+            var pwdVerify = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
+            if (pwdVerify == PasswordVerificationResult.Failed)
+            {
+                AuthLockoutHelper.RecordPasswordFailure(user, _timeProvider, out var isLockedOut, out var lockMinutes, out var remainingAttempts);
+                await _context.SaveChangesAsync(cancellationToken);
+                if (isLockedOut)
+                {
+                    return AuthLockoutHelper.PasswordLockedOutResult(lockMinutes, isInitial: true);
+                }
+
+                return AuthLockoutHelper.PasswordFailedResult(
+                    remainingAttempts,
+                    $"Maling password. May natitira ka pang {remainingAttempts} pagsubok bago mag-lockout. / Invalid password. {remainingAttempts} attempts remaining.");
+            }
+
+            AuthLockoutHelper.ResetPasswordLockout(user);
+            verified = true;
+        }
+        else if (!string.IsNullOrWhiteSpace(request.Pin))
+        {
+            if (!hasPin)
+            {
+                return BadRequest(new { message = "Walang naka-set na PIN ang account. / Account has no PIN configured." });
+            }
+
+            if (AuthLockoutHelper.CheckPinLockout(user, _timeProvider, out var pinLockoutMinutes))
+            {
+                return AuthLockoutHelper.PinLockedOutResult(pinLockoutMinutes);
+            }
+
+            var pinVerify = _passwordHasher.VerifyHashedPassword(user, user.PinHash!, request.Pin.Trim());
+            if (pinVerify == PasswordVerificationResult.Failed)
+            {
+                AuthLockoutHelper.RecordPinFailureInMemory(user, _timeProvider, out var isPinLockedOut, out var pinLockMinutes, out var remainingPinAttempts);
+                await _context.SaveChangesAsync(cancellationToken);
+                if (isPinLockedOut)
+                {
+                    return AuthLockoutHelper.PinLockedOutResult(pinLockMinutes, isInitial: true);
+                }
+
+                return AuthLockoutHelper.PinFailedResult(remainingPinAttempts);
+            }
+
+            AuthLockoutHelper.ResetPinLockout(user);
+            verified = true;
+        }
+        else if (!string.IsNullOrWhiteSpace(request.GoogleIdToken) || !string.IsNullOrWhiteSpace(request.GoogleAccessToken))
+        {
+            if (_googleAuthService == null)
+            {
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new { message = "Hindi available ang Google verification. / Google verification is unavailable." });
+            }
+
+            var googleUser = await _googleAuthService.VerifyGoogleTokenAsync(request.GoogleAccessToken, request.GoogleIdToken, cancellationToken);
+            if (googleUser == null)
+            {
+                return Unauthorized(new { message = "Hindi balido o nag-expire na ang Google token. / Invalid or expired Google token." });
+            }
+
+            var rawGoogleSubject = $"google:{googleUser.Subject}";
+            var googleSubject = rawGoogleSubject.Length > 128 ? rawGoogleSubject[..128] : rawGoogleSubject;
+            var matchesSubject = hasGoogle && (
+                string.Equals(user.FirebaseUid, googleSubject, StringComparison.Ordinal) ||
+                string.Equals(user.FirebaseUid, googleUser.Subject?.Trim(), StringComparison.Ordinal));
+            var matchesEmail = !string.IsNullOrWhiteSpace(googleUser.Email) &&
+                               string.Equals(user.NormalizedEmail, NormalizeEmail(googleUser.Email), StringComparison.OrdinalIgnoreCase);
+
+            if (!matchesSubject && !matchesEmail)
+            {
+                return Unauthorized(new { message = "Hindi tugma ang Google account sa kasalukuyang tindahan. / Google account does not match the current store account." });
+            }
+
+            verified = true;
+        }
+
+        if (!verified)
+        {
+            return BadRequest(new
+            {
+                message = "Kailangan ng kasalukuyang password, PIN, o Google re-authentication upang kumpirmahin ang pagbura ng account. / Current password, PIN, or Google re-authentication is required to confirm account deletion."
+            });
+        }
+
+        var now = _timeProvider.GetUtcNow();
+
+        if (request.Immediate)
+        {
+            await AccountDeletionHelper.AnonymizeUserAndTenantAsync(_context, user, user.Tenant, now, cancellationToken);
+            await _context.SaveChangesAsync(cancellationToken);
+
+            return Ok(new DeleteAccountResponseDto(
+                Domain.Entities.User.StatusDeleted,
+                null,
+                "Permanenteng binura at in-anonymize na ang iyong account. / Your account has been permanently deleted and anonymized."));
+        }
+
+        var scheduledAt = now.AddDays(AccountDeletionHelper.GracePeriodDays);
+        user.AccountStatus = Domain.Entities.User.StatusPendingDeletion;
+        user.DeletionScheduledAt = scheduledAt;
+        await AuthRefreshTokenHelper.RevokeAllForUserAsync(_context, user, user.Id, _timeProvider, cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return Ok(new DeleteAccountResponseDto(
+            Domain.Entities.User.StatusPendingDeletion,
+            scheduledAt,
+            "Naka-iskedyul na ang pagbura ng iyong account sa loob ng 30 araw. Maaari mo itong ibalik sa pamamagitan ng pag-login bago ang petsang ito. / Your account is scheduled for deletion in 30 days. You can restore it by signing in before this date."));
+    }
+
+    private async Task<ActionResult<AuthResponseDto>?> CheckAndHandleAccountStatusOnLoginAsync(
+        User user,
+        bool? restoreAccount,
+        CancellationToken cancellationToken)
+    {
+        if (string.Equals(user.AccountStatus, Domain.Entities.User.StatusDeleted, StringComparison.OrdinalIgnoreCase))
+        {
+            return Unauthorized(new { message = "Ang account na ito ay permanente nang binura. / This account has been permanently deleted." });
+        }
+
+        if (string.Equals(user.AccountStatus, Domain.Entities.User.StatusPendingDeletion, StringComparison.OrdinalIgnoreCase))
+        {
+            var now = _timeProvider.GetUtcNow();
+            if (user.DeletionScheduledAt.HasValue && user.DeletionScheduledAt.Value <= now)
+            {
+                await AccountDeletionHelper.AnonymizeUserAndTenantAsync(_context, user, user.Tenant, now, cancellationToken);
+                await _context.SaveChangesAsync(cancellationToken);
+                return Unauthorized(new { message = "Ang account na ito ay permanente nang binura matapos ang 30-day grace period. / This account has been permanently deleted after the 30-day grace period." });
+            }
+
+            if (restoreAccount == true)
+            {
+                user.AccountStatus = Domain.Entities.User.StatusActive;
+                user.DeletionScheduledAt = null;
+                return null;
+            }
+
+            return Conflict(new
+            {
+                message = "Naka-deactivate ang iyong account at nakatakdang burahin. Gusto mo bang ibalik ang iyong account? / Your account is deactivated and scheduled for deletion. Would you like to restore your account?",
+                pendingDeletion = true,
+                deletionScheduledAt = user.DeletionScheduledAt
+            });
+        }
+
+        return null;
     }
 }

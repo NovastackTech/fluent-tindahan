@@ -64,6 +64,7 @@ import { useTranslation } from '../state/languageStore';
 import { SafeLogoutDialog } from '../components/SafeLogoutDialog';
 import { useSafeLogout } from '../components/useSafeLogout';
 import { PinManagementDialog } from '../components/PinManagementDialog';
+import { DeleteAccountDialog } from '../components/DeleteAccountDialog';
 import { GCashFeeSettingsCard } from '../components/GCashFeeSettingsCard';
 
 const useStyles = makeStyles({
@@ -167,6 +168,11 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
   const [isClearDlqConfirmOpen, setIsClearDlqConfirmOpen] = useState(false);
 
   const [isPinDialogOpen, setIsPinDialogOpen] = useState(false);
+  const [isDeleteAccountOpen, setIsDeleteAccountOpen] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const params = new URLSearchParams(window.location.search);
+    return params.get('tab') === 'delete-account' || params.get('intent') === 'delete-account';
+  });
 
   useEffect(() => {
     updateQueueCounts().catch(console.error);
@@ -800,6 +806,16 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
           >
             {t.settings.logoutBtn}
           </Button>
+          <Button
+            appearance="subtle"
+            size="small"
+            style={{ color: tokens.colorPaletteRedForeground1 }}
+            icon={<DeleteRegular />}
+            onClick={() => setIsDeleteAccountOpen(true)}
+            data-testid="settings-delete-account-btn"
+          >
+            {t.settings.deleteAccountBtn}
+          </Button>
         </div>
       </Card>
 
@@ -878,6 +894,17 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
       <PinManagementDialog
         open={isPinDialogOpen}
         onOpenChange={setIsPinDialogOpen}
+      />
+
+      {/* Self-Service Account Deactivation / Deletion Dialog */}
+      <DeleteAccountDialog
+        open={isDeleteAccountOpen}
+        onOpenChange={setIsDeleteAccountOpen}
+        onDeleted={() => {
+          if (onNavigate) {
+            onNavigate('login');
+          }
+        }}
       />
 
       <SafeLogoutDialog

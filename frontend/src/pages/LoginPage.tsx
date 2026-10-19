@@ -117,6 +117,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   const { t, language } = useTranslation();
   const { completeOnboarding } = useAuthStore();
 
+  const [isDeleteIntent, setIsDeleteIntent] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const params = new URLSearchParams(window.location.search);
+    return params.get('intent') === 'delete-account' || params.get('tab') === 'delete-account';
+  });
+
   const {
     isUnsyncedDialogOpen,
     unsyncedLoginCount,
@@ -125,6 +131,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
     setIsSubmitting,
     pendingOtpEmail,
     setPendingOtpEmail,
+    pendingDeletionInfo,
+    clearPendingDeletionInfo,
     closeUnsyncedDialog,
     handleConfirmWipeAndLogin,
     handleSyncFirst,
@@ -134,7 +142,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
     handleResendEmailOtp,
     handleGoogleAuth
   } = useStoreAuthFlow({
-    onSuccess: () => onNavigate('pos')
+    onSuccess: () => {
+      const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+      if (isDeleteIntent || params?.get('intent') === 'delete-account' || params?.get('tab') === 'delete-account') {
+        onNavigate('settings');
+      } else {
+        onNavigate('pos');
+      }
+    }
   });
 
   const getInitialTab = (): 'login' | 'register' => {
@@ -391,6 +406,73 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
           </TabList>
         )}
 
+        {isDeleteIntent && (
+          <div
+            style={{
+              backgroundColor: tokens.colorPaletteYellowBackground1,
+              color: tokens.colorNeutralForeground1,
+              borderLeft: `4px solid ${tokens.colorPaletteYellowBorderActive}`,
+              borderRadius: tokens.borderRadiusMedium,
+              padding: `${tokens.spacingVerticalS} ${tokens.spacingHorizontalM}`,
+              marginBottom: tokens.spacingVerticalM,
+              fontSize: tokens.fontSizeBase200
+            }}
+            role="status"
+            data-testid="login-delete-intent-banner"
+          >
+            {t.login.webDeleteIntentBanner}
+          </div>
+        )}
+
+        {pendingDeletionInfo && (
+          <div
+            style={{
+              backgroundColor: tokens.colorPaletteYellowBackground1,
+              border: `1px solid ${tokens.colorPaletteYellowBorderActive}`,
+              borderRadius: tokens.borderRadiusMedium,
+              padding: tokens.spacingVerticalM,
+              marginBottom: tokens.spacingVerticalM,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px'
+            }}
+            role="alert"
+            data-testid="login-pending-deletion-banner"
+          >
+            <Text weight="bold" size={300}>
+              {t.login.pendingDeletionTitle}
+            </Text>
+            <Text size={200}>
+              {t.login.pendingDeletionDesc.replace(
+                '{date}',
+                pendingDeletionInfo.scheduledAt
+                  ? new Date(pendingDeletionInfo.scheduledAt).toLocaleDateString()
+                  : '30 days'
+              )}
+            </Text>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '4px' }}>
+              <Button
+                appearance="primary"
+                size="small"
+                disabled={isSubmitting}
+                onClick={() => void pendingDeletionInfo.retryWithRestore()}
+                data-testid="login-restore-account-btn"
+              >
+                {t.login.restoreAccountBtn}
+              </Button>
+              <Button
+                appearance="secondary"
+                size="small"
+                disabled={isSubmitting}
+                onClick={clearPendingDeletionInfo}
+                data-testid="login-cancel-restore-btn"
+              >
+                {t.login.cancelRestoreBtn}
+              </Button>
+            </div>
+          </div>
+        )}
+
         <AuthErrorBanner
           authErrors={authErrors}
           language={language}
@@ -640,7 +722,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
           </Button>
         </div>
 
-        {/* Back to Landing Page link */}
+        {/* Back to Landing Page link & Web Account Deletion entry point */}
         <div className={styles.footerNav}>
           <Button
             appearance="subtle"
@@ -651,6 +733,25 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
           >
             {t.login.backToLanding}
           </Button>
+          <div style={{ marginTop: '4px' }}>
+            <Button
+              appearance="subtle"
+              size="small"
+              style={{ fontSize: tokens.fontSizeBase100, color: tokens.colorNeutralForeground3 }}
+              onClick={() => {
+                setIsDeleteIntent(true);
+                setActiveTab('login');
+                if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
+                  const url = new URL(window.location.href);
+                  url.searchParams.set('intent', 'delete-account');
+                  window.history.replaceState(null, '', url.pathname + url.search);
+                }
+              }}
+              data-testid="login-web-delete-link"
+            >
+              {t.login.webDeleteAccountPrompt}
+            </Button>
+          </div>
         </div>
       </Card>
 
