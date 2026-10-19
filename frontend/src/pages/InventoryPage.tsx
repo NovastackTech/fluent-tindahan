@@ -534,11 +534,16 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
         set.add(p.category.trim());
       }
     });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [products]);
+
+  const formCategorySuggestions = useMemo(() => {
+    const set = new Set(categories);
     getCatalog().forEach((c) => {
       if (c.category) set.add(c.category);
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [products]);
+  }, [categories]);
 
   // Overall Inventory KPI Metrics
   const metrics = useMemo(() => {
@@ -1455,7 +1460,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                     onChange={(_, data) => setFormCategory(data.value)}
                   />
                   <datalist id="categories-list">
-                    {categories.map((c) => (
+                    {formCategorySuggestions.map((c) => (
                       <option key={c} value={c} />
                     ))}
                   </datalist>
