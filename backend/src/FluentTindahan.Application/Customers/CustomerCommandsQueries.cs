@@ -37,7 +37,10 @@ public class GetCustomersQueryHandler : IRequestHandler<GetCustomersQuery, List<
                 c.TenantId,
                 c.Name,
                 c.Phone,
-                c.TotalUtangBalance,
+                c.UtangLedgers.Any()
+                    ? (c.UtangLedgers.Where(u => u.Type == "Credit").Sum(u => (decimal?)u.Amount) ?? 0m) -
+                      (c.UtangLedgers.Where(u => u.Type == "Payment").Sum(u => (decimal?)u.Amount) ?? 0m)
+                    : c.TotalUtangBalance,
                 c.UpdatedAt))
             .ToListAsync(cancellationToken);
     }

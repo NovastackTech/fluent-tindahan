@@ -94,6 +94,102 @@ public class BatchSyncTests
     }
 
     [Fact]
+    public async Task ProcessBatchSync_CustomerCreationWithOpeningUtang_DoesNotDoubleCountBalance()
+    {
+        // Arrange (Issue #107): Customer created with initial utang of 100, then 50 charge, then 60 payment -> 90 balance
+        var (context, userMock) = CreateInMemoryContext();
+        var customerId = Guid.NewGuid();
+        var handler = new ProcessBatchSyncCommandHandler(
+            context,
+            userMock.Object,
+            NullLogger<ProcessBatchSyncCommandHandler>.Instance
+        );
+
+        var now = DateTimeOffset.UtcNow;
+        var request = new BatchSyncRequestDto
+        {
+            DeviceId = Guid.NewGuid(),
+            Operations = new List<SyncOperationDto>
+            {
+                new()
+                {
+                    SyncId = "sync-cust-1",
+                    Entity = "Customer",
+                    Action = "Insert",
+                    Timestamp = now.AddMinutes(-30),
+                    Payload = JsonSerializer.SerializeToElement(new
+                    {
+                        id = customerId,
+                        name = "QA-TEST Juan",
+                        phone = "09171234567",
+                        totalUtangBalance = 0m,
+                        updatedAt = now.AddMinutes(-30)
+                    })
+                },
+                new()
+                {
+                    SyncId = "sync-utang-initial",
+                    Entity = "UtangLedger",
+                    Action = "Insert",
+                    Timestamp = now.AddMinutes(-30),
+                    Payload = JsonSerializer.SerializeToElement(new
+                    {
+                        id = Guid.NewGuid(),
+                        customerId = customerId,
+                        amount = 100.00m,
+                        type = "Credit",
+                        date = now.AddMinutes(-30),
+                        notes = "Initial balance"
+                    })
+                },
+                new()
+                {
+                    SyncId = "sync-utang-charge",
+                    Entity = "UtangLedger",
+                    Action = "Insert",
+                    Timestamp = now.AddMinutes(-20),
+                    Payload = JsonSerializer.SerializeToElement(new
+                    {
+                        id = Guid.NewGuid(),
+                        customerId = customerId,
+                        amount = 50.00m,
+                        type = "Credit",
+                        date = now.AddMinutes(-20),
+                        notes = "Charge"
+                    })
+                },
+                new()
+                {
+                    SyncId = "sync-utang-payment",
+                    Entity = "UtangLedger",
+                    Action = "Insert",
+                    Timestamp = now.AddMinutes(-10),
+                    Payload = JsonSerializer.SerializeToElement(new
+                    {
+                        id = Guid.NewGuid(),
+                        customerId = customerId,
+                        amount = 60.00m,
+                        type = "Payment",
+                        date = now.AddMinutes(-10),
+                        notes = "Payment"
+                    })
+                }
+            }
+        };
+
+        // Act
+        var result = await handler.Handle(new ProcessBatchSyncCommand(request), CancellationToken.None);
+
+        // Assert
+        result.ProcessedCount.Should().Be(4);
+        result.Results.Should().AllSatisfy(r => r.Status.Should().Be("Success"));
+
+        var savedCustomer = await context.Customers.FindAsync(customerId);
+        savedCustomer.Should().NotBeNull();
+        savedCustomer!.TotalUtangBalance.Should().Be(90.00m); // 100 + 50 - 60
+    }
+
+    [Fact]
     public async Task ProcessBatchSync_LWW_IgnoresStaleProductUpdate()
     {
         // Arrange
