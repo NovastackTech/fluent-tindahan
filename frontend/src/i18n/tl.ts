@@ -293,6 +293,7 @@ export const tl: Translations = {
       potentialProfit: 'Inaasahang Kita',
       avgMargin: 'Karaniwang Margin',
       searchPlaceholder: 'Maghanap ayon sa pangalan o barcode...',
+      clearSearch: 'I-clear ang paghahanap',
       allCategories: 'Lahat ng Kategorya',
       filterAll: 'Lahat ng Stock',
       filterLowStock: '⚠️ Paubos na (≤ 5)',

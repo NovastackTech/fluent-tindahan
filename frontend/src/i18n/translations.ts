@@ -262,6 +262,7 @@ export interface Translations {
     potentialProfit: string;
     avgMargin: string;
     searchPlaceholder: string;
+    clearSearch: string;
     allCategories: string;
     filterAll: string;
     filterLowStock: string;

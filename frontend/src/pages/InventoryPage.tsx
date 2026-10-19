@@ -874,7 +874,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                     appearance="subtle"
                     icon={<DismissRegular />}
                     onClick={() => setSearchQuery('')}
-                    aria-label={t.common.cancel}
+                    aria-label={t.inventory.clearSearch}
                   />
                 ) : undefined
               }

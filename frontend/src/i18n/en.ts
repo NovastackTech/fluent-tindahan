@@ -293,6 +293,7 @@ export const en: Translations = {
       potentialProfit: 'Projected Gross Profit',
       avgMargin: 'Average Margin',
       searchPlaceholder: 'Search by product name or barcode...',
+      clearSearch: 'Clear search',
       allCategories: 'All Categories',
       filterAll: 'All Stock',
       filterLowStock: '⚠️ Low Stock (≤ 5)',
