@@ -8,6 +8,15 @@ import { useLanguageStore } from '../state/languageStore';
 import { calculateGCashFee, DEFAULT_GCASH_FEE_TIERS, useGCashFeeStore } from '../state/gcashFeeStore';
 import { useAuthStore } from '../state/authStore';
 import { toLocalDateKey } from '../utils/date';
+import { kickSync } from '../sync/syncEngine';
+
+vi.mock('../sync/syncEngine', async () => {
+  const actual = await vi.importActual<typeof import('../sync/syncEngine')>('../sync/syncEngine');
+  return {
+    ...actual,
+    kickSync: vi.fn(() => new Promise(() => {}))
+  };
+});
 
 describe('GCashPage', () => {
   beforeEach(async () => {
@@ -560,6 +569,116 @@ describe('GCashPage', () => {
     expect(screen.queryByText(/Not synced; excluded from totals|Hindi naka-sync; hindi kasama sa totals/i)).not.toBeInTheDocument();
     expect(screen.getByTestId('today-cash-out-total')).toHaveTextContent('₱0.00');
     confirmMock.mockRestore();
+  });
+
+  it('keeps Save clickable after a reload when the form is blank, even with a queued sync and a saved transaction', async () => {
+    const tenantId = useAuthStore.getState().tenantId;
+    await db.gcashTxns.add({
+      id: 'g-already-saved',
+      tenantId,
+      type: 'CashIn',
+      amount: 2000,
+      fee: 30,
+      refNo: '02929292922',
+      refNoNorm: '02929292922',
+      customerPhone: '09171704454',
+      date: new Date().toISOString()
+    });
+    await db.syncQueue.bulkAdd([1, 2, 3].map((n) => ({
+      id: `stuck-sync-${n}`,
+      entity: 'GCashTxn' as const,
+      action: 'Insert' as const,
+      timestamp: new Date().toISOString(),
+      payload: { id: `stuck-payload-${n}` },
+      status: n === 1 ? 'InFlight' as const : 'Pending' as const,
+      retryCount: 0,
+      inFlightAt: new Date(Date.now() - 60_000).toISOString()
+    })));
+
+    renderGCash();
+
+    const submitBtn = await screen.findByRole('button', { name: /I-save ang Transaksyon \(Cash-In\)|Save Transaction \(Cash-In\)/i });
+    expect(submitBtn).toBeEnabled();
+    expect(screen.getByTestId('monthly-gcash-count')).toHaveTextContent('1/30');
+    expect(screen.getByTestId('today-cash-in-total')).toHaveTextContent('₱2,000.00');
+
+    fireEvent.click(submitBtn);
+    expect(await screen.findByTestId('gcash-amount-error')).toHaveTextContent(/mas mataas sa ₱0|greater than ₱0/i);
+    expect(await db.gcashTxns.count()).toBe(1);
+    expect(submitBtn).toBeDisabled();
+
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Halaga.*Amount|Amount/i }), { target: { value: '100' } });
+    expect(submitBtn).toBeEnabled();
+  });
+
+  it('records cash-in locally and clears the form while background sync never resolves', async () => {
+    renderGCash();
+
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Halaga.*Amount|Amount/i }), { target: { value: '1500' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /Reference Number/i }), { target: { value: 'REF-LOCAL-IN' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /Cellphone ng Customer|Customer Mobile Number/i }), { target: { value: '09170001111' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /Tala.*Receiver|Notes \/ Receiver Name/i }), { target: { value: 'Padala ni Tatay' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Transaksyon \(Cash-In\)|Save Transaction \(Cash-In\)/i }));
+
+    expect(await screen.findByTestId('gcash-save-success')).toHaveTextContent(/matagumpay|recorded successfully/i);
+    expect(screen.getByRole('spinbutton', { name: /Halaga.*Amount|Amount/i })).toHaveValue(null);
+    expect(screen.getByRole('spinbutton', { name: /Kaltas|Service Fee/i })).toHaveValue(0);
+    expect(screen.getByRole('textbox', { name: /Reference Number/i })).toHaveValue('');
+    expect(screen.getByRole('textbox', { name: /Cellphone ng Customer|Customer Mobile Number/i })).toHaveValue('');
+    expect(screen.getByRole('textbox', { name: /Tala.*Receiver|Notes \/ Receiver Name/i })).toHaveValue('');
+    expect(screen.getByRole('button', { name: /I-save ang Transaksyon \(Cash-In\)|Save Transaction \(Cash-In\)/i })).toBeEnabled();
+
+    await waitFor(async () => {
+      const saved = await db.gcashTxns.where('refNo').equals('REF-LOCAL-IN').toArray();
+      expect(saved).toHaveLength(1);
+      expect(saved[0]).toMatchObject({ type: 'CashIn', amount: 1500, fee: 30, customerPhone: '09170001111', notes: 'Padala ni Tatay' });
+      expect(await db.syncQueue.count()).toBe(1);
+    });
+    expect(screen.getByText(/REF-LOCAL-IN/)).toBeInTheDocument();
+    expect(screen.getByText('Padala ni Tatay')).toBeInTheDocument();
+    expect(screen.getByTestId('today-cash-in-total')).toHaveTextContent('₱1,500.00');
+    expect(screen.getByTestId('today-gcash-fees-total')).toHaveTextContent('₱30.00');
+    expect(kickSync).toHaveBeenCalled();
+
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Halaga.*Amount|Amount/i }), { target: { value: '200' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /Reference Number/i }), { target: { value: 'REF-LOCAL-IN-2' } });
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Transaksyon \(Cash-In\)|Save Transaction \(Cash-In\)/i }));
+    await waitFor(async () => {
+      expect(await db.gcashTxns.where('refNo').equals('REF-LOCAL-IN-2').count()).toBe(1);
+    });
+    expect(screen.getByTestId('today-cash-in-total')).toHaveTextContent('₱1,700.00');
+  });
+
+  it('records cash-out locally and clears the form while background sync never resolves', async () => {
+    renderGCash();
+    fireEvent.click(screen.getByRole('tab', { name: /Cash.*Out/i }));
+
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Halaga.*Amount|Amount/i }), { target: { value: '800' } });
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Kaltas|Service Fee/i }), { target: { value: '20' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /Reference Number/i }), { target: { value: 'REF-LOCAL-OUT' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /Cellphone ng Customer|Customer Mobile Number/i }), { target: { value: '09181234567' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /Tala.*Receiver|Notes \/ Receiver Name/i }), { target: { value: 'Padala ni Nanay' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Transaksyon \(Cash-Out\)|Save Transaction \(Cash-Out\)/i }));
+
+    expect(await screen.findByTestId('gcash-save-success')).toHaveTextContent(/matagumpay|recorded successfully/i);
+    expect(screen.getByRole('spinbutton', { name: /Halaga.*Amount|Amount/i })).toHaveValue(null);
+    expect(screen.getByRole('spinbutton', { name: /Kaltas|Service Fee/i })).toHaveValue(0);
+    expect(screen.getByRole('textbox', { name: /Reference Number/i })).toHaveValue('');
+    expect(screen.getByRole('textbox', { name: /Cellphone ng Customer|Customer Mobile Number/i })).toHaveValue('');
+    expect(screen.getByRole('textbox', { name: /Tala.*Receiver|Notes \/ Receiver Name/i })).toHaveValue('');
+    expect(screen.getByRole('button', { name: /I-save ang Transaksyon \(Cash-Out\)|Save Transaction \(Cash-Out\)/i })).toBeEnabled();
+
+    await waitFor(async () => {
+      const saved = await db.gcashTxns.where('type').equals('CashOut').toArray();
+      expect(saved).toHaveLength(1);
+      expect(saved[0]).toMatchObject({ amount: 800, fee: 20, refNo: 'REF-LOCAL-OUT', notes: 'Padala ni Nanay' });
+    });
+    expect(screen.getByText('Padala ni Nanay')).toBeInTheDocument();
+    expect(screen.getByTestId('today-cash-out-total')).toHaveTextContent('₱800.00');
+    expect(screen.getByTestId('today-gcash-fees-total')).toHaveTextContent('₱20.00');
+    expect(kickSync).toHaveBeenCalled();
   });
 });
 

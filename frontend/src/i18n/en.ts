@@ -222,7 +222,8 @@ export const en: Translations = {
       feeExceedsAmount: 'Service fee cannot exceed transaction amount.',
       feeCannotBeNegative: 'Service fee cannot be negative.',
       duplicateRefWarning: 'This reference number has already been used. Duplicate entries are not allowed.',
-      phoneInvalid: 'Must be a valid 11-digit Philippine mobile number (09XXXXXXXXX).'
+      phoneInvalid: 'Must be a valid 11-digit Philippine mobile number (09XXXXXXXXX).',
+      saveFailed: 'Could not save the transaction on this device. Please try again.'
     },
     dashboard: {
       title: 'Store Performance Dashboard',
@@ -477,7 +478,8 @@ export const en: Translations = {
     },
     banner: {
       offlineTitle: 'You are Currently Offline',
-      offlineDesc: 'All sales, utang, and GCash logs are stored securely on your device and will sync automatically once reconnected.'
+      offlineDesc: 'All sales, utang, and GCash logs are stored securely on your device and will sync automatically once reconnected.',
+      queuedBody: 'Saved on this device. Sync runs in the background and does not block saving.'
     },
     privacy: {
       title: 'Data Privacy Notice (RA 10173)',

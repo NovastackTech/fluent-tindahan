@@ -31,7 +31,7 @@ import { useAuthStore } from '../state/authStore';
 import { DEFAULT_TENANT_ID } from '../db/seedData';
 
 vi.mock('../services/apiClient', () => ({
-  TenantAccountMismatchError: class TenantAccountMismatchError extends Error {},
+  TenantAccountMismatchError: class TenantAccountMismatchError extends Error { },
   TenantProvisioningError: class TenantProvisioningError extends Error {
     status: number;
     constructor(status: number) {

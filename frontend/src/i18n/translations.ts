@@ -193,6 +193,7 @@ export interface Translations {
     feeCannotBeNegative: string;
     duplicateRefWarning: string;
     phoneInvalid: string;
+    saveFailed: string;
   };
   dashboard: {
     title: string;
@@ -466,6 +467,7 @@ export interface Translations {
   banner: {
     offlineTitle: string;
     offlineDesc: string;
+    queuedBody: string;
   };
   privacy: {
     title: string;

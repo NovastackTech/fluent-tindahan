@@ -94,6 +94,9 @@ export interface SyncQueueRecord {
   retryCount: number;
   errorMessage?: string;
   queueOrder?: number;
+  /** When status became InFlight. Missing or old values are recovered after a reload. */
+  inFlightAt?: string;
+  inFlightOwner?: string;
 }
 
 export interface DeadLetterRecord {

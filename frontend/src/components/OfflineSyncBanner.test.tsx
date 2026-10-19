@@ -39,11 +39,20 @@ describe('OfflineSyncBanner', () => {
   });
 
   it('renders pending queue counter when online and pendingCount > 0', () => {
-    useSyncStore.setState({ isOnline: true, pendingCount: 3 });
+    useSyncStore.setState({ isOnline: true, isSyncing: false, pendingCount: 3 });
     renderBanner();
 
     expect(screen.getByText(/3/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Puwersahing mag-sync|Force Sync/i })).toBeInTheDocument();
+    expect(screen.getByText(/hindi nito hinaharangan ang pag-save|does not block saving/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^Nagsi-sync\.\.\.$|^Syncing\.\.\.$/)).not.toBeInTheDocument();
+  });
+
+  it('shows the syncing label only while a batch is actually in flight', () => {
+    useSyncStore.setState({ isOnline: true, isSyncing: true, pendingCount: 3 });
+    renderBanner();
+
+    expect(screen.getAllByText(/Nagsi-sync\.\.\.|Syncing\.\.\./).length).toBeGreaterThan(0);
   });
 
   it('renders dead letter queue alert when deadLetterCount > 0 and handles retry click', async () => {
