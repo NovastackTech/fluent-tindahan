@@ -1251,6 +1251,8 @@ describe('POSPage', () => {
     fireEvent.change(tenderInput, { target: { value: '10' } }); // Total is 50, short tender disables button
     expect(completeBtn).toBeDisabled();
     expect(completeBtn).toHaveAttribute('aria-label', expect.stringMatching(/Kumpletuhin ang Benta|Complete Sale/i));
+
+    useCartStore.getState().clearCart();
   });
 });
 
