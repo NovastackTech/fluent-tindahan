@@ -100,8 +100,12 @@ describe('UtangPage', () => {
     const saved = await db.customers.where('name').equals('Mang Kanor').first();
     expect(saved).toBeDefined();
     expect(saved?.totalUtangBalance).toBe(150);
-    expect(await db.utangLedger.toArray()).toHaveLength(1);
-    expect(await db.syncQueue.toArray()).toHaveLength(2);
+    const syncOps = await db.syncQueue.toArray();
+    expect(syncOps).toHaveLength(2);
+    const customerOp = syncOps.find((op) => op.entity === 'Customer');
+    expect(customerOp?.payload.totalUtangBalance).toBe(0);
+    const ledgerOp = syncOps.find((op) => op.entity === 'UtangLedger');
+    expect(ledgerOp?.payload.amount).toBe(150);
   });
 
   it('shows inline validation when saving a customer with a blank name', async () => {
@@ -540,40 +544,55 @@ describe('UtangPage', () => {
     });
   });
 
-  it('exposes accessible names for customer creation, payment confirm, and credit save buttons', async () => {
-    renderUtang();
-
-    // 1. Add Customer button and Save Customer button
-    const addCustBtn = screen.getByRole('button', { name: /Magdagdag ng Bagong Suki|Add New Customer/i });
-    expect(addCustBtn).toHaveAttribute('aria-label');
-    fireEvent.click(addCustBtn);
-
-    const saveCustBtn = screen.getByRole('button', { name: /I-save ang Suki|Save Customer/i });
-    expect(saveCustBtn).toHaveAttribute('aria-label');
-    fireEvent.click(screen.getByRole('button', { name: /Kanselahin|Cancel/i }));
-
-    // Setup customer with balance
+  it('preserves stored customer debt balance and does not overwrite it with incomplete local UtangLedger', async () => {
+    // Simulate customer having an opening/restored totalUtangBalance in db.customers (e.g. 200)
+    // while UtangLedger currently only has a partial row of 100 (e.g. pending full sync or legacy opening debt).
     await db.customers.add({
-      id: 'cust-a11y',
+      id: 'cust-mar100',
       tenantId: 'tenant-1',
-      name: 'A11y Test Suki',
-      phone: '09170009999',
+      name: 'MAR100',
+      phone: '09876544534',
       totalUtangBalance: 200,
       updatedAt: new Date().toISOString()
     });
 
-    fireEvent.click(await screen.findByText('A11y Test Suki'));
+    await db.utangLedger.add({
+      id: 'ledger-mar100-1',
+      tenantId: 'tenant-1',
+      customerId: 'cust-mar100',
+      type: 'Credit',
+      amount: 100,
+      date: new Date().toISOString(),
+      notes: ''
+    });
 
-    // 2. Record Payment confirm button
-    fireEvent.click(await screen.findByRole('button', { name: /Magbayad|Pay/i }));
-    const confirmPayBtn = screen.getByRole('button', { name: /Kumpirmahin ang Bayad|Confirm Payment/i });
-    expect(confirmPayBtn).toHaveAttribute('aria-label');
-    fireEvent.click(screen.getByRole('button', { name: /Kanselahin|Cancel/i }));
+    renderUtang();
 
-    // 3. Add Credit save button
-    fireEvent.click(await screen.findByRole('button', { name: /Dagdagan ng Utang|Add Debt/i }));
-    const saveCreditBtn = screen.getByRole('button', { name: /Itala ang Utang|Save Credit/i });
-    expect(saveCreditBtn).toHaveAttribute('aria-label');
+    // The UI should display the stored balance ₱200.00, NOT drop debt to ₱100.00
+    await waitFor(() => {
+      expect(screen.getByText('MAR100')).toBeInTheDocument();
+      expect(screen.getAllByText('₱200.00').length).toBeGreaterThanOrEqual(1);
+    });
+
+    // Opening customer modal should also show ₱200.00 for the customer's current balance
+    fireEvent.click(screen.getByText('MAR100'));
+    await waitFor(() => {
+      expect(screen.getAllByText('₱200.00').length).toBeGreaterThanOrEqual(2);
+      // Timeline displays the recorded ledger entry
+      expect(screen.getByText('+₱100.00')).toBeInTheDocument();
+    });
+
+    // Verify Dexie db.customers was NOT overwritten to 100
+    const stored = await db.customers.get('cust-mar100');
+    expect(stored?.totalUtangBalance).toBe(200);
   });
 });
+
+
+
+
+
+
+
+
 

@@ -55,10 +55,18 @@ public class GetDashboardSummaryQueryHandler : IRequestHandler<GetDashboardSumma
         }
 
         var debtors = await debtorsQuery
-            .Where(c => c.TotalUtangBalance > 0)
+            .Select(c => new
+            {
+                c.Id,
+                Balance = c.UtangLedgers.Any()
+                    ? (c.UtangLedgers.Where(u => u.Type == "Credit").Sum(u => (decimal?)u.Amount) ?? 0m) -
+                      (c.UtangLedgers.Where(u => u.Type == "Payment").Sum(u => (decimal?)u.Amount) ?? 0m)
+                    : c.TotalUtangBalance
+            })
+            .Where(x => x.Balance > 0)
             .ToListAsync(cancellationToken);
 
-        var totalUtang = debtors.Sum(c => c.TotalUtangBalance);
+        var totalUtang = debtors.Sum(c => c.Balance);
         var debtorsCount = debtors.Count;
 
         var todayGCash = await _context.GCashTransactions
