@@ -19,6 +19,10 @@ function executeReload(): void {
     clearTimeout(fallbackReloadTimer);
     fallbackReloadTimer = null;
   }
+  if (fallbackHardNavTimer) {
+    clearTimeout(fallbackHardNavTimer);
+    fallbackHardNavTimer = null;
+  }
   if (deferredReloadTimer) {
     clearTimeout(deferredReloadTimer);
     deferredReloadTimer = null;
