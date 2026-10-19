@@ -903,7 +903,7 @@ describe('OnboardingModal', () => {
       return { processed: 1, conflicts: 0, errors: 0 };
     });
 
-    const syncBtn = screen.getByTestId('unsynced-dialog-sync-btn');
+    const syncBtn = await screen.findByTestId('unsynced-dialog-sync-btn');
     fireEvent.click(syncBtn);
 
     await waitFor(() => {
