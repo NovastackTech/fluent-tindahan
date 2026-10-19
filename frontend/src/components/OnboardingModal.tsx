@@ -311,11 +311,15 @@ export const OnboardingModal: React.FC = () => {
   const submissionInFlight = useRef(false);
   const onboardingIds = useRef<{ tenantId: string; userId: string } | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
+      isMountedRef.current = false;
       if (noticeTimer.current) {
         clearTimeout(noticeTimer.current);
+        noticeTimer.current = null;
       }
     };
   }, []);
@@ -572,8 +576,11 @@ export const OnboardingModal: React.FC = () => {
 
           await updateLocalTenantBusinessName(trimmedBusinessName);
 
+          if (!isMountedRef.current) return;
           noticeTimer.current = setTimeout(() => {
-            closeOnboarding();
+            if (isMountedRef.current) {
+              closeOnboarding();
+            }
           }, 400);
           return;
         }
@@ -647,7 +654,8 @@ export const OnboardingModal: React.FC = () => {
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={(_, data) => !data.open && isEditMode && closeOnboarding()}>
+    <>
+      <Dialog open={isOpen} onOpenChange={(_, data) => !data.open && isEditMode && closeOnboarding()}>
       <DialogSurface className={styles.surface} aria-label={isEditMode ? t.onboarding.editTitle : t.onboarding.welcomeTitle}>
         <DialogBody>
           <div className={styles.headerRow}>
@@ -1064,17 +1072,18 @@ export const OnboardingModal: React.FC = () => {
                   : t.onboarding.loginBtn}
             </Button>
           </DialogActions>
-
-          <ConfirmUnsyncedLoginDialog
-            isOpen={isUnsyncedDialogOpen}
-            unsyncedCount={unsyncedLoginCount}
-            onClose={closeUnsyncedDialog}
-            onConfirmWipeAndLogin={handleConfirmWipeAndLogin}
-            onSyncFirst={handleSyncFirst}
-            isSyncing={isSyncingFirst}
-          />
         </DialogBody>
       </DialogSurface>
     </Dialog>
+
+    <ConfirmUnsyncedLoginDialog
+      isOpen={isUnsyncedDialogOpen}
+      unsyncedCount={unsyncedLoginCount}
+      onClose={closeUnsyncedDialog}
+      onConfirmWipeAndLogin={handleConfirmWipeAndLogin}
+      onSyncFirst={handleSyncFirst}
+      isSyncing={isSyncingFirst}
+    />
+  </>
   );
 };
