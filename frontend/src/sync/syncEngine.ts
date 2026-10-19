@@ -181,7 +181,7 @@ export async function enqueueSync(
 }
 
 /** An in-flight batch older than this was interrupted by a reload or a crashed tab. */
-export const IN_FLIGHT_STALE_MS = 20_000;
+export const IN_FLIGHT_STALE_MS = 90_000;
 
 /**
  * Puts stranded InFlight queue rows back to Pending.
@@ -335,9 +335,11 @@ export async function processSyncQueue(options?: { force?: boolean }): Promise<{
   });
 
   const batchIds = pendingItems.map((item) => item.id);
+  const passToken = createClientUuid();
   await db.syncQueue.where('id').anyOf(batchIds).modify({
     status: 'InFlight',
-    inFlightAt: new Date().toISOString()
+    inFlightAt: new Date().toISOString(),
+    inFlightOwner: passToken
   });
 
   store.setSyncing(true);
@@ -501,9 +503,10 @@ export async function processSyncQueue(options?: { force?: boolean }): Promise<{
       // pass (including after a reload) can send them. A crashed tab is covered
       // by recoverStaleInFlightSyncItems.
       await db.syncQueue.where('id').anyOf(batchIds).modify((item: SyncQueueRecord) => {
-        if (item.status === 'InFlight') {
+        if (item.status === 'InFlight' && item.inFlightOwner === passToken) {
           item.status = 'Pending';
           delete item.inFlightAt;
+          delete item.inFlightOwner;
         }
       });
     } finally {
