@@ -5,10 +5,24 @@ let updateSWFunction: ((reloadPage?: boolean) => Promise<void>) | null = null;
 let updateIntervalId: ReturnType<typeof setInterval> | null = null;
 let initPromise: Promise<void> | null = null;
 let isReloading = false;
+let reloadExecuted = false;
+let fallbackReloadTimer: ReturnType<typeof setTimeout> | null = null;
+let fallbackHardNavTimer: ReturnType<typeof setTimeout> | null = null;
 let deferredReloadUnsubscribe: (() => void) | null = null;
 let deferredReloadTimer: ReturnType<typeof setTimeout> | null = null;
 
 function executeReload(): void {
+  if (reloadExecuted) return;
+  reloadExecuted = true;
+
+  if (fallbackReloadTimer) {
+    clearTimeout(fallbackReloadTimer);
+    fallbackReloadTimer = null;
+  }
+  if (fallbackHardNavTimer) {
+    clearTimeout(fallbackHardNavTimer);
+    fallbackHardNavTimer = null;
+  }
   if (deferredReloadTimer) {
     clearTimeout(deferredReloadTimer);
     deferredReloadTimer = null;
@@ -206,17 +220,19 @@ export async function reloadAppForUpdate(): Promise<void> {
   }
 
   // 4. If controllerchange already fired or serviceWorker event listeners are unavailable, reload directly.
-  // Otherwise, allow a short window for controllerchange to trigger executeReload before fallback.
+  // Otherwise, allow a window (1000ms) for controllerchange to trigger executeReload before fallback.
   if (controllerChangeFired || !('serviceWorker' in navigator) || typeof navigator.serviceWorker.addEventListener !== 'function') {
     executeReload();
   } else {
-    setTimeout(() => {
+    fallbackReloadTimer = setTimeout(() => {
+      fallbackReloadTimer = null;
       executeReload();
     }, 1000);
   }
 
   // 5. Hard navigation fallback: force assign location href if reload calls were ignored
-  setTimeout(() => {
+  fallbackHardNavTimer = setTimeout(() => {
+    fallbackHardNavTimer = null;
     try {
       if (typeof window !== 'undefined' && typeof window.location?.assign === 'function') {
         window.location.assign(window.location.href);
@@ -237,9 +253,18 @@ export function _resetUpdateSWFunctionForTest(): void {
   updateSWFunction = null;
   initPromise = null;
   isReloading = false;
+  reloadExecuted = false;
   if (updateIntervalId) {
     clearInterval(updateIntervalId);
     updateIntervalId = null;
+  }
+  if (fallbackReloadTimer) {
+    clearTimeout(fallbackReloadTimer);
+    fallbackReloadTimer = null;
+  }
+  if (fallbackHardNavTimer) {
+    clearTimeout(fallbackHardNavTimer);
+    fallbackHardNavTimer = null;
   }
   if (deferredReloadTimer) {
     clearTimeout(deferredReloadTimer);

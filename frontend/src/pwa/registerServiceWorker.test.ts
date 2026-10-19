@@ -546,6 +546,55 @@ describe('registerServiceWorker', () => {
     });
   });
 
+  it('clears fallbackReloadTimer and prevents duplicate reloads when controllerchange fires', async () => {
+    vi.useFakeTimers();
+    const originalLocation = window.location;
+    const reloadMock = vi.fn();
+    Object.defineProperty(window, 'location', {
+      value: { ...originalLocation, reload: reloadMock },
+      configurable: true,
+      writable: true
+    });
+
+    let controllerChangeCallback: (() => void) | undefined;
+    const addEventListenerMock = vi.fn((event: string, cb: () => void) => {
+      if (event === 'controllerchange') {
+        controllerChangeCallback = cb;
+      }
+    });
+
+    Object.defineProperty(navigator, 'serviceWorker', {
+      value: {
+        register: vi.fn(),
+        addEventListener: addEventListenerMock
+      },
+      configurable: true,
+      writable: true
+    });
+
+    _resetUpdateSWFunctionForTest();
+    await reloadAppForUpdate();
+
+    expect(reloadMock).not.toHaveBeenCalled();
+
+    // Trigger controllerchange from activating SW
+    controllerChangeCallback?.();
+    expect(reloadMock).toHaveBeenCalledTimes(1);
+
+    // Advance timers past fallback timeout (1000ms)
+    vi.advanceTimersByTime(1500);
+
+    // Should still only have been called once, not re-triggered by fallback timer
+    expect(reloadMock).toHaveBeenCalledTimes(1);
+
+    Object.defineProperty(window, 'location', {
+      value: originalLocation,
+      configurable: true,
+      writable: true
+    });
+    vi.useRealTimers();
+  });
+
   it('guards against duplicate registration when initServiceWorker is called multiple times', async () => {
     Object.defineProperty(navigator, 'serviceWorker', {
       value: {
