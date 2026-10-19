@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   makeStyles,
   tokens,
@@ -168,56 +168,24 @@ export const UtangPage: React.FC = () => {
       .sort((a, b) => b.date.localeCompare(a.date));
   }, [allUtangEntries, selectedCustomerId]);
 
-  const balancesByCustomerId = useMemo(() => {
-    if (!allUtangEntries) return new Map<string, number>();
-    const map = new Map<string, number>();
-    for (const entry of allUtangEntries) {
-      const currentCentavos = map.get(entry.customerId) ?? 0;
-      const amountCentavos = Math.round(entry.amount * 100);
-      const nextCentavos = entry.type === 'Credit'
-        ? currentCentavos + amountCentavos
-        : currentCentavos - amountCentavos;
-      map.set(entry.customerId, nextCentavos);
-    }
-    const result = new Map<string, number>();
-    for (const [custId, centavos] of map.entries()) {
-      result.set(custId, Math.max(0, centavos) / 100);
-    }
-    return result;
-  }, [allUtangEntries]);
-
-  const getCustomerBalance = useCallback(
-    (cust: CustomerRecord): number => {
-      if (balancesByCustomerId.has(cust.id)) {
-        return balancesByCustomerId.get(cust.id)!;
-      }
-      return cust.totalUtangBalance ?? 0;
-    },
-    [balancesByCustomerId]
-  );
-
-  // Reconcile and self-heal any drifted/doubled totalUtangBalance in db.customers
+  // Flag mismatch between stored balance and local ledger entries without overwriting stored balance
   useEffect(() => {
-    if (!customers || !allUtangEntries || customers.length === 0) return;
-    const toUpdate: Array<{ id: string; balance: number }> = [];
-    for (const c of customers) {
-      if (balancesByCustomerId.has(c.id)) {
-        const trueBal = balancesByCustomerId.get(c.id)!;
-        if (c.totalUtangBalance !== trueBal) {
-          toUpdate.push({ id: c.id, balance: trueBal });
-        }
-      }
+    if (!selectedCustomer || ledgerEntries.length === 0) return;
+    const ledgerCentavos = ledgerEntries.reduce(
+      (sum, e) => sum + (e.type === 'Credit' ? 1 : -1) * Math.round(e.amount * 100),
+      0
+    );
+    const ledgerBal = Math.max(0, ledgerCentavos) / 100;
+    if (Math.abs((selectedCustomer.totalUtangBalance ?? 0) - ledgerBal) > 0.01) {
+      console.warn(
+        `[UtangPage] Mismatch detected for customer ${selectedCustomer.name} (${selectedCustomer.id}): ` +
+        `stored balance is ₱${selectedCustomer.totalUtangBalance}, but local ledger calculates ₱${ledgerBal}. ` +
+        `Not overwriting stored balance because local ledger may be partial or pending sync.`
+      );
     }
-    if (toUpdate.length > 0) {
-      void db.transaction('rw', db.customers, async () => {
-        for (const item of toUpdate) {
-          await db.customers.update(item.id, { totalUtangBalance: item.balance });
-        }
-      });
-    }
-  }, [customers, allUtangEntries, balancesByCustomerId]);
+  }, [selectedCustomer, ledgerEntries]);
 
-  const selectedCustomerBalance = selectedCustomer ? getCustomerBalance(selectedCustomer) : 0;
+  const selectedCustomerBalance = selectedCustomer?.totalUtangBalance ?? 0;
 
   // Filtered debtors
   const filteredCustomers = useMemo(() => {
@@ -229,8 +197,8 @@ export const UtangPage: React.FC = () => {
   }, [customers, searchQuery]);
 
   const totalOutstanding = useMemo(() => {
-    return customers.reduce((sum, c) => sum + getCustomerBalance(c), 0);
-  }, [customers, getCustomerBalance]);
+    return customers.reduce((sum, c) => sum + (c.totalUtangBalance ?? 0), 0);
+  }, [customers]);
 
   // Create new customer
   const handleCreateCustomer = async () => {
@@ -345,10 +313,7 @@ export const UtangPage: React.FC = () => {
       // Atomic read-check-write so concurrent submits cannot both pass the check
       const result = await db.transaction('rw', db.customers, db.utangLedger, db.syncQueue, async () => {
         const fresh = await db.customers.get(selectedCustomer.id);
-        const entries = await db.utangLedger.where('tenantId').equals(tenantId).filter((e) => e.customerId === selectedCustomer.id).toArray();
-        const latestBalance = entries.length > 0
-          ? Math.max(0, entries.reduce((s, e) => s + (e.type === 'Credit' ? 1 : -1) * Math.round(e.amount * 100), 0)) / 100
-          : (fresh?.totalUtangBalance ?? 0);
+        const latestBalance = fresh?.totalUtangBalance ?? 0;
         if (Math.round(amount * 100) > Math.round(latestBalance * 100)) {
           return { ok: false as const, currentBalance: latestBalance };
         }
@@ -418,7 +383,7 @@ export const UtangPage: React.FC = () => {
 
       const newBalance = await db.transaction('rw', db.customers, db.utangLedger, db.syncQueue, async () => {
         const fresh = await db.customers.get(selectedCustomer.id);
-        const currentBalance = fresh ? getCustomerBalance(fresh) : selectedCustomerBalance;
+        const currentBalance = fresh?.totalUtangBalance ?? (selectedCustomer.totalUtangBalance ?? 0);
         await db.utangLedger.add(ledgerRecord);
         await addSyncRecord('UtangLedger', 'Insert', ledgerRecord);
         const updated = Math.round(currentBalance * 100 + amount * 100) / 100;
@@ -520,7 +485,7 @@ export const UtangPage: React.FC = () => {
           </Card>
         ) : (
           filteredCustomers.map((cust) => {
-            const balance = getCustomerBalance(cust);
+            const balance = cust.totalUtangBalance ?? 0;
             const hasUtang = balance > 0;
             return (
               <Card
@@ -724,16 +689,6 @@ export const UtangPage: React.FC = () => {
                   {t.utang.payAll} ({formatPeso(selectedCustomerBalance)})
                 </Button>
               )}
-
-                    {selectedCustomer && selectedCustomer.totalUtangBalance > 0 && (
-                      <Button
-                        size="small"
-                        appearance="subtle"
-                        onClick={() => setPaymentAmount(selectedCustomer.totalUtangBalance.toString())}
-                      >
-                        {t.utang.payAll} ({formatPeso(selectedCustomer.totalUtangBalance)})
-                      </Button>
-                    )}
 
                     <div style={{ margin: '12px 0' }}>
                       <Text size={200} weight="semibold">{t.utang.paymentNotesLabel}</Text>

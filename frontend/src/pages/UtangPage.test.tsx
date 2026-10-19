@@ -544,9 +544,9 @@ describe('UtangPage', () => {
     });
   });
 
-  it('derives running customer debt balance dynamically from UtangLedger and reconciles drifted customer balance', async () => {
-    // Simulate customer having an inflated/doubled totalUtangBalance in db.customers (e.g. 200)
-    // while UtangLedger contains the true single credit entry of 100.
+  it('preserves stored customer debt balance and does not overwrite it with incomplete local UtangLedger', async () => {
+    // Simulate customer having an opening/restored totalUtangBalance in db.customers (e.g. 200)
+    // while UtangLedger currently only has a partial row of 100 (e.g. pending full sync or legacy opening debt).
     await db.customers.add({
       id: 'cust-mar100',
       tenantId: 'tenant-1',
@@ -568,25 +568,23 @@ describe('UtangPage', () => {
 
     renderUtang();
 
-    // The UI should display ₱100.00 (from UtangLedger), NOT ₱200.00
+    // The UI should display the stored balance ₱200.00, NOT drop debt to ₱100.00
     await waitFor(() => {
       expect(screen.getByText('MAR100')).toBeInTheDocument();
-      expect(screen.getAllByText('₱100.00').length).toBeGreaterThanOrEqual(1);
-      expect(screen.queryByText('₱200.00')).not.toBeInTheDocument();
+      expect(screen.getAllByText('₱200.00').length).toBeGreaterThanOrEqual(1);
     });
 
-    // Opening customer modal should also show ₱100.00
+    // Opening customer modal should also show ₱200.00 for the customer's current balance
     fireEvent.click(screen.getByText('MAR100'));
     await waitFor(() => {
+      expect(screen.getAllByText('₱200.00').length).toBeGreaterThanOrEqual(2);
+      // Timeline displays the recorded ledger entry
       expect(screen.getByText('+₱100.00')).toBeInTheDocument();
-      expect(screen.queryByText('₱200.00')).not.toBeInTheDocument();
     });
 
-    // Verify self-healing in local Dexie db.customers
-    await waitFor(async () => {
-      const reconciled = await db.customers.get('cust-mar100');
-      expect(reconciled?.totalUtangBalance).toBe(100);
-    });
+    // Verify Dexie db.customers was NOT overwritten to 100
+    const stored = await db.customers.get('cust-mar100');
+    expect(stored?.totalUtangBalance).toBe(200);
   });
 });
 
