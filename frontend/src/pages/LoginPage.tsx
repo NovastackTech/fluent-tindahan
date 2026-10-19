@@ -11,7 +11,9 @@ import {
   Badge,
   Spinner,
   Checkbox,
-  Divider
+  Divider,
+  Field,
+  Input
 } from '@fluentui/react-components';
 import {
   KeyRegular,
@@ -121,11 +123,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
     isSyncingFirst,
     isSubmitting,
     setIsSubmitting,
+    pendingOtpEmail,
+    setPendingOtpEmail,
     closeUnsyncedDialog,
     handleConfirmWipeAndLogin,
     handleSyncFirst,
     handleStoreLogin,
     handleStoreRegistration,
+    handleVerifyEmailOtp,
+    handleResendEmailOtp,
     handleGoogleAuth
   } = useStoreAuthFlow({
     onSuccess: () => onNavigate('pos')
@@ -150,6 +156,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [authErrors, setAuthErrors] = useState<string[]>([]);
+  const [otpCode, setOtpCode] = useState('');
+  const [otpInfoMsg, setOtpInfoMsg] = useState('');
   const [regFieldErrors, setRegFieldErrors] = useState<{
     storeName?: boolean;
     email?: boolean;
@@ -173,6 +181,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
 
   const handleTabSelect = (nextTab: 'login' | 'register') => {
     setActiveTab(nextTab);
+    setPendingOtpEmail(null);
+    setOtpCode('');
+    setOtpInfoMsg('');
     setAuthErrors([]);
     setRegFieldErrors({});
     setLoginFieldErrors({});
@@ -278,6 +289,24 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
     });
   };
 
+  const handleOtpSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSubmitting) return;
+    setAuthErrors([]);
+    setOtpInfoMsg('');
+    await handleVerifyEmailOtp(otpCode, (msg) => setAuthErrors([msg]));
+  };
+
+  const handleOtpResend = async () => {
+    if (isSubmitting) return;
+    setAuthErrors([]);
+    setOtpInfoMsg('');
+    await handleResendEmailOtp(
+      (msg) => setOtpInfoMsg(msg),
+      (msg) => setAuthErrors([msg])
+    );
+  };
+
   const handleExploreDemo = async () => {
     setIsSubmitting(true);
     try {
@@ -330,34 +359,44 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
             </Badge>
           </div>
           <Text as="h1" size={500} weight="bold" style={{ display: 'block', marginBottom: '4px' }}>
-            {activeTab === 'register' ? t.login.signUpPageTitle : t.login.pageTitle}
+            {pendingOtpEmail
+              ? t.onboarding.otpTitle
+              : activeTab === 'register'
+                ? t.login.signUpPageTitle
+                : t.login.pageTitle}
           </Text>
           <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-            {activeTab === 'register' ? t.login.signUpPageSubtitle : t.login.pageSubtitle}
+            {pendingOtpEmail
+              ? t.onboarding.otpSubtitle.replace('{email}', pendingOtpEmail)
+              : activeTab === 'register'
+                ? t.login.signUpPageSubtitle
+                : t.login.pageSubtitle}
           </Text>
         </div>
 
-        <TabList
-          selectedValue={activeTab}
-          onTabSelect={(_, data) => {
-            handleTabSelect(data.value as 'login' | 'register');
-          }}
-          style={{ marginBottom: tokens.spacingVerticalM }}
-        >
-          <Tab value="login" icon={<KeyRegular />} data-testid="login-tab-login">
-            {t.landing.tabLogin}
-          </Tab>
-          <Tab value="register" icon={<SparkleRegular />} data-testid="login-tab-register">
-            {t.landing.tabRegister}
-          </Tab>
-        </TabList>
+        {!pendingOtpEmail && (
+          <TabList
+            selectedValue={activeTab}
+            onTabSelect={(_, data) => {
+              handleTabSelect(data.value as 'login' | 'register');
+            }}
+            style={{ marginBottom: tokens.spacingVerticalM }}
+          >
+            <Tab value="login" icon={<KeyRegular />} data-testid="login-tab-login">
+              {t.landing.tabLogin}
+            </Tab>
+            <Tab value="register" icon={<SparkleRegular />} data-testid="login-tab-register">
+              {t.landing.tabRegister}
+            </Tab>
+          </TabList>
+        )}
 
         <AuthErrorBanner
           authErrors={authErrors}
           language={language}
           containerClassName={styles.errorBanner}
           testId="login-error-banner"
-          showSwitchToPassword={activeTab === 'login' && loginMode === 'pin'}
+          showSwitchToPassword={!pendingOtpEmail && activeTab === 'login' && loginMode === 'pin'}
           onSwitchToPassword={() => {
             setLoginMode('password');
             setAuthErrors([]);
@@ -365,6 +404,24 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
           }}
           switchToPasswordTestId="login-switch-to-password-btn"
         />
+
+        {otpInfoMsg && (
+          <div
+            style={{
+              backgroundColor: tokens.colorPaletteGreenBackground1,
+              color: tokens.colorPaletteGreenForeground1,
+              border: `1px solid ${tokens.colorPaletteGreenBorder1}`,
+              borderRadius: tokens.borderRadiusMedium,
+              padding: `${tokens.spacingVerticalS} ${tokens.spacingHorizontalM}`,
+              marginBottom: tokens.spacingVerticalM,
+              fontSize: tokens.fontSizeBase200
+            }}
+            role="status"
+            data-testid="login-otp-info-banner"
+          >
+            {otpInfoMsg}
+          </div>
+        )}
 
         {pendingSyncCount > 0 && (
           <div
@@ -388,7 +445,63 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
           </div>
         )}
 
-        {activeTab === 'login' ? (
+        {pendingOtpEmail ? (
+          <form onSubmit={handleOtpSubmit} noValidate data-testid="login-otp-form">
+            <Field label={t.onboarding.otpLabel} required style={{ marginBottom: tokens.spacingVerticalM }}>
+              <Input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={6}
+                value={otpCode}
+                onChange={(_, d) => {
+                  setOtpCode(d.value.replace(/\D/g, '').slice(0, 6));
+                  if (authErrors.length) setAuthErrors([]);
+                }}
+                placeholder={t.onboarding.otpPlaceholder}
+                contentBefore={<KeyRegular />}
+                autoFocus
+                data-testid="login-otp-input"
+              />
+            </Field>
+            <Button
+              appearance="primary"
+              size="large"
+              type="submit"
+              disabled={isSubmitting}
+              icon={isSubmitting ? <Spinner size="extra-tiny" /> : <CheckmarkCircleRegular />}
+              style={{ width: '100%', marginBottom: tokens.spacingVerticalS }}
+              data-testid="login-otp-verify-btn"
+            >
+              {t.onboarding.otpVerifyBtn}
+            </Button>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: tokens.spacingHorizontalS }}>
+              <Button
+                appearance="subtle"
+                type="button"
+                disabled={isSubmitting}
+                onClick={() => {
+                  setPendingOtpEmail(null);
+                  setOtpCode('');
+                  setOtpInfoMsg('');
+                  setAuthErrors([]);
+                }}
+                data-testid="login-otp-back-btn"
+              >
+                {t.onboarding.otpBackBtn}
+              </Button>
+              <Button
+                appearance="secondary"
+                type="button"
+                disabled={isSubmitting}
+                onClick={handleOtpResend}
+                data-testid="login-otp-resend-btn"
+              >
+                {t.onboarding.otpResendBtn}
+              </Button>
+            </div>
+          </form>
+        ) : activeTab === 'login' ? (
           <form onSubmit={handleLoginSubmit} noValidate>
             <LoginFormFields
               idPrefix="login"

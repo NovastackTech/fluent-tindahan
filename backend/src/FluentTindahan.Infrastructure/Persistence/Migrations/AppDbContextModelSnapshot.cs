@@ -382,6 +382,26 @@ namespace FluentTindahan.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(256)")
                         .HasDefaultValue("");
 
+                    b.Property<int>("EmailOtpAttempts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
+                    b.Property<DateTimeOffset?>("EmailOtpExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EmailOtpHash")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTimeOffset?>("EmailOtpSentAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("EmailVerified")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<int>("FailedPasswordAttempts")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
@@ -444,6 +464,9 @@ namespace FluentTindahan.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
+
+                    b.Property<DateTimeOffset?>("SessionsInvalidatedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");

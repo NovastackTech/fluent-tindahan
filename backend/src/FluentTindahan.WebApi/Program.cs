@@ -92,6 +92,34 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromMinutes(1)
         };
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = async context =>
+            {
+                var userIdStr = context.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                    ?? context.Principal?.FindFirst("sub")?.Value
+                    ?? context.Principal?.FindFirst("user_id")?.Value;
+
+                if (Guid.TryParse(userIdStr, out var userId))
+                {
+                    var db = context.HttpContext.RequestServices.GetRequiredService<FluentTindahan.Application.Common.Interfaces.IApplicationDbContext>();
+                    var invalidatedAt = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(
+                        Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Users)
+                            .Where(u => u.Id == userId)
+                            .Select(u => u.SessionsInvalidatedAt),
+                        context.HttpContext.RequestAborted);
+
+                    if (invalidatedAt.HasValue && context.SecurityToken != null)
+                    {
+                        var issuedAt = new DateTimeOffset(context.SecurityToken.ValidFrom, TimeSpan.Zero);
+                        if (issuedAt < invalidatedAt.Value.AddSeconds(-1))
+                        {
+                            context.Fail("Session has been invalidated.");
+                        }
+                    }
+                }
+            }
+        };
     });
 
 builder.Services.AddScoped<IAuthorizationHandler, TenantResolvedHandler>();

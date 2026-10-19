@@ -23,6 +23,7 @@ public class AuthController : ControllerBase
     private readonly PasswordHasher<User> _passwordHasher;
     private readonly TimeProvider _timeProvider;
     private readonly IGoogleAuthService? _googleAuthService;
+    private readonly IEmailOtpSender? _emailOtpSender;
 
     public const int DefaultGraceWindowSeconds = AuthRefreshTokenHelper.DefaultGraceWindowSeconds;
 
@@ -31,7 +32,8 @@ public class AuthController : ControllerBase
         IJwtTokenService jwtTokenService,
         ICurrentUserService? currentUserService = null,
         TimeProvider? timeProvider = null,
-        IGoogleAuthService? googleAuthService = null)
+        IGoogleAuthService? googleAuthService = null,
+        IEmailOtpSender? emailOtpSender = null)
     {
         _context = context;
         _jwtTokenService = jwtTokenService;
@@ -39,6 +41,7 @@ public class AuthController : ControllerBase
         _passwordHasher = new PasswordHasher<User>();
         _timeProvider = timeProvider ?? TimeProvider.System;
         _googleAuthService = googleAuthService;
+        _emailOtpSender = emailOtpSender;
     }
 
     #region Static Helper Forwarders
@@ -47,6 +50,7 @@ public class AuthController : ControllerBase
     public static void ResetIpPinThrottle(string clientIp) => AuthLockoutHelper.ResetIpPinThrottle(clientIp);
     public static string CleanDisplayEmail(string? email) => AuthEmailNormalizer.CleanDisplayEmail(email);
     public static string NormalizeEmail(string? email) => AuthEmailNormalizer.NormalizeEmail(email);
+    public static bool IsDisposableEmail(string? email) => AuthEmailNormalizer.IsDisposableEmail(email);
     public static bool IsUniqueEmailViolation(DbUpdateException ex) => DbConstraintHelper.IsUniqueEmailViolation(ex);
     public static bool IsUniqueConstraintViolation(DbUpdateException ex) => DbConstraintHelper.IsUniqueConstraintViolation(ex);
 
@@ -168,6 +172,21 @@ public class AuthController : ControllerBase
         public string? RefreshToken { get; init; }
     }
 
+    public sealed record VerifyEmailOtpRequest
+    {
+        [EmailAddress, StringLength(256)]
+        public string? Email { get; init; }
+
+        [Required, RegularExpression(@"^\d{6}$", ErrorMessage = "OTP must be a 6-digit code.")]
+        public string Otp { get; init; } = string.Empty;
+    }
+
+    public sealed record ResendEmailOtpRequest
+    {
+        [EmailAddress, StringLength(256)]
+        public string? Email { get; init; }
+    }
+
     public sealed record AuthResponseDto(
         Guid TenantId,
         Guid UserId,
@@ -183,7 +202,9 @@ public class AuthController : ControllerBase
         string Token,
         DateTimeOffset ExpiresAt,
         string? RefreshToken = null,
-        bool IsNewUser = false
+        bool IsNewUser = false,
+        bool EmailVerified = true,
+        bool RequiresEmailVerification = false
     );
 
     #endregion
@@ -366,7 +387,8 @@ public class AuthController : ControllerBase
         User user,
         Tenant tenant,
         bool isNewUser,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? pendingOtpCode = null)
     {
         var access = _jwtTokenService.GenerateAccessToken(user.Id, tenant.Id, email: user.Email, role: user.Role);
         var (refreshToken, _, _, _) = AuthRefreshTokenHelper.IssueRefreshToken(
@@ -389,6 +411,11 @@ public class AuthController : ControllerBase
         {
             _context.ChangeTracker.Clear();
             return Conflict(new { message = "May tindahan o user nang nakarehistro gamit ang ID na ito. / A store or user is already registered with this ID." });
+        }
+
+        if (!string.IsNullOrEmpty(pendingOtpCode) && _emailOtpSender != null)
+        {
+            await _emailOtpSender.SendOtpAsync(user.Email, pendingOtpCode, user.OwnerName, cancellationToken);
         }
 
         AuthLockoutHelper.ResetIpPinThrottle(AuthClaimsHelper.GetClientIpAddress(HttpContext));
@@ -427,6 +454,11 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = "Kailangan ng wastong email address. / Valid email address is required." });
         }
 
+        if (IsDisposableEmail(normalizedEmail))
+        {
+            return BadRequest(new { message = "Hindi pinapayagan ang pansamantalang (disposable) email address. Mangyaring gumamit ng permanenteng email. / Disposable email addresses are not allowed. Please use a permanent email address." });
+        }
+
         var emailExists = await _context.Users.IgnoreQueryFilters()
             .AnyAsync(u => u.NormalizedEmail == normalizedEmail, cancellationToken);
         if (emailExists)
@@ -461,13 +493,16 @@ public class AuthController : ControllerBase
         user.PinHash = !string.IsNullOrWhiteSpace(request.Pin)
             ? _passwordHasher.HashPassword(user, request.Pin.Trim())
             : null;
+        user.EmailVerified = false;
+        var otpCode = AuthOtpHelper.IssueOtp(user, _timeProvider);
 
-        return await SaveNewUserAndRespondAsync(user, tenant!, isNewUser: false, cancellationToken);
+        return await SaveNewUserAndRespondAsync(user, tenant!, isNewUser: false, cancellationToken, otpCode);
     }
 
     /// <summary>
     /// Authenticates or registers a store owner using a verified Google OAuth token.
-    /// Links existing email/password accounts if emails match, or provisions a new store with client UUIDs.
+    /// Links existing verified email/password accounts if emails match, overwrites credentials and invalidates
+    /// active sessions when an existing matching email account is unverified, or provisions a new store with client UUIDs.
     /// </summary>
     [HttpPost("google")]
     [EnableRateLimiting("AuthSensitive")]
@@ -501,6 +536,11 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = "Kailangan ng wastong email address mula sa Google. / Valid email address from Google is required." });
         }
 
+        if (IsDisposableEmail(normalizedEmail))
+        {
+            return BadRequest(new { message = "Hindi pinapayagan ang pansamantalang (disposable) email address. / Disposable email addresses are not allowed." });
+        }
+
         var rawGoogleSubject = $"google:{googleUser.Subject}";
         var googleSubject = rawGoogleSubject.Length > 128 ? rawGoogleSubject[..128] : rawGoogleSubject;
         var googleOwnerName = string.IsNullOrWhiteSpace(googleUser.FullName)
@@ -518,7 +558,21 @@ public class AuthController : ControllerBase
                 existingUser.Tenant = await _context.Tenants.IgnoreQueryFilters()
                     .FirstOrDefaultAsync(t => t.Id == existingUser.TenantId, cancellationToken);
             }
-            // Existing User (Login / Account Link)
+
+            var now = _timeProvider.GetUtcNow();
+
+            // Never auto-merge unverified accounts: overwrite credentials and invalidate active sessions
+            if (!existingUser.EmailVerified)
+            {
+                existingUser.PasswordHash = string.Empty;
+                existingUser.PinHash = null;
+                AuthOtpHelper.ClearOtp(existingUser);
+                existingUser.SessionsInvalidatedAt = now;
+                await AuthRefreshTokenHelper.RevokeAllForUserAsync(_context, existingUser, existingUser.Id, _timeProvider, cancellationToken);
+            }
+
+            existingUser.EmailVerified = true;
+
             if (existingUser.FirebaseUid != googleSubject)
             {
                 existingUser.FirebaseUid = googleSubject;
@@ -577,7 +631,7 @@ public class AuthController : ControllerBase
                         Id = targetTenantId,
                         BusinessName = resolvedBusinessName,
                         Tier = PlanTier.Libre,
-                        CreatedAt = _timeProvider.GetUtcNow()
+                        CreatedAt = now
                     };
                     _context.Tenants.Add(resolvedTenant);
                 }
@@ -586,7 +640,6 @@ public class AuthController : ControllerBase
                 existingUser.TenantId = resolvedTenant.Id;
             }
 
-            var now = _timeProvider.GetUtcNow();
             existingUser.LastLoginAt = now;
             AuthLockoutHelper.ResetPasswordLockout(existingUser);
             AuthLockoutHelper.ResetPinLockout(existingUser);
@@ -651,12 +704,15 @@ public class AuthController : ControllerBase
             return upgradeError;
         }
 
+        user!.EmailVerified = true;
+        AuthOtpHelper.ClearOtp(user);
+
         if (!string.IsNullOrWhiteSpace(request.Pin))
         {
-            user!.PinHash = _passwordHasher.HashPassword(user, request.Pin.Trim());
+            user.PinHash = _passwordHasher.HashPassword(user, request.Pin.Trim());
         }
 
-        return await SaveNewUserAndRespondAsync(user!, tenant!, isNewUser: true, cancellationToken);
+        return await SaveNewUserAndRespondAsync(user, tenant!, isNewUser: true, cancellationToken);
     }
 
     /// <summary>
@@ -720,7 +776,15 @@ public class AuthController : ControllerBase
 
         AuthLockoutHelper.ResetPasswordLockout(user);
         AuthLockoutHelper.ResetPinLockout(user);
-        user.LastLoginAt = _timeProvider.GetUtcNow();
+        var now = _timeProvider.GetUtcNow();
+        user.LastLoginAt = now;
+
+        string? pendingOtpCode = null;
+        if (!user.EmailVerified &&
+            (string.IsNullOrEmpty(user.EmailOtpHash) || !user.EmailOtpExpiresAt.HasValue || user.EmailOtpExpiresAt.Value < now))
+        {
+            pendingOtpCode = AuthOtpHelper.IssueOtp(user, _timeProvider);
+        }
 
         var access = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId, email: user.Email, role: user.Role);
         var (refreshToken, _, _, _) = AuthRefreshTokenHelper.IssueRefreshToken(
@@ -731,6 +795,11 @@ public class AuthController : ControllerBase
             _timeProvider);
 
         await _context.SaveChangesAsync(cancellationToken);
+        if (!string.IsNullOrEmpty(pendingOtpCode) && _emailOtpSender != null)
+        {
+            await _emailOtpSender.SendOtpAsync(user.Email, pendingOtpCode, user.OwnerName, cancellationToken);
+        }
+
         AuthLockoutHelper.ResetIpPinThrottle(AuthClaimsHelper.GetClientIpAddress(HttpContext));
 
         return Ok(AuthResponseBuilder.Build(user, user.Tenant, access, refreshToken));
@@ -842,8 +911,21 @@ public class AuthController : ControllerBase
                 _timeProvider);
 
             AuthLockoutHelper.ResetPinLockout(freshUser);
-            freshUser.LastLoginAt = _timeProvider.GetUtcNow();
+            var now = _timeProvider.GetUtcNow();
+            freshUser.LastLoginAt = now;
+
+            string? pendingOtpCode = null;
+            if (!freshUser.EmailVerified &&
+                (string.IsNullOrEmpty(freshUser.EmailOtpHash) || !freshUser.EmailOtpExpiresAt.HasValue || freshUser.EmailOtpExpiresAt.Value < now))
+            {
+                pendingOtpCode = AuthOtpHelper.IssueOtp(freshUser, _timeProvider);
+            }
+
             await _context.SaveChangesAsync(cancellationToken);
+            if (!string.IsNullOrEmpty(pendingOtpCode) && _emailOtpSender != null)
+            {
+                await _emailOtpSender.SendOtpAsync(freshUser.Email, pendingOtpCode, freshUser.OwnerName, cancellationToken);
+            }
 
             return Ok(AuthResponseBuilder.Build(freshUser, freshUser.Tenant, access, refreshToken));
         }
@@ -1207,6 +1289,11 @@ public class AuthController : ControllerBase
                 return BadRequest(new { message = "Kailangan ng wastong email address. / Valid email address is required." });
             }
 
+            if (IsDisposableEmail(normalizedEmail))
+            {
+                return BadRequest(new { message = "Hindi pinapayagan ang pansamantalang (disposable) email address. Mangyaring gumamit ng permanenteng email. / Disposable email addresses are not allowed. Please use a permanent email address." });
+            }
+
             if (!string.Equals(user.NormalizedEmail, normalizedEmail, StringComparison.OrdinalIgnoreCase))
             {
                 isEmailChanging = true;
@@ -1214,6 +1301,7 @@ public class AuthController : ControllerBase
         }
 
         string? responseRefreshToken = null;
+        string? pendingOtpCode = null;
 
         if (isEmailChanging)
         {
@@ -1319,6 +1407,8 @@ public class AuthController : ControllerBase
             }
             user.Email = cleanEmail!;
             user.NormalizedEmail = normalizedEmail!;
+            user.EmailVerified = false;
+            pendingOtpCode = AuthOtpHelper.IssueOtp(user, _timeProvider);
 
             // Revoke other refresh tokens on email change
             string? currentFamilyId = null;
@@ -1360,7 +1450,152 @@ public class AuthController : ControllerBase
             return Conflict(new { message = "May account nang nakarehistro gamit ang email na ito. / An account is already registered with this email." });
         }
 
+        if (!string.IsNullOrEmpty(pendingOtpCode) && _emailOtpSender != null)
+        {
+            await _emailOtpSender.SendOtpAsync(user.Email, pendingOtpCode, user.OwnerName, cancellationToken);
+        }
+
         var access = _jwtTokenService.GenerateAccessToken(user.Id, tenant.Id, email: user.Email, role: user.Role);
         return Ok(AuthResponseBuilder.Build(user, tenant, access, refreshToken: responseRefreshToken, ownerName: user.OwnerName));
+    }
+
+    /// <summary>
+    /// Verifies a 6-digit email OTP for a newly registered or email-updated account.
+    /// Can be called with an authenticated session or by supplying the email address.
+    /// </summary>
+    [HttpPost("verify-email-otp")]
+    [EnableRateLimiting("AuthSensitive")]
+    [ProducesResponseType(typeof(AuthResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    public async Task<ActionResult<AuthResponseDto>> VerifyEmailOtp(
+        [FromBody] VerifyEmailOtpRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request == null || !ModelState.IsValid || string.IsNullOrWhiteSpace(request.Otp))
+        {
+            return BadRequest(ModelState.IsValid ? (object)new { message = "Kailangan ng 6-digit OTP code. / A 6-digit OTP code is required." } : ModelState);
+        }
+
+        var user = await ResolveUserForOtpAsync(request.Email, cancellationToken);
+        if (user == null || user.Tenant == null)
+        {
+            return Unauthorized(new { message = "Hindi natagpuan ang account. / Account not found." });
+        }
+
+        if (user.EmailVerified)
+        {
+            var existingAccess = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId, email: user.Email, role: user.Role);
+            var (existingRefresh, _, _, _) = AuthRefreshTokenHelper.IssueRefreshToken(_context, _jwtTokenService, user, user.TenantId, _timeProvider);
+            await _context.SaveChangesAsync(cancellationToken);
+            return Ok(AuthResponseBuilder.Build(user, user.Tenant, existingAccess, existingRefresh, user.OwnerName));
+        }
+
+        var status = AuthOtpHelper.VerifyOtp(user, request.Otp, _timeProvider);
+        switch (status)
+        {
+            case OtpVerificationStatus.InvalidFormat:
+                return BadRequest(new { message = "Kailangan ng 6-digit OTP code. / A 6-digit OTP code is required." });
+
+            case OtpVerificationStatus.MissingOrExpired:
+                return BadRequest(new { message = "Paso na o walang OTP code. Mangyaring humingi ng bagong code. / OTP code has expired or is missing. Please request a new code." });
+
+            case OtpVerificationStatus.TooManyAttempts:
+                await _context.SaveChangesAsync(cancellationToken);
+                return StatusCode(StatusCodes.Status429TooManyRequests, new
+                {
+                    message = "Masyadong maraming maling pagsubok sa OTP. Mangyaring humingi ng bagong code. / Too many failed OTP attempts. Please request a new code."
+                });
+
+            case OtpVerificationStatus.InvalidCode:
+                await _context.SaveChangesAsync(cancellationToken);
+                var remainingAttempts = Math.Max(0, AuthOtpHelper.MaxVerificationAttempts - user.EmailOtpAttempts);
+                return BadRequest(new
+                {
+                    message = $"Maling OTP code. May natitira ka pang {remainingAttempts} pagsubok. / Invalid OTP code. {remainingAttempts} attempts remaining.",
+                    remainingAttempts
+                });
+
+            default:
+                var access = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId, email: user.Email, role: user.Role);
+                var (refreshToken, _, _, _) = AuthRefreshTokenHelper.IssueRefreshToken(
+                    _context,
+                    _jwtTokenService,
+                    user,
+                    user.TenantId,
+                    _timeProvider);
+                await _context.SaveChangesAsync(cancellationToken);
+                return Ok(AuthResponseBuilder.Build(user, user.Tenant, access, refreshToken, user.OwnerName));
+        }
+    }
+
+    /// <summary>
+    /// Issues and dispatches a fresh 6-digit email verification OTP with a 60-second resend cooldown.
+    /// </summary>
+    [HttpPost("resend-email-otp")]
+    [EnableRateLimiting("AuthSensitive")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> ResendEmailOtp(
+        [FromBody] ResendEmailOtpRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var user = await ResolveUserForOtpAsync(request?.Email, cancellationToken);
+        if (user == null || user.Tenant == null)
+        {
+            return Unauthorized(new { message = "Hindi natagpuan ang account. / Account not found." });
+        }
+
+        if (user.EmailVerified)
+        {
+            return BadRequest(new { message = "Beripikado na ang email address na ito. / This email address is already verified." });
+        }
+
+        if (!AuthOtpHelper.CanResendOtp(user, _timeProvider, out var retryAfterSeconds))
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, new
+            {
+                message = $"Mangyaring maghintay ng {retryAfterSeconds} segundo bago humingi ng bagong OTP. / Please wait {retryAfterSeconds} seconds before requesting a new OTP.",
+                retryAfterSeconds
+            });
+        }
+
+        var otpCode = AuthOtpHelper.IssueOtp(user, _timeProvider);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        if (_emailOtpSender != null)
+        {
+            await _emailOtpSender.SendOtpAsync(user.Email, otpCode, user.OwnerName, cancellationToken);
+        }
+
+        return Ok(new { message = "Naipadala na ang bagong 6-digit OTP sa iyong email. / A new 6-digit OTP has been sent to your email." });
+    }
+
+    private async Task<User?> ResolveUserForOtpAsync(string? email, CancellationToken cancellationToken)
+    {
+        var userId = AuthClaimsHelper.ResolveUserId(_currentUserService, HttpContext?.User);
+        if (userId.HasValue && userId.Value != Guid.Empty)
+        {
+            var byId = await _context.Users.IgnoreQueryFilters()
+                .Include(u => u.Tenant)
+                .FirstOrDefaultAsync(u => u.Id == userId.Value, cancellationToken);
+            if (byId != null)
+            {
+                return byId;
+            }
+        }
+
+        var normalizedEmail = NormalizeEmail(email);
+        if (string.IsNullOrWhiteSpace(normalizedEmail))
+        {
+            return null;
+        }
+
+        return await _context.Users.IgnoreQueryFilters()
+            .Include(u => u.Tenant)
+            .FirstOrDefaultAsync(u => u.NormalizedEmail == normalizedEmail, cancellationToken);
     }
 }

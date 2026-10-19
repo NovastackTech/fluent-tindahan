@@ -17,6 +17,8 @@ export interface AuthResponseDto {
   expiresAt: string;
   refreshToken?: string;
   isNewUser?: boolean;
+  emailVerified?: boolean;
+  requiresEmailVerification?: boolean;
 }
 
 export interface GoogleAuthRequestPayload {
@@ -227,4 +229,15 @@ export async function logoutStore(refreshToken?: string | null): Promise<void> {
     console.warn('[authService] Server logout notification failed:', e);
   }
 }
+
+export async function verifyEmailOtp(payload: { email?: string; otp: string }): Promise<AuthResponseDto> {
+  const response = await apiClient.post<AuthResponseDto>('/auth/verify-email-otp', payload);
+  return response.data;
+}
+
+export async function resendEmailOtp(payload?: { email?: string }): Promise<{ message: string }> {
+  const response = await apiClient.post<{ message: string }>('/auth/resend-email-otp', payload ?? {});
+  return response.data;
+}
+
 

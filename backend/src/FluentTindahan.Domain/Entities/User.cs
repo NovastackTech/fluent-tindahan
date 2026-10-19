@@ -34,5 +34,18 @@ public class User : IMustHaveTenant
     public string? RefreshTokenIdHash { get; set; }
     public DateTimeOffset? RefreshTokenExpiresAt { get; set; }
 
+    /// <summary>
+    /// True once the owner proved mailbox ownership (6-digit email OTP or a verified Google identity).
+    /// </summary>
+    public bool EmailVerified { get; set; }
+    public string? EmailOtpHash { get; set; }
+    public DateTimeOffset? EmailOtpExpiresAt { get; set; }
+    public DateTimeOffset? EmailOtpSentAt { get; set; }
+    public int EmailOtpAttempts { get; set; }
+    /// <summary>
+    /// Access tokens issued before this instant are rejected (forced session invalidation).
+    /// </summary>
+    public DateTimeOffset? SessionsInvalidatedAt { get; set; }
+
     public Tenant? Tenant { get; set; }
 }

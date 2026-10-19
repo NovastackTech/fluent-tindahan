@@ -24,6 +24,8 @@ export interface ExecuteStoreRegistrationParams {
 export interface ExecuteStoreRegistrationResult {
   success: boolean;
   emailAlreadyExists?: boolean;
+  requiresEmailVerification?: boolean;
+  authResult?: AuthResponseDto;
 }
 
 export async function executeStoreRegistration(
@@ -55,9 +57,10 @@ export async function executeStoreRegistration(
 
   let serverToken: string | undefined;
   let registeredHasPin = Boolean(params.pin?.trim());
+  let authResult: AuthResponseDto | undefined;
 
   try {
-    const authResult = await registerStore({
+    authResult = await registerStore({
       tenantId: newTenantId,
       userId: newUserId,
       email: params.email,
@@ -73,6 +76,10 @@ export async function executeStoreRegistration(
     if (apiErr?.response?.status === 409) {
       params.onError?.(apiErr?.response?.data?.message || 'Email already exists');
       return { success: false, emailAlreadyExists: true };
+    }
+    if (apiErr?.response?.status === 400) {
+      params.onError?.(apiErr?.response?.data?.message || 'Invalid registration data');
+      return { success: false };
     }
     console.warn('Backend registration offline, proceeding locally:', apiErr);
     params.onOfflineNotice?.();
@@ -101,7 +108,11 @@ export async function executeStoreRegistration(
   await updateQueueCounts();
   void kickSync();
 
-  return { success: true };
+  return {
+    success: true,
+    requiresEmailVerification: Boolean(authResult?.requiresEmailVerification),
+    authResult
+  };
 }
 
 export interface FinalizeLoginOptions {

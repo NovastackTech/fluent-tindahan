@@ -601,7 +601,18 @@ export const tl: Translations = {
       currentPasswordHint: 'Kinakailangan upang kumpirmahin ang pagpapalit ng email address ng tindahan.',
       ownerOnlyBusinessName: 'Ang may-ari lamang ang maaaring magpalit ng pangalan ng tindahan.',
       savedLocallyNotice: 'Nai-save sa device. Isa-synchronize sa server pagbalik ng koneksyon.',
-      pendingProfileSync: 'May nakabinbing profile update na isa-synchronize sa server.'
+      pendingProfileSync: 'May nakabinbing profile update na isa-synchronize sa server.',
+      emailDisposableNotAllowed: 'Hindi pinapayagan ang pansamantalang (disposable) email address. Mangyaring gumamit ng permanenteng email.',
+      otpTitle: 'I-verify ang Iyong Email Address',
+      otpSubtitle: 'Ilagay ang 6-digit verification code na ipinadala sa {email}.',
+      otpLabel: '6-Digit Verification Code (OTP)',
+      otpPlaceholder: '000000',
+      otpInvalid: 'Mangyaring ilagay ang wastong 6-digit verification code.',
+      otpVerifyBtn: 'I-verify ang Email',
+      otpResendBtn: 'Ipadala Muli ang Code',
+      otpResentNotice: 'Naipadala na ang bagong 6-digit code sa iyong email.',
+      otpVerifiedSuccess: 'Matagumpay na na-verify ang email!',
+      otpBackBtn: 'Bumalik'
     },
     subscription: {
       planSection: 'Plano at Subscription',

@@ -616,6 +616,17 @@ export interface Translations {
     ownerOnlyBusinessName: string;
     savedLocallyNotice: string;
     pendingProfileSync: string;
+    emailDisposableNotAllowed: string;
+    otpTitle: string;
+    otpSubtitle: string;
+    otpLabel: string;
+    otpPlaceholder: string;
+    otpInvalid: string;
+    otpVerifyBtn: string;
+    otpResendBtn: string;
+    otpResentNotice: string;
+    otpVerifiedSuccess: string;
+    otpBackBtn: string;
   };
   landing: {
     heroBadge: string;

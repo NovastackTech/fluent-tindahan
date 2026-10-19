@@ -627,7 +627,18 @@ export const en: Translations = {
       currentPasswordHint: 'Required to authorize changing the store email address.',
       ownerOnlyBusinessName: 'Only the store owner can change the store name.',
       savedLocallyNotice: 'Saved locally. Will sync to server when connection is restored.',
-      pendingProfileSync: 'Pending profile update will sync to server when connected.'
+      pendingProfileSync: 'Pending profile update will sync to server when connected.',
+      emailDisposableNotAllowed: 'Disposable or temporary email addresses are not allowed. Please use a permanent email address.',
+      otpTitle: 'Verify Your Email Address',
+      otpSubtitle: 'Enter the 6-digit verification code sent to {email}.',
+      otpLabel: '6-Digit Verification Code (OTP)',
+      otpPlaceholder: '000000',
+      otpInvalid: 'Please enter a valid 6-digit verification code.',
+      otpVerifyBtn: 'Verify Email',
+      otpResendBtn: 'Resend Code',
+      otpResentNotice: 'A new 6-digit verification code has been sent to your email.',
+      otpVerifiedSuccess: 'Email verified successfully!',
+      otpBackBtn: 'Back'
     },
     landing: {
       heroBadge: '🇵🇭 Built for Philippine Retail • 100% Offline-Ready',

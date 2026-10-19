@@ -86,6 +86,12 @@ public class AppDbContext : DbContext, IApplicationDbContext
             builder.Property(u => u.FirebaseUid).HasMaxLength(128);
             builder.Property(u => u.RefreshTokenIdHash).HasMaxLength(128);
             builder.Property(u => u.RefreshTokenExpiresAt);
+            builder.Property(u => u.EmailVerified).HasDefaultValue(false);
+            builder.Property(u => u.EmailOtpHash).HasMaxLength(128);
+            builder.Property(u => u.EmailOtpAttempts).HasDefaultValue(0);
+            builder.Property(u => u.EmailOtpExpiresAt);
+            builder.Property(u => u.EmailOtpSentAt);
+            builder.Property(u => u.SessionsInvalidatedAt);
 
             builder.HasIndex(u => u.TenantId);
             builder.HasIndex(u => u.FirebaseUid);
