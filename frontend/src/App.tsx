@@ -11,6 +11,7 @@ import {
   Button
 } from '@fluentui/react-components';
 import { DismissRegular } from '@fluentui/react-icons';
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import { sariSariLightTheme, sariSariDarkTheme } from './theme/theme';
 import { useThemeStore } from './state/themeStore';
 import { Header } from './components/Header';
@@ -23,7 +24,7 @@ import { OnboardingModal } from './components/OnboardingModal';
 import { SessionLockModal } from './components/SessionLockModal';
 import { DisclaimerModal } from './components/DisclaimerModal';
 import { TermsModal } from './components/TermsModal';
-import { initSyncEngine } from './sync/syncEngine';
+import { initSyncEngine, restoreTenantDataFromServer } from './sync/syncEngine';
 import { usePwaStore, initPwaListeners } from './state/pwaStore';
 import { initServiceWorker } from './pwa/registerServiceWorker';
 import { initPwaTabCoordinator } from './pwa/pwaTabCoordinator';
@@ -45,17 +46,23 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ defa
 const LandingPage = lazy(() => import('./pages/LandingPage').then(m => ({ default: m.LandingPage })));
 const LoginPage = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })));
 
-export function getInitialNavTab(): NavTab {
+function getInitialNavTab(): NavTab {
   if (typeof window === 'undefined') return 'dashboard';
   const params = new URLSearchParams(window.location.search);
-  const tabParam = params.get('tab') as NavTab | null;
-  const validTabs: NavTab[] = ['dashboard', 'pos', 'inventory', 'utang', 'gcash', 'import', 'settings', 'landing', 'login'];
-  if (tabParam && validTabs.includes(tabParam)) {
-    return tabParam;
+  const tabParam = params.get('tab')?.toLowerCase();
+  if (tabParam === 'signup' || tabParam === 'register') {
+    return 'login';
   }
-  const path = window.location.pathname.replace(/^\//, '').toLowerCase() as NavTab;
-  if (validTabs.includes(path)) {
-    return path;
+  const validTabs: NavTab[] = ['dashboard', 'pos', 'inventory', 'utang', 'gcash', 'import', 'settings', 'landing', 'login'];
+  if (tabParam && validTabs.includes(tabParam as NavTab)) {
+    return tabParam as NavTab;
+  }
+  const path = window.location.pathname.replace(/^\//, '').toLowerCase();
+  if (path === 'signup' || path === 'register') {
+    return 'login';
+  }
+  if (validTabs.includes(path as NavTab)) {
+    return path as NavTab;
   }
   return 'dashboard';
 }
@@ -100,6 +107,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (!isOnboardingStatusReady) return;
     if (!isOnboarded && activeTab !== 'landing' && activeTab !== 'login') {
+      // oxlint-disable-next-line react/set-state-in-effect - Route unauthenticated non-landing users to login when onboarding state is confirmed
       handleTabChange('login');
     }
   }, [isOnboarded, isOnboardingStatusReady, activeTab]);
@@ -109,6 +117,9 @@ export const App: React.FC = () => {
     const handlePreloadError = (event: Event) => {
       event.preventDefault();
       console.warn('[PWA] Vite dynamic chunk preload error detected.');
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        return;
+      }
       usePwaStore.getState().setNeedRefresh(true);
     };
     window.addEventListener('vite:preloadError', handlePreloadError);
@@ -194,10 +205,30 @@ export const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!isOnboardingStatusReady || !isOnboarded || storeServicesStarted.current) return;
+    if (!isOnboarded) {
+      storeServicesStarted.current = false;
+      return;
+    }
+    if (!isOnboardingStatusReady || storeServicesStarted.current) return;
     storeServicesStarted.current = true;
 
     initSyncEngine();
+
+    const checkAndPullCatalog = async () => {
+      const activeTenantId = useAuthStore.getState().tenantId;
+      if (activeTenantId) {
+        const [prodCount, custCount, utangCount, gcashCount] = await Promise.all([
+          db.products.where('tenantId').equals(activeTenantId).count(),
+          db.customers.where('tenantId').equals(activeTenantId).count(),
+          db.utangLedger.where('tenantId').equals(activeTenantId).count(),
+          db.gcashTxns.where('tenantId').equals(activeTenantId).count()
+        ]);
+        if (prodCount === 0 && custCount === 0 && utangCount === 0 && gcashCount === 0) {
+          await restoreTenantDataFromServer();
+        }
+      }
+    };
+    checkAndPullCatalog().catch(console.error);
 
     const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
     const isBillingSuccess = searchParams?.get('billing') === 'success';
@@ -227,9 +258,12 @@ export const App: React.FC = () => {
     handleBillingReturn().catch(console.error);
   }, [isOnboarded, isOnboardingStatusReady]);
 
+const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string) || 'fluent-tindahan-dev.apps.googleusercontent.com';
+
   return (
-    <FluentProvider theme={isDarkMode ? sariSariDarkTheme : sariSariLightTheme}>
-      <div className={styles.appContainer}>
+    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+      <FluentProvider theme={isDarkMode ? sariSariDarkTheme : sariSariLightTheme}>
+        <div className={styles.appContainer}>
         <Header onNavigate={handleTabChange} activeTab={activeTab} />
         <PwaUpdateToast />
         <PwaInstallBanner />
@@ -280,6 +314,7 @@ export const App: React.FC = () => {
         <TermsModal />
       </div>
     </FluentProvider>
+  </GoogleOAuthProvider>
   );
 };
 

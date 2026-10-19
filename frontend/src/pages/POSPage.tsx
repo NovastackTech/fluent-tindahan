@@ -17,7 +17,8 @@ import {
   TabList,
   Tab,
   Select,
-  Divider
+  Divider,
+  ToggleButton
 } from '@fluentui/react-components';
 import {
   SearchRegular,
@@ -43,12 +44,12 @@ import {
 import { type NavTab } from '../components/Navigation';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type ProductRecord, type CustomerRecord } from '../db/db';
-import { useCartStore } from '../state/cartStore';
+import { toCentavos, useCartStore } from '../state/cartStore';
 import { useAuthStore } from '../state/authStore';
 import { usePwaStore } from '../state/pwaStore';
 import { formatPeso } from '../utils/currency';
 import { normalizePhilippineMobile } from '../utils/philippineMobile';
-import { enqueueSync } from '../sync/syncEngine';
+import { addSyncRecord, kickSync, enqueueSync } from '../sync/syncEngine';
 import { ReceiptModal, type ReceiptData } from '../components/ReceiptModal';
 import { BarcodeScannerModal } from '../components/BarcodeScannerModal';
 import { QuickRegisterProductDialog } from '../components/QuickRegisterProductDialog';
@@ -187,6 +188,12 @@ const useStyles = makeStyles({
     ...shorthands.gap(tokens.spacingHorizontalS),
     marginTop: tokens.spacingVerticalS
   },
+  exactAmountButton: {
+    width: '100%',
+    marginTop: tokens.spacingVerticalS,
+    justifyContent: 'center',
+    fontWeight: tokens.fontWeightSemibold
+  },
   cartList: {
     display: 'flex',
     flexDirection: 'column',
@@ -203,6 +210,8 @@ const useStyles = makeStyles({
 });
 
 const QUICK_PESO_BILLS = [20, 50, 100, 200, 500, 1000];
+const EMPTY_PRODUCTS: ProductRecord[] = [];
+const EMPTY_CUSTOMERS: CustomerRecord[] = [];
 
 export interface POSPageProps {
   onNavigate?: (tab: NavTab) => void;
@@ -212,9 +221,11 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
   const styles = useStyles();
   const { t, language } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  // Empty means "Lahat" / All — every product category is shown.
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [exactCashSelected, setExactCashSelected] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
   const [pendingReceiptData, setPendingReceiptData] = useState<ReceiptData | null>(null);
@@ -324,11 +335,12 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
     () => db.products.where('tenantId').equals(tenantId).toArray(),
     [tenantId]
   );
-  const products = productResults || [];
-  const customers = useLiveQuery(
+  const products = productResults || EMPTY_PRODUCTS;
+  const customerResults = useLiveQuery(
     () => db.customers.where('tenantId').equals(tenantId).toArray(),
     [tenantId]
-  ) || [];
+  );
+  const customers = customerResults || EMPTY_CUSTOMERS;
 
   // Extract unique categories
   const categories = useMemo(() => {
@@ -339,20 +351,21 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
     return [t.pos.allCategories, ...Array.from(set)];
   }, [products, t.pos.allCategories]);
 
-  // Filter products by search and category
+  // Search narrows the list; selected categories are a union (any match).
+  // No selected categories means the Lahat chip is active and nothing is excluded.
   const filteredProducts = useMemo(() => {
+    const normalizedQuery = searchQuery.toLowerCase();
+    const hasCategoryFilter = selectedCategories.length > 0;
     return products.filter((p) => {
       const matchesSearch =
-        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.name.toLowerCase().includes(normalizedQuery) ||
         (p.barcode && p.barcode.includes(searchQuery));
       const matchesCategory =
-        selectedCategory === t.pos.allCategories ||
-        selectedCategory === 'All' ||
-        selectedCategory === 'Lahat' ||
-        p.category === selectedCategory;
+        !hasCategoryFilter ||
+        (p.category != null && selectedCategories.includes(p.category));
       return matchesSearch && matchesCategory;
     });
-  }, [products, searchQuery, selectedCategory, t.pos.allCategories]);
+  }, [products, searchQuery, selectedCategories]);
 
   const totalAmount = getTotalAmount();
   const totalCount = getTotalCount();
@@ -575,13 +588,52 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
     showToast(`${newProduct.name} - ${t.barcode.registeredSuccess}`, 'success');
   };
 
+  const cashMatchesTotal = (amount: number) => toCentavos(amount) === toCentavos(totalAmount);
+
+  const applyExactCash = () => {
+    setCashReceived(totalAmount);
+    setExactCashSelected(true);
+  };
+
+  const openCheckout = () => {
+    applyExactCash();
+    setIsCartOpen(false);
+    setIsCheckoutOpen(true);
+  };
+
   const handleQuickBillClick = (billAmount: number) => {
+    setExactCashSelected(false);
     setCashReceived(billAmount);
   };
 
   const handleExactCashClick = () => {
-    setCashReceived(totalAmount);
+    applyExactCash();
   };
+
+  const handleCashReceivedChange = (raw: string) => {
+    const trimmed = raw.trim();
+    if (trimmed === '' || trimmed === '-' || trimmed === '.' || trimmed === '-.') {
+      setCashReceived(0);
+      setExactCashSelected(false);
+      return;
+    }
+    const next = parseFloat(trimmed);
+    if (!Number.isFinite(next)) {
+      setCashReceived(0);
+      setExactCashSelected(false);
+      return;
+    }
+    setCashReceived(next);
+    setExactCashSelected(cashMatchesTotal(next));
+  };
+
+  // Keep a selected exact tender aligned with the cart total (tab switches, qty edits).
+  React.useEffect(() => {
+    if (!isCheckoutOpen || !exactCashSelected) return;
+    if (toCentavos(useCartStore.getState().cashReceived) !== toCentavos(totalAmount)) {
+      setCashReceived(totalAmount);
+    }
+  }, [isCheckoutOpen, exactCashSelected, totalAmount, setCashReceived]);
 
   const changeAmount = useMemo(() => {
     if (paymentMethod === 'Cash') {
@@ -763,7 +815,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
       }
 
       // Save directly to Dexie
-      await db.transaction('rw', db.sales, db.saleItems, db.utangLedger, db.customers, db.products, async () => {
+      await db.transaction('rw', [db.sales, db.saleItems, db.utangLedger, db.customers, db.products, db.syncQueue], async () => {
         // Atomic stock validation inside transaction if blocking and not overridden
         if (!isStockAllowed) {
           for (const item of cartItems) {
@@ -787,24 +839,29 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
           const prod = await db.products.get(item.productId);
           if (prod && prod.stockQty !== undefined) {
             const nextStock = Math.max(0, prod.stockQty - item.qty);
-            await db.products.update(item.productId, {
-              stockQty: nextStock
-            });
+            const updated: ProductRecord = {
+              ...prod,
+              stockQty: nextStock,
+              updatedAt: now
+            };
+            await db.products.put(updated);
+            await addSyncRecord('Product', 'Update', updated);
           }
         }
 
         // If Utang, append to UtangLedger and update customer balance
         if (utangId && customerId) {
-          await db.utangLedger.add({
+          const utangPayload = {
             id: utangId,
             tenantId,
             customerId,
             amount: totalAmount,
-            type: 'Credit',
+            type: 'Credit' as const,
             date: now,
             refSaleId: saleId,
             notes: `Benta POS #${saleId.slice(0, 6)}`
-          });
+          };
+          await db.utangLedger.add(utangPayload);
 
           const cust = await db.customers.get(customerId);
           if (cust) {
@@ -814,41 +871,32 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
               updatedAt: now
             });
           }
+
+          await addSyncRecord('UtangLedger', 'Insert', utangPayload);
         }
-      });
 
-      // Sync UtangLedger if Utang sale
-      if (utangId && customerId) {
-        await enqueueSync('UtangLedger', 'Insert', {
-          id: utangId,
-          customerId,
-          amount: totalAmount,
-          type: 'Credit',
+        // Enqueue Sale into sync queue
+        await addSyncRecord('Sale', 'Insert', {
+          id: saleId,
+          totalAmount,
+          paymentMethod,
           date: now,
-          refSaleId: saleId,
-          notes: `Benta POS #${saleId.slice(0, 6)}`
+          userId,
+          customerId: customerId || undefined,
+          cashReceived: paymentMethod === 'Cash' ? cashReceived : undefined,
+          changeGiven: paymentMethod === 'Cash' ? changeAmount : undefined,
+          items: cartItems.map((i) => ({
+            id: crypto.randomUUID(),
+            productId: i.productId,
+            productName: i.name,
+            qty: i.qty,
+            unitPrice: i.price,
+            subtotal: i.subtotal
+          }))
         });
-      }
-
-      // Enqueue Sale into sync queue
-      await enqueueSync('Sale', 'Insert', {
-        id: saleId,
-        totalAmount,
-        paymentMethod,
-        date: now,
-        userId,
-        customerId: customerId || undefined,
-        cashReceived: paymentMethod === 'Cash' ? cashReceived : undefined,
-        changeGiven: paymentMethod === 'Cash' ? changeAmount : undefined,
-        items: cartItems.map((i) => ({
-          id: crypto.randomUUID(),
-          productId: i.productId,
-          productName: i.name,
-          qty: i.qty,
-          unitPrice: i.price,
-          subtotal: i.subtotal
-        }))
       });
+
+      void kickSync();
 
       // Prepare receipt data and mark receipt active
       usePwaStore.getState().setHasActiveReceipt(true);
@@ -903,6 +951,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
           type="button"
           onClick={() => setIsScannerOpen(true)}
           title={t.barcode.openCamera}
+          aria-label={t.barcode.openCamera}
         >
           {t.barcode.openCamera}
         </Button>
@@ -927,25 +976,41 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
           onScroll={checkScroll}
           onWheel={handleCategoryWheel}
         >
-          {categories.map((cat) => (
-            <Button
-              key={cat}
-              size="small"
-              className={styles.categoryChip}
-              appearance={selectedCategory === cat ? 'primary' : 'secondary'}
-              onClick={(e) => {
-                setSelectedCategory(cat);
-                (e.currentTarget as HTMLElement).scrollIntoView({
-                  behavior: 'smooth',
-                  block: 'nearest',
-                  inline: 'center'
-                });
-              }}
-              shape="circular"
-            >
-              {cat}
-            </Button>
-          ))}
+          {categories.map((cat, index) => {
+            const isAllChip = index === 0;
+            const isActive = isAllChip
+              ? selectedCategories.length === 0
+              : selectedCategories.includes(cat);
+
+            return (
+              <Button
+                key={isAllChip ? '__all-categories__' : cat}
+                size="small"
+                className={styles.categoryChip}
+                appearance={isActive ? 'primary' : 'secondary'}
+                aria-pressed={isActive}
+                onClick={(e) => {
+                  if (isAllChip) {
+                    setSelectedCategories([]);
+                  } else {
+                    setSelectedCategories((current) =>
+                      current.includes(cat)
+                        ? current.filter((selected) => selected !== cat)
+                        : [...current, cat]
+                    );
+                  }
+                  (e.currentTarget as HTMLElement).scrollIntoView?.({
+                    behavior: 'smooth',
+                    block: 'nearest',
+                    inline: 'center'
+                  });
+                }}
+                shape="circular"
+              >
+                {cat}
+              </Button>
+            );
+          })}
         </div>
 
         {canScrollRight && (
@@ -1020,16 +1085,18 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
                     </Badge>
                   )}
                 </div>
-                <Text size={100} style={{ color: tokens.colorNeutralForeground3, display: 'block', marginTop: '2px' }}>
-                  {t.pos.stockLabel}: {p.stockQty}{' '}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px', flexWrap: 'wrap' }}>
+                  <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>
+                    {t.pos.stockLabel}: {p.stockQty}
+                  </Text>
                   {isOutOfStock ? (
-                    <Badge size="extra-small" color="danger">{t.pos.outOfStock}</Badge>
+                    <Badge size="small" appearance="tint" color="danger">{t.pos.outOfStock}</Badge>
                   ) : isAtMaxStock ? (
-                    <Badge size="extra-small" color="warning">{language === 'tl' ? 'Nasa limit na' : 'At max stock'}</Badge>
+                    <Badge size="small" appearance="tint" color="warning">{language === 'tl' ? 'Nasa limit na' : 'At max stock'}</Badge>
                   ) : p.stockQty <= 5 ? (
-                    <Badge size="extra-small" color="warning">{t.pos.lowStockBadge}</Badge>
+                    <Badge size="small" appearance="tint" color="warning">{t.pos.lowStockBadge}</Badge>
                   ) : null}
-                </Text>
+                </div>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
@@ -1043,7 +1110,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
                     e.stopPropagation();
                     handleAddProductToCart(p);
                   }}
-                  aria-label={`${t.pos.itemAdded}: ${p.name}`}
+                  aria-label={`${t.pos.addToCart}: ${p.name}`}
                 />
               </div>
             </Card>
@@ -1074,7 +1141,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
                   showToast(stockError, 'warning');
                   return;
                 }
-                setIsCheckoutOpen(true);
+                openCheckout();
               }}
             >
               {t.pos.pay}
@@ -1231,8 +1298,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
                     showToast(stockError, 'warning');
                     return;
                   }
-                  setIsCartOpen(false);
-                  setIsCheckoutOpen(true);
+                  openCheckout();
                 }}
               >
                 {t.pos.checkoutBtn} ({formatPeso(totalAmount)})
@@ -1263,7 +1329,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
           }
         }}
       >
-        <DialogSurface ref={checkoutDialogRef}>
+        <DialogSurface ref={checkoutDialogRef} style={{ maxWidth: '520px', width: '100%' }}>
           {receiptData ? (
             <ReceiptModal
               embedded
@@ -1376,8 +1442,8 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
                     id="pos-cash-received"
                     type="number"
                     aria-label={language === 'tl' ? 'Tinanggap na pera (Cash received)' : 'Cash received (Tinanggap)'}
-                    value={cashReceived === 0 ? '' : cashReceived.toString()}
-                    onChange={(_, data) => setCashReceived(parseFloat(data.value) || 0)}
+                    value={cashReceived === 0 && !exactCashSelected ? '' : cashReceived.toString()}
+                    onChange={(_, data) => handleCashReceivedChange(data.value)}
                     placeholder="0.00"
                     style={{ width: '100%', marginTop: '4px' }}
                     contentBefore="₱"
@@ -1397,14 +1463,17 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
                     ))}
                   </div>
 
-                  <Button
+                  <ToggleButton
                     size="small"
-                    appearance="subtle"
-                    style={{ width: '100%', marginTop: '8px' }}
+                    appearance="secondary"
+                    checked={exactCashSelected}
+                    isAccessible
+                    className={styles.exactAmountButton}
+                    icon={exactCashSelected ? <CheckmarkRegular /> : undefined}
                     onClick={handleExactCashClick}
                   >
                     {t.pos.exactAmount} ({formatPeso(totalAmount)})
-                  </Button>
+                  </ToggleButton>
 
                   <div style={{ marginTop: '16px', padding: '12px', background: tokens.colorNeutralBackground2, borderRadius: '6px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1578,6 +1647,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
                           appearance="primary"
                           icon={<CheckmarkRegular />}
                           onClick={handleSaveNewDebtor}
+                          aria-label={t.pos.saveAndSelectDebtor}
                         >
                           {t.pos.saveAndSelectDebtor}
                         </Button>
@@ -1650,6 +1720,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
                 icon={<CheckmarkCircleRegular />}
                 onClick={handleCompleteSale}
                 disabled={!isTenderValid || !isStockAllowed}
+                aria-label={t.pos.completeSaleBtn}
               >
                 {t.pos.completeSaleBtn}
               </Button>

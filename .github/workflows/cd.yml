@@ -1,0 +1,179 @@
+name: CD (Alibaba Cloud SAS)
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+    inputs:
+      skip_backup:
+        description: 'Skip database pg_dump snapshot before deploying'
+        type: boolean
+        default: false
+      skip_setup:
+        description: 'Skip Docker setup check'
+        type: boolean
+        default: true
+
+concurrency:
+  group: cd-production
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate (Frontend & Backend)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --ignore-scripts
+
+      - name: Run frontend linter
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Run frontend unit tests
+        working-directory: frontend
+        run: npm test
+
+      - name: Build frontend production bundle
+        working-directory: frontend
+        run: npm run build
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Run backend unit tests
+        run: dotnet test backend/tests/FluentTindahan.UnitTests/FluentTindahan.UnitTests.csproj --configuration Release --verbosity normal
+
+  deploy:
+    name: Deploy to Alibaba SAS
+    needs: [validate]
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://tindahan-dev.novastack-inc.online
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Package deploy archive
+        run: |
+          tar -czf /tmp/fluent-tindahan-deploy.tar.gz \
+            --exclude-vcs \
+            --exclude='./.git' \
+            --exclude='./.github' \
+            --exclude='./.agents' \
+            --exclude='./.vscode' \
+            --exclude='./.idea' \
+            --exclude='./node_modules' \
+            --exclude='./frontend/node_modules' \
+            --exclude='./frontend/dist' \
+            --exclude='./frontend/coverage' \
+            --exclude='./backend/**/bin' \
+            --exclude='./backend/**/obj' \
+            --exclude='./backend/**/TestResults' \
+            --exclude='./tindahan' \
+            --exclude='./backups' \
+            --exclude='./*.user' \
+            --exclude='./.env*' \
+            --exclude='./deploy/alibaba-sas.env' \
+            --exclude='./deploy/alibaba-sas/secrets.env' \
+            .
+          echo "Deploy archive created: $(ls -lh /tmp/fluent-tindahan-deploy.tar.gz)"
+
+      - name: Configure SSH and Deploy
+        env:
+          SAS_HOST: ${{ secrets.SAS_HOST }}
+          SAS_USER: ${{ secrets.SAS_USER || 'root' }}
+          SAS_PORT: ${{ secrets.SAS_PORT || 22 }}
+          SAS_SSH_KEY: ${{ secrets.SAS_SSH_KEY }}
+          SAS_PASSWORD: ${{ secrets.SAS_PASSWORD }}
+          SAS_APP_DIR: ${{ secrets.SAS_APP_DIR || '/opt/fluent-tindahan' }}
+          PUBLIC_HOST: ${{ secrets.PUBLIC_HOST || 'tindahan-dev.novastack-inc.online' }}
+          PUBLIC_ORIGIN: ${{ secrets.PUBLIC_ORIGIN || 'https://tindahan-dev.novastack-inc.online' }}
+          HOST_HTTP_PORT: ${{ secrets.HOST_HTTP_PORT || '8089' }}
+          PAYMONGO_SECRET_KEY: ${{ secrets.PAYMONGO_SECRET_KEY }}
+          PAYMONGO_PUBLIC_KEY: ${{ secrets.PAYMONGO_PUBLIC_KEY }}
+          PAYMONGO_WEBHOOK_SECRET: ${{ secrets.PAYMONGO_WEBHOOK_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          DEMO_MODE: ${{ secrets.DEMO_MODE || 'false' }}
+          SKIP_BACKUP: ${{ inputs.skip_backup }}
+          SKIP_SETUP: ${{ inputs.skip_setup }}
+        run: |
+          set -euo pipefail
+
+          # 1. Configure SSH Authentication
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          if [ -n "${SAS_SSH_KEY:-}" ]; then
+            printf '%s\n' "$SAS_SSH_KEY" > ~/.ssh/id_sas
+            chmod 600 ~/.ssh/id_sas
+            ssh-keyscan -p "$SAS_PORT" -H "$SAS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+            SSH_CMD="ssh -i ~/.ssh/id_sas -p $SAS_PORT -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30"
+          elif [ -n "${SAS_PASSWORD:-}" ]; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+            ssh-keyscan -p "$SAS_PORT" -H "$SAS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+            export SSHPASS="$SAS_PASSWORD"
+            SSH_CMD="sshpass -e ssh -p $SAS_PORT -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30"
+          else
+            echo "::error::Neither SAS_SSH_KEY nor SAS_PASSWORD secret is configured."
+            exit 1
+          fi
+
+          echo "Connecting to $SAS_USER@$SAS_HOST:$SAS_PORT..."
+
+          # 2. Upload deploy archive to temporary staging path
+          cat /tmp/fluent-tindahan-deploy.tar.gz | $SSH_CMD "$SAS_USER@$SAS_HOST" "cat > /tmp/fluent-tindahan-deploy.tar.gz"
+
+          # 3. Verify archive on server, then clean app directory (preserving .env and backups/) and unpack
+          $SSH_CMD "$SAS_USER@$SAS_HOST" "set -euo pipefail; tar -tzf /tmp/fluent-tindahan-deploy.tar.gz >/dev/null; mkdir -p '$SAS_APP_DIR'; find '$SAS_APP_DIR' -mindepth 1 -maxdepth 1 ! -name .env ! -name backups -exec rm -rf {} +; tar -xzf /tmp/fluent-tindahan-deploy.tar.gz -C '$SAS_APP_DIR'; rm -f /tmp/fluent-tindahan-deploy.tar.gz"
+
+          # 4. Stream secrets.env over stdin (never in command string or argv)
+          if [ -n "${PAYMONGO_SECRET_KEY:-}" ] || [ -n "${GOOGLE_CLIENT_ID:-}" ]; then
+            printf 'PAYMONGO_SECRET_KEY=%s\nPAYMONGO_PUBLIC_KEY=%s\nPAYMONGO_WEBHOOK_SECRET=%s\nPAYMONGO_FRONTEND_ORIGIN=%s\nDEMO_MODE=%s\nGOOGLE_CLIENT_ID=%s\n' \
+              "${PAYMONGO_SECRET_KEY:-}" "${PAYMONGO_PUBLIC_KEY:-}" "${PAYMONGO_WEBHOOK_SECRET:-}" "$PUBLIC_ORIGIN" "$DEMO_MODE" "${GOOGLE_CLIENT_ID:-}" \
+              | $SSH_CMD "$SAS_USER@$SAS_HOST" "umask 077; cat > '$SAS_APP_DIR/deploy/alibaba-sas/secrets.env'"
+          fi
+
+          # 5. Build install flags
+          INSTALL_ARGS="--dir '$SAS_APP_DIR' --domain '$PUBLIC_HOST' --port '$HOST_HTTP_PORT' --name fluent-tindahan"
+          if [ "${SKIP_SETUP:-false}" = "true" ]; then
+            INSTALL_ARGS="$INSTALL_ARGS --skip-setup"
+          fi
+          if [ "${SKIP_BACKUP:-false}" = "true" ]; then
+            INSTALL_ARGS="$INSTALL_ARGS --no-backup"
+          fi
+
+          # 6. Execute install.sh
+          echo "Executing install.sh on remote server..."
+          $SSH_CMD "$SAS_USER@$SAS_HOST" "chmod +x '$SAS_APP_DIR'/deploy/alibaba-sas/*.sh && cd '$SAS_APP_DIR' && bash deploy/alibaba-sas/install.sh $INSTALL_ARGS"
+
+      - name: Verify Deployment Health
+        env:
+          PUBLIC_ORIGIN: ${{ secrets.PUBLIC_ORIGIN || 'https://tindahan-dev.novastack-inc.online' }}
+        run: |
+          echo "Checking $PUBLIC_ORIGIN/api/health ..."
+          for attempt in {1..20}; do
+            sleep 6
+            if curl -fsS --connect-timeout 5 --max-time 15 "$PUBLIC_ORIGIN/api/health"; then
+              echo ""
+              echo "Deployment verified healthy!"
+              exit 0
+            fi
+            echo "Attempt $attempt/20 failed. Waiting 6s..."
+          done
+          echo "::error::Health check failed after 20 attempts ($PUBLIC_ORIGIN/api/health)."
+          exit 1

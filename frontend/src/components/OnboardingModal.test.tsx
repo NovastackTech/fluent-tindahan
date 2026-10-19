@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { FluentProvider } from '@fluentui/react-components';
 import { OnboardingModal } from './OnboardingModal';
@@ -8,6 +8,16 @@ import { useSubscriptionStore } from '../state/subscriptionStore';
 import { calculateGCashFee, DEFAULT_GCASH_FEE_TIERS, useGCashFeeStore } from '../state/gcashFeeStore';
 import { db } from '../db/db';
 import * as authService from '../services/authService';
+import * as syncEngine from '../sync/syncEngine';
+
+vi.mock('../sync/syncEngine', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../sync/syncEngine')>();
+  return {
+    ...actual,
+    restoreTenantDataFromServer: vi.fn().mockResolvedValue(undefined),
+    processSyncQueue: vi.fn().mockResolvedValue({ processed: 0, conflicts: 0, errors: 0 })
+  };
+});
 
 vi.mock('../services/authService', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/authService')>();
@@ -72,7 +82,23 @@ vi.mock('../services/authService', async (importOriginal) => {
       hasPin: false,
       token: 'mock-token',
       expiresAt: '2028-01-01'
-    }))
+    })),
+    authenticateWithGoogle: vi.fn().mockResolvedValue({
+      tenantId: 'mock-google-tenant',
+      userId: 'mock-google-user',
+      email: 'google@tindahan.ph',
+      businessName: 'Mock Google Store',
+      ownerName: 'Google Owner',
+      phone: '',
+      role: 'Owner',
+      tier: 'Libre',
+      planTier: 'Libre',
+      subscriptionEndDate: null,
+      hasPin: true,
+      token: 'mock-google-token',
+      expiresAt: '2028-01-01',
+      isNewUser: true
+    })
   };
 });
 
@@ -81,8 +107,15 @@ describe('OnboardingModal', () => {
     localStorage.clear();
     await db.tenants.clear();
     await db.products.clear();
+    await db.syncQueue.clear();
     useGCashFeeStore.setState({ feesByTenant: {} });
     useAuthStore.setState({
+      tenantId: 'onboard-test-tenant',
+      userId: 'onboard-test-user',
+      hasPin: false,
+      localPinVerifier: null,
+      firebaseToken: null,
+      refreshToken: null,
       consentAccepted: true,
       isOnboarded: false,
       isOnboardingStatusReady: true,
@@ -102,6 +135,10 @@ describe('OnboardingModal', () => {
     vi.clearAllMocks();
   });
 
+  afterEach(() => {
+    vi.clearAllTimers();
+  });
+
   const renderModal = () => {
     return render(
       <FluentProvider theme={sariSariLightTheme}>
@@ -113,7 +150,7 @@ describe('OnboardingModal', () => {
   const fillRegistrationCredentials = (email = 'test.owner@gmail.com', password = 'Password123!', pin = '') => {
     const emailInput = screen.getByPlaceholderText(/Hal. nena.store@gmail.com|e.g. nena.store@gmail.com/i);
     fireEvent.change(emailInput, { target: { value: email } });
-    const passwordInput = screen.getByPlaceholderText(/Minimum 6 characters/i);
+    const passwordInput = screen.getByPlaceholderText(/Minimum [68] characters/i);
     fireEvent.change(passwordInput, { target: { value: password } });
     if (pin) {
       const pinInput = screen.getByPlaceholderText(/4 hanggang 6 na numero|4 to 6 digits/i);
@@ -163,7 +200,7 @@ describe('OnboardingModal', () => {
     const storeInput = screen.getByPlaceholderText(/Hal. Tindahan ni Aling Maria|e.g. Maria's Sari-Sari Store/i);
     fireEvent.change(storeInput, { target: { value: 'Tindahan ni Maria' } });
 
-    const passwordInput = screen.getByPlaceholderText(/Minimum 6 characters/i);
+    const passwordInput = screen.getByPlaceholderText(/Minimum [68] characters/i);
     fireEvent.change(passwordInput, { target: { value: 'Password123!' } });
 
     const submitBtn = screen.getByRole('button', { name: /Simulan ang Aking Tindahan|Launch My Store/i });
@@ -195,7 +232,7 @@ describe('OnboardingModal', () => {
     fireEvent.click(submitBtn);
 
     await waitFor(() => {
-      expect(screen.getByText(/Dapat mayroong 6 o higit pang characters|Password must be at least 6 characters/i)).toBeInTheDocument();
+      expect(screen.getByText(/Dapat mayroong [68] o higit pang characters|Password must be at least [68] characters/i)).toBeInTheDocument();
     });
   });
 
@@ -331,7 +368,7 @@ describe('OnboardingModal', () => {
     const emailInput = screen.getByPlaceholderText(/Hal. nena.store@gmail.com|e.g. nena.store@gmail.com/i);
     fireEvent.change(emailInput, { target: { value: 'suki@tindahan.ph' } });
 
-    const passwordInput = screen.getByPlaceholderText(/Minimum 6 characters/i);
+    const passwordInput = screen.getByPlaceholderText(/Minimum [68] characters/i);
     fireEvent.change(passwordInput, { target: { value: 'Password123!' } });
 
     const loginBtn = screen.getByRole('button', { name: /Pumasok sa Tindahan|Log In to Store/i });
@@ -343,6 +380,7 @@ describe('OnboardingModal', () => {
         password: 'Password123!'
       });
       expect(useAuthStore.getState().isOnboarded).toBe(true);
+      expect(syncEngine.restoreTenantDataFromServer).toHaveBeenCalled();
     });
   });
 
@@ -371,6 +409,7 @@ describe('OnboardingModal', () => {
         pin: '4321'
       });
       expect(useAuthStore.getState().isOnboarded).toBe(true);
+      expect(syncEngine.restoreTenantDataFromServer).toHaveBeenCalled();
     });
   });
 
@@ -767,6 +806,117 @@ describe('OnboardingModal', () => {
     const pending = getPendingProfileUpdate();
     expect(pending).not.toBeNull();
     expect(pending?.payload.ownerName).toBe('Nanay Suki Updated');
+  });
+
+  it('opens ConfirmUnsyncedLoginDialog when switching tenant with pending sync queue items on PIN login, and preserves localPin on Force Wipe & Login', async () => {
+    await db.syncQueue.add({
+      id: 'unsynced-onboard-1',
+      entity: 'Sale',
+      action: 'Insert',
+      payload: {},
+      timestamp: new Date().toISOString(),
+      status: 'Pending',
+      retryCount: 0
+    });
+
+    useAuthStore.setState({
+      tenantId: 'onboard-old-tenant',
+      userId: 'onboard-old-user',
+      consentAccepted: true,
+      isOnboarded: false,
+      isOnboardingStatusReady: true,
+      isOnboardingOpen: true,
+      onboardingMode: 'initial'
+    });
+
+    renderModal();
+
+    const loginTab = screen.getByRole('tab', { name: /Mag-login|Login/i });
+    fireEvent.click(loginTab);
+
+    const pinRadio = screen.getByRole('radio', { name: /Quick PIN|PIN/i });
+    fireEvent.click(pinRadio);
+
+    const emailInput = screen.getByPlaceholderText(/Hal. nena.store@gmail.com|e.g. nena.store@gmail.com/i);
+    fireEvent.change(emailInput, { target: { value: 'pin@tindahan.ph' } });
+
+    const pinInput = screen.getByPlaceholderText(/4 hanggang 6 na numero|4 to 6 digits/i);
+    fireEvent.change(pinInput, { target: { value: '8888' } });
+
+    const loginBtn = screen.getByRole('button', { name: /Pumasok sa Tindahan|Mag-login|Login/i });
+    fireEvent.click(loginBtn);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('unsynced-dialog-wipe-btn')).toBeInTheDocument();
+      expect(screen.getByTestId('unsynced-dialog-sync-btn')).toBeInTheDocument();
+    });
+
+    expect(useAuthStore.getState().tenantId).toBe('onboard-old-tenant');
+
+    const wipeBtn = screen.getByTestId('unsynced-dialog-wipe-btn');
+    fireEvent.click(wipeBtn);
+
+    await waitFor(() => {
+      expect(useAuthStore.getState().tenantId).toBe('mock-login-tenant');
+      expect(useAuthStore.getState().hasPin).toBe(true);
+      expect(useAuthStore.getState().localPinVerifier).toBeTruthy();
+      expect(useAuthStore.getState().isOnboardingOpen).toBe(false);
+    });
+  });
+
+  it('opens ConfirmUnsyncedLoginDialog on Google sign-up when sync queue has items, and preserves newUserPreferences and localPin on Sync First', async () => {
+    await db.syncQueue.add({
+      id: 'unsynced-onboard-2',
+      entity: 'Sale',
+      action: 'Insert',
+      payload: {},
+      timestamp: new Date().toISOString(),
+      status: 'Pending',
+      retryCount: 0
+    });
+
+    useAuthStore.setState({
+      tenantId: 'onboard-old-tenant-2',
+      userId: 'onboard-old-user-2',
+      consentAccepted: true,
+      isOnboarded: false,
+      isOnboardingStatusReady: true,
+      isOnboardingOpen: true,
+      onboardingMode: 'initial'
+    });
+
+    renderModal();
+
+    const storeInput = screen.getByPlaceholderText(/Hal. Tindahan ni Aling Maria|e.g. Maria's Sari-Sari Store/i);
+    fireEvent.change(storeInput, { target: { value: 'New Google Tindahan' } });
+
+    const pinInput = screen.getByPlaceholderText(/4 hanggang 6 na numero|4 to 6 digits/i);
+    fireEvent.change(pinInput, { target: { value: '7777' } });
+
+    const googleBtn = screen.getByTestId('onboarding-register-google-btn');
+    fireEvent.click(googleBtn);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('unsynced-dialog-sync-btn')).toBeInTheDocument();
+    }, { timeout: 4000 });
+
+    expect(useAuthStore.getState().tenantId).toBe('onboard-old-tenant-2');
+
+    vi.mocked(syncEngine.processSyncQueue).mockImplementationOnce(async () => {
+      await db.syncQueue.clear();
+      return { processed: 1, conflicts: 0, errors: 0 };
+    });
+
+    const syncBtn = await screen.findByTestId('unsynced-dialog-sync-btn');
+    fireEvent.click(syncBtn);
+
+    await waitFor(() => {
+      expect(syncEngine.processSyncQueue).toHaveBeenCalled();
+      expect(useAuthStore.getState().tenantId).toBe('mock-google-tenant');
+      expect(useAuthStore.getState().hasPin).toBe(true);
+      expect(useAuthStore.getState().localPinVerifier).toBeTruthy();
+      expect(useAuthStore.getState().isOnboardingOpen).toBe(false);
+    });
   });
 });
 

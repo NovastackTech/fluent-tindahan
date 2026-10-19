@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 import { FluentProvider } from '@fluentui/react-components';
 import { OfflineSyncBanner } from './OfflineSyncBanner';
 import { sariSariLightTheme } from '../theme/theme';
 import { useSyncStore } from '../sync/syncEngine';
+import { useLanguageStore } from '../state/languageStore';
+import { translations } from '../i18n/translations';
 
 describe('OfflineSyncBanner', () => {
   beforeEach(() => {
@@ -97,4 +99,54 @@ describe('OfflineSyncBanner', () => {
     expect(screen.getByText(/May nakabinbing profile update|Pending profile update/i)).toBeInTheDocument();
     expect(screen.getByText(/Nai-save sa device\. Isa-synchronize sa server pagbalik ng koneksyon\.|Saved locally\. Will sync to server when connection is restored\./i)).toBeInTheDocument();
   });
+
+  it('switches sync error text dynamically when language is toggled from Tagalog to English', () => {
+    act(() => {
+      useLanguageStore.setState({ language: 'tl' });
+      useSyncStore.setState({
+        isOnline: true,
+        pendingCount: 0,
+        deadLetterCount: 0,
+        lastErrorMessage: translations.tl.common.differentAccountSyncBlocked
+      });
+    });
+
+    renderBanner();
+
+    expect(screen.getByText('Problema sa Pag-sync')).toBeInTheDocument();
+    expect(screen.getByText(translations.tl.common.differentAccountSyncBlocked)).toBeInTheDocument();
+
+    act(() => {
+      useLanguageStore.getState().toggleLanguage();
+    });
+
+    expect(screen.getByText('Sync Error')).toBeInTheDocument();
+    expect(screen.getByText(translations.en.common.differentAccountSyncBlocked)).toBeInTheDocument();
+  });
+
+  it('switches DLQ error text dynamically when language is toggled from Tagalog to English', () => {
+    const tlDlq = 'May mga produkto sa Dead Letter Queue na kailangang ayusin sa Settings bago ma-sync.';
+    const enDlq = 'Some products in the Dead Letter Queue require editing in Settings before syncing.';
+
+    act(() => {
+      useLanguageStore.setState({ language: 'tl' });
+      useSyncStore.setState({
+        isOnline: true,
+        pendingCount: 0,
+        deadLetterCount: 2,
+        lastErrorMessage: tlDlq
+      });
+    });
+
+    renderBanner();
+
+    expect(screen.getByText(tlDlq)).toBeInTheDocument();
+
+    act(() => {
+      useLanguageStore.getState().toggleLanguage();
+    });
+
+    expect(screen.getByText(enDlq)).toBeInTheDocument();
+  });
 });
+

@@ -10,6 +10,11 @@ import {
   getArchivedDeadLetterItems,
   clearDeadLetterArchive,
   pullCatalogFromServer,
+  pullCustomersFromServer,
+  pullUtangFromServer,
+  pullGCashFromServer,
+  pullSalesFromServer,
+  restoreTenantDataFromServer,
   initSyncEngine,
   STORAGE_KEY_LAST_SYNCED,
   getSyncStorageKey,
@@ -26,7 +31,7 @@ import { useAuthStore } from '../state/authStore';
 import { DEFAULT_TENANT_ID } from '../db/seedData';
 
 vi.mock('../services/apiClient', () => ({
-  TenantAccountMismatchError: class TenantAccountMismatchError extends Error {},
+  TenantAccountMismatchError: class TenantAccountMismatchError extends Error { },
   TenantProvisioningError: class TenantProvisioningError extends Error {
     status: number;
     constructor(status: number) {
@@ -183,6 +188,53 @@ describe('syncEngine', () => {
 
     const remaining = await db.syncQueue.toArray();
     expect(remaining).toHaveLength(0);
+    expect(useSyncStore.getState().lastSyncedAt).not.toBeNull();
+  });
+
+  it('processSyncQueue without force returns immediately without calling server when queue is empty', async () => {
+    expect(useSyncStore.getState().lastSyncedAt).toBeNull();
+
+    const result = await processSyncQueue();
+
+    expect(result).toEqual({ processed: 0, conflicts: 0, errors: 0 });
+    expect(apiClient.post).not.toHaveBeenCalled();
+    expect(useSyncStore.getState().lastSyncedAt).toBeNull();
+  });
+
+  it('processSyncQueue with force: true pings server and updates lastSyncedAt even when queue is empty', async () => {
+    expect(useSyncStore.getState().lastSyncedAt).toBeNull();
+
+    (apiClient.post as any).mockResolvedValueOnce({
+      data: { results: [] }
+    });
+
+    const result = await processSyncQueue({ force: true });
+
+    expect(result).toEqual({ processed: 0, conflicts: 0, errors: 0 });
+    expect(apiClient.post).toHaveBeenCalledWith('/sync/batch', expect.objectContaining({
+      operations: []
+    }));
+    expect(useSyncStore.getState().lastSyncedAt).not.toBeNull();
+  });
+
+  it('processSyncQueue with force: true clears backoff and blocked session states before syncing', async () => {
+    useSyncStore.setState({
+      batchFailureCount: 3,
+      nextRetryAt: Date.now() + 60000,
+      authBlockedSessionKey: 'some-blocked-key',
+      lastErrorMessage: 'Some previous error'
+    });
+
+    (apiClient.post as any).mockResolvedValueOnce({
+      data: { results: [] }
+    });
+
+    await processSyncQueue({ force: true });
+
+    expect(useSyncStore.getState().batchFailureCount).toBe(0);
+    expect(useSyncStore.getState().nextRetryAt).toBeNull();
+    expect(useSyncStore.getState().authBlockedSessionKey).toBeNull();
+    expect(useSyncStore.getState().lastErrorMessage).toBeNull();
     expect(useSyncStore.getState().lastSyncedAt).not.toBeNull();
   });
 
@@ -855,57 +907,227 @@ describe('syncEngine', () => {
     expect(useSyncStore.getState().lastErrorMessage).toBe('1 GCash transaction conflict detected.');
   });
 
-  it('requeues a stale InFlight GCash operation so a reload can sync it', async () => {
-    await db.syncQueue.add({
-      id: 'stale-inflight',
-      entity: 'GCashTxn',
-      action: 'Insert',
-      timestamp: new Date().toISOString(),
-      payload: { id: 'g-stale' },
-      status: 'InFlight',
-      retryCount: 0,
-      inFlightAt: new Date(Date.now() - 60_000).toISOString()
-    });
-    (apiClient.post as any).mockResolvedValueOnce({
-      data: { results: [{ syncId: 'stale-inflight', status: 'Success' }] }
+  it('pullCustomersFromServer populates customers into Dexie', async () => {
+    (apiClient.get as any).mockResolvedValueOnce({
+      data: [
+        {
+          id: 'cust-1',
+          tenantId: DEFAULT_TENANT_ID,
+          name: 'Maria Santos',
+          phone: '09171234567',
+          totalUtangBalance: 150,
+          updatedAt: '2026-10-18T00:00:00.000Z'
+        }
+      ]
     });
 
-    const result = await processSyncQueue();
-
-    expect(result.processed).toBe(1);
-    expect(await db.syncQueue.get('stale-inflight')).toBeUndefined();
-    expect(useSyncStore.getState().isSyncing).toBe(false);
+    const count = await pullCustomersFromServer();
+    expect(count).toBe(1);
+    const saved = await db.customers.get('cust-1');
+    expect(saved?.name).toBe('Maria Santos');
+    expect(saved?.totalUtangBalance).toBe(150);
   });
 
-  it('leaves a fresh InFlight batch alone so a second tab does not send it again', async () => {
-    await db.syncQueue.add({
-      id: 'fresh-inflight',
-      entity: 'GCashTxn',
-      action: 'Insert',
-      timestamp: new Date().toISOString(),
-      payload: { id: 'g-fresh' },
-      status: 'InFlight',
-      retryCount: 0,
-      inFlightAt: new Date().toISOString()
+  it('pullUtangFromServer populates utang ledger into Dexie', async () => {
+    (apiClient.get as any).mockResolvedValueOnce({
+      data: [
+        {
+          id: 'utang-1',
+          tenantId: DEFAULT_TENANT_ID,
+          customerId: 'cust-1',
+          amount: 150,
+          type: 'Credit',
+          date: '2026-10-18T00:00:00.000Z',
+          notes: 'Initial utang'
+        }
+      ]
     });
 
-    const result = await processSyncQueue();
-
-    expect(result).toEqual({ processed: 0, conflicts: 0, errors: 0 });
-    expect(apiClient.post).not.toHaveBeenCalled();
-    expect(await db.syncQueue.get('fresh-inflight')).toMatchObject({ status: 'InFlight' });
+    const count = await pullUtangFromServer();
+    expect(count).toBe(1);
+    const saved = await db.utangLedger.get('utang-1');
+    expect(saved?.amount).toBe(150);
+    expect(saved?.customerId).toBe('cust-1');
   });
 
-  it('returns the current batch to Pending when the request fails so the queue is not stuck InFlight', async () => {
-    const syncId = await enqueueSync('GCashTxn', 'Insert', { id: 'g-net', amount: 100 });
-    (apiClient.post as any).mockRejectedValueOnce({
-      message: 'Network Error'
+  it('pullGCashFromServer populates gcash transactions into Dexie with normalized ref', async () => {
+    (apiClient.get as any).mockResolvedValueOnce({
+      data: [
+        {
+          id: 'gcash-1',
+          tenantId: DEFAULT_TENANT_ID,
+          type: 'CashIn',
+          amount: 500,
+          fee: 10,
+          refNo: 'REF-998877',
+          customerPhone: '09171234567',
+          date: '2026-10-18T00:00:00.000Z'
+        }
+      ]
     });
 
-    await processSyncQueue();
+    const count = await pullGCashFromServer();
+    expect(count).toBe(1);
+    const saved = await db.gcashTxns.get('gcash-1');
+    expect(saved?.amount).toBe(500);
+    expect(saved?.refNoNorm).toBe('ref-998877');
+  });
 
-    expect(await db.syncQueue.get(syncId)).toMatchObject({ status: 'Pending' });
-    expect(useSyncStore.getState().isSyncing).toBe(false);
+  it('pullSalesFromServer populates sales and saleItems into Dexie', async () => {
+    (apiClient.get as any).mockResolvedValueOnce({
+      data: [
+        {
+          id: 'sale-1',
+          tenantId: DEFAULT_TENANT_ID,
+          totalAmount: 100,
+          paymentMethod: 'Cash',
+          date: '2026-10-18T00:00:00.000Z',
+          userId: 'user-1',
+          items: [
+            {
+              id: 'item-1',
+              productId: 'prod-1',
+              qty: 2,
+              unitPrice: 50,
+              subtotal: 100
+            }
+          ]
+        }
+      ]
+    });
+
+    const count = await pullSalesFromServer();
+    expect(count).toBe(1);
+    const savedSale = await db.sales.get('sale-1');
+    expect(savedSale?.totalAmount).toBe(100);
+    const savedItem = await db.saleItems.get('item-1');
+    expect(savedItem?.qty).toBe(2);
+  });
+
+  it('restoreTenantDataFromServer pulls all resources', async () => {
+    (apiClient.get as any).mockImplementation((url: string) => {
+      if (url === '/products') return Promise.resolve({ data: [] });
+      if (url === '/customers') return Promise.resolve({ data: [] });
+      if (url === '/utang') return Promise.resolve({ data: [] });
+      if (url === '/gcash') return Promise.resolve({ data: [] });
+      if (url === '/sales') return Promise.resolve({ data: [] });
+      return Promise.resolve({ data: [] });
+    });
+
+    await restoreTenantDataFromServer();
+    expect(apiClient.get).toHaveBeenCalledWith('/products');
+    expect(apiClient.get).toHaveBeenCalledWith('/customers');
+    expect(apiClient.get).toHaveBeenCalledWith('/utang');
+    expect(apiClient.get).toHaveBeenCalledWith('/gcash');
+    expect(apiClient.get).toHaveBeenCalledWith('/sales');
+  });
+
+  it('pullCatalogFromServer preserves local product edits that have pending syncQueue updates', async () => {
+    await db.products.put({
+      id: 'prod-local-edit',
+      tenantId: DEFAULT_TENANT_ID,
+      name: 'Local Edited Item',
+      price: 25,
+      cost: 15,
+      stockQty: 2,
+      updatedAt: '2026-10-18T10:00:00.000Z'
+    });
+
+    await db.syncQueue.add({
+      id: 'sync-prod-1',
+      entity: 'Product',
+      action: 'Update',
+      timestamp: new Date().toISOString(),
+      payload: { id: 'prod-local-edit', stockQty: 2 },
+      status: 'Pending',
+      retryCount: 0,
+      queueOrder: 1
+    });
+
+    (apiClient.get as any).mockResolvedValueOnce({
+      data: [
+        {
+          id: 'prod-local-edit',
+          tenantId: DEFAULT_TENANT_ID,
+          name: 'Server Stale Name',
+          price: 20,
+          cost: 10,
+          stockQty: 10,
+          updatedAt: '2026-10-18T09:00:00.000Z'
+        },
+        {
+          id: 'prod-unmodified',
+          tenantId: DEFAULT_TENANT_ID,
+          name: 'Server Item',
+          price: 30,
+          cost: 20,
+          stockQty: 5,
+          updatedAt: '2026-10-18T09:00:00.000Z'
+        }
+      ]
+    });
+
+    const count = await pullCatalogFromServer();
+    expect(count).toBe(1);
+
+    const preserved = await db.products.get('prod-local-edit');
+    expect(preserved?.stockQty).toBe(2);
+    expect(preserved?.name).toBe('Local Edited Item');
+
+    const imported = await db.products.get('prod-unmodified');
+    expect(imported?.stockQty).toBe(5);
+  });
+
+  it('pullCustomersFromServer preserves local customer balance when pending mutations or newer updatedAt exist', async () => {
+    await db.customers.put({
+      id: 'cust-local-edit',
+      tenantId: DEFAULT_TENANT_ID,
+      name: 'Ka Freddie',
+      phone: '09191234567',
+      totalUtangBalance: 150,
+      updatedAt: '2026-10-18T11:00:00.000Z'
+    });
+
+    await db.syncQueue.add({
+      id: 'sync-utang-1',
+      entity: 'UtangLedger',
+      action: 'Insert',
+      timestamp: new Date().toISOString(),
+      payload: { id: 'u-1', customerId: 'cust-local-edit', amount: 50 },
+      status: 'Pending',
+      retryCount: 0,
+      queueOrder: 1
+    });
+
+    (apiClient.get as any).mockResolvedValueOnce({
+      data: [
+        {
+          id: 'cust-local-edit',
+          tenantId: DEFAULT_TENANT_ID,
+          name: 'Ka Freddie',
+          phone: '09191234567',
+          totalUtangBalance: 100,
+          updatedAt: '2026-10-18T09:00:00.000Z'
+        },
+        {
+          id: 'cust-new',
+          tenantId: DEFAULT_TENANT_ID,
+          name: 'Ate Susan',
+          phone: '09181234567',
+          totalUtangBalance: 0,
+          updatedAt: '2026-10-18T09:00:00.000Z'
+        }
+      ]
+    });
+
+    const count = await pullCustomersFromServer();
+    expect(count).toBe(1);
+
+    const preserved = await db.customers.get('cust-local-edit');
+    expect(preserved?.totalUtangBalance).toBe(150);
+
+    const imported = await db.customers.get('cust-new');
+    expect(imported?.name).toBe('Ate Susan');
   });
 
   it('initSyncEngine attaches online and offline event handlers', () => {

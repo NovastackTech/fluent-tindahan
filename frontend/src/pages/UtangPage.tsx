@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   makeStyles,
   tokens,
@@ -63,24 +63,17 @@ const useStyles = makeStyles({
   },
   timelineItem: {
     display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    ...shorthands.gap(tokens.spacingHorizontalM),
-    ...shorthands.padding(tokens.spacingVerticalS, '0'),
-    ...shorthands.borderBottom('1px', 'solid', tokens.colorNeutralStroke2)
-  },
-  timelineLeft: {
-    display: 'flex',
     flexDirection: 'column',
-    flexGrow: 1,
-    flexShrink: 1,
-    minWidth: 0
+    ...shorthands.padding(tokens.spacingVerticalS, '0'),
+    ...shorthands.borderBottom('1px', 'solid', tokens.colorNeutralStroke2),
+    width: '100%'
   },
-  timelineBadgeRow: {
+  timelineHeaderRow: {
     display: 'flex',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    ...shorthands.gap(tokens.spacingHorizontalXS),
-    minWidth: 0
+    width: '100%',
+    marginBottom: '2px'
   },
   timelineBadge: {
     whiteSpace: 'nowrap',
@@ -89,7 +82,8 @@ const useStyles = makeStyles({
   timelineNotes: {
     overflowWrap: 'break-word',
     wordBreak: 'break-word',
-    minWidth: 0
+    marginTop: '2px',
+    display: 'block'
   },
   timelineAmount: {
     whiteSpace: 'nowrap',
@@ -97,6 +91,28 @@ const useStyles = makeStyles({
     textAlign: 'right'
   }
 });
+
+const EMPTY_CUSTOMERS: CustomerRecord[] = [];
+const LEGACY_DEFAULT_NOTES = new Set(['Unang tala ng utang', 'Dagdag na utang', 'Bayad sa utang']);
+
+function createUtangLedgerRecord(
+  tenantId: string,
+  customerId: string,
+  amount: number,
+  type: 'Payment' | 'Credit',
+  date: string,
+  notes: string
+): UtangLedgerRecord {
+  return {
+    id: crypto.randomUUID(),
+    tenantId,
+    customerId,
+    amount,
+    type,
+    date,
+    notes
+  };
+}
 
 export const UtangPage: React.FC = () => {
   const styles = useStyles();
@@ -133,22 +149,43 @@ export const UtangPage: React.FC = () => {
   const tenantId = useAuthStore((s) => s.tenantId);
 
   // Live queries
-  const customers = useLiveQuery(
+  const customerResults = useLiveQuery(
     () => db.customers.where('tenantId').equals(tenantId).toArray(),
     [tenantId]
-  ) || [];
+  );
+  const customers = customerResults || EMPTY_CUSTOMERS;
   const selectedCustomerId = selectedCustomer?.id;
 
-  const ledgerEntries = useLiveQuery(
-    async (): Promise<UtangLedgerRecord[]> => {
-      if (!selectedCustomerId) return [];
-      const list = await db.utangLedger.where('tenantId').equals(tenantId).toArray();
-      return list
-        .filter((entry) => entry.customerId === selectedCustomerId)
-        .sort((a, b) => b.date.localeCompare(a.date));
-    },
-    [tenantId, selectedCustomerId]
-  ) || [];
+  const allUtangEntries = useLiveQuery(
+    () => db.utangLedger.where('tenantId').equals(tenantId).toArray(),
+    [tenantId]
+  );
+
+  const ledgerEntries = useMemo(() => {
+    if (!selectedCustomerId || !allUtangEntries) return [];
+    return allUtangEntries
+      .filter((entry) => entry.customerId === selectedCustomerId)
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [allUtangEntries, selectedCustomerId]);
+
+  // Flag mismatch between stored balance and local ledger entries without overwriting stored balance
+  useEffect(() => {
+    if (!selectedCustomer || ledgerEntries.length === 0) return;
+    const ledgerCentavos = ledgerEntries.reduce(
+      (sum, e) => sum + (e.type === 'Credit' ? 1 : -1) * Math.round(e.amount * 100),
+      0
+    );
+    const ledgerBal = Math.max(0, ledgerCentavos) / 100;
+    if (Math.abs((selectedCustomer.totalUtangBalance ?? 0) - ledgerBal) > 0.01) {
+      console.warn(
+        `[UtangPage] Mismatch detected for customer ${selectedCustomer.name} (${selectedCustomer.id}): ` +
+        `stored balance is ₱${selectedCustomer.totalUtangBalance}, but local ledger calculates ₱${ledgerBal}. ` +
+        `Not overwriting stored balance because local ledger may be partial or pending sync.`
+      );
+    }
+  }, [selectedCustomer, ledgerEntries]);
+
+  const selectedCustomerBalance = selectedCustomer?.totalUtangBalance ?? 0;
 
   // Filtered debtors
   const filteredCustomers = useMemo(() => {
@@ -160,7 +197,7 @@ export const UtangPage: React.FC = () => {
   }, [customers, searchQuery]);
 
   const totalOutstanding = useMemo(() => {
-    return customers.reduce((sum, c) => sum + (c.totalUtangBalance || 0), 0);
+    return customers.reduce((sum, c) => sum + (c.totalUtangBalance ?? 0), 0);
   }, [customers]);
 
   // Create new customer
@@ -215,7 +252,7 @@ export const UtangPage: React.FC = () => {
     };
 
     await db.customers.add(newCustomer);
-    await enqueueSync('Customer', 'Insert', newCustomer);
+    await enqueueSync('Customer', 'Insert', { ...newCustomer, totalUtangBalance: 0 });
 
     if (initBalance > 0) {
       const ledgerId = crypto.randomUUID();
@@ -226,7 +263,7 @@ export const UtangPage: React.FC = () => {
         amount: initBalance,
         type: 'Credit',
         date: now,
-        notes: 'Unang tala ng utang'
+        notes: ''
       };
       await db.utangLedger.add(ledgerRecord);
       await enqueueSync('UtangLedger', 'Insert', ledgerRecord);
@@ -249,7 +286,7 @@ export const UtangPage: React.FC = () => {
       return;
     }
 
-    const currentBalance = selectedCustomer.totalUtangBalance ?? 0;
+    const currentBalance = selectedCustomerBalance;
     if (Math.round(amount * 100) > Math.round(currentBalance * 100)) {
       setPaymentAmountError(
         language === 'tl'
@@ -264,20 +301,19 @@ export const UtangPage: React.FC = () => {
     setIsSaving(true);
     try {
       const now = new Date().toISOString();
-      const ledgerRecord: UtangLedgerRecord = {
-        id: crypto.randomUUID(),
+      const ledgerRecord = createUtangLedgerRecord(
         tenantId,
-        customerId: selectedCustomer.id,
+        selectedCustomer.id,
         amount,
-        type: 'Payment',
-        date: now,
-        notes: paymentNotes || 'Bayad sa utang'
-      };
+        'Payment',
+        now,
+        paymentNotes.trim()
+      );
 
       // Atomic read-check-write so concurrent submits cannot both pass the check
       const result = await db.transaction('rw', db.customers, db.utangLedger, db.syncQueue, async () => {
         const fresh = await db.customers.get(selectedCustomer.id);
-        const latestBalance = fresh?.totalUtangBalance ?? selectedCustomer.totalUtangBalance ?? 0;
+        const latestBalance = fresh?.totalUtangBalance ?? 0;
         if (Math.round(amount * 100) > Math.round(latestBalance * 100)) {
           return { ok: false as const, currentBalance: latestBalance };
         }
@@ -336,19 +372,18 @@ export const UtangPage: React.FC = () => {
     setIsSaving(true);
     try {
       const now = new Date().toISOString();
-      const ledgerRecord: UtangLedgerRecord = {
-        id: crypto.randomUUID(),
+      const ledgerRecord = createUtangLedgerRecord(
         tenantId,
-        customerId: selectedCustomer.id,
+        selectedCustomer.id,
         amount,
-        type: 'Credit',
-        date: now,
-        notes: creditNotes || 'Dagdag na utang'
-      };
+        'Credit',
+        now,
+        creditNotes.trim()
+      );
 
       const newBalance = await db.transaction('rw', db.customers, db.utangLedger, db.syncQueue, async () => {
         const fresh = await db.customers.get(selectedCustomer.id);
-        const currentBalance = fresh?.totalUtangBalance ?? selectedCustomer.totalUtangBalance ?? 0;
+        const currentBalance = fresh?.totalUtangBalance ?? (selectedCustomer.totalUtangBalance ?? 0);
         await db.utangLedger.add(ledgerRecord);
         await addSyncRecord('UtangLedger', 'Insert', ledgerRecord);
         const updated = Math.round(currentBalance * 100 + amount * 100) / 100;
@@ -405,6 +440,7 @@ export const UtangPage: React.FC = () => {
             setNewCustLimitError(null);
             setIsNewCustomerOpen(true);
           }}
+          aria-label={t.utang.addNewCustomer}
         >
           {t.utang.addNewCustomer}
         </Button>
@@ -450,7 +486,8 @@ export const UtangPage: React.FC = () => {
           </Card>
         ) : (
           filteredCustomers.map((cust) => {
-            const hasUtang = cust.totalUtangBalance > 0;
+            const balance = cust.totalUtangBalance ?? 0;
+            const hasUtang = balance > 0;
             return (
               <Card
                 key={cust.id}
@@ -491,7 +528,7 @@ export const UtangPage: React.FC = () => {
                         display: 'block'
                       }}
                     >
-                      {formatPeso(cust.totalUtangBalance)}
+                      {formatPeso(balance)}
                     </Text>
                     <Badge
                       appearance="tint"
@@ -514,62 +551,68 @@ export const UtangPage: React.FC = () => {
           <DialogBody>
             {selectedCustomer && (
               <>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
-                    <DialogTitle>{selectedCustomer.name}</DialogTitle>
-                    <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-                      Tel: {selectedCustomer.phone || 'N/A'}
-                    </Text>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>{t.utang.currentDebt}</Text>
-                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: selectedCustomer.totalUtangBalance > 0 ? tokens.colorPaletteRedForeground1 : tokens.colorPaletteGreenForeground1 }}>
-                      {formatPeso(selectedCustomer.totalUtangBalance)}
+                <DialogTitle
+                  action={
+                    <div style={{ textAlign: 'right' }}>
+                      <Text size={100} style={{ color: tokens.colorNeutralForeground3, display: 'block' }}>{t.utang.currentDebt}</Text>
+                      <div style={{ fontSize: '24px', fontWeight: 'bold', color: selectedCustomerBalance > 0 ? tokens.colorPaletteRedForeground1 : tokens.colorPaletteGreenForeground1 }}>
+                        {formatPeso(selectedCustomerBalance)}
+                      </div>
                     </div>
+                  }
+                >
+                  <span style={{ display: 'block' }}>{selectedCustomer.name}</span>
+                  <span style={{ fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground3, fontWeight: 'normal', display: 'block' }}>
+                    Tel: {selectedCustomer.phone || 'N/A'}
+                  </span>
+                </DialogTitle>
+
+                <DialogContent>
+                  {/* Quick actions for this customer */}
+                  <div style={{ display: 'flex', gap: '8px', margin: '16px 0', flexWrap: 'wrap' }}>
+                    <Button
+                      appearance="primary"
+                      icon={<PaymentRegular />}
+                      style={{ flexGrow: 1 }}
+                      onClick={() => {
+                        setPaymentAmount(selectedCustomerBalance.toString());
+                        setIsPaymentOpen(true);
+                      }}
+                      aria-label={t.utang.payButton}
+                    >
+                      {t.utang.payButton}
+                    </Button>
+                    <Button
+                      appearance="secondary"
+                      icon={<AddRegular />}
+                      style={{ flexGrow: 1 }}
+                      onClick={() => setIsAddCreditOpen(true)}
+                      aria-label={t.utang.addDebtButton}
+                    >
+                      {t.utang.addDebtButton}
+                    </Button>
                   </div>
-                </div>
 
-                {/* Quick actions for this customer */}
-                <div style={{ display: 'flex', gap: '8px', margin: '16px 0', flexWrap: 'wrap' }}>
-                  <Button
-                    appearance="primary"
-                    icon={<PaymentRegular />}
-                    style={{ flexGrow: 1 }}
-                    onClick={() => {
-                      setPaymentAmount(selectedCustomer.totalUtangBalance.toString());
-                      setIsPaymentOpen(true);
-                    }}
-                  >
-                    {t.utang.payButton}
-                  </Button>
-                  <Button
-                    appearance="secondary"
-                    icon={<AddRegular />}
-                    style={{ flexGrow: 1 }}
-                    onClick={() => setIsAddCreditOpen(true)}
-                  >
-                    {t.utang.addDebtButton}
-                  </Button>
-                </div>
+                  <Divider style={{ margin: '8px 0' }} />
 
-                <Divider style={{ margin: '8px 0' }} />
+                  <Text weight="semibold" size={300} style={{ marginBottom: '8px', display: 'block' }}>
+                    {t.utang.timelineTitle}
+                  </Text>
 
-                <Text weight="semibold" size={300} style={{ marginBottom: '8px', display: 'block' }}>
-                  {t.utang.timelineTitle}
-                </Text>
+                  <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                    {ledgerEntries.length === 0 ? (
+                      <Text size={200} style={{ color: tokens.colorNeutralForeground3, textAlign: 'center', display: 'block', padding: '12px' }}>
+                        {t.utang.noTransactions}
+                      </Text>
+                    ) : (
+                      ledgerEntries.map((entry) => {
+                        const isCredit = entry.type === 'Credit';
+                        const rawNotes = entry.notes?.trim() || '';
+                        const displayNotes = LEGACY_DEFAULT_NOTES.has(rawNotes) ? '' : rawNotes;
 
-                <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
-                  {ledgerEntries.length === 0 ? (
-                    <Text size={200} style={{ color: tokens.colorNeutralForeground3, textAlign: 'center', display: 'block', padding: '12px' }}>
-                      {t.utang.noTransactions}
-                    </Text>
-                  ) : (
-                    ledgerEntries.map((entry) => {
-                      const isCredit = entry.type === 'Credit';
-                      return (
-                        <div key={entry.id} className={styles.timelineItem}>
-                          <div className={styles.timelineLeft}>
-                            <div className={styles.timelineBadgeRow}>
+                        return (
+                          <div key={entry.id} className={styles.timelineItem}>
+                            <div className={styles.timelineHeaderRow}>
                               <Badge
                                 appearance="filled"
                                 color={isCredit ? 'danger' : 'success'}
@@ -578,27 +621,29 @@ export const UtangPage: React.FC = () => {
                               >
                                 {isCredit ? '+\u00A0UTANG' : '-\u00A0BAYAD'}
                               </Badge>
-                              <Text weight="semibold" size={200} className={styles.timelineNotes}>
-                                {entry.notes || (isCredit ? t.nav.utang : t.common.pesos)}
+                              <Text
+                                weight="bold"
+                                size={300}
+                                className={styles.timelineAmount}
+                                style={{ color: isCredit ? tokens.colorPaletteRedForeground1 : tokens.colorPaletteGreenForeground1 }}
+                              >
+                                {isCredit ? '+' : '-'}{formatPeso(entry.amount)}
                               </Text>
                             </div>
+                            {displayNotes && (
+                              <Text weight="semibold" size={200} className={styles.timelineNotes}>
+                                {displayNotes}
+                              </Text>
+                            )}
                             <Text size={100} style={{ color: tokens.colorNeutralForeground3, marginTop: '2px', display: 'block' }}>
                               {new Date(entry.date).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
                             </Text>
                           </div>
-                          <Text
-                            weight="bold"
-                            size={300}
-                            className={styles.timelineAmount}
-                            style={{ color: isCredit ? tokens.colorPaletteRedForeground1 : tokens.colorPaletteGreenForeground1 }}
-                          >
-                            {isCredit ? '+' : '-'}{formatPeso(entry.amount)}
-                          </Text>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </DialogContent>
               </>
             )}
 
@@ -607,9 +652,6 @@ export const UtangPage: React.FC = () => {
                 {t.common.close}
               </Button>
             </DialogActions>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
 
       {/* Record Payment Dialog */}
       <Dialog open={isPaymentOpen} onOpenChange={(_, data) => setIsPaymentOpen(data.open)}>
@@ -641,90 +683,94 @@ export const UtangPage: React.FC = () => {
                 )}
               </div>
 
-              {selectedCustomer && selectedCustomer.totalUtangBalance > 0 && (
+              {selectedCustomer && selectedCustomerBalance > 0 && (
                 <Button
                   size="small"
                   appearance="subtle"
-                  onClick={() => setPaymentAmount(selectedCustomer.totalUtangBalance.toString())}
+                  onClick={() => setPaymentAmount(selectedCustomerBalance.toString())}
                 >
-                  {t.utang.payAll} ({formatPeso(selectedCustomer.totalUtangBalance)})
+                  {t.utang.payAll} ({formatPeso(selectedCustomerBalance)})
                 </Button>
               )}
 
-              <div style={{ margin: '12px 0' }}>
-                <Text size={200} weight="semibold">{t.utang.paymentNotesLabel}</Text>
-                <Input
-                  aria-label={t.utang.paymentNotesLabel}
-                  style={{ width: '100%', marginTop: '4px' }}
-                  value={paymentNotes}
-                  onChange={(_, data) => setPaymentNotes(data.value)}
-                  placeholder={t.utang.paymentNotesPlaceholder}
-                />
-              </div>
-            </DialogContent>
+                    <div style={{ margin: '12px 0' }}>
+                      <Text size={200} weight="semibold">{t.utang.paymentNotesLabel}</Text>
+                      <Input
+                        aria-label={t.utang.paymentNotesLabel}
+                        style={{ width: '100%', marginTop: '4px' }}
+                        value={paymentNotes}
+                        onChange={(_, data) => setPaymentNotes(data.value)}
+                        placeholder={t.utang.paymentNotesPlaceholder}
+                      />
+                    </div>
+                  </DialogContent>
 
-            <DialogActions>
-              <Button appearance="subtle" onClick={() => setIsPaymentOpen(false)}>
-                {t.common.cancel}
-              </Button>
-              <Button appearance="primary" icon={<CheckmarkRegular />} onClick={handleRecordPayment} disabled={isSaving}>
-                {t.utang.confirmPayment}
-              </Button>
-            </DialogActions>
+                  <DialogActions>
+                    <Button appearance="subtle" onClick={() => setIsPaymentOpen(false)}>
+                      {t.common.cancel}
+                    </Button>
+                    <Button appearance="primary" icon={<CheckmarkRegular />} onClick={handleRecordPayment} disabled={isSaving}>
+                      {t.utang.confirmPayment}
+                    </Button>
+                  </DialogActions>
+                </DialogBody>
+              </DialogSurface>
+            </Dialog>
+
+            {/* Add Credit Dialog */}
+            <Dialog open={isAddCreditOpen} onOpenChange={(_, data) => setIsAddCreditOpen(data.open)}>
+              <DialogSurface>
+                <DialogBody>
+                  <DialogTitle>{t.utang.addCreditTitle} {selectedCustomer?.name}</DialogTitle>
+                  <DialogContent>
+                    <div style={{ margin: '8px 0' }}>
+                      <Text size={200} weight="semibold">{t.utang.creditAmountLabel}</Text>
+                      <Input
+                        type="number"
+                        aria-invalid={!!creditAmountError}
+                        style={{ width: '100%', marginTop: '4px' }}
+                        value={creditAmount}
+                        onChange={(_, data) => {
+                          setCreditAmount(data.value);
+                          if (creditAmountError) setCreditAmountError('');
+                        }}
+                        placeholder="0.00"
+                        contentBefore="₱"
+                      />
+                      {creditAmountError && (
+                        <Text role="alert" size={200} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
+                          {creditAmountError}
+                        </Text>
+                      )}
+                    </div>
+
+                    <div style={{ margin: '12px 0' }}>
+                      <Text size={200} weight="semibold">{t.utang.creditNotesLabel}</Text>
+                      <Input
+                        aria-label={t.utang.customerNameLabel}
+                        style={{ width: '100%', marginTop: '4px' }}
+                        value={creditNotes}
+                        onChange={(_, data) => setCreditNotes(data.value)}
+                        placeholder={t.utang.creditNotesPlaceholder}
+                      />
+                    </div>
+                  </DialogContent>
+
+                  <DialogActions>
+                    <Button appearance="subtle" onClick={() => setIsAddCreditOpen(false)}>
+                      {t.common.cancel}
+                    </Button>
+                    <Button appearance="primary" icon={<CheckmarkRegular />} onClick={handleAddCredit} disabled={isSaving}>
+                      {t.utang.saveCredit}
+                    </Button>
+                  </DialogActions>
+                </DialogBody>
+              </DialogSurface>
+            </Dialog>
           </DialogBody>
         </DialogSurface>
       </Dialog>
 
-      {/* Add Credit Dialog */}
-      <Dialog open={isAddCreditOpen} onOpenChange={(_, data) => setIsAddCreditOpen(data.open)}>
-        <DialogSurface>
-          <DialogBody>
-            <DialogTitle>{t.utang.addCreditTitle} {selectedCustomer?.name}</DialogTitle>
-            <DialogContent>
-              <div style={{ margin: '8px 0' }}>
-                <Text size={200} weight="semibold">{t.utang.creditAmountLabel}</Text>
-                <Input
-                  type="number"
-                  aria-invalid={!!creditAmountError}
-                  style={{ width: '100%', marginTop: '4px' }}
-                  value={creditAmount}
-                  onChange={(_, data) => {
-                    setCreditAmount(data.value);
-                    if (creditAmountError) setCreditAmountError('');
-                  }}
-                  placeholder="0.00"
-                  contentBefore="₱"
-                />
-                {creditAmountError && (
-                  <Text role="alert" size={200} style={{ color: tokens.colorPaletteRedForeground1, marginTop: '2px', display: 'block' }}>
-                    {creditAmountError}
-                  </Text>
-                )}
-              </div>
-
-              <div style={{ margin: '12px 0' }}>
-                <Text size={200} weight="semibold">{t.utang.creditNotesLabel}</Text>
-                <Input
-                  aria-label={t.utang.customerNameLabel}
-                  style={{ width: '100%', marginTop: '4px' }}
-                  value={creditNotes}
-                  onChange={(_, data) => setCreditNotes(data.value)}
-                  placeholder={t.utang.creditNotesPlaceholder}
-                />
-              </div>
-            </DialogContent>
-
-            <DialogActions>
-              <Button appearance="subtle" onClick={() => setIsAddCreditOpen(false)}>
-                {t.common.cancel}
-              </Button>
-              <Button appearance="primary" icon={<CheckmarkRegular />} onClick={handleAddCredit} disabled={isSaving}>
-                {t.utang.saveCredit}
-              </Button>
-            </DialogActions>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
 
       {/* Create New Customer Dialog */}
       <Dialog open={isNewCustomerOpen} onOpenChange={(_, data) => {
@@ -821,7 +867,7 @@ export const UtangPage: React.FC = () => {
               <Button appearance="subtle" onClick={() => setIsNewCustomerOpen(false)}>
                 {t.common.cancel}
               </Button>
-              <Button appearance="primary" icon={<CheckmarkRegular />} onClick={handleCreateCustomer}>
+              <Button appearance="primary" icon={<CheckmarkRegular />} onClick={handleCreateCustomer} aria-label={t.utang.saveCustomer}>
                 {t.utang.saveCustomer}
               </Button>
             </DialogActions>

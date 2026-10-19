@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { FluentProvider } from '@fluentui/react-components';
 import { sariSariLightTheme } from '../theme/theme';
@@ -123,5 +123,40 @@ describe('TermsModal', () => {
     expect(termsEN.effectiveDate).toBe(TERMS_EFFECTIVE_DATE_EN);
     expect(termsTL.effectiveDate).toBe(TERMS_EFFECTIVE_DATE_TL);
     expect(CURRENT_TERMS_VERSION).toBe('2026-10-14');
+  });
+
+  it('resets modal language to the active global language when closed and reopened', () => {
+    useLanguageStore.setState({ language: 'tl' });
+    useTermsStore.setState({ isTermsOpen: true });
+    const { rerender } = renderModal();
+
+    // Toggle language from Tagalog to English
+    const toggleBtn = screen.getByTestId('terms-lang-toggle-btn');
+    fireEvent.click(toggleBtn);
+    expect(screen.getByText('Philippines')).toBeInTheDocument();
+
+    // Close the modal
+    act(() => {
+      useTermsStore.setState({ isTermsOpen: false });
+    });
+    rerender(
+      <FluentProvider theme={sariSariLightTheme}>
+        <TermsModal />
+      </FluentProvider>
+    );
+    expect(screen.queryByTestId('terms-modal')).not.toBeInTheDocument();
+
+    // Reopen the modal while global language is still Tagalog
+    act(() => {
+      useTermsStore.setState({ isTermsOpen: true });
+    });
+    rerender(
+      <FluentProvider theme={sariSariLightTheme}>
+        <TermsModal />
+      </FluentProvider>
+    );
+
+    // Should have reset back to Tagalog content
+    expect(screen.getByText('Pilipinas')).toBeInTheDocument();
   });
 });

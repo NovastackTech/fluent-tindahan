@@ -1,8 +1,11 @@
+using System.Net;
+using System.Net.Http;
 using System.Security.Claims;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using FluentTindahan.Application.Common.Interfaces;
@@ -672,6 +675,87 @@ public class InfrastructureTests
     }
 
     [Fact]
+    public void AddInfrastructure_MissingConnectionString_InProduction_ThrowsInvalidOperationException()
+    {
+        var services = new ServiceCollection();
+        var configMock = new Mock<IConfiguration>();
+        configMock.Setup(c => c.GetSection("ConnectionStrings")).Returns(new Mock<IConfigurationSection>().Object);
+
+        var envMock = new Mock<IHostEnvironment>();
+        envMock.Setup(e => e.EnvironmentName).Returns(Environments.Production);
+
+        var act = () => services.AddInfrastructure(configMock.Object, envMock.Object);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*ConnectionStrings:DefaultConnection must be configured in production.*");
+    }
+
+    [Fact]
+    public void AddInfrastructure_WhitespaceConnectionString_InProduction_ThrowsInvalidOperationException()
+    {
+        var services = new ServiceCollection();
+        var configMock = new Mock<IConfiguration>();
+        var connStringsSection = new Mock<IConfigurationSection>();
+        connStringsSection.Setup(s => s["DefaultConnection"]).Returns("   ");
+        configMock.Setup(c => c.GetSection("ConnectionStrings")).Returns(connStringsSection.Object);
+
+        var envMock = new Mock<IHostEnvironment>();
+        envMock.Setup(e => e.EnvironmentName).Returns(Environments.Production);
+
+        var act = () => services.AddInfrastructure(configMock.Object, envMock.Object);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*ConnectionStrings:DefaultConnection must be configured in production.*");
+    }
+
+    [Fact]
+    public void AddInfrastructure_MissingConnectionString_InDevelopment_UsesDefaultDevConnectionString()
+    {
+        var services = new ServiceCollection();
+        var configMock = new Mock<IConfiguration>();
+        configMock.Setup(c => c.GetSection("ConnectionStrings")).Returns(new Mock<IConfigurationSection>().Object);
+
+        var envMock = new Mock<IHostEnvironment>();
+        envMock.Setup(e => e.EnvironmentName).Returns(Environments.Development);
+
+        services.AddInfrastructure(configMock.Object, envMock.Object);
+
+        services.Any(s => s.ServiceType == typeof(AppDbContext)).Should().BeTrue();
+    }
+
+    [Fact]
+    public void AddInfrastructure_ResolvesFromDatabaseUrl_WhenDefaultConnectionMissing()
+    {
+        var services = new ServiceCollection();
+        var configMock = new Mock<IConfiguration>();
+        configMock.Setup(c => c.GetSection("ConnectionStrings")).Returns(new Mock<IConfigurationSection>().Object);
+        configMock.Setup(c => c["DATABASE_URL"]).Returns("Host=prodhost;Database=proddb;Username=u;Password=p");
+
+        var envMock = new Mock<IHostEnvironment>();
+        envMock.Setup(e => e.EnvironmentName).Returns(Environments.Production);
+
+        services.AddInfrastructure(configMock.Object, envMock.Object);
+
+        services.Any(s => s.ServiceType == typeof(AppDbContext)).Should().BeTrue();
+    }
+
+    [Fact]
+    public void AddInfrastructure_ResolvesFromConnectionStringsDefaultConnection_WhenInProduction()
+    {
+        var services = new ServiceCollection();
+        var configMock = new Mock<IConfiguration>();
+        configMock.Setup(c => c.GetSection("ConnectionStrings")).Returns(new Mock<IConfigurationSection>().Object);
+        configMock.Setup(c => c["ConnectionStrings:DefaultConnection"]).Returns("Host=prodhost;Database=proddb;Username=u;Password=p");
+
+        var envMock = new Mock<IHostEnvironment>();
+        envMock.Setup(e => e.EnvironmentName).Returns(Environments.Production);
+
+        services.AddInfrastructure(configMock.Object, envMock.Object);
+
+        services.Any(s => s.ServiceType == typeof(AppDbContext)).Should().BeTrue();
+    }
+
+    [Fact]
     public void AppDbContext_HasNoPendingModelChanges()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
@@ -932,5 +1016,296 @@ public class InfrastructureTests
     {
         var builder = new Npgsql.NpgsqlConnectionStringBuilder(connStr);
         builder.Password.Should().Be(expected);
+    }
+
+    [Fact]
+    public async Task GoogleAuthService_MissingClientIdConfig_FailsClosedAndReturnsNull()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        var handler = new MockHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK));
+        using var client = new HttpClient(handler);
+        var loggerMock = new Mock<ILogger<GoogleAuthService>>();
+
+        var service = new GoogleAuthService(client, config, loggerMock.Object);
+
+        var accessResult = await service.VerifyGoogleTokenAsync("access-token-123", null);
+        accessResult.Should().BeNull();
+
+        var idResult = await service.VerifyGoogleTokenAsync(null, "id-token-123");
+        idResult.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GoogleAuthService_AccessToken_AudienceMismatch_ReturnsNull()
+    {
+        var inMemory = new Dictionary<string, string?>
+        {
+            { "Google:ClientId", "my-app-client-id" }
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(inMemory).Build();
+        var handler = new MockHttpMessageHandler(req =>
+        {
+            if (req.RequestUri!.AbsoluteUri.Contains("tokeninfo"))
+            {
+                // Returned audience belongs to another client
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{\"aud\":\"attacker-client-id\",\"sub\":\"user-1\"}")
+                };
+            }
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+        using var client = new HttpClient(handler);
+        var loggerMock = new Mock<ILogger<GoogleAuthService>>();
+
+        var service = new GoogleAuthService(client, config, loggerMock.Object);
+        var result = await service.VerifyGoogleTokenAsync("foreign-access-token", null);
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GoogleAuthService_AccessToken_MatchingAudience_ReturnsProfile()
+    {
+        var inMemory = new Dictionary<string, string?>
+        {
+            { "Google:ClientId", "my-app-client-id" }
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(inMemory).Build();
+        var handler = new MockHttpMessageHandler(req =>
+        {
+            if (req.RequestUri!.AbsoluteUri.Contains("tokeninfo"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{\"aud\":\"my-app-client-id\",\"sub\":\"google-sub-1\"}")
+                };
+            }
+            if (req.RequestUri.AbsoluteUri.Contains("userinfo"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{\"sub\":\"google-sub-1\",\"email\":\"tindahan@gmail.com\",\"email_verified\":true,\"name\":\"Nanay Gloria\",\"given_name\":\"Gloria\"}")
+                };
+            }
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+        using var client = new HttpClient(handler);
+        var loggerMock = new Mock<ILogger<GoogleAuthService>>();
+
+        var service = new GoogleAuthService(client, config, loggerMock.Object);
+        var result = await service.VerifyGoogleTokenAsync("valid-access-token", null);
+
+        result.Should().NotBeNull();
+        result!.Subject.Should().Be("google-sub-1");
+        result.Email.Should().Be("tindahan@gmail.com");
+        result.EmailVerified.Should().BeTrue();
+        result.FullName.Should().Be("Nanay Gloria");
+        result.GivenName.Should().Be("Gloria");
+    }
+
+    [Fact]
+    public async Task GoogleAuthService_IdToken_AudienceMismatch_ReturnsNull()
+    {
+        var inMemory = new Dictionary<string, string?>
+        {
+            { "Google:ClientId", "my-app-client-id" }
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(inMemory).Build();
+        var handler = new MockHttpMessageHandler(req =>
+        {
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"aud\":\"foreign-client-id\",\"sub\":\"google-sub-2\",\"email\":\"victim@gmail.com\"}")
+            };
+        });
+        using var client = new HttpClient(handler);
+        var loggerMock = new Mock<ILogger<GoogleAuthService>>();
+
+        var service = new GoogleAuthService(client, config, loggerMock.Object);
+        var result = await service.VerifyGoogleTokenAsync(null, "foreign-id-token");
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GoogleAuthService_IdToken_MatchingAudience_ReturnsProfile()
+    {
+        var inMemory = new Dictionary<string, string?>
+        {
+            { "Google:ClientId", "my-app-client-id" }
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(inMemory).Build();
+        var handler = new MockHttpMessageHandler(req =>
+        {
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"aud\":\"my-app-client-id\",\"sub\":\"google-sub-3\",\"email\":\"pedro@gmail.com\",\"email_verified\":\"true\",\"name\":\"Pedro Penduko\",\"given_name\":\"Pedro\"}")
+            };
+        });
+        using var client = new HttpClient(handler);
+        var loggerMock = new Mock<ILogger<GoogleAuthService>>();
+
+        var service = new GoogleAuthService(client, config, loggerMock.Object);
+        var result = await service.VerifyGoogleTokenAsync(null, "valid-id-token");
+
+        result.Should().NotBeNull();
+        result!.Subject.Should().Be("google-sub-3");
+        result.Email.Should().Be("pedro@gmail.com");
+        result.EmailVerified.Should().BeTrue();
+        result.FullName.Should().Be("Pedro Penduko");
+        result.GivenName.Should().Be("Pedro");
+    }
+
+    [Fact]
+    public async Task GoogleAuthService_AccessToken_RunsRequestsConcurrently()
+    {
+        var inMemory = new Dictionary<string, string?>
+        {
+            { "Google:ClientId", "my-app-client-id" }
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(inMemory).Build();
+
+        var inFlightCount = 0;
+        var maxInFlight = 0;
+        var syncLock = new object();
+
+        var handler = new MockHttpMessageHandler(async (req, ct) =>
+        {
+            lock (syncLock)
+            {
+                inFlightCount++;
+                if (inFlightCount > maxInFlight) maxInFlight = inFlightCount;
+            }
+
+            await Task.Delay(25, ct);
+
+            lock (syncLock)
+            {
+                inFlightCount--;
+            }
+
+            if (req.RequestUri!.AbsoluteUri.Contains("tokeninfo"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{\"aud\":\"my-app-client-id\",\"sub\":\"concurrent-sub\"}")
+                };
+            }
+            if (req.RequestUri.AbsoluteUri.Contains("userinfo"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{\"sub\":\"concurrent-sub\",\"email\":\"concurrent@test.com\",\"email_verified\":true}")
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        using var client = new HttpClient(handler);
+        var loggerMock = new Mock<ILogger<GoogleAuthService>>();
+        var service = new GoogleAuthService(client, config, loggerMock.Object);
+
+        var result = await service.VerifyGoogleTokenAsync("concurrent-token", null);
+
+        result.Should().NotBeNull();
+        result!.Subject.Should().Be("concurrent-sub");
+        maxInFlight.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task GoogleAuthService_AccessToken_Timeout_HandlesCleanlyAndReturnsNull()
+    {
+        var inMemory = new Dictionary<string, string?>
+        {
+            { "Google:ClientId", "my-app-client-id" }
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(inMemory).Build();
+
+        var handler = new MockHttpMessageHandler((_, _) =>
+        {
+            throw new TaskCanceledException("The request was canceled due to configured HttpClient.Timeout.");
+        });
+
+        using var client = new HttpClient(handler);
+        var loggerMock = new Mock<ILogger<GoogleAuthService>>();
+        var service = new GoogleAuthService(client, config, loggerMock.Object);
+
+        var result = await service.VerifyGoogleTokenAsync("slow-token", null);
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GoogleAuthService_AccessToken_UserInfoFails_ReturnsNull()
+    {
+        var inMemory = new Dictionary<string, string?>
+        {
+            { "Google:ClientId", "my-app-client-id" }
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(inMemory).Build();
+
+        var handler = new MockHttpMessageHandler(req =>
+        {
+            if (req.RequestUri!.AbsoluteUri.Contains("tokeninfo"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{\"aud\":\"my-app-client-id\",\"sub\":\"test-sub\"}")
+                };
+            }
+            return new HttpResponseMessage(HttpStatusCode.InternalServerError);
+        });
+
+        using var client = new HttpClient(handler);
+        var loggerMock = new Mock<ILogger<GoogleAuthService>>();
+        var service = new GoogleAuthService(client, config, loggerMock.Object);
+
+        var result = await service.VerifyGoogleTokenAsync("token-userinfo-error", null);
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public void DependencyInjection_GoogleAuthService_ConfiguresTenSecondTimeout()
+    {
+        var services = new ServiceCollection();
+        var configMock = new Mock<IConfiguration>();
+        var connStringsSection = new Mock<IConfigurationSection>();
+        connStringsSection.Setup(s => s["DefaultConnection"]).Returns("Host=localhost;Database=test");
+        configMock.Setup(c => c.GetSection("ConnectionStrings")).Returns(connStringsSection.Object);
+
+        var envMock = new Mock<IHostEnvironment>();
+        envMock.Setup(e => e.EnvironmentName).Returns(Environments.Development);
+
+        services.AddSingleton(envMock.Object);
+        services.AddInfrastructure(configMock.Object);
+
+        using var provider = services.BuildServiceProvider();
+        var clientFactory = provider.GetRequiredService<IHttpClientFactory>();
+        var client = clientFactory.CreateClient(typeof(IGoogleAuthService).Name);
+
+        client.Timeout.Should().Be(TimeSpan.FromSeconds(10));
+    }
+
+    private sealed class MockHttpMessageHandler : HttpMessageHandler
+    {
+        private readonly Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> _asyncHandler;
+
+        public MockHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> handler)
+        {
+            _asyncHandler = (req, _) => Task.FromResult(handler(req));
+        }
+
+        public MockHttpMessageHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> asyncHandler)
+        {
+            _asyncHandler = asyncHandler;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            return _asyncHandler(request, cancellationToken);
+        }
     }
 }

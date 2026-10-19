@@ -22,6 +22,7 @@ public class AuthController : ControllerBase
     private readonly ICurrentUserService _currentUserService;
     private readonly PasswordHasher<User> _passwordHasher;
     private readonly TimeProvider _timeProvider;
+    private readonly IGoogleAuthService? _googleAuthService;
 
     public const int DefaultGraceWindowSeconds = AuthRefreshTokenHelper.DefaultGraceWindowSeconds;
 
@@ -29,13 +30,15 @@ public class AuthController : ControllerBase
         IApplicationDbContext context,
         IJwtTokenService jwtTokenService,
         ICurrentUserService? currentUserService = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IGoogleAuthService? googleAuthService = null)
     {
         _context = context;
         _jwtTokenService = jwtTokenService;
         _currentUserService = currentUserService!;
         _passwordHasher = new PasswordHasher<User>();
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _googleAuthService = googleAuthService;
     }
 
     #region Static Helper Forwarders
@@ -149,6 +152,22 @@ public class AuthController : ControllerBase
         public string? RefreshToken { get; init; }
     }
 
+    public sealed record GoogleAuthRequest
+    {
+        public string? AccessToken { get; init; }
+        public string? IdToken { get; init; }
+
+        [StringLength(200)]
+        public string? BusinessName { get; init; }
+
+        [RegularExpression(@"^\d{4,6}$", ErrorMessage = "PIN must be between 4 and 6 digits.")]
+        public string? Pin { get; init; }
+
+        public Guid? TenantId { get; init; }
+        public Guid? UserId { get; init; }
+        public string? RefreshToken { get; init; }
+    }
+
     public sealed record AuthResponseDto(
         Guid TenantId,
         Guid UserId,
@@ -163,10 +182,225 @@ public class AuthController : ControllerBase
         bool HasPin,
         string Token,
         DateTimeOffset ExpiresAt,
-        string? RefreshToken = null
+        string? RefreshToken = null,
+        bool IsNewUser = false
     );
 
     #endregion
+
+    private async Task<(Tenant? ExistingTenant, User? PlaceholderUser, ActionResult? ErrorResult)> ValidateAnonymousStoreUpgradeAsync(
+        Guid tenantId,
+        Guid? requestedUserId,
+        string? refreshToken,
+        CancellationToken cancellationToken)
+    {
+        var existingTenant = await _context.Tenants.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
+
+        if (existingTenant == null)
+        {
+            return (null, null, null);
+        }
+
+        var existingUsers = await _context.Users.IgnoreQueryFilters()
+            .Where(u => u.TenantId == tenantId)
+            .ToListAsync(cancellationToken);
+
+        var isAnonymousProvisionedOwner = requestedUserId.HasValue &&
+            existingUsers.Count == 1 &&
+            existingUsers[0].Id == requestedUserId.Value &&
+            string.IsNullOrEmpty(existingUsers[0].PasswordHash) &&
+            string.IsNullOrEmpty(existingUsers[0].Email);
+
+        if (!isAnonymousProvisionedOwner)
+        {
+            return (null, null, Conflict(new { message = "May tindahan nang nakarehistro gamit ang ID na ito. / This store is already registered." }));
+        }
+
+        var placeholderUser = existingUsers[0];
+        var claimUserId = AuthClaimsHelper.ResolveUserId(_currentUserService, HttpContext?.User);
+        var claimTenantId = AuthClaimsHelper.ResolveTenantId(_currentUserService, HttpContext?.User);
+        var isAuthenticated = AuthClaimsHelper.IsAuthenticated(_currentUserService, HttpContext?.User);
+
+        var isCallerAuthenticatedAsPlaceholder = isAuthenticated &&
+            claimUserId.HasValue &&
+            claimUserId.Value == placeholderUser.Id &&
+            claimTenantId.HasValue &&
+            claimTenantId.Value == tenantId;
+
+        var candidateSessionToken = refreshToken
+            ?? (Request?.Headers.TryGetValue("X-Refresh-Token", out var rtHeader) == true ? rtHeader.ToString() : null);
+
+        var isSameDeviceSession = await AuthClaimsHelper.ValidatePlaceholderSessionAsync(
+            _jwtTokenService,
+            _context,
+            placeholderUser,
+            tenantId,
+            candidateSessionToken,
+            cancellationToken);
+
+        if (!isCallerAuthenticatedAsPlaceholder && !isSameDeviceSession)
+        {
+            return (null, null, Unauthorized(new
+            {
+                message = "Hindi pinapayagan ang pag-upgrade ng tindahang ito nang walang authenticated session mula sa parehong device. / Upgrading this store is only allowed from an authenticated session from the same device, not from IDs alone."
+            }));
+        }
+
+        return (existingTenant, placeholderUser, null);
+    }
+
+    private async Task<(Tenant? Tenant, User? User, ActionResult? ErrorResult)> ProvisionOrUpgradeStoreOwnerAsync(
+        Guid? requestedTenantId,
+        Guid? requestedUserId,
+        string? refreshToken,
+        string businessName,
+        string displayEmail,
+        string normalizedEmail,
+        string? ownerName,
+        string? phone,
+        string? firebaseUid,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = requestedTenantId.HasValue && requestedTenantId.Value != Guid.Empty
+            ? requestedTenantId.Value
+            : Guid.NewGuid();
+
+        var userId = requestedUserId.HasValue && requestedUserId.Value != Guid.Empty
+            ? requestedUserId.Value
+            : Guid.NewGuid();
+
+        Tenant? tenant = null;
+        User? user = null;
+
+        if (requestedTenantId.HasValue && requestedTenantId.Value != Guid.Empty)
+        {
+            var (existingTenant, placeholderUser, upgradeError) = await ValidateAnonymousStoreUpgradeAsync(
+                tenantId,
+                requestedUserId,
+                refreshToken,
+                cancellationToken);
+
+            if (upgradeError != null)
+            {
+                return (null, null, upgradeError);
+            }
+
+            if (existingTenant != null && placeholderUser != null)
+            {
+                tenant = existingTenant;
+                if (string.IsNullOrWhiteSpace(tenant.BusinessName))
+                {
+                    tenant.BusinessName = businessName;
+                }
+
+                user = placeholderUser;
+                user.Email = displayEmail;
+                user.NormalizedEmail = normalizedEmail;
+                if (!string.IsNullOrWhiteSpace(phone))
+                {
+                    user.Phone = phone.Trim();
+                }
+                if (!string.IsNullOrWhiteSpace(ownerName))
+                {
+                    user.OwnerName = ownerName.Trim();
+                }
+                if (!string.IsNullOrWhiteSpace(firebaseUid))
+                {
+                    user.FirebaseUid = firebaseUid;
+                }
+                user.Role = "Owner";
+                AuthLockoutHelper.ResetPinLockout(user);
+                AuthLockoutHelper.ResetPasswordLockout(user);
+                user.LastLoginAt = _timeProvider.GetUtcNow();
+            }
+        }
+
+        if (tenant == null || user == null)
+        {
+            if (requestedUserId.HasValue && requestedUserId.Value != Guid.Empty)
+            {
+                var userIdInUse = await _context.Users.IgnoreQueryFilters()
+                    .AnyAsync(u => u.Id == userId, cancellationToken);
+                if (userIdInUse)
+                {
+                    return (null, null, Conflict(new { message = "Ginagamit na ang user ID na ito. / The user ID is already in use." }));
+                }
+            }
+
+            var now = _timeProvider.GetUtcNow();
+            tenant = new Tenant
+            {
+                Id = tenantId,
+                BusinessName = businessName,
+                Tier = PlanTier.Libre,
+                CreatedAt = now
+            };
+            _context.Tenants.Add(tenant);
+
+            user = new User
+            {
+                Id = userId,
+                TenantId = tenantId,
+                Email = displayEmail,
+                NormalizedEmail = normalizedEmail,
+                Phone = !string.IsNullOrWhiteSpace(phone) ? phone.Trim() : string.Empty,
+                FirebaseUid = firebaseUid ?? string.Empty,
+                PasswordHash = string.Empty,
+                OwnerName = !string.IsNullOrWhiteSpace(ownerName) ? ownerName.Trim() : null,
+                Role = "Owner",
+                FailedPinAttempts = 0,
+                PinLockoutEnd = null,
+                FailedPasswordAttempts = 0,
+                PasswordLockoutEnd = null,
+                CreatedAt = now,
+                LastLoginAt = now
+            };
+            _context.Users.Add(user);
+        }
+
+        return (tenant, user, null);
+    }
+
+    private async Task<ActionResult<AuthResponseDto>> SaveNewUserAndRespondAsync(
+        User user,
+        Tenant tenant,
+        bool isNewUser,
+        CancellationToken cancellationToken)
+    {
+        var access = _jwtTokenService.GenerateAccessToken(user.Id, tenant.Id, email: user.Email, role: user.Role);
+        var (refreshToken, _, _, _) = AuthRefreshTokenHelper.IssueRefreshToken(
+            _context,
+            _jwtTokenService,
+            user,
+            tenant.Id,
+            _timeProvider);
+
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsUniqueEmailViolation(ex))
+        {
+            _context.ChangeTracker.Clear();
+            return Conflict(new { message = "May tindahan nang nakarehistro gamit ang email na ito. Pakipili ang Mag-login. / A store is already registered with this email." });
+        }
+        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            _context.ChangeTracker.Clear();
+            return Conflict(new { message = "May tindahan o user nang nakarehistro gamit ang ID na ito. / A store or user is already registered with this ID." });
+        }
+
+        AuthLockoutHelper.ResetIpPinThrottle(AuthClaimsHelper.GetClientIpAddress(HttpContext));
+
+        return Ok(AuthResponseBuilder.Build(
+            user,
+            tenant,
+            access,
+            refreshToken,
+            user.OwnerName,
+            isNewUser: isNewUser));
+    }
 
     /// <summary>
     /// Registers a new store and owner identity using email and password.
@@ -200,208 +434,229 @@ public class AuthController : ControllerBase
             return Conflict(new { message = "May tindahan nang nakarehistro gamit ang email na ito. Pakipili ang Mag-login. / A store is already registered with this email." });
         }
 
-        var tenantId = request.TenantId.HasValue && request.TenantId.Value != Guid.Empty
-            ? request.TenantId.Value
-            : Guid.NewGuid();
-
-        var userId = request.UserId.HasValue && request.UserId.Value != Guid.Empty
-            ? request.UserId.Value
-            : Guid.NewGuid();
-
         var businessName = request.BusinessName.Trim();
         if (businessName.Length < 2)
         {
             return BadRequest(new { message = "Kailangan ng pangalan ng tindahan (minimum 2 letra). / Store name is required (minimum 2 chars)." });
         }
 
-        Tenant tenant;
-        User user;
+        var (tenant, user, upgradeError) = await ProvisionOrUpgradeStoreOwnerAsync(
+            request.TenantId,
+            request.UserId,
+            request.RefreshToken,
+            businessName,
+            displayEmail,
+            normalizedEmail,
+            request.OwnerName,
+            request.Phone,
+            firebaseUid: null,
+            cancellationToken);
 
-        if (request.TenantId.HasValue && request.TenantId.Value != Guid.Empty)
+        if (upgradeError != null)
         {
-            var existingTenant = await _context.Tenants.IgnoreQueryFilters()
-                .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
-
-            if (existingTenant != null)
-            {
-                var existingUsers = await _context.Users.IgnoreQueryFilters()
-                    .Where(u => u.TenantId == tenantId)
-                    .ToListAsync(cancellationToken);
-
-                var isAnonymousProvisionedOwner = request.UserId.HasValue &&
-                    existingUsers.Count == 1 &&
-                    existingUsers[0].Id == request.UserId.Value &&
-                    string.IsNullOrEmpty(existingUsers[0].PasswordHash) &&
-                    string.IsNullOrEmpty(existingUsers[0].Email);
-
-                if (!isAnonymousProvisionedOwner)
-                {
-                    return Conflict(new { message = "May tindahan nang nakarehistro gamit ang ID na ito. / This store is already registered." });
-                }
-
-                var placeholderUser = existingUsers[0];
-                var claimUserId = AuthClaimsHelper.ResolveUserId(_currentUserService, HttpContext?.User);
-                var claimTenantId = AuthClaimsHelper.ResolveTenantId(_currentUserService, HttpContext?.User);
-                var isAuthenticated = AuthClaimsHelper.IsAuthenticated(_currentUserService, HttpContext?.User);
-
-                var isCallerAuthenticatedAsPlaceholder = isAuthenticated &&
-                    claimUserId.HasValue &&
-                    claimUserId.Value == placeholderUser.Id &&
-                    claimTenantId.HasValue &&
-                    claimTenantId.Value == tenantId;
-
-                var candidateSessionToken = request.RefreshToken
-                    ?? (Request?.Headers.TryGetValue("X-Refresh-Token", out var rtHeader) == true ? rtHeader.ToString() : null);
-
-                var isSameDeviceSession = await AuthClaimsHelper.ValidatePlaceholderSessionAsync(
-                    _jwtTokenService,
-                    _context,
-                    placeholderUser,
-                    tenantId,
-                    candidateSessionToken,
-                    cancellationToken);
-
-                if (!isCallerAuthenticatedAsPlaceholder && !isSameDeviceSession)
-                {
-                    return Unauthorized(new
-                    {
-                        message = "Hindi pinapayagan ang pag-upgrade ng tindahang ito nang walang authenticated session mula sa parehong device. / Upgrading this store is only allowed from an authenticated session from the same device, not from IDs alone."
-                    });
-                }
-
-                tenant = existingTenant;
-                if (string.IsNullOrWhiteSpace(tenant.BusinessName))
-                {
-                    tenant.BusinessName = businessName;
-                }
-
-                user = existingUsers[0];
-                user.Email = displayEmail;
-                user.NormalizedEmail = normalizedEmail;
-                user.Phone = request.Phone?.Trim() ?? user.Phone;
-                if (!string.IsNullOrWhiteSpace(request.OwnerName))
-                {
-                    user.OwnerName = request.OwnerName.Trim();
-                }
-                user.Role = "Owner";
-                AuthLockoutHelper.ResetPinLockout(user);
-                AuthLockoutHelper.ResetPasswordLockout(user);
-                user.LastLoginAt = _timeProvider.GetUtcNow();
-            }
-            else
-            {
-                if (request.UserId.HasValue && request.UserId.Value != Guid.Empty)
-                {
-                    var userIdInUse = await _context.Users.IgnoreQueryFilters()
-                        .AnyAsync(u => u.Id == userId, cancellationToken);
-                    if (userIdInUse)
-                    {
-                        return Conflict(new { message = "Ginagamit na ang user ID na ito. / The user ID is already in use." });
-                    }
-                }
-
-                tenant = new Tenant
-                {
-                    Id = tenantId,
-                    BusinessName = businessName,
-                    Tier = PlanTier.Libre,
-                    CreatedAt = _timeProvider.GetUtcNow()
-                };
-                _context.Tenants.Add(tenant);
-
-                user = new User
-                {
-                    Id = userId,
-                    TenantId = tenantId,
-                    Email = displayEmail,
-                    NormalizedEmail = normalizedEmail,
-                    Phone = request.Phone?.Trim() ?? string.Empty,
-                    OwnerName = string.IsNullOrWhiteSpace(request.OwnerName) ? null : request.OwnerName.Trim(),
-                    Role = "Owner",
-                    FailedPinAttempts = 0,
-                    PinLockoutEnd = null,
-                    FailedPasswordAttempts = 0,
-                    PasswordLockoutEnd = null,
-                    CreatedAt = _timeProvider.GetUtcNow(),
-                    LastLoginAt = _timeProvider.GetUtcNow()
-                };
-                _context.Users.Add(user);
-            }
-        }
-        else
-        {
-            if (request.UserId.HasValue && request.UserId.Value != Guid.Empty)
-            {
-                var userIdInUse = await _context.Users.IgnoreQueryFilters()
-                    .AnyAsync(u => u.Id == userId, cancellationToken);
-                if (userIdInUse)
-                {
-                    return Conflict(new { message = "Ginagamit na ang user ID na ito. / The user ID is already in use." });
-                }
-            }
-
-            tenant = new Tenant
-            {
-                Id = tenantId,
-                BusinessName = businessName,
-                Tier = PlanTier.Libre,
-                CreatedAt = _timeProvider.GetUtcNow()
-            };
-            _context.Tenants.Add(tenant);
-
-            user = new User
-            {
-                Id = userId,
-                TenantId = tenantId,
-                Email = displayEmail,
-                NormalizedEmail = normalizedEmail,
-                Phone = request.Phone?.Trim() ?? string.Empty,
-                OwnerName = string.IsNullOrWhiteSpace(request.OwnerName) ? null : request.OwnerName.Trim(),
-                Role = "Owner",
-                FailedPinAttempts = 0,
-                PinLockoutEnd = null,
-                FailedPasswordAttempts = 0,
-                PasswordLockoutEnd = null,
-                CreatedAt = _timeProvider.GetUtcNow(),
-                LastLoginAt = _timeProvider.GetUtcNow()
-            };
-            _context.Users.Add(user);
+            return upgradeError;
         }
 
-        user.PasswordHash = _passwordHasher.HashPassword(user, request.Password);
+        user!.PasswordHash = _passwordHasher.HashPassword(user, request.Password);
         user.PinHash = !string.IsNullOrWhiteSpace(request.Pin)
             ? _passwordHasher.HashPassword(user, request.Pin.Trim())
             : null;
 
-        var access = _jwtTokenService.GenerateAccessToken(user.Id, tenant.Id, email: user.Email, role: user.Role);
-        var (refreshToken, _, _, _) = AuthRefreshTokenHelper.IssueRefreshToken(
-            _context,
-            _jwtTokenService,
-            user,
-            tenant.Id,
-            _timeProvider);
+        return await SaveNewUserAndRespondAsync(user, tenant!, isNewUser: false, cancellationToken);
+    }
 
-        try
+    /// <summary>
+    /// Authenticates or registers a store owner using a verified Google OAuth token.
+    /// Links existing email/password accounts if emails match, or provisions a new store with client UUIDs.
+    /// </summary>
+    [HttpPost("google")]
+    [EnableRateLimiting("AuthSensitive")]
+    [ProducesResponseType(typeof(AuthResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<AuthResponseDto>> GoogleAuth(
+        [FromBody] GoogleAuthRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request == null || (string.IsNullOrWhiteSpace(request.AccessToken) && string.IsNullOrWhiteSpace(request.IdToken)))
         {
-            await _context.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateException ex) when (IsUniqueEmailViolation(ex))
-        {
-            _context.ChangeTracker.Clear();
-            return Conflict(new { message = "May tindahan nang nakarehistro gamit ang email na ito. Pakipili ang Mag-login. / A store is already registered with this email." });
-        }
-        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
-        {
-            _context.ChangeTracker.Clear();
-            return Conflict(new { message = "May tindahan o user nang nakarehistro gamit ang ID na ito. / A store or user is already registered with this ID." });
+            return BadRequest(new { message = "Kailangan ng Google access token o ID token. / Google access token or ID token is required." });
         }
 
-        return Ok(AuthResponseBuilder.Build(
-            user,
-            tenant,
-            access,
-            refreshToken,
-            user.OwnerName));
+        if (_googleAuthService == null)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { message = "Hindi naka-configure ang Google authentication service. / Google auth service is not configured." });
+        }
+
+        var googleUser = await _googleAuthService.VerifyGoogleTokenAsync(request.AccessToken, request.IdToken, cancellationToken);
+        if (googleUser == null || !googleUser.EmailVerified || string.IsNullOrWhiteSpace(googleUser.Subject))
+        {
+            return Unauthorized(new { message = "Hindi ma-verify ang Google account o hindi beripikado ang email. / Google account could not be verified or email is not verified." });
+        }
+
+        var displayEmail = CleanDisplayEmail(googleUser.Email);
+        var normalizedEmail = NormalizeEmail(googleUser.Email);
+        if (string.IsNullOrWhiteSpace(normalizedEmail) || !new EmailAddressAttribute().IsValid(normalizedEmail))
+        {
+            return BadRequest(new { message = "Kailangan ng wastong email address mula sa Google. / Valid email address from Google is required." });
+        }
+
+        var rawGoogleSubject = $"google:{googleUser.Subject}";
+        var googleSubject = rawGoogleSubject.Length > 128 ? rawGoogleSubject[..128] : rawGoogleSubject;
+        var googleOwnerName = string.IsNullOrWhiteSpace(googleUser.FullName)
+            ? null
+            : (googleUser.FullName.Trim().Length > 100 ? googleUser.FullName.Trim()[..100] : googleUser.FullName.Trim());
+
+        // Check if user already exists by external Subject or NormalizedEmail
+        var existingUser = await _context.Users.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.FirebaseUid == googleSubject || u.NormalizedEmail == normalizedEmail, cancellationToken);
+
+        if (existingUser != null)
+        {
+            if (existingUser.TenantId != Guid.Empty)
+            {
+                existingUser.Tenant = await _context.Tenants.IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(t => t.Id == existingUser.TenantId, cancellationToken);
+            }
+            // Existing User (Login / Account Link)
+            if (existingUser.FirebaseUid != googleSubject)
+            {
+                existingUser.FirebaseUid = googleSubject;
+            }
+
+            if (existingUser.Email != displayEmail)
+            {
+                existingUser.Email = displayEmail;
+            }
+
+            if (existingUser.NormalizedEmail != normalizedEmail)
+            {
+                existingUser.NormalizedEmail = normalizedEmail;
+            }
+
+            if (string.IsNullOrWhiteSpace(existingUser.OwnerName) && googleOwnerName != null)
+            {
+                existingUser.OwnerName = googleOwnerName;
+            }
+            else if (existingUser.OwnerName?.Length > 100)
+            {
+                existingUser.OwnerName = existingUser.OwnerName[..100];
+            }
+
+            // Guard against orphaned or missing tenants on legacy users
+            if (existingUser.Tenant == null || existingUser.TenantId == Guid.Empty)
+            {
+                var targetTenantId = existingUser.TenantId != Guid.Empty
+                    ? existingUser.TenantId
+                    : (request.TenantId.HasValue && request.TenantId.Value != Guid.Empty
+                        ? request.TenantId.Value
+                        : Guid.NewGuid());
+
+                var resolvedTenant = await _context.Tenants.IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(t => t.Id == targetTenantId, cancellationToken);
+
+                if (resolvedTenant == null)
+                {
+                    var resolvedBusinessName = !string.IsNullOrWhiteSpace(request.BusinessName) && request.BusinessName.Trim().Length >= 2
+                        ? request.BusinessName.Trim()
+                        : (!string.IsNullOrWhiteSpace(existingUser.OwnerName)
+                            ? $"{existingUser.OwnerName.Trim()}'s Tindahan"
+                            : (!string.IsNullOrWhiteSpace(googleUser.GivenName)
+                                ? $"{googleUser.GivenName.Trim()}'s Tindahan"
+                                : (!string.IsNullOrWhiteSpace(googleOwnerName)
+                                    ? $"{googleOwnerName}'s Tindahan"
+                                    : "Aking Tindahan")));
+
+                    if (resolvedBusinessName.Length > 200)
+                    {
+                        resolvedBusinessName = resolvedBusinessName[..200];
+                    }
+
+                    resolvedTenant = new Tenant
+                    {
+                        Id = targetTenantId,
+                        BusinessName = resolvedBusinessName,
+                        Tier = PlanTier.Libre,
+                        CreatedAt = _timeProvider.GetUtcNow()
+                    };
+                    _context.Tenants.Add(resolvedTenant);
+                }
+
+                existingUser.Tenant = resolvedTenant;
+                existingUser.TenantId = resolvedTenant.Id;
+            }
+
+            var now = _timeProvider.GetUtcNow();
+            existingUser.LastLoginAt = now;
+            AuthLockoutHelper.ResetPasswordLockout(existingUser);
+            AuthLockoutHelper.ResetPinLockout(existingUser);
+
+            var access = _jwtTokenService.GenerateAccessToken(existingUser.Id, existingUser.TenantId, email: existingUser.Email, role: existingUser.Role);
+            var (refreshToken, _, _, _) = AuthRefreshTokenHelper.IssueRefreshToken(
+                _context,
+                _jwtTokenService,
+                existingUser,
+                existingUser.TenantId,
+                _timeProvider);
+
+            try
+            {
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException ex) when (IsUniqueEmailViolation(ex))
+            {
+                _context.ChangeTracker.Clear();
+                return Conflict(new { message = "May account nang nakarehistro gamit ang email na ito. / An account is already registered with this email." });
+            }
+            catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+            {
+                _context.ChangeTracker.Clear();
+                return Conflict(new { message = "May account o tindahan nang nakaugnay sa impormasyong ito. / An account or store is already linked with this information." });
+            }
+
+            AuthLockoutHelper.ResetIpPinThrottle(AuthClaimsHelper.GetClientIpAddress(HttpContext));
+
+            return Ok(AuthResponseBuilder.Build(
+                existingUser,
+                existingUser.Tenant,
+                access,
+                refreshToken,
+                existingUser.OwnerName,
+                isNewUser: false));
+        }
+
+        // New User (Sign-Up / Store Provisioning)
+        var businessName = !string.IsNullOrWhiteSpace(request.BusinessName) && request.BusinessName.Trim().Length >= 2
+            ? request.BusinessName.Trim()
+            : (!string.IsNullOrWhiteSpace(googleUser.GivenName)
+                ? $"{googleUser.GivenName.Trim()}'s Tindahan"
+                : (!string.IsNullOrWhiteSpace(googleOwnerName)
+                    ? $"{googleOwnerName}'s Tindahan"
+                    : "Aking Tindahan"));
+
+        var (tenant, user, upgradeError) = await ProvisionOrUpgradeStoreOwnerAsync(
+            request.TenantId,
+            request.UserId,
+            request.RefreshToken,
+            businessName,
+            displayEmail,
+            normalizedEmail,
+            googleOwnerName,
+            phone: null,
+            firebaseUid: googleSubject,
+            cancellationToken);
+
+        if (upgradeError != null)
+        {
+            return upgradeError;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Pin))
+        {
+            user!.PinHash = _passwordHasher.HashPassword(user, request.Pin.Trim());
+        }
+
+        return await SaveNewUserAndRespondAsync(user!, tenant!, isNewUser: true, cancellationToken);
     }
 
     /// <summary>
@@ -554,99 +809,41 @@ public class AuthController : ControllerBase
             {
                 return AuthLockoutHelper.PinLockedOutResult(pinLockoutMinutes);
             }
-            else if (freshUser.PinLockoutEnd.HasValue)
-            {
-                if (_context.Database.IsNpgsql())
-                {
-                    await _context.Users.IgnoreQueryFilters()
-                        .Where(u => u.Id == freshUser.Id)
-                        .ExecuteUpdateAsync(s => s
-                            .SetProperty(u => u.FailedPinAttempts, 0)
-                            .SetProperty(u => u.PinLockoutEnd, (DateTimeOffset?)null),
-                            cancellationToken);
-                }
-                else
-                {
-                    await _context.SaveChangesAsync(cancellationToken);
-                }
-            }
 
             var pin = (request.Pin ?? string.Empty).Trim();
             var verifyResult = _passwordHasher.VerifyHashedPassword(freshUser, freshUser.PinHash, pin);
             if (verifyResult == PasswordVerificationResult.Failed)
             {
                 AuthLockoutHelper.RecordIpPinFailure(clientIp, _timeProvider, out var ipLockedOut, out var ipLockMinutes);
-
-                if (_context.Database.IsNpgsql())
-                {
-                    var lockoutTime = _timeProvider.GetUtcNow().AddMinutes(AuthLockoutHelper.LockoutDurationMinutes);
-                    await _context.Users.IgnoreQueryFilters()
-                        .Where(u => u.Id == freshUser.Id)
-                        .ExecuteUpdateAsync(s => s
-                            .SetProperty(u => u.FailedPinAttempts, u => u.FailedPinAttempts + 1)
-                            .SetProperty(u => u.PinLockoutEnd, u => u.FailedPinAttempts + 1 >= AuthLockoutHelper.MaxFailedAttempts ? lockoutTime : u.PinLockoutEnd),
-                            cancellationToken);
-
-                    var updated = await _context.Users.IgnoreQueryFilters()
-                        .AsNoTracking()
-                        .Where(u => u.Id == freshUser.Id)
-                        .Select(u => new { u.FailedPinAttempts, u.PinLockoutEnd })
-                        .FirstAsync(cancellationToken);
-
-                    freshUser.FailedPinAttempts = updated.FailedPinAttempts;
-                    freshUser.PinLockoutEnd = updated.PinLockoutEnd;
-                }
-                else
-                {
-                    AuthLockoutHelper.RecordPinFailureInMemory(freshUser, _timeProvider, out _, out _, out _);
-                    await _context.SaveChangesAsync(cancellationToken);
-                }
+                AuthLockoutHelper.RecordPinFailureInMemory(freshUser, _timeProvider, out var isPinLockedOut, out var pinLockMinutes, out var remainingAttempts);
+                await _context.SaveChangesAsync(cancellationToken);
 
                 if (ipLockedOut)
                 {
                     return AuthLockoutHelper.IpPinLockedOutResult(ipLockMinutes, isInitial: true);
                 }
 
-                if (freshUser.FailedPinAttempts >= AuthLockoutHelper.MaxFailedAttempts)
+                if (isPinLockedOut)
                 {
-                    return AuthLockoutHelper.PinLockedOutResult(AuthLockoutHelper.LockoutDurationMinutes, isInitial: true);
+                    return AuthLockoutHelper.PinLockedOutResult(pinLockMinutes, isInitial: true);
                 }
 
-                var remainingAttempts = AuthLockoutHelper.MaxFailedAttempts - freshUser.FailedPinAttempts;
                 return AuthLockoutHelper.PinFailedResult(remainingAttempts);
             }
 
             AuthLockoutHelper.ResetIpPinThrottle(clientIp);
 
             var access = _jwtTokenService.GenerateAccessToken(freshUser.Id, freshUser.TenantId, email: freshUser.Email, role: freshUser.Role);
-            var (refreshToken, refreshExpiresAt, tokenHash, _) = AuthRefreshTokenHelper.IssueRefreshToken(
+            var (refreshToken, _, _, _) = AuthRefreshTokenHelper.IssueRefreshToken(
                 _context,
                 _jwtTokenService,
                 freshUser,
                 freshUser.TenantId,
                 _timeProvider);
 
-            var now = _timeProvider.GetUtcNow();
-
-            if (_context.Database.IsNpgsql())
-            {
-                await _context.Users.IgnoreQueryFilters()
-                    .Where(u => u.Id == freshUser.Id)
-                    .ExecuteUpdateAsync(s => s
-                        .SetProperty(u => u.FailedPinAttempts, 0)
-                        .SetProperty(u => u.PinLockoutEnd, (DateTimeOffset?)null)
-                        .SetProperty(u => u.LastLoginAt, now)
-                        .SetProperty(u => u.RefreshTokenIdHash, tokenHash)
-                        .SetProperty(u => u.RefreshTokenExpiresAt, refreshExpiresAt),
-                        cancellationToken);
-                await _context.SaveChangesAsync(cancellationToken);
-            }
-            else
-            {
-                AuthLockoutHelper.ResetPinLockout(freshUser);
-                freshUser.LastLoginAt = now;
-                await _context.SaveChangesAsync(cancellationToken);
-            }
+            AuthLockoutHelper.ResetPinLockout(freshUser);
+            freshUser.LastLoginAt = _timeProvider.GetUtcNow();
+            await _context.SaveChangesAsync(cancellationToken);
 
             return Ok(AuthResponseBuilder.Build(freshUser, freshUser.Tenant, access, refreshToken));
         }
@@ -686,38 +883,74 @@ public class AuthController : ControllerBase
         var user = await _context.Users.IgnoreQueryFilters()
             .FirstOrDefaultAsync(u => u.Id == userId.Value, cancellationToken);
 
-        if (user == null || string.IsNullOrEmpty(user.PasswordHash))
+        if (user == null)
         {
-            return Unauthorized(new { message = "Hindi natagpuan ang account o walang password. / User not found or password not configured." });
+            return Unauthorized(new { message = "Hindi natagpuan ang account. / User not found." });
         }
 
-        if (AuthLockoutHelper.CheckPasswordLockout(user, _timeProvider, out var lockoutMinutes))
-        {
-            return AuthLockoutHelper.PasswordLockedOutResult(lockoutMinutes);
-        }
+        var isGoogleUserWithoutPassword = string.IsNullOrEmpty(user.PasswordHash) && !string.IsNullOrEmpty(user.FirebaseUid);
 
-        var verifyResult = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
-        if (verifyResult == PasswordVerificationResult.Failed)
+        if (!isGoogleUserWithoutPassword)
         {
-            AuthLockoutHelper.RecordPasswordFailure(user, _timeProvider, out var isLockedOut, out var lockMinutes, out var remainingAttempts);
-            await _context.SaveChangesAsync(cancellationToken);
-
-            if (isLockedOut)
+            if (string.IsNullOrEmpty(user.PasswordHash))
             {
-                return AuthLockoutHelper.PasswordLockedOutResult(lockMinutes, isInitial: true);
+                return Unauthorized(new { message = "Hindi natagpuan ang account o walang password. / User not found or password not configured." });
             }
 
-            return AuthLockoutHelper.PasswordFailedResult(
-                remainingAttempts,
-                $"Maling password. May natitira ka pang {remainingAttempts} pagsubok bago mag-lockout. / Invalid password. {remainingAttempts} attempts remaining.");
-        }
+            if (AuthLockoutHelper.CheckPasswordLockout(user, _timeProvider, out var lockoutMinutes))
+            {
+                return AuthLockoutHelper.PasswordLockedOutResult(lockoutMinutes);
+            }
 
-        if (verifyResult == PasswordVerificationResult.SuccessRehashNeeded)
+            var verifyResult = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
+            if (verifyResult == PasswordVerificationResult.Failed)
+            {
+                AuthLockoutHelper.RecordPasswordFailure(user, _timeProvider, out var isLockedOut, out var lockMinutes, out var remainingAttempts);
+                await _context.SaveChangesAsync(cancellationToken);
+
+                if (isLockedOut)
+                {
+                    return AuthLockoutHelper.PasswordLockedOutResult(lockMinutes, isInitial: true);
+                }
+
+                return AuthLockoutHelper.PasswordFailedResult(
+                    remainingAttempts,
+                    $"Maling password. May natitira ka pang {remainingAttempts} pagsubok bago mag-lockout. / Invalid password. {remainingAttempts} attempts remaining.");
+            }
+
+            if (verifyResult == PasswordVerificationResult.SuccessRehashNeeded)
+            {
+                user.PasswordHash = _passwordHasher.HashPassword(user, request.Password);
+            }
+
+            AuthLockoutHelper.ResetPasswordLockout(user);
+        }
+        else
         {
-            user.PasswordHash = _passwordHasher.HashPassword(user, request.Password);
-        }
+            if (!string.IsNullOrEmpty(user.PinHash))
+            {
+                if (AuthLockoutHelper.CheckPinLockout(user, _timeProvider, out var pinLockoutMinutes))
+                {
+                    return AuthLockoutHelper.PinLockedOutResult(pinLockoutMinutes);
+                }
 
-        AuthLockoutHelper.ResetPasswordLockout(user);
+                var pinVerify = _passwordHasher.VerifyHashedPassword(user, user.PinHash, (request.Password ?? string.Empty).Trim());
+                if (pinVerify == PasswordVerificationResult.Failed)
+                {
+                    AuthLockoutHelper.RecordPinFailureInMemory(user, _timeProvider, out var isLockedOut, out var lockMinutes, out var remainingAttempts);
+                    await _context.SaveChangesAsync(cancellationToken);
+
+                    if (isLockedOut)
+                    {
+                        return AuthLockoutHelper.PinLockedOutResult(lockMinutes, isInitial: true);
+                    }
+
+                    return AuthLockoutHelper.PinFailedResult(remainingAttempts);
+                }
+
+                AuthLockoutHelper.ResetPinLockout(user);
+            }
+        }
         user.PinHash = !string.IsNullOrWhiteSpace(request.Pin)
             ? _passwordHasher.HashPassword(user, request.Pin.Trim())
             : null;
@@ -781,6 +1014,9 @@ public class AuthController : ControllerBase
         [FromBody] LogoutRequest? request,
         CancellationToken cancellationToken)
     {
+        var clientIp = AuthClaimsHelper.GetClientIpAddress(HttpContext);
+        AuthLockoutHelper.ResetIpPinThrottle(clientIp);
+
         var userId = AuthClaimsHelper.ResolveUserId(_currentUserService, HttpContext?.User);
         string? targetFamilyId = null;
 

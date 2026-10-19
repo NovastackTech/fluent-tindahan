@@ -100,8 +100,12 @@ describe('UtangPage', () => {
     const saved = await db.customers.where('name').equals('Mang Kanor').first();
     expect(saved).toBeDefined();
     expect(saved?.totalUtangBalance).toBe(150);
-    expect(await db.utangLedger.toArray()).toHaveLength(1);
-    expect(await db.syncQueue.toArray()).toHaveLength(2);
+    const syncOps = await db.syncQueue.toArray();
+    expect(syncOps).toHaveLength(2);
+    const customerOp = syncOps.find((op) => op.entity === 'Customer');
+    expect(customerOp?.payload.totalUtangBalance).toBe(0);
+    const ledgerOp = syncOps.find((op) => op.entity === 'UtangLedger');
+    expect(ledgerOp?.payload.amount).toBe(150);
   });
 
   it('shows inline validation when saving a customer with a blank name', async () => {
@@ -253,6 +257,8 @@ describe('UtangPage', () => {
     await waitFor(async () => {
       const updated = await db.customers.get('cust-pay');
       expect(updated?.totalUtangBalance).toBe(300);
+      const ledger = await db.utangLedger.where('customerId').equals('cust-pay').first();
+      expect(ledger?.notes).toBe('');
     });
 
     await waitFor(() => {
@@ -456,4 +462,137 @@ describe('UtangPage', () => {
 
     alertMock.mockRestore();
   });
+
+  it('hides generic legacy labels (Unang tala ng utang, Dagdag na utang, Bayad sa utang) from timeline while preserving custom notes', async () => {
+    await db.customers.add({
+      id: 'cust-generic-labels',
+      tenantId: 'tenant-1',
+      name: 'Maria Santos Demo',
+      phone: '09876542345',
+      totalUtangBalance: 2234,
+      updatedAt: new Date().toISOString()
+    });
+
+    await db.utangLedger.add({
+      id: 'ledger-initial',
+      tenantId: 'tenant-1',
+      customerId: 'cust-generic-labels',
+      type: 'Credit',
+      amount: 1000,
+      date: new Date().toISOString(),
+      notes: 'Unang tala ng utang'
+    });
+
+    await db.utangLedger.add({
+      id: 'ledger-additional',
+      tenantId: 'tenant-1',
+      customerId: 'cust-generic-labels',
+      type: 'Credit',
+      amount: 1234,
+      date: new Date().toISOString(),
+      notes: 'Dagdag na utang'
+    });
+
+    await db.utangLedger.add({
+      id: 'ledger-payment-legacy',
+      tenantId: 'tenant-1',
+      customerId: 'cust-generic-labels',
+      type: 'Payment',
+      amount: 500,
+      date: new Date().toISOString(),
+      notes: 'Bayad sa utang'
+    });
+
+    await db.utangLedger.add({
+      id: 'ledger-custom',
+      tenantId: 'tenant-1',
+      customerId: 'cust-generic-labels',
+      type: 'Credit',
+      amount: 50,
+      date: new Date().toISOString(),
+      notes: '2 itlog at mantika'
+    });
+
+    await db.utangLedger.add({
+      id: 'ledger-custom-word',
+      tenantId: 'tenant-1',
+      customerId: 'cust-generic-labels',
+      type: 'Credit',
+      amount: 25,
+      date: new Date().toISOString(),
+      notes: 'Utang'
+    });
+
+    renderUtang();
+
+    await waitFor(() => {
+      expect(screen.getByText('Maria Santos Demo')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Maria Santos Demo'));
+
+    await waitFor(() => {
+      expect(screen.getByText('+₱1,000.00')).toBeInTheDocument();
+      expect(screen.getByText('+₱1,234.00')).toBeInTheDocument();
+      expect(screen.getByText('-₱500.00')).toBeInTheDocument();
+      expect(screen.getByText('+₱50.00')).toBeInTheDocument();
+      expect(screen.getByText('2 itlog at mantika')).toBeInTheDocument();
+      expect(screen.getByText('Utang')).toBeInTheDocument();
+      expect(screen.queryByText('Unang tala ng utang')).not.toBeInTheDocument();
+      expect(screen.queryByText('Dagdag na utang')).not.toBeInTheDocument();
+      expect(screen.queryByText('Bayad sa utang')).not.toBeInTheDocument();
+    });
+  });
+
+  it('preserves stored customer debt balance and does not overwrite it with incomplete local UtangLedger', async () => {
+    // Simulate customer having an opening/restored totalUtangBalance in db.customers (e.g. 200)
+    // while UtangLedger currently only has a partial row of 100 (e.g. pending full sync or legacy opening debt).
+    await db.customers.add({
+      id: 'cust-mar100',
+      tenantId: 'tenant-1',
+      name: 'MAR100',
+      phone: '09876544534',
+      totalUtangBalance: 200,
+      updatedAt: new Date().toISOString()
+    });
+
+    await db.utangLedger.add({
+      id: 'ledger-mar100-1',
+      tenantId: 'tenant-1',
+      customerId: 'cust-mar100',
+      type: 'Credit',
+      amount: 100,
+      date: new Date().toISOString(),
+      notes: ''
+    });
+
+    renderUtang();
+
+    // The UI should display the stored balance ₱200.00, NOT drop debt to ₱100.00
+    await waitFor(() => {
+      expect(screen.getByText('MAR100')).toBeInTheDocument();
+      expect(screen.getAllByText('₱200.00').length).toBeGreaterThanOrEqual(1);
+    });
+
+    // Opening customer modal should also show ₱200.00 for the customer's current balance
+    fireEvent.click(screen.getByText('MAR100'));
+    await waitFor(() => {
+      expect(screen.getAllByText('₱200.00').length).toBeGreaterThanOrEqual(2);
+      // Timeline displays the recorded ledger entry
+      expect(screen.getByText('+₱100.00')).toBeInTheDocument();
+    });
+
+    // Verify Dexie db.customers was NOT overwritten to 100
+    const stored = await db.customers.get('cust-mar100');
+    expect(stored?.totalUtangBalance).toBe(200);
+  });
 });
+
+
+
+
+
+
+
+
+

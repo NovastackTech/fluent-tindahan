@@ -1,13 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   makeStyles,
   tokens,
   shorthands,
   Card,
   Text,
-  Input,
   Button,
-  Field,
   TabList,
   Tab,
   Badge,
@@ -17,11 +15,6 @@ import {
 } from '@fluentui/react-components';
 import {
   KeyRegular,
-  LockClosedRegular,
-  MailRegular,
-  EyeRegular,
-  EyeOffRegular,
-  BuildingShopRegular,
   ArrowRightRegular,
   SparkleRegular,
   ArrowLeftRegular,
@@ -30,14 +23,16 @@ import {
 import type { NavTab } from '../components/Navigation';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
-import { processSyncQueue } from '../sync/syncEngine';
+import { useStoreAuthFlow } from '../hooks/useStoreAuthFlow';
 import { ConfirmUnsyncedLoginDialog } from '../components/ConfirmUnsyncedLoginDialog';
 import { useTranslation } from '../state/languageStore';
 import { useAuthStore } from '../state/authStore';
-import { useSubscriptionStore } from '../state/subscriptionStore';
-import { useGCashFeeStore, DEFAULT_GCASH_FEE_TIERS } from '../state/gcashFeeStore';
-import { registerStore, loginStore, loginPin, type AuthResponseDto } from '../services/authService';
-import { createClientUuid, seedDexieDatabaseIfNeeded, DEFAULT_TENANT_ID } from '../db/seedData';
+import { seedDexieDatabaseIfNeeded, DEFAULT_TENANT_ID } from '../db/seedData';
+import { RegistrationFormFields } from '../components/RegistrationFormFields';
+import { LoginFormFields } from '../components/LoginFormFields';
+import { AuthErrorBanner } from '../components/AuthErrorBanner';
+import { validateRegistrationInput, validateLoginInput } from '../utils/registrationValidation';
+import { GoogleAuthButton } from '../components/GoogleAuthButton';
 
 export interface LoginPageProps {
   onNavigate: (tab: NavTab) => void;
@@ -114,16 +109,89 @@ const useStyles = makeStyles({
   }
 });
 
+
 export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   const styles = useStyles();
-  const { t } = useTranslation();
-  const { completeOnboarding, loginWithAuthPayload } = useAuthStore();
+  const { t, language } = useTranslation();
+  const { completeOnboarding } = useAuthStore();
 
-  const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
+  const {
+    isUnsyncedDialogOpen,
+    unsyncedLoginCount,
+    isSyncingFirst,
+    isSubmitting,
+    setIsSubmitting,
+    closeUnsyncedDialog,
+    handleConfirmWipeAndLogin,
+    handleSyncFirst,
+    handleStoreLogin,
+    handleStoreRegistration,
+    handleGoogleAuth
+  } = useStoreAuthFlow({
+    onSuccess: () => onNavigate('pos')
+  });
+
+  const getInitialTab = (): 'login' | 'register' => {
+    if (typeof window === 'undefined') return 'login';
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab')?.toLowerCase();
+    if (tab === 'signup' || tab === 'register' || tab === 'newstore' || tab === 'new-store') {
+      return 'register';
+    }
+    const path = window.location.pathname.replace(/^\//, '').toLowerCase();
+    if (path === 'signup' || path === 'register') {
+      return 'register';
+    }
+    return 'login';
+  };
+
+  const [activeTab, setActiveTab] = useState<'login' | 'register'>(getInitialTab);
   const [loginMode, setLoginMode] = useState<'password' | 'pin'>('password');
   const [showPassword, setShowPassword] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [authError, setAuthError] = useState<string>('');
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [authErrors, setAuthErrors] = useState<string[]>([]);
+  const [regFieldErrors, setRegFieldErrors] = useState<{
+    storeName?: boolean;
+    email?: boolean;
+    password?: boolean;
+    confirmPassword?: boolean;
+    pin?: boolean;
+  }>({});
+  const [loginFieldErrors, setLoginFieldErrors] = useState<{
+    email?: boolean;
+    password?: boolean;
+    pin?: boolean;
+  }>({});
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setActiveTab(getInitialTab());
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const handleTabSelect = (nextTab: 'login' | 'register') => {
+    setActiveTab(nextTab);
+    setAuthErrors([]);
+    setRegFieldErrors({});
+    setLoginFieldErrors({});
+    if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', nextTab === 'register' ? 'signup' : 'login');
+      window.history.replaceState(null, '', url.pathname + url.search);
+    }
+  };
+
+  const setAuthError = (err: string | string[]) => {
+    if (!err || (Array.isArray(err) && err.length === 0)) {
+      setAuthErrors([]);
+    } else if (Array.isArray(err)) {
+      setAuthErrors(err);
+    } else {
+      setAuthErrors([err]);
+    }
+  };
 
   // Login inputs
   const initialEmail = typeof window !== 'undefined'
@@ -137,213 +205,77 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   const [regStoreName, setRegStoreName] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
+  const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [regPin, setRegPin] = useState('');
   const [regOfferGcash, setRegOfferGcash] = useState(true);
+  const [regIncludeStarterProducts, setRegIncludeStarterProducts] = useState(true);
 
-  // Unsynced queue protection
-  const [isUnsyncedDialogOpen, setIsUnsyncedDialogOpen] = useState(false);
-  const [unsyncedLoginCount, setUnsyncedLoginCount] = useState(0);
-  const [pendingAuthPayload, setPendingAuthPayload] = useState<{
-    payload: AuthResponseDto;
-    localPin?: string;
-  } | null>(null);
-  const [isSyncingFirst, setIsSyncingFirst] = useState(false);
   const pendingSyncCount = useLiveQuery(() => db.syncQueue.count(), []) || 0;
-
-  const handleConfirmWipeAndLogin = async () => {
-    if (!pendingAuthPayload) return;
-    setIsUnsyncedDialogOpen(false);
-    setIsSubmitting(true);
-    try {
-      await loginWithAuthPayload(
-        pendingAuthPayload.payload,
-        pendingAuthPayload.localPin,
-        true
-      );
-      void useSubscriptionStore.getState().refreshSubscription();
-      onNavigate('pos');
-    } finally {
-      setIsSubmitting(false);
-      setPendingAuthPayload(null);
-    }
-  };
-
-  const handleSyncFirst = async () => {
-    setIsSyncingFirst(true);
-    try {
-      await processSyncQueue();
-      const remaining = await db.syncQueue.count();
-      setUnsyncedLoginCount(remaining);
-      if (remaining === 0 && pendingAuthPayload) {
-        setIsUnsyncedDialogOpen(false);
-        await loginWithAuthPayload(
-          pendingAuthPayload.payload,
-          pendingAuthPayload.localPin,
-          false
-        );
-        void useSubscriptionStore.getState().refreshSubscription();
-        onNavigate('pos');
-      }
-    } catch (e) {
-      console.warn('Sync attempt failed:', e);
-    } finally {
-      setIsSyncingFirst(false);
-    }
-  };
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
-    setAuthError('');
+    setAuthErrors([]);
+    setLoginFieldErrors({});
 
-    const trimmedEmail = loginEmailVal.trim().toLowerCase();
-    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      setAuthError(t.onboarding.emailInvalid);
+    const validation = validateLoginInput(loginEmailVal, loginMode, loginPasswordVal, loginPinVal, t);
+    if (!validation.isValid) {
+      setAuthErrors(validation.errors);
+      setLoginFieldErrors(validation.fieldErrors);
       return;
     }
 
-    setIsSubmitting(true);
-    try {
-      let authResult;
-      if (loginMode === 'password') {
-        if (!loginPasswordVal) {
-          setAuthError(t.onboarding.passwordRequired);
-          setIsSubmitting(false);
-          return;
+    await handleStoreLogin({
+      email: validation.trimmedEmail,
+      loginMode,
+      password: loginPasswordVal,
+      pin: loginPinVal,
+      onError: (msg) => {
+        setAuthErrors([msg]);
+        if (loginMode === 'password') {
+          setLoginFieldErrors({ email: true, password: true });
+        } else {
+          setLoginFieldErrors({ email: true, pin: true });
         }
-        authResult = await loginStore({
-          email: trimmedEmail,
-          password: loginPasswordVal
-        });
-      } else {
-        if (!loginPinVal.trim() || !/^\d{4,6}$/.test(loginPinVal.trim())) {
-          setAuthError(t.onboarding.pinInvalid);
-          setIsSubmitting(false);
-          return;
-        }
-        authResult = await loginPin({
-          email: trimmedEmail,
-          pin: loginPinVal.trim()
-        });
       }
-
-      const loginRes = await loginWithAuthPayload(
-        authResult,
-        loginMode === 'pin' ? loginPinVal.trim() : undefined,
-        false
-      );
-
-      if (!loginRes.success) {
-        setPendingAuthPayload({
-          payload: authResult,
-          localPin: loginMode === 'pin' ? loginPinVal.trim() : undefined
-        });
-        setUnsyncedLoginCount(loginRes.unsyncedCount);
-        setIsUnsyncedDialogOpen(true);
-        setIsSubmitting(false);
-        return;
-      }
-
-      void useSubscriptionStore.getState().refreshSubscription();
-      onNavigate('pos');
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || t.onboarding.loginFailed;
-      setAuthError(msg);
-    } finally {
-      setIsSubmitting(false);
-    }
+    });
   };
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
-    setAuthError('');
+    setAuthErrors([]);
+    setRegFieldErrors({});
 
-    const trimmedStore = regStoreName.trim();
-    const trimmedEmail = regEmail.trim().toLowerCase();
+    const validation = validateRegistrationInput(
+      regStoreName,
+      regEmail,
+      regPassword,
+      regConfirmPassword,
+      regPin,
+      t
+    );
 
-    if (!trimmedStore || trimmedStore.length < 2) {
-      setAuthError(t.onboarding.storeNameRequired);
-      return;
-    }
-    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      setAuthError(t.onboarding.emailInvalid);
-      return;
-    }
-    if (!regPassword || regPassword.length < 6) {
-      setAuthError(t.onboarding.passwordMinLength);
-      return;
-    }
-    if (regPin.trim() && !/^\d{4,6}$/.test(regPin.trim())) {
-      setAuthError(t.onboarding.pinInvalid);
+    if (!validation.isValid) {
+      setAuthErrors(validation.errors);
+      setRegFieldErrors(validation.fieldErrors);
       return;
     }
 
-    setIsSubmitting(true);
-    try {
-      const newTenantId = createClientUuid();
-      const newUserId = createClientUuid();
+    const { trimmedStore, trimmedEmail } = validation;
 
-      // 1. Seed local Dexie (Zero Network Block Guarantee)
-      await seedDexieDatabaseIfNeeded(false, newTenantId, false, trimmedStore);
-
-      // 2. Set GCash fees
-      try {
-        const fees = regOfferGcash ? DEFAULT_GCASH_FEE_TIERS : DEFAULT_GCASH_FEE_TIERS.map(() => 0);
-        fees.forEach((fee, idx) => {
-          useGCashFeeStore.getState().setFeeForTenant(newTenantId, idx, fee);
-        });
-      } catch (fErr) {
-        console.warn('Could not set GCash fees:', fErr);
+    await handleStoreRegistration({
+      businessName: trimmedStore,
+      email: trimmedEmail,
+      password: regPassword,
+      pin: regPin,
+      offerGcash: regOfferGcash,
+      includeStarterProducts: regIncludeStarterProducts,
+      onError: (msg) => {
+        setAuthErrors([msg]);
+        setRegFieldErrors({ email: true });
       }
-
-      let serverToken: string | undefined;
-      let registeredHasPin = Boolean(regPin.trim());
-
-      try {
-        const authResult = await registerStore({
-          tenantId: newTenantId,
-          userId: newUserId,
-          email: trimmedEmail,
-          password: regPassword,
-          pin: regPin.trim() || undefined,
-          businessName: trimmedStore
-        });
-        serverToken = authResult.token;
-        registeredHasPin = authResult.hasPin;
-      } catch (apiErr: any) {
-        if (apiErr?.response?.status === 409) {
-          setAuthError(t.onboarding.emailAlreadyExists);
-          setIsSubmitting(false);
-          return;
-        }
-        console.warn('Backend registration offline, proceeding locally:', apiErr);
-      }
-
-      completeOnboarding({
-        businessName: trimmedStore,
-        userEmail: trimmedEmail,
-        tenantId: newTenantId,
-        userId: newUserId,
-        hasPin: registeredHasPin,
-        localPin: regPin.trim() || undefined,
-        token: serverToken
-      });
-
-      useSubscriptionStore.setState({
-        tier: 'Libre',
-        subscriptionEndDate: null,
-        isActive: false,
-        daysRemaining: null
-      });
-
-      void useSubscriptionStore.getState().refreshSubscription();
-      onNavigate('pos');
-    } catch (err: any) {
-      setAuthError(err?.message || t.onboarding.submitError);
-    } finally {
-      setIsSubmitting(false);
-    }
+    });
   };
 
   const handleExploreDemo = async () => {
@@ -367,6 +299,24 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
     }
   };
 
+  const handleGoogleSuccess = async (tokenResponse: { access_token: string }) => {
+    setAuthErrors([]);
+    await handleGoogleAuth({
+      accessToken: tokenResponse.access_token,
+      businessName: activeTab === 'register' ? regStoreName.trim() || undefined : undefined,
+      pin: activeTab === 'register' ? regPin.trim() || undefined : undefined,
+      offerGcash: activeTab === 'register' ? regOfferGcash : true,
+      includeStarterProducts: activeTab === 'register' ? regIncludeStarterProducts : true,
+      onError: (msg) => setAuthErrors([msg]),
+      defaultErrorMessage: t.login.googleAuthFailed
+    });
+  };
+
+  const handleGoogleError = (err: unknown) => {
+    console.warn('[LoginPage] Google sign-in cancelled or failed:', err);
+    setAuthErrors([t.login.googleAuthFailed]);
+  };
+
   return (
     <div className={styles.pageRoot} id="login-page-root">
       <Card className={styles.card}>
@@ -380,18 +330,17 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
             </Badge>
           </div>
           <Text as="h1" size={500} weight="bold" style={{ display: 'block', marginBottom: '4px' }}>
-            {t.login.pageTitle}
+            {activeTab === 'register' ? t.login.signUpPageTitle : t.login.pageTitle}
           </Text>
           <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-            {t.login.pageSubtitle}
+            {activeTab === 'register' ? t.login.signUpPageSubtitle : t.login.pageSubtitle}
           </Text>
         </div>
 
         <TabList
           selectedValue={activeTab}
           onTabSelect={(_, data) => {
-            setActiveTab(data.value as 'login' | 'register');
-            setAuthError('');
+            handleTabSelect(data.value as 'login' | 'register');
           }}
           style={{ marginBottom: tokens.spacingVerticalM }}
         >
@@ -403,11 +352,19 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
           </Tab>
         </TabList>
 
-        {authError && (
-          <div className={styles.errorBanner} role="alert" data-testid="login-error-banner">
-            <Text weight="semibold">{authError}</Text>
-          </div>
-        )}
+        <AuthErrorBanner
+          authErrors={authErrors}
+          language={language}
+          containerClassName={styles.errorBanner}
+          testId="login-error-banner"
+          showSwitchToPassword={activeTab === 'login' && loginMode === 'pin'}
+          onSwitchToPassword={() => {
+            setLoginMode('password');
+            setAuthErrors([]);
+            setLoginFieldErrors({});
+          }}
+          switchToPasswordTestId="login-switch-to-password-btn"
+        />
 
         {pendingSyncCount > 0 && (
           <div
@@ -433,79 +390,25 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
 
         {activeTab === 'login' ? (
           <form onSubmit={handleLoginSubmit} noValidate>
-            <Field label={t.landing.emailLabel} required style={{ marginBottom: tokens.spacingVerticalM }}>
-              <Input
-                type="email"
-                id="login-email"
-                name="email"
-                autoComplete="username"
-                enterKeyHint="next"
-                value={loginEmailVal}
-                onChange={(_, d) => setLoginEmailVal(d.value)}
-                placeholder={t.landing.emailPlaceholder}
-                contentBefore={<MailRegular />}
-                required
-              />
-            </Field>
-
-            {loginMode === 'password' ? (
-              <Field label={t.landing.passwordLabel} required style={{ marginBottom: tokens.spacingVerticalS }}>
-                <Input
-                  type={showPassword ? 'text' : 'password'}
-                  id="login-password"
-                  name="password"
-                  autoComplete="current-password"
-                  enterKeyHint="done"
-                  value={loginPasswordVal}
-                  onChange={(_, d) => setLoginPasswordVal(d.value)}
-                  placeholder={t.landing.passwordPlaceholder}
-                  contentBefore={<LockClosedRegular />}
-                  contentAfter={
-                    <Button
-                      appearance="subtle"
-                      size="small"
-                      icon={showPassword ? <EyeOffRegular /> : <EyeRegular />}
-                      onClick={() => setShowPassword(!showPassword)}
-                      type="button"
-                      aria-label="Toggle password visibility"
-                    />
-                  }
-                  required
-                />
-              </Field>
-            ) : (
-              <Field label={t.landing.pinLabel} hint="4–6 numeric digits" required style={{ marginBottom: tokens.spacingVerticalS }}>
-                <Input
-                  type="password"
-                  id="login-pin"
-                  name="pin"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  maxLength={6}
-                  enterKeyHint="done"
-                  value={loginPinVal}
-                  onChange={(_, d) => setLoginPinVal(d.value.replace(/\D/g, '').slice(0, 6))}
-                  placeholder={t.landing.pinPlaceholder}
-                  contentBefore={<KeyRegular />}
-                  required
-                />
-              </Field>
-            )}
-
-            <div className={styles.modeToggleRow}>
-              <Button
-                appearance="transparent"
-                size="small"
-                type="button"
-                onClick={() => {
-                  setLoginMode(loginMode === 'password' ? 'pin' : 'password');
-                  setAuthError('');
-                }}
-                data-testid="login-toggle-mode-btn"
-              >
-                {loginMode === 'password' ? t.landing.usePinToggle : t.landing.usePasswordToggle}
-              </Button>
-            </div>
+            <LoginFormFields
+              idPrefix="login"
+              loginEmailVal={loginEmailVal}
+              setLoginEmailVal={setLoginEmailVal}
+              loginPasswordVal={loginPasswordVal}
+              setLoginPasswordVal={setLoginPasswordVal}
+              loginPinVal={loginPinVal}
+              setLoginPinVal={setLoginPinVal}
+              loginMode={loginMode}
+              setLoginMode={setLoginMode}
+              showPassword={showPassword}
+              setShowPassword={setShowPassword}
+              loginFieldErrors={loginFieldErrors}
+              setLoginFieldErrors={setLoginFieldErrors}
+              setAuthErrors={setAuthErrors}
+              t={t}
+              toggleTestId="login-toggle-mode-btn"
+              toggleClassName={styles.modeToggleRow}
+            />
 
             <Button
               appearance="primary"
@@ -518,78 +421,64 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
             >
               {t.landing.loginSubmitBtn}
             </Button>
+
+            <Divider style={{ margin: `${tokens.spacingVerticalM} 0` }}>
+              {t.login.orDivider}
+            </Divider>
+
+            <GoogleAuthButton
+              mode="login"
+              disabled={isSubmitting}
+              onSuccess={handleGoogleSuccess}
+              onError={handleGoogleError}
+              dataTestId="login-google-btn"
+            />
           </form>
         ) : (
           <form onSubmit={handleRegisterSubmit} noValidate>
-            <Field label={t.landing.storeNameLabel} required style={{ marginBottom: tokens.spacingVerticalS }}>
-              <Input
-                id="login-reg-store"
-                name="businessName"
-                value={regStoreName}
-                onChange={(_, d) => setRegStoreName(d.value)}
-                placeholder={t.landing.storeNamePlaceholder}
-                contentBefore={<BuildingShopRegular />}
-                required
-              />
-            </Field>
-
-            <Field label={t.landing.emailLabel} required style={{ marginBottom: tokens.spacingVerticalS }}>
-              <Input
-                type="email"
-                id="login-reg-email"
-                name="email"
-                autoComplete="username"
-                value={regEmail}
-                onChange={(_, d) => setRegEmail(d.value)}
-                placeholder={t.landing.emailPlaceholder}
-                contentBefore={<MailRegular />}
-                required
-              />
-            </Field>
-
-            <Field label={t.landing.passwordLabel} required style={{ marginBottom: tokens.spacingVerticalS }}>
-              <Input
-                type={showPassword ? 'text' : 'password'}
-                id="login-reg-password"
-                name="new-password"
-                autoComplete="new-password"
-                value={regPassword}
-                onChange={(_, d) => setRegPassword(d.value)}
-                placeholder={t.landing.passwordPlaceholder}
-                contentBefore={<LockClosedRegular />}
-                contentAfter={
-                  <Button
-                    appearance="subtle"
-                    size="small"
-                    icon={showPassword ? <EyeOffRegular /> : <EyeRegular />}
-                    onClick={() => setShowPassword(!showPassword)}
-                    type="button"
-                    aria-label="Toggle password visibility"
-                  />
-                }
-                required
-              />
-            </Field>
-
-            <Field label={t.landing.pinLabel} style={{ marginBottom: tokens.spacingVerticalS }}>
-              <Input
-                type="password"
-                id="login-reg-pin"
-                name="pin"
-                inputMode="numeric"
-                maxLength={6}
-                value={regPin}
-                onChange={(_, d) => setRegPin(d.value.replace(/\D/g, '').slice(0, 6))}
-                placeholder={t.landing.pinPlaceholder}
-                contentBefore={<KeyRegular />}
-              />
-            </Field>
+            <RegistrationFormFields
+              idPrefix="login"
+              regStoreName={regStoreName}
+              setRegStoreName={setRegStoreName}
+              regEmail={regEmail}
+              setRegEmail={setRegEmail}
+              regPassword={regPassword}
+              setRegPassword={setRegPassword}
+              regConfirmPassword={regConfirmPassword}
+              setRegConfirmPassword={setRegConfirmPassword}
+              regPin={regPin}
+              setRegPin={setRegPin}
+              showPassword={showPassword}
+              setShowPassword={setShowPassword}
+              showConfirmPassword={showConfirmPassword}
+              setShowConfirmPassword={setShowConfirmPassword}
+              regFieldErrors={regFieldErrors}
+              setRegFieldErrors={setRegFieldErrors}
+              t={t}
+            />
 
             <Checkbox
               checked={regOfferGcash}
               onChange={(_, d) => setRegOfferGcash(Boolean(d.checked))}
               label={t.landing.offerGcashLabel}
+              style={{ marginBottom: tokens.spacingVerticalS }}
+            />
+
+            <Checkbox
+              checked={regIncludeStarterProducts}
+              onChange={(_, d) => setRegIncludeStarterProducts(Boolean(d.checked))}
+              label={
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <Text weight="semibold" size={200}>
+                    {t.landing.starterProductsLabel}
+                  </Text>
+                  <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>
+                    {t.landing.starterProductsDesc}
+                  </Text>
+                </div>
+              }
               style={{ marginBottom: tokens.spacingVerticalM }}
+              data-testid="login-reg-starter-products"
             />
 
             <Button
@@ -603,6 +492,18 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
             >
               {t.landing.registerSubmitBtn}
             </Button>
+
+            <Divider style={{ margin: `${tokens.spacingVerticalM} 0` }}>
+              {t.login.orDivider}
+            </Divider>
+
+            <GoogleAuthButton
+              mode="register"
+              disabled={isSubmitting}
+              onSuccess={handleGoogleSuccess}
+              onError={handleGoogleError}
+              dataTestId="register-google-btn"
+            />
           </form>
         )}
 
@@ -643,10 +544,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
       <ConfirmUnsyncedLoginDialog
         isOpen={isUnsyncedDialogOpen}
         unsyncedCount={unsyncedLoginCount}
-        onClose={() => {
-          setIsUnsyncedDialogOpen(false);
-          setPendingAuthPayload(null);
-        }}
+        onClose={closeUnsyncedDialog}
         onConfirmWipeAndLogin={handleConfirmWipeAndLogin}
         onSyncFirst={handleSyncFirst}
         isSyncing={isSyncingFirst}

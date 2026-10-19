@@ -89,6 +89,24 @@ describe('POSPage', () => {
     expect(useCartStore.getState().getTotalAmount()).toBe(16);
   });
 
+  it('has accessible action name on the product card add button describing action rather than past tense', async () => {
+    const { unmount } = renderPOS();
+    await waitFor(() => {
+      expect(screen.getByText('Lucky Me Pancit Canton Kalamansi')).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole('button', { name: 'Idagdag sa basket: Lucky Me Pancit Canton Kalamansi' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Naidagdag sa basket: Lucky Me Pancit Canton Kalamansi' })).not.toBeInTheDocument();
+
+    unmount();
+    useLanguageStore.setState({ language: 'en' });
+    renderPOS();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Add to cart: Lucky Me Pancit Canton Kalamansi' })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('button', { name: 'Added to cart: Lucky Me Pancit Canton Kalamansi' })).not.toBeInTheDocument();
+  });
+
   it('filters products when searching by name', async () => {
     await db.products.add({
       id: 'p-2',
@@ -111,6 +129,217 @@ describe('POSPage', () => {
       expect(screen.getByText('Coca Cola 1.5L')).toBeInTheDocument();
       expect(screen.queryByText('Lucky Me Pancit Canton Kalamansi')).not.toBeInTheDocument();
     });
+  });
+
+  it('filters products by any selected category and combines that with search', async () => {
+    await db.products.bulkAdd([
+      {
+        id: 'p-coffee',
+        tenantId: 't-1',
+        name: 'Nescafe 3-in-1',
+        price: 8,
+        cost: 6,
+        barcode: '4800011111111',
+        category: 'Coffee & Beverages',
+        stockQty: 12,
+        updatedAt: new Date().toISOString()
+      },
+      {
+        id: 'p-cola',
+        tenantId: 't-1',
+        name: 'Coca Cola 1.5L',
+        price: 75,
+        cost: 65,
+        barcode: '4800011122334',
+        category: 'Coffee & Beverages',
+        stockQty: 10,
+        updatedAt: new Date().toISOString()
+      },
+      {
+        id: 'p-snack',
+        tenantId: 't-1',
+        name: 'Chippy Barbecue',
+        price: 12,
+        cost: 9,
+        barcode: '4800022233344',
+        category: 'Snacks & Chips',
+        stockQty: 15,
+        updatedAt: new Date().toISOString()
+      }
+    ]);
+
+    renderPOS();
+
+    await waitFor(() => {
+      expect(screen.getByText('Lucky Me Pancit Canton Kalamansi')).toBeInTheDocument();
+      expect(screen.getByText('Nescafe 3-in-1')).toBeInTheDocument();
+      expect(screen.getByText('Coca Cola 1.5L')).toBeInTheDocument();
+      expect(screen.getByText('Chippy Barbecue')).toBeInTheDocument();
+    });
+
+    const allChip = screen.getByRole('button', { name: /^Lahat$/ });
+    const noodlesChip = screen.getByRole('button', { name: /^Instant Noodles$/ });
+    const coffeeChip = screen.getByRole('button', { name: /^Coffee & Beverages$/ });
+    const snacksChip = screen.getByRole('button', { name: /^Snacks & Chips$/ });
+
+    expect(allChip).toHaveAttribute('aria-pressed', 'true');
+    expect(noodlesChip).toHaveAttribute('aria-pressed', 'false');
+    expect(coffeeChip).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(noodlesChip);
+
+    await waitFor(() => {
+      expect(screen.getByText('Lucky Me Pancit Canton Kalamansi')).toBeInTheDocument();
+      expect(screen.queryByText('Nescafe 3-in-1')).not.toBeInTheDocument();
+      expect(screen.queryByText('Coca Cola 1.5L')).not.toBeInTheDocument();
+      expect(screen.queryByText('Chippy Barbecue')).not.toBeInTheDocument();
+    });
+    expect(allChip).toHaveAttribute('aria-pressed', 'false');
+    expect(noodlesChip).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.click(coffeeChip);
+
+    await waitFor(() => {
+      expect(screen.getByText('Lucky Me Pancit Canton Kalamansi')).toBeInTheDocument();
+      expect(screen.getByText('Nescafe 3-in-1')).toBeInTheDocument();
+      expect(screen.getByText('Coca Cola 1.5L')).toBeInTheDocument();
+      expect(screen.queryByText('Chippy Barbecue')).not.toBeInTheDocument();
+    });
+    expect(coffeeChip).toHaveAttribute('aria-pressed', 'true');
+    expect(snacksChip).toHaveAttribute('aria-pressed', 'false');
+    expect(allChip).toHaveAttribute('aria-pressed', 'false');
+
+    const searchInput = screen.getByPlaceholderText(/barcode|produkto|product/i);
+    fireEvent.change(searchInput, { target: { value: 'Coca' } });
+
+    await waitFor(() => {
+      expect(screen.getByText('Coca Cola 1.5L')).toBeInTheDocument();
+      expect(screen.queryByText('Lucky Me Pancit Canton Kalamansi')).not.toBeInTheDocument();
+      expect(screen.queryByText('Nescafe 3-in-1')).not.toBeInTheDocument();
+      expect(screen.queryByText('Chippy Barbecue')).not.toBeInTheDocument();
+    });
+
+    // A barcode outside the selected categories stays hidden.
+    fireEvent.change(searchInput, { target: { value: '4800022233344' } });
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Walang nahanap na paninda. Subukan ang ibang paghahanap o kategorya.'
+    );
+
+    // A barcode inside the selected categories still matches.
+    fireEvent.change(searchInput, { target: { value: '4800016644026' } });
+    await waitFor(() => {
+      expect(screen.getByText('Lucky Me Pancit Canton Kalamansi')).toBeInTheDocument();
+      expect(screen.queryByText('Coca Cola 1.5L')).not.toBeInTheDocument();
+      expect(screen.queryByText('Chippy Barbecue')).not.toBeInTheDocument();
+    });
+
+    fireEvent.change(searchInput, { target: { value: '' } });
+
+    await waitFor(() => {
+      expect(screen.getByText('Lucky Me Pancit Canton Kalamansi')).toBeInTheDocument();
+      expect(screen.getByText('Nescafe 3-in-1')).toBeInTheDocument();
+      expect(screen.getByText('Coca Cola 1.5L')).toBeInTheDocument();
+      expect(screen.queryByText('Chippy Barbecue')).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(noodlesChip);
+    await waitFor(() => {
+      expect(screen.queryByText('Lucky Me Pancit Canton Kalamansi')).not.toBeInTheDocument();
+      expect(screen.getByText('Nescafe 3-in-1')).toBeInTheDocument();
+      expect(screen.getByText('Coca Cola 1.5L')).toBeInTheDocument();
+    });
+    expect(noodlesChip).toHaveAttribute('aria-pressed', 'false');
+    expect(coffeeChip).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.click(allChip);
+    await waitFor(() => {
+      expect(screen.getByText('Lucky Me Pancit Canton Kalamansi')).toBeInTheDocument();
+      expect(screen.getByText('Nescafe 3-in-1')).toBeInTheDocument();
+      expect(screen.getByText('Coca Cola 1.5L')).toBeInTheDocument();
+      expect(screen.getByText('Chippy Barbecue')).toBeInTheDocument();
+    });
+    expect(allChip).toHaveAttribute('aria-pressed', 'true');
+    expect(coffeeChip).toHaveAttribute('aria-pressed', 'false');
+    expect(noodlesChip).toHaveAttribute('aria-pressed', 'false');
+    expect(snacksChip).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('reactivates Lahat when the last selected category chip is toggled off', async () => {
+    await db.products.add({
+      id: 'p-snack',
+      tenantId: 't-1',
+      name: 'Chippy Barbecue',
+      price: 12,
+      cost: 9,
+      barcode: '4800022233344',
+      category: 'Snacks & Chips',
+      stockQty: 15,
+      updatedAt: new Date().toISOString()
+    });
+
+    renderPOS();
+
+    await waitFor(() => {
+      expect(screen.getByText('Chippy Barbecue')).toBeInTheDocument();
+    });
+
+    const allChip = screen.getByRole('button', { name: /^Lahat$/ });
+    const snacksChip = screen.getByRole('button', { name: /^Snacks & Chips$/ });
+
+    fireEvent.click(snacksChip);
+    await waitFor(() => {
+      expect(screen.getByText('Chippy Barbecue')).toBeInTheDocument();
+      expect(screen.queryByText('Lucky Me Pancit Canton Kalamansi')).not.toBeInTheDocument();
+    });
+    expect(allChip).toHaveAttribute('aria-pressed', 'false');
+    expect(snacksChip).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.click(snacksChip);
+    await waitFor(() => {
+      expect(screen.getByText('Chippy Barbecue')).toBeInTheDocument();
+      expect(screen.getByText('Lucky Me Pancit Canton Kalamansi')).toBeInTheDocument();
+    });
+    expect(allChip).toHaveAttribute('aria-pressed', 'true');
+    expect(snacksChip).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('clears category selection from the English All chip', async () => {
+    useLanguageStore.setState({ language: 'en' });
+    await db.products.add({
+      id: 'p-snack',
+      tenantId: 't-1',
+      name: 'Chippy Barbecue',
+      price: 12,
+      cost: 9,
+      barcode: '4800022233344',
+      category: 'Snacks & Chips',
+      stockQty: 15,
+      updatedAt: new Date().toISOString()
+    });
+
+    renderPOS();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^All$/, pressed: true })).toBeInTheDocument();
+      expect(screen.getByText('Chippy Barbecue')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /^Snacks & Chips$/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Instant Noodles$/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Chippy Barbecue')).toBeInTheDocument();
+      expect(screen.getByText('Lucky Me Pancit Canton Kalamansi')).toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: /^All$/ })).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(screen.getByRole('button', { name: /^All$/ }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^All$/, pressed: true })).toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: /^Snacks & Chips$/ })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: /^Instant Noodles$/ })).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('shows a localized empty state when product search has no matches', async () => {
@@ -242,6 +471,9 @@ describe('POSPage', () => {
       const ledger = await db.utangLedger.toArray();
       expect(ledger).toHaveLength(1);
       expect(ledger[0].amount).toBe(16);
+
+      const queue = await db.syncQueue.toArray();
+      expect(queue.some((q) => q.entity === 'Product' && q.action === 'Update')).toBe(true);
     });
   });
 
@@ -835,7 +1067,196 @@ describe('POSPage', () => {
       expect(prod?.stockQty).toBe(0); // clamped cleanly to 0
     });
   });
+
+  const exactAmountButton = () => screen.getByRole('button', { name: /Eksaktong Halaga|Exact Amount/i });
+  const cashTenderInput = () => screen.getByRole('spinbutton', { name: /Tinanggap na pera|Cash received/i });
+
+  it('preselects exact cash when checkout opens and completes the sale without re-entering the amount', async () => {
+    useCartStore.setState({ cashReceived: 500, paymentMethod: 'GCash' });
+    renderPOS();
+
+    await waitFor(() => {
+      expect(screen.getByText('Lucky Me Pancit Canton Kalamansi')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText('Lucky Me Pancit Canton Kalamansi'));
+    fireEvent.click(screen.getByRole('button', { name: /Bayad|Pay/i }));
+
+    const dialog = screen.getByRole('dialog');
+    expect(screen.getByRole('tab', { name: 'GCash' })).toHaveAttribute('aria-selected', 'true');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Cash' }));
+
+    expect(exactAmountButton()).toHaveAttribute('aria-pressed', 'true');
+    expect(cashTenderInput()).toHaveValue(16);
+    expect(within(dialog).getByText('₱0.00')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Kumpletuhin ang Benta|Complete Sale/i })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole('button', { name: /Kumpletuhin ang Benta|Complete Sale/i }));
+
+    await waitFor(async () => {
+      const sales = await db.sales.toArray();
+      expect(sales).toHaveLength(1);
+      expect(sales[0].paymentMethod).toBe('Cash');
+      expect(sales[0].totalAmount).toBe(16);
+      expect(sales[0].cashReceived).toBe(16);
+      expect(sales[0].changeGiven).toBe(0);
+    });
+  });
+
+  it('drops exact-amount selection for a typed or quick tender, keeps it across payment tabs, and applies the new total on reopen', async () => {
+    await db.products.add({
+      id: 'p-soap',
+      tenantId: 't-1',
+      name: 'Safeguard Soap',
+      price: 12.5,
+      cost: 9,
+      barcode: '4800011122001',
+      category: 'Personal Care',
+      stockQty: 10,
+      updatedAt: new Date().toISOString()
+    });
+
+    renderPOS();
+
+    await waitFor(() => {
+      expect(screen.getByText('Lucky Me Pancit Canton Kalamansi')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText('Lucky Me Pancit Canton Kalamansi'));
+    fireEvent.click(screen.getByRole('button', { name: /Bayad|Pay/i }));
+
+    const dialog = screen.getByRole('dialog');
+    expect(exactAmountButton()).toHaveAttribute('aria-pressed', 'true');
+    expect(cashTenderInput()).toHaveValue(16);
+
+    fireEvent.change(cashTenderInput(), { target: { value: '50' } });
+    expect(exactAmountButton()).toHaveAttribute('aria-pressed', 'false');
+    expect(cashTenderInput()).toHaveValue(50);
+    expect(within(dialog).getByText('₱34.00')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'GCash' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Utang' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Split' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Cash' }));
+
+    expect(exactAmountButton()).toHaveAttribute('aria-pressed', 'false');
+    expect(cashTenderInput()).toHaveValue(50);
+    expect(within(dialog).getByText('₱34.00')).toBeInTheDocument();
+
+    fireEvent.change(cashTenderInput(), { target: { value: '16' } });
+    expect(exactAmountButton()).toHaveAttribute('aria-pressed', 'true');
+    expect(within(dialog).getByText('₱0.00')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '₱100.00' }));
+    expect(exactAmountButton()).toHaveAttribute('aria-pressed', 'false');
+    expect(cashTenderInput()).toHaveValue(100);
+    expect(within(dialog).getByText('₱84.00')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /^Kanselahin$|^Cancel$/i }));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Safeguard Soap'));
+    fireEvent.click(screen.getByRole('button', { name: /Bayad|Pay/i }));
+
+    expect(exactAmountButton()).toHaveAttribute('aria-pressed', 'true');
+    expect(cashTenderInput()).toHaveValue(28.5);
+    expect(within(screen.getByRole('dialog')).getByText('₱0.00')).toBeInTheDocument();
+    expect(exactAmountButton()).toHaveTextContent('₱28.50');
+  });
+
+  it('deselects exact amount when a quick bill equals the total and still shows zero change', async () => {
+    await db.products.add({
+      id: 'p-bill',
+      tenantId: 't-1',
+      name: 'Load 20',
+      price: 20,
+      cost: 19,
+      barcode: '4800011122002',
+      category: 'Load',
+      stockQty: 10,
+      updatedAt: new Date().toISOString()
+    });
+
+    renderPOS();
+
+    await waitFor(() => {
+      expect(screen.getByText('Load 20')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText('Load 20'));
+    fireEvent.click(screen.getByRole('button', { name: /Bayad|Pay/i }));
+
+    const dialog = screen.getByRole('dialog');
+    expect(exactAmountButton()).toHaveAttribute('aria-pressed', 'true');
+    expect(cashTenderInput()).toHaveValue(20);
+
+    fireEvent.click(screen.getByRole('button', { name: '₱20.00' }));
+
+    expect(exactAmountButton()).toHaveAttribute('aria-pressed', 'false');
+    expect(cashTenderInput()).toHaveValue(20);
+    expect(within(dialog).getByText('₱0.00')).toBeInTheDocument();
+  });
+
+  it('renders low stock badge alongside stock count when product stock is 5 or below', async () => {
+    await db.products.add({
+      id: 'chippy-barbecue',
+      tenantId: 't-1',
+      name: 'Chippy Barbecue Corn Chips 110g',
+      price: 25,
+      cost: 20,
+      stockQty: 3,
+      category: 'Snacks',
+      updatedAt: new Date().toISOString()
+    });
+
+    renderPOS();
+
+    await waitFor(() => {
+      expect(screen.getByText('Chippy Barbecue Corn Chips 110g')).toBeInTheDocument();
+      expect(screen.getByText('Stock: 3')).toBeInTheDocument();
+      expect(screen.getByText('Mababa')).toBeInTheDocument();
+    });
+  });
+
+  it('exposes accessible names on search barcode scanner and disabled Complete Sale button', async () => {
+    await db.products.add({
+      id: 'prod-accessible-test',
+      tenantId: 't-1',
+      name: 'Accessible Test Item',
+      price: 50,
+      cost: 40,
+      stockQty: 10,
+      category: 'General',
+      updatedAt: new Date().toISOString()
+    });
+
+    renderPOS();
+
+    // 1. Search barcode scanner button has non-empty accessible name
+    const scannerBtn = screen.getByRole('button', { name: /Buksan ang Scanner|Scan Barcode|Open Camera/i });
+    expect(scannerBtn).toBeInTheDocument();
+
+    // Add item to cart
+    fireEvent.click(await screen.findByText('Accessible Test Item'));
+
+    // Open checkout
+    const payBtn = await screen.findByRole('button', { name: /Bayad|Pay/i });
+    fireEvent.click(payBtn);
+
+    // 2. Disabled Complete Sale button has accessible name when tender is invalid / short
+    const completeBtn = await screen.findByRole('button', { name: /Kumpletuhin ang Benta|Complete Sale/i });
+    expect(completeBtn).toBeInTheDocument();
+
+    const tenderInput = screen.getByLabelText(/Cash received|Tinanggap/i);
+    fireEvent.change(tenderInput, { target: { value: '10' } }); // Total is 50, short tender disables button
+    expect(completeBtn).toBeDisabled();
+    expect(completeBtn).toHaveAttribute('aria-label', expect.stringMatching(/Kumpletuhin ang Benta|Complete Sale/i));
+
+    useCartStore.getState().clearCart();
+  });
 });
+
+
 
 
 

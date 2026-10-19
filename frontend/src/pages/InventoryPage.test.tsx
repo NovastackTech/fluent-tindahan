@@ -72,13 +72,13 @@ describe('InventoryPage', () => {
       stockQty: 6,
       updatedAt: new Date().toISOString()
     }));
-    await db.products.bulkAdd(makeProducts(43, 0));
+    await db.products.bulkAdd(makeProducts(23, 0));
     renderInventory();
 
     expect(await screen.findByText('Halos puno')).toBeInTheDocument();
     expect(screen.getByText('≤ 5 piraso ang natitira')).toBeInTheDocument();
 
-    await db.products.bulkAdd(makeProducts(5, 43));
+    await db.products.bulkAdd(makeProducts(5, 23));
     await waitFor(() => expect(screen.getByText('Puno na')).toBeInTheDocument());
 
     act(() => {
@@ -313,6 +313,19 @@ describe('InventoryPage', () => {
       const prods = await db.products.toArray();
       expect(prods.find(p => p.id === 'inv-1')).toBeUndefined();
     });
+  });
+
+  it('exposes accessible names for header and scanner buttons', async () => {
+    const onNavigateMock = vi.fn();
+    render(
+      <FluentProvider theme={sariSariLightTheme}>
+        <InventoryPage onNavigate={onNavigateMock} />
+      </FluentProvider>
+    );
+
+    expect(screen.getByRole('button', { name: /Magdagdag ng Produkto|Add Product/i })).toHaveAttribute('aria-label');
+    expect(screen.getByRole('button', { name: /Mag-import ng CSV|Import CSV/i })).toHaveAttribute('aria-label');
+    expect(screen.getByRole('button', { name: /Buksan ang Scanner|Open Scanner/i })).toHaveAttribute('aria-label');
   });
 });
 
