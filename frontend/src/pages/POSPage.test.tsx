@@ -1254,6 +1254,30 @@ describe('POSPage', () => {
 
     useCartStore.getState().clearCart();
   });
+
+  it('disables checkout button when cart is empty (issue #134)', async () => {
+    useCartStore.getState().addItem({
+      productId: 'p-1',
+      name: 'Lucky Me Pancit Canton Kalamansi',
+      price: 16,
+      maxStock: 20
+    });
+
+    renderPOS();
+
+    // Floating bar is visible with 1 item. Click the bar to open the cart dialog
+    const floatingBarText = await screen.findByText(/sa cart|in cart/i);
+    fireEvent.click(floatingBarText);
+
+    // In cart dialog, clear the cart
+    const clearBtn = await screen.findByRole('button', { name: /I-clear|Clear/i });
+    fireEvent.click(clearBtn);
+
+    // Verify checkout button is disabled
+    const checkoutBtn = screen.getByRole('button', { name: /Mag-Checkout|Checkout/i });
+    expect(checkoutBtn).toBeDisabled();
+    expect(clearBtn).toBeDisabled();
+  });
 });
 
 
