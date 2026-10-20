@@ -70,6 +70,11 @@ public class AuthController : ControllerBase
     public static bool IsDisposableEmail(string? email) => AuthEmailNormalizer.IsDisposableEmail(email);
     public static bool IsUniqueEmailViolation(DbUpdateException ex) => DbConstraintHelper.IsUniqueEmailViolation(ex);
     public static bool IsUniqueConstraintViolation(DbUpdateException ex) => DbConstraintHelper.IsUniqueConstraintViolation(ex);
+    public static bool IsValidPassword(string? password)
+    {
+        if (string.IsNullOrWhiteSpace(password) || password.Length < 8) return false;
+        return password.Any(char.IsLetter) && password.Any(char.IsDigit);
+    }
 
     #endregion
 
@@ -80,7 +85,8 @@ public class AuthController : ControllerBase
         [Required, EmailAddress, StringLength(256)]
         public string Email { get; init; } = string.Empty;
 
-        [Required, StringLength(100, MinimumLength = 6)]
+        [Required, StringLength(100, MinimumLength = 8, ErrorMessage = "Password must be at least 8 characters.")]
+        [RegularExpression(@"^(?=.*[a-zA-Z])(?=.*\d).{8,}$", ErrorMessage = "Password must be at least 8 characters and contain both letters and numbers.")]
         public string Password { get; init; } = string.Empty;
 
         [RegularExpression(@"^\d{4,6}$", ErrorMessage = "PIN must be between 4 and 6 digits.")]
@@ -149,7 +155,8 @@ public class AuthController : ControllerBase
     {
         public string? CurrentPassword { get; init; }
 
-        [Required, MinLength(6, ErrorMessage = "Password must be at least 6 characters.")]
+        [Required, MinLength(8, ErrorMessage = "Password must be at least 8 characters.")]
+        [RegularExpression(@"^(?=.*[a-zA-Z])(?=.*\d).{8,}$", ErrorMessage = "Password must be at least 8 characters and contain both letters and numbers.")]
         public string NewPassword { get; init; } = string.Empty;
 
         public string? RefreshToken { get; init; }
@@ -169,7 +176,8 @@ public class AuthController : ControllerBase
         [Required, StringLength(6, MinimumLength = 6)]
         public string Otp { get; init; } = string.Empty;
 
-        [Required, MinLength(6, ErrorMessage = "Password must be at least 6 characters.")]
+        [Required, MinLength(8, ErrorMessage = "Password must be at least 8 characters.")]
+        [RegularExpression(@"^(?=.*[a-zA-Z])(?=.*\d).{8,}$", ErrorMessage = "Password must be at least 8 characters and contain both letters and numbers.")]
         public string NewPassword { get; init; } = string.Empty;
     }
 
@@ -509,9 +517,9 @@ public class AuthController : ControllerBase
         [FromBody] RegisterRequest request,
         CancellationToken cancellationToken)
     {
-        if (request == null || !ModelState.IsValid || string.IsNullOrWhiteSpace(request.Password))
+        if (request == null || !ModelState.IsValid || string.IsNullOrWhiteSpace(request.Password) || !IsValidPassword(request.Password))
         {
-            return BadRequest(ModelState.IsValid ? (object)new { message = "Kailangan ng password (minimum 6 letra). / Password is required (minimum 6 chars)." } : ModelState);
+            return BadRequest(ModelState.IsValid ? (object)new { message = "Kailangan ng password (minimum 8 characters na may letra at numero). / Password is required (minimum 8 chars with letters & numbers)." } : ModelState);
         }
 
         var displayEmail = CleanDisplayEmail(request.Email);
@@ -1249,9 +1257,9 @@ public class AuthController : ControllerBase
         [FromBody] ChangePasswordRequest request,
         CancellationToken cancellationToken)
     {
-        if (request == null || !ModelState.IsValid || string.IsNullOrWhiteSpace(request.NewPassword))
+        if (request == null || !ModelState.IsValid || string.IsNullOrWhiteSpace(request.NewPassword) || !IsValidPassword(request.NewPassword))
         {
-            return BadRequest(ModelState.IsValid ? (object)new { message = "Kailangan ng bagong password (minimum 6 letra). / New password is required (minimum 6 chars)." } : ModelState);
+            return BadRequest(ModelState.IsValid ? (object)new { message = "Kailangan ng bagong password (minimum 8 characters na may letra at numero). / New password is required (minimum 8 chars with letters & numbers)." } : ModelState);
         }
 
         var userId = AuthClaimsHelper.ResolveUserId(_currentUserService, HttpContext?.User);
@@ -1412,9 +1420,10 @@ public class AuthController : ControllerBase
         if (request == null || !ModelState.IsValid ||
             string.IsNullOrWhiteSpace(request.Email) ||
             string.IsNullOrWhiteSpace(request.Otp) ||
-            string.IsNullOrWhiteSpace(request.NewPassword))
+            string.IsNullOrWhiteSpace(request.NewPassword) ||
+            !IsValidPassword(request.NewPassword))
         {
-            return BadRequest(ModelState.IsValid ? (object)new { message = "Kailangan ng email, 6-digit code, at bagong password. / Email, 6-digit code, and new password are required." } : ModelState);
+            return BadRequest(ModelState.IsValid ? (object)new { message = "Kailangan ng email, 6-digit code, at bagong password (minimum 8 characters na may letra at numero). / Email, 6-digit code, and new password (minimum 8 chars with letters & numbers) are required." } : ModelState);
         }
 
         var cleanEmail = request.Email.Trim().ToLowerInvariant();

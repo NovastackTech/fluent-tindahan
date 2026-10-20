@@ -864,6 +864,32 @@ describe('SettingsPage', () => {
       expect(useAuthStore.getState().firebaseToken).toBe('mock-fresh-jwt-token');
     });
   });
+
+  it('rejects 7-character new password in ChangePasswordDialog (EV-02 #143)', async () => {
+    renderSettings();
+
+    const changePasswordBtn = screen.getByTestId('settings-change-password-btn');
+    await act(async () => {
+      fireEvent.click(changePasswordBtn);
+    });
+
+    const currentInput = screen.getByTestId('change-password-current-input');
+    const newInput = screen.getByTestId('change-password-new-input');
+    const confirmInput = screen.getByTestId('change-password-confirm-input');
+
+    await act(async () => {
+      fireEvent.change(currentInput, { target: { value: 'OldPassword123!' } });
+      fireEvent.change(newInput, { target: { value: 'Short7!' } });
+      fireEvent.change(confirmInput, { target: { value: 'Short7!' } });
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('change-password-save-btn'));
+    });
+
+    expect(screen.getByTestId('change-password-error-banner')).toHaveTextContent(/8.*characters.*letters.*numbers|8 o higit pang characters/i);
+    expect(authService.changePassword).not.toHaveBeenCalled();
+  });
 });
 
 

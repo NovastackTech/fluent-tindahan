@@ -41,6 +41,7 @@ import { validateRegistrationInput, validateLoginInput } from '../utils/registra
 import { GoogleAuthButton } from '../components/GoogleAuthButton';
 import { forgotPassword, resetPassword } from '../services/authService';
 import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
+import { evaluatePasswordStrength } from '../utils/passwordStrength';
 
 export interface LoginPageProps {
   onNavigate: (tab: NavTab) => void;
@@ -388,8 +389,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
       return;
     }
 
-    if (forgotNewPassword.length < 6) {
-      setAuthErrors([t.onboarding.passwordMinLength || 'Password must be at least 6 characters.']);
+    const strength = evaluatePasswordStrength(forgotNewPassword);
+    if (!strength.isValid) {
+      setAuthErrors([t.onboarding.passwordStrengthError || 'Password must be at least 8 characters and contain both letters and numbers.']);
       return;
     }
 
@@ -737,10 +739,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
                 label={t.settings.newPasswordLabel}
                 required
                 hint={t.settings.newPasswordPlaceholder}
-                validationState={forgotNewPassword && forgotNewPassword.length < 6 ? 'error' : undefined}
+                validationState={forgotNewPassword && !evaluatePasswordStrength(forgotNewPassword).isValid ? 'error' : undefined}
                 validationMessage={
-                  forgotNewPassword && forgotNewPassword.length < 6
-                    ? t.onboarding.passwordMinLength || 'Password must be at least 6 characters.'
+                  forgotNewPassword && !evaluatePasswordStrength(forgotNewPassword).isValid
+                    ? t.onboarding.passwordStrengthError || 'Password must be at least 8 characters and contain both letters and numbers.'
                     : undefined
                 }
                 style={{ marginBottom: tokens.spacingVerticalM }}
@@ -813,7 +815,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
                 disabled={
                   isSubmitting ||
                   forgotOtp.trim().length !== 6 ||
-                  forgotNewPassword.length < 6 ||
+                  !evaluatePasswordStrength(forgotNewPassword).isValid ||
                   !forgotConfirmPassword ||
                   forgotConfirmPassword !== forgotNewPassword
                 }
