@@ -47,11 +47,13 @@ services:
       PayMongo__SecretKey: ${PAYMONGO_SECRET_KEY:-}
       PayMongo__WebhookSecret: ${PAYMONGO_WEBHOOK_SECRET:-}
       PayMongo__FrontendOrigin: ${PAYMONGO_FRONTEND_ORIGIN:-http://localhost}
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USERNAME: ${SMTP_USERNAME:-}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
+      Smtp__Host: ${SMTP_HOST:-}
+      Smtp__Port: ${SMTP_PORT:-587}
+      Smtp__Username: ${SMTP_USERNAME:-}
+      Smtp__Password: ${SMTP_PASSWORD:-}
+      Smtp__FromEmail: ${SMTP_FROM_EMAIL:-noreply@fluent-tindahan.ph}
+      Smtp__FromName: ${SMTP_FROM_NAME:-Fluent Tindahan}
+      Smtp__EnableSsl: ${SMTP_ENABLE_SSL:-true}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
       interval: 30s

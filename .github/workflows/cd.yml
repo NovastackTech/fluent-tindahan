@@ -111,6 +111,13 @@ jobs:
           DEMO_MODE: ${{ secrets.DEMO_MODE || 'false' }}
           SKIP_BACKUP: ${{ inputs.skip_backup }}
           SKIP_SETUP: ${{ inputs.skip_setup }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM_EMAIL: ${{ secrets.SMTP_FROM_EMAIL }}
+          SMTP_FROM_NAME: ${{ secrets.SMTP_FROM_NAME }}
+          SMTP_ENABLE_SSL: ${{ secrets.SMTP_ENABLE_SSL }}
         run: |
           set -euo pipefail
 
@@ -142,9 +149,10 @@ jobs:
           $SSH_CMD "$SAS_USER@$SAS_HOST" "set -euo pipefail; tar -tzf /tmp/fluent-tindahan-deploy.tar.gz >/dev/null; mkdir -p '$SAS_APP_DIR'; find '$SAS_APP_DIR' -mindepth 1 -maxdepth 1 ! -name .env ! -name backups -exec rm -rf {} +; tar -xzf /tmp/fluent-tindahan-deploy.tar.gz -C '$SAS_APP_DIR'; rm -f /tmp/fluent-tindahan-deploy.tar.gz"
 
           # 4. Stream secrets.env over stdin (never in command string or argv)
-          if [ -n "${PAYMONGO_SECRET_KEY:-}" ] || [ -n "${GOOGLE_CLIENT_ID:-}" ]; then
-            printf 'PAYMONGO_SECRET_KEY=%s\nPAYMONGO_PUBLIC_KEY=%s\nPAYMONGO_WEBHOOK_SECRET=%s\nPAYMONGO_FRONTEND_ORIGIN=%s\nDEMO_MODE=%s\nGOOGLE_CLIENT_ID=%s\n' \
+          if [ -n "${PAYMONGO_SECRET_KEY:-}" ] || [ -n "${GOOGLE_CLIENT_ID:-}" ] || [ -n "${SMTP_HOST:-}" ] || [ -n "${SMTP_PASSWORD:-}" ] || [ -n "${SMTP_USERNAME:-}" ]; then
+            printf 'PAYMONGO_SECRET_KEY=%s\nPAYMONGO_PUBLIC_KEY=%s\nPAYMONGO_WEBHOOK_SECRET=%s\nPAYMONGO_FRONTEND_ORIGIN=%s\nDEMO_MODE=%s\nGOOGLE_CLIENT_ID=%s\nSMTP_HOST=%s\nSMTP_PORT=%s\nSMTP_USERNAME=%s\nSMTP_PASSWORD=%s\nSMTP_FROM_EMAIL=%s\nSMTP_FROM_NAME=%s\nSMTP_ENABLE_SSL=%s\n' \
               "${PAYMONGO_SECRET_KEY:-}" "${PAYMONGO_PUBLIC_KEY:-}" "${PAYMONGO_WEBHOOK_SECRET:-}" "$PUBLIC_ORIGIN" "$DEMO_MODE" "${GOOGLE_CLIENT_ID:-}" \
+              "${SMTP_HOST:-}" "${SMTP_PORT:-}" "${SMTP_USERNAME:-}" "${SMTP_PASSWORD:-}" "${SMTP_FROM_EMAIL:-}" "${SMTP_FROM_NAME:-}" "${SMTP_ENABLE_SSL:-}" \
               | $SSH_CMD "$SAS_USER@$SAS_HOST" "umask 077; cat > '$SAS_APP_DIR/deploy/alibaba-sas/secrets.env'"
           fi
 
