@@ -72,6 +72,16 @@ if (!builder.Environment.IsDevelopment() &&
     throw new InvalidOperationException("The committed JWT secret key has been burned and cannot be used in production. A new unique JWT_SECRET_KEY must be generated and configured per real deployment.");
 }
 
+if (!builder.Environment.IsDevelopment())
+{
+    var smtpHost = builder.Configuration["Smtp:Host"] ?? builder.Configuration["SMTP_HOST"];
+    var isDemo = string.Equals(builder.Configuration["DemoMode"], "true", StringComparison.OrdinalIgnoreCase);
+    if (string.IsNullOrWhiteSpace(smtpHost) && !isDemo)
+    {
+        throw new InvalidOperationException("Smtp:Host or SMTP_HOST must be configured in production.");
+    }
+}
+
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? JwtTokenService.DefaultIssuer;
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? JwtTokenService.DefaultAudience;
 var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret));
@@ -91,6 +101,43 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidAudience = jwtAudience,
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromMinutes(1)
+        };
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = async context =>
+            {
+                var userIdStr = context.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                    ?? context.Principal?.FindFirst("sub")?.Value
+                    ?? context.Principal?.FindFirst("user_id")?.Value;
+
+                if (Guid.TryParse(userIdStr, out var userId))
+                {
+                    var db = context.HttpContext.RequestServices.GetRequiredService<FluentTindahan.Application.Common.Interfaces.IApplicationDbContext>();
+                    var userState = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(
+                        Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Users)
+                            .Where(u => u.Id == userId)
+                            .Select(u => new { u.SessionsInvalidatedAt, u.AccountStatus }),
+                        context.HttpContext.RequestAborted);
+
+                    if (userState != null)
+                    {
+                        if (!string.Equals(userState.AccountStatus, FluentTindahan.Domain.Entities.User.StatusActive, StringComparison.OrdinalIgnoreCase))
+                        {
+                            context.Fail("Account is deactivated or deleted.");
+                            return;
+                        }
+
+                        if (userState.SessionsInvalidatedAt.HasValue && context.SecurityToken != null)
+                        {
+                            var issuedAt = new DateTimeOffset(context.SecurityToken.ValidFrom, TimeSpan.Zero);
+                            if (issuedAt < userState.SessionsInvalidatedAt.Value.AddSeconds(-1))
+                            {
+                                context.Fail("Session has been invalidated.");
+                            }
+                        }
+                    }
+                }
+            }
         };
     });
 

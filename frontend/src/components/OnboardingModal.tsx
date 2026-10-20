@@ -56,6 +56,7 @@ import { updateProfile } from '../services/authService';
 import { queuePendingProfileUpdate, clearPendingProfileUpdate } from '../services/profileSync';
 import { GoogleAuthButton } from './GoogleAuthButton';
 import { useStoreAuthFlow } from '../hooks/useStoreAuthFlow';
+import { isDisposableEmail } from '../utils/registrationValidation';
 
 const useStyles = makeStyles({
   surface: {
@@ -266,17 +267,22 @@ export const OnboardingModal: React.FC = () => {
     isSyncingFirst,
     isSubmitting,
     setIsSubmitting,
+    pendingOtpEmail,
+    setPendingOtpEmail,
     closeUnsyncedDialog,
     handleConfirmWipeAndLogin,
     handleSyncFirst,
     handleStoreLogin,
     handleStoreRegistration,
+    handleVerifyEmailOtp,
+    handleResendEmailOtp,
     handleGoogleAuth
   } = useStoreAuthFlow({
     onSuccess: closeOnboarding
   });
 
   const [submissionError, setSubmissionError] = useState('');
+  const [otpCode, setOtpCode] = useState('');
 
   const [activeTab, setActiveTab] = useState<'register' | 'login'>('register');
 
@@ -357,19 +363,21 @@ export const OnboardingModal: React.FC = () => {
       setLoginPinVal('');
       setFormCurrentPassword('');
       setFormCurrentPin('');
+      setOtpCode('');
+      setPendingOtpEmail(null);
       clearValidationErrors();
       setIsSubmitting(false);
     } else {
       onboardingIds.current = null;
     }
-  }, [isOpen, isEditMode, isOnboarded, businessName, ownerName, userPhone, userEmail, setIsSubmitting]);
+  }, [isOpen, isEditMode, isOnboarded, businessName, ownerName, userPhone, userEmail, setIsSubmitting, setPendingOtpEmail]);
   /* oxlint-enable react/set-state-in-effect */
 
   if (!isOpen) {
     return null;
   }
 
-  const validateEmail = (email: string): boolean => {
+  const validateEmail = (email: string, checkDisposable = false): boolean => {
     const trimmed = email.trim();
     if (!trimmed) {
       setEmailError(t.onboarding.emailRequired);
@@ -377,6 +385,10 @@ export const OnboardingModal: React.FC = () => {
     }
     if (!EMAIL_REGEX.test(trimmed)) {
       setEmailError(t.onboarding.emailInvalid);
+      return false;
+    }
+    if (checkDisposable && isDisposableEmail(trimmed)) {
+      setEmailError(t.onboarding.emailDisposableNotAllowed);
       return false;
     }
     setEmailError('');
@@ -411,7 +423,7 @@ export const OnboardingModal: React.FC = () => {
       setBusinessNameError('');
     }
 
-    if (!validateEmail(formEmail)) {
+    if (!validateEmail(formEmail, !isEditMode || isEmailChanged)) {
       isValid = false;
     }
 
@@ -537,6 +549,11 @@ export const OnboardingModal: React.FC = () => {
 
           await updateLocalTenantBusinessName(trimmedBusinessName);
 
+          if (authResult.requiresEmailVerification) {
+            setPendingOtpEmail(authResult.email || trimmedEmail);
+            return;
+          }
+
           closeOnboarding();
           return;
         } catch (serverError: any) {
@@ -636,6 +653,34 @@ export const OnboardingModal: React.FC = () => {
     }
   };
 
+  const handleOtpSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (submissionInFlight.current || isSubmitting) return;
+    setSubmissionError('');
+    setOfflineNotice('');
+    submissionInFlight.current = true;
+    try {
+      await handleVerifyEmailOtp(otpCode, setSubmissionError);
+    } finally {
+      submissionInFlight.current = false;
+    }
+  };
+
+  const handleOtpResend = async () => {
+    if (submissionInFlight.current || isSubmitting) return;
+    setSubmissionError('');
+    setOfflineNotice('');
+    submissionInFlight.current = true;
+    try {
+      await handleResendEmailOtp(
+        (msg) => setOfflineNotice(msg),
+        setSubmissionError
+      );
+    } finally {
+      submissionInFlight.current = false;
+    }
+  };
+
   const handleGoogleSuccess = async (tokenResponse: { access_token: string }) => {
     await handleGoogleAuth({
       accessToken: tokenResponse.access_token,
@@ -663,15 +708,25 @@ export const OnboardingModal: React.FC = () => {
               <BuildingShopRegular />
             </div>
             <div className={styles.titleArea}>
-              <DialogTitle>{isEditMode ? t.onboarding.editTitle : t.onboarding.welcomeTitle}</DialogTitle>
+              <DialogTitle>
+                {pendingOtpEmail
+                  ? t.onboarding.otpTitle
+                  : isEditMode
+                    ? t.onboarding.editTitle
+                    : t.onboarding.welcomeTitle}
+              </DialogTitle>
               {!isEditMode && <Badge appearance="filled" color="brand">🇵🇭 Tindahan</Badge>}
               <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-                {isEditMode ? t.onboarding.editSubtitle : t.onboarding.welcomeSubtitle}
+                {pendingOtpEmail
+                  ? t.onboarding.otpSubtitle.replace('{email}', pendingOtpEmail)
+                  : isEditMode
+                    ? t.onboarding.editSubtitle
+                    : t.onboarding.welcomeSubtitle}
               </Text>
             </div>
           </div>
 
-          {!isEditMode && (
+          {!isEditMode && !pendingOtpEmail && (
             <TabList
               className={styles.tabNav}
               selectedValue={activeTab}
@@ -705,11 +760,38 @@ export const OnboardingModal: React.FC = () => {
                 size={200}
                 className={mergeClasses(styles.statusNotice, styles.warningNotice)}
               >
-                {offlineNotice}
+                {getLocalizedSyncErrorMessage(offlineNotice, language) || offlineNotice}
               </Text>
             )}
 
-            {activeTab === 'register' || isEditMode ? (
+            {pendingOtpEmail ? (
+              <form onSubmit={handleOtpSubmit} id="onboarding-otp-form">
+                <div className={styles.formSection}>
+                  <Field label={t.onboarding.otpLabel} required>
+                    <PinInput
+                      value={otpCode}
+                      onChange={(val) => {
+                        setOtpCode(val);
+                        if (submissionError) setSubmissionError('');
+                      }}
+                      placeholder={t.onboarding.otpPlaceholder}
+                    />
+                  </Field>
+                  <div>
+                    <Button
+                      appearance="secondary"
+                      size="small"
+                      type="button"
+                      disabled={isSubmitting}
+                      onClick={handleOtpResend}
+                      data-testid="onboarding-otp-resend-btn"
+                    >
+                      {t.onboarding.otpResendBtn}
+                    </Button>
+                  </div>
+                </div>
+              </form>
+            ) : activeTab === 'register' || isEditMode ? (
               <form onSubmit={handleRegisterSubmit} id="onboarding-form">
                 <div className={styles.formSection}>
                   {/* Store Name */}
@@ -1049,28 +1131,56 @@ export const OnboardingModal: React.FC = () => {
           </DialogContent>
 
           <DialogActions className={styles.actions}>
-            {isEditMode && (
-              <Button
-                appearance="secondary"
-                icon={<DismissRegular />}
-                onClick={closeOnboarding}
-                disabled={isSubmitting}
-              >
-                {t.onboarding.cancelBtn}
-              </Button>
+            {pendingOtpEmail ? (
+              <>
+                <Button
+                  appearance="secondary"
+                  onClick={() => {
+                    setPendingOtpEmail(null);
+                    setOtpCode('');
+                    setSubmissionError('');
+                    setOfflineNotice('');
+                  }}
+                  disabled={isSubmitting}
+                >
+                  {t.onboarding.otpBackBtn}
+                </Button>
+                <Button
+                  appearance="primary"
+                  icon={isSubmitting ? <Spinner size="extra-tiny" /> : <CheckmarkRegular />}
+                  onClick={handleOtpSubmit}
+                  disabled={isSubmitting}
+                  data-testid="onboarding-otp-verify-btn"
+                >
+                  {t.onboarding.otpVerifyBtn}
+                </Button>
+              </>
+            ) : (
+              <>
+                {isEditMode && (
+                  <Button
+                    appearance="secondary"
+                    icon={<DismissRegular />}
+                    onClick={closeOnboarding}
+                    disabled={isSubmitting}
+                  >
+                    {t.onboarding.cancelBtn}
+                  </Button>
+                )}
+                <Button
+                  appearance="primary"
+                  icon={isSubmitting ? <Spinner size="extra-tiny" /> : isEditMode ? <CheckmarkRegular /> : <SparkleRegular />}
+                  onClick={activeTab === 'register' || isEditMode ? handleRegisterSubmit : handleLoginSubmit}
+                  disabled={isSubmitting}
+                >
+                  {isEditMode
+                    ? t.onboarding.saveProfileBtn
+                    : activeTab === 'register'
+                      ? t.onboarding.launchBtn
+                      : t.onboarding.loginBtn}
+                </Button>
+              </>
             )}
-            <Button
-              appearance="primary"
-              icon={isSubmitting ? <Spinner size="extra-tiny" /> : isEditMode ? <CheckmarkRegular /> : <SparkleRegular />}
-              onClick={activeTab === 'register' || isEditMode ? handleRegisterSubmit : handleLoginSubmit}
-              disabled={isSubmitting}
-            >
-              {isEditMode
-                ? t.onboarding.saveProfileBtn
-                : activeTab === 'register'
-                  ? t.onboarding.launchBtn
-                  : t.onboarding.loginBtn}
-            </Button>
           </DialogActions>
         </DialogBody>
       </DialogSurface>

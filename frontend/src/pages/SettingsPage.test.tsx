@@ -23,7 +23,18 @@ vi.mock('../services/authService', async (importOriginal) => {
     updatePin: vi.fn().mockImplementation(async ({ pin }) => ({
       success: true,
       hasPin: Boolean(pin && pin.trim())
-    }))
+    })),
+    deleteAccount: vi.fn().mockResolvedValue({
+      status: 'PENDING_DELETION',
+      deletionScheduledAt: '2026-11-20T00:00:00Z',
+      message: 'Scheduled for deletion'
+    }),
+    changePassword: vi.fn().mockResolvedValue({
+      token: 'mock-fresh-jwt-token',
+      expiresAt: '2026-10-21T00:00:00Z',
+      refreshToken: 'mock-fresh-refresh-token',
+      message: 'Password changed successfully'
+    })
   };
 });
 
@@ -758,6 +769,99 @@ describe('SettingsPage', () => {
       expect(useSyncStore.getState().lastSyncedAt).not.toBeNull();
       expect(screen.queryByText(/Last sync: Never/i)).not.toBeInTheDocument();
       expect(screen.getByText(/Last sync:/i)).toBeInTheDocument();
+    });
+  });
+
+  it('opens DeleteAccountDialog with pre-flight warnings and executes account deletion with re-authentication', async () => {
+    useSubscriptionStore.setState({ tier: 'TindahanPro' });
+    await db.customers.add({
+      id: 'cust-1',
+      tenantId: 'settings-test-tenant',
+      name: 'Suki Pedro',
+      phone: '09171234567',
+      totalUtangBalance: 125.5,
+      updatedAt: new Date().toISOString()
+    });
+
+    const onNavigate = vi.fn();
+    renderSettings(onNavigate);
+
+    const deleteBtn = screen.getByTestId('settings-delete-account-btn');
+    fireEvent.click(deleteBtn);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('delete-account-sub-warning')).toBeInTheDocument();
+      expect(screen.getByTestId('delete-account-utang-warning')).toHaveTextContent('₱125.50');
+    });
+
+    // Select immediate permanent deletion mode
+    fireEvent.click(screen.getByTestId('delete-mode-immediate'));
+
+    // Enter password for step-up re-authentication
+    const passwordInput = screen.getByTestId('delete-account-password-input');
+    fireEvent.change(passwordInput, { target: { value: 'OwnerPass123!' } });
+
+    const confirmBtn = screen.getByTestId('confirm-delete-account-btn');
+    await act(async () => {
+      fireEvent.click(confirmBtn);
+    });
+
+    await waitFor(() => {
+      expect(authService.deleteAccount).toHaveBeenCalledWith({
+        password: 'OwnerPass123!',
+        pin: undefined,
+        immediate: true
+      });
+      expect(useAuthStore.getState().isOnboarded).toBe(false);
+      expect(onNavigate).toHaveBeenCalledWith('login');
+    });
+  });
+
+  it('opens ChangePasswordDialog and successfully changes password', async () => {
+    renderSettings();
+
+    const changePasswordBtn = screen.getByTestId('settings-change-password-btn');
+    expect(changePasswordBtn).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(changePasswordBtn);
+    });
+
+    const currentInput = screen.getByTestId('change-password-current-input');
+    const newInput = screen.getByTestId('change-password-new-input');
+    const confirmInput = screen.getByTestId('change-password-confirm-input');
+
+    expect(currentInput).toBeInTheDocument();
+    expect(newInput).toBeInTheDocument();
+    expect(confirmInput).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.change(currentInput, { target: { value: 'OldPassword123!' } });
+      fireEvent.change(newInput, { target: { value: 'NewPassword999!' } });
+      fireEvent.change(confirmInput, { target: { value: 'MismatchPassword!' } });
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('change-password-save-btn'));
+    });
+
+    expect(screen.getByTestId('change-password-error-banner')).toHaveTextContent(/Hindi magkatugma|do not match/i);
+
+    await act(async () => {
+      fireEvent.change(confirmInput, { target: { value: 'NewPassword999!' } });
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('change-password-save-btn'));
+    });
+
+    await waitFor(() => {
+      expect(authService.changePassword).toHaveBeenCalledWith({
+        currentPassword: 'OldPassword123!',
+        newPassword: 'NewPassword999!',
+        refreshToken: undefined
+      });
+      expect(useAuthStore.getState().firebaseToken).toBe('mock-fresh-jwt-token');
     });
   });
 });

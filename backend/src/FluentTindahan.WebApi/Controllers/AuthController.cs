@@ -8,6 +8,7 @@ using FluentTindahan.Application.Common.Interfaces;
 using FluentTindahan.Domain.Entities;
 using FluentTindahan.Domain.Enums;
 using FluentTindahan.Domain.Interfaces;
+using FluentTindahan.Infrastructure.Services;
 using FluentTindahan.WebApi.Authorization;
 using FluentTindahan.WebApi.Controllers.Helpers;
 
@@ -23,6 +24,10 @@ public class AuthController : ControllerBase
     private readonly PasswordHasher<User> _passwordHasher;
     private readonly TimeProvider _timeProvider;
     private readonly IGoogleAuthService? _googleAuthService;
+    private readonly IEmailOtpSender? _emailOtpSender;
+    private readonly IConfiguration? _configuration;
+    private readonly IWebHostEnvironment? _hostEnvironment;
+    private readonly ILogger<AuthController>? _logger;
 
     public const int DefaultGraceWindowSeconds = AuthRefreshTokenHelper.DefaultGraceWindowSeconds;
 
@@ -31,7 +36,11 @@ public class AuthController : ControllerBase
         IJwtTokenService jwtTokenService,
         ICurrentUserService? currentUserService = null,
         TimeProvider? timeProvider = null,
-        IGoogleAuthService? googleAuthService = null)
+        IGoogleAuthService? googleAuthService = null,
+        IEmailOtpSender? emailOtpSender = null,
+        IConfiguration? configuration = null,
+        IWebHostEnvironment? hostEnvironment = null,
+        ILogger<AuthController>? logger = null)
     {
         _context = context;
         _jwtTokenService = jwtTokenService;
@@ -39,6 +48,17 @@ public class AuthController : ControllerBase
         _passwordHasher = new PasswordHasher<User>();
         _timeProvider = timeProvider ?? TimeProvider.System;
         _googleAuthService = googleAuthService;
+        _emailOtpSender = emailOtpSender;
+        _configuration = configuration;
+        _hostEnvironment = hostEnvironment;
+        _logger = logger;
+    }
+
+    private bool IsDevOrDemoMode()
+    {
+        if (_hostEnvironment?.IsDevelopment() == true) return true;
+        var demo = _configuration?["DemoMode"] ?? _configuration?["DEMO_MODE"] ?? Environment.GetEnvironmentVariable("DEMO_MODE");
+        return string.Equals(demo, "true", StringComparison.OrdinalIgnoreCase);
     }
 
     #region Static Helper Forwarders
@@ -47,6 +67,7 @@ public class AuthController : ControllerBase
     public static void ResetIpPinThrottle(string clientIp) => AuthLockoutHelper.ResetIpPinThrottle(clientIp);
     public static string CleanDisplayEmail(string? email) => AuthEmailNormalizer.CleanDisplayEmail(email);
     public static string NormalizeEmail(string? email) => AuthEmailNormalizer.NormalizeEmail(email);
+    public static bool IsDisposableEmail(string? email) => AuthEmailNormalizer.IsDisposableEmail(email);
     public static bool IsUniqueEmailViolation(DbUpdateException ex) => DbConstraintHelper.IsUniqueEmailViolation(ex);
     public static bool IsUniqueConstraintViolation(DbUpdateException ex) => DbConstraintHelper.IsUniqueConstraintViolation(ex);
 
@@ -86,6 +107,8 @@ public class AuthController : ControllerBase
 
         [Required]
         public string Password { get; init; } = string.Empty;
+
+        public bool? RestoreAccount { get; init; }
     }
 
     public sealed record LoginPinRequest
@@ -95,6 +118,8 @@ public class AuthController : ControllerBase
 
         [Required, RegularExpression(@"^\d{4,6}$", ErrorMessage = "PIN must be between 4 and 6 digits.")]
         public string Pin { get; init; } = string.Empty;
+
+        public bool? RestoreAccount { get; init; }
     }
 
     public sealed record UpdatePinRequest
@@ -122,8 +147,27 @@ public class AuthController : ControllerBase
 
     public sealed record ChangePasswordRequest
     {
-        [Required]
-        public string CurrentPassword { get; init; } = string.Empty;
+        public string? CurrentPassword { get; init; }
+
+        [Required, MinLength(6, ErrorMessage = "Password must be at least 6 characters.")]
+        public string NewPassword { get; init; } = string.Empty;
+
+        public string? RefreshToken { get; init; }
+    }
+
+    public sealed record ForgotPasswordRequest
+    {
+        [Required, EmailAddress]
+        public string Email { get; init; } = string.Empty;
+    }
+
+    public sealed record ResetPasswordRequest
+    {
+        [Required, EmailAddress]
+        public string Email { get; init; } = string.Empty;
+
+        [Required, StringLength(6, MinimumLength = 6)]
+        public string Otp { get; init; } = string.Empty;
 
         [Required, MinLength(6, ErrorMessage = "Password must be at least 6 characters.")]
         public string NewPassword { get; init; } = string.Empty;
@@ -166,6 +210,41 @@ public class AuthController : ControllerBase
         public Guid? TenantId { get; init; }
         public Guid? UserId { get; init; }
         public string? RefreshToken { get; init; }
+        public bool? RestoreAccount { get; init; }
+    }
+
+    public sealed record DeleteAccountRequest
+    {
+        [StringLength(128)]
+        public string? Password { get; init; }
+
+        [RegularExpression(@"^\d{4,6}$", ErrorMessage = "PIN must be between 4 and 6 digits.")]
+        public string? Pin { get; init; }
+
+        public string? GoogleAccessToken { get; init; }
+        public string? GoogleIdToken { get; init; }
+        public bool Immediate { get; init; }
+    }
+
+    public sealed record DeleteAccountResponseDto(
+        string Status,
+        DateTimeOffset? DeletionScheduledAt,
+        string Message
+    );
+
+    public sealed record VerifyEmailOtpRequest
+    {
+        [EmailAddress, StringLength(256)]
+        public string? Email { get; init; }
+
+        [Required, RegularExpression(@"^\d{6}$", ErrorMessage = "OTP must be a 6-digit code.")]
+        public string Otp { get; init; } = string.Empty;
+    }
+
+    public sealed record ResendEmailOtpRequest
+    {
+        [EmailAddress, StringLength(256)]
+        public string? Email { get; init; }
     }
 
     public sealed record AuthResponseDto(
@@ -183,7 +262,9 @@ public class AuthController : ControllerBase
         string Token,
         DateTimeOffset ExpiresAt,
         string? RefreshToken = null,
-        bool IsNewUser = false
+        bool IsNewUser = false,
+        bool EmailVerified = true,
+        bool RequiresEmailVerification = false
     );
 
     #endregion
@@ -366,7 +447,8 @@ public class AuthController : ControllerBase
         User user,
         Tenant tenant,
         bool isNewUser,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? pendingOtpCode = null)
     {
         var access = _jwtTokenService.GenerateAccessToken(user.Id, tenant.Id, email: user.Email, role: user.Role);
         var (refreshToken, _, _, _) = AuthRefreshTokenHelper.IssueRefreshToken(
@@ -389,6 +471,18 @@ public class AuthController : ControllerBase
         {
             _context.ChangeTracker.Clear();
             return Conflict(new { message = "May tindahan o user nang nakarehistro gamit ang ID na ito. / A store or user is already registered with this ID." });
+        }
+
+        if (!string.IsNullOrEmpty(pendingOtpCode) && _emailOtpSender != null)
+        {
+            try
+            {
+                await _emailOtpSender.SendOtpAsync(user.Email, pendingOtpCode, user.OwnerName, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Failed to send registration OTP email to {Email}. User can request resend.", user.Email);
+            }
         }
 
         AuthLockoutHelper.ResetIpPinThrottle(AuthClaimsHelper.GetClientIpAddress(HttpContext));
@@ -427,6 +521,11 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = "Kailangan ng wastong email address. / Valid email address is required." });
         }
 
+        if (IsDisposableEmail(normalizedEmail))
+        {
+            return BadRequest(new { message = "Hindi pinapayagan ang pansamantalang (disposable) email address. Mangyaring gumamit ng permanenteng email. / Disposable email addresses are not allowed. Please use a permanent email address." });
+        }
+
         var emailExists = await _context.Users.IgnoreQueryFilters()
             .AnyAsync(u => u.NormalizedEmail == normalizedEmail, cancellationToken);
         if (emailExists)
@@ -461,13 +560,16 @@ public class AuthController : ControllerBase
         user.PinHash = !string.IsNullOrWhiteSpace(request.Pin)
             ? _passwordHasher.HashPassword(user, request.Pin.Trim())
             : null;
+        user.EmailVerified = false;
+        var otpCode = AuthOtpHelper.IssueOtp(user, _timeProvider);
 
-        return await SaveNewUserAndRespondAsync(user, tenant!, isNewUser: false, cancellationToken);
+        return await SaveNewUserAndRespondAsync(user, tenant!, isNewUser: false, cancellationToken, otpCode);
     }
 
     /// <summary>
     /// Authenticates or registers a store owner using a verified Google OAuth token.
-    /// Links existing email/password accounts if emails match, or provisions a new store with client UUIDs.
+    /// Links existing verified email/password accounts if emails match, overwrites credentials and invalidates
+    /// active sessions when an existing matching email account is unverified, or provisions a new store with client UUIDs.
     /// </summary>
     [HttpPost("google")]
     [EnableRateLimiting("AuthSensitive")]
@@ -501,6 +603,11 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = "Kailangan ng wastong email address mula sa Google. / Valid email address from Google is required." });
         }
 
+        if (IsDisposableEmail(normalizedEmail))
+        {
+            return BadRequest(new { message = "Hindi pinapayagan ang pansamantalang (disposable) email address. / Disposable email addresses are not allowed." });
+        }
+
         var rawGoogleSubject = $"google:{googleUser.Subject}";
         var googleSubject = rawGoogleSubject.Length > 128 ? rawGoogleSubject[..128] : rawGoogleSubject;
         var googleOwnerName = string.IsNullOrWhiteSpace(googleUser.FullName)
@@ -518,7 +625,27 @@ public class AuthController : ControllerBase
                 existingUser.Tenant = await _context.Tenants.IgnoreQueryFilters()
                     .FirstOrDefaultAsync(t => t.Id == existingUser.TenantId, cancellationToken);
             }
-            // Existing User (Login / Account Link)
+
+            var googleStatusCheck = await CheckAndHandleAccountStatusOnLoginAsync(existingUser, request.RestoreAccount, cancellationToken);
+            if (googleStatusCheck != null)
+            {
+                return googleStatusCheck;
+            }
+
+            var now = _timeProvider.GetUtcNow();
+
+            // Never auto-merge unverified accounts: overwrite credentials and invalidate active sessions
+            if (!existingUser.EmailVerified)
+            {
+                existingUser.PasswordHash = string.Empty;
+                existingUser.PinHash = null;
+                AuthOtpHelper.ClearOtp(existingUser);
+                existingUser.SessionsInvalidatedAt = now;
+                await AuthRefreshTokenHelper.RevokeAllForUserAsync(_context, existingUser, existingUser.Id, _timeProvider, cancellationToken);
+            }
+
+            existingUser.EmailVerified = true;
+
             if (existingUser.FirebaseUid != googleSubject)
             {
                 existingUser.FirebaseUid = googleSubject;
@@ -577,7 +704,7 @@ public class AuthController : ControllerBase
                         Id = targetTenantId,
                         BusinessName = resolvedBusinessName,
                         Tier = PlanTier.Libre,
-                        CreatedAt = _timeProvider.GetUtcNow()
+                        CreatedAt = now
                     };
                     _context.Tenants.Add(resolvedTenant);
                 }
@@ -586,7 +713,6 @@ public class AuthController : ControllerBase
                 existingUser.TenantId = resolvedTenant.Id;
             }
 
-            var now = _timeProvider.GetUtcNow();
             existingUser.LastLoginAt = now;
             AuthLockoutHelper.ResetPasswordLockout(existingUser);
             AuthLockoutHelper.ResetPinLockout(existingUser);
@@ -651,12 +777,15 @@ public class AuthController : ControllerBase
             return upgradeError;
         }
 
+        user!.EmailVerified = true;
+        AuthOtpHelper.ClearOtp(user);
+
         if (!string.IsNullOrWhiteSpace(request.Pin))
         {
-            user!.PinHash = _passwordHasher.HashPassword(user, request.Pin.Trim());
+            user.PinHash = _passwordHasher.HashPassword(user, request.Pin.Trim());
         }
 
-        return await SaveNewUserAndRespondAsync(user!, tenant!, isNewUser: true, cancellationToken);
+        return await SaveNewUserAndRespondAsync(user, tenant!, isNewUser: true, cancellationToken);
     }
 
     /// <summary>
@@ -713,6 +842,12 @@ public class AuthController : ControllerBase
                 $"Maling email o password. May natitira ka pang {remainingAttempts} pagsubok bago mag-lockout. / Invalid email or password. {remainingAttempts} attempts remaining.");
         }
 
+        var loginStatusCheck = await CheckAndHandleAccountStatusOnLoginAsync(user, request.RestoreAccount, cancellationToken);
+        if (loginStatusCheck != null)
+        {
+            return loginStatusCheck;
+        }
+
         if (verifyResult == PasswordVerificationResult.SuccessRehashNeeded)
         {
             user.PasswordHash = _passwordHasher.HashPassword(user, request.Password);
@@ -720,7 +855,15 @@ public class AuthController : ControllerBase
 
         AuthLockoutHelper.ResetPasswordLockout(user);
         AuthLockoutHelper.ResetPinLockout(user);
-        user.LastLoginAt = _timeProvider.GetUtcNow();
+        var now = _timeProvider.GetUtcNow();
+        user.LastLoginAt = now;
+
+        string? pendingOtpCode = null;
+        if (!user.EmailVerified &&
+            (string.IsNullOrEmpty(user.EmailOtpHash) || !user.EmailOtpExpiresAt.HasValue || user.EmailOtpExpiresAt.Value < now))
+        {
+            pendingOtpCode = AuthOtpHelper.IssueOtp(user, _timeProvider);
+        }
 
         var access = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId, email: user.Email, role: user.Role);
         var (refreshToken, _, _, _) = AuthRefreshTokenHelper.IssueRefreshToken(
@@ -731,6 +874,18 @@ public class AuthController : ControllerBase
             _timeProvider);
 
         await _context.SaveChangesAsync(cancellationToken);
+        if (!string.IsNullOrEmpty(pendingOtpCode) && _emailOtpSender != null)
+        {
+            try
+            {
+                await _emailOtpSender.SendOtpAsync(user.Email, pendingOtpCode, user.OwnerName, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Failed to send login OTP email to {Email}. User can request resend.", user.Email);
+            }
+        }
+
         AuthLockoutHelper.ResetIpPinThrottle(AuthClaimsHelper.GetClientIpAddress(HttpContext));
 
         return Ok(AuthResponseBuilder.Build(user, user.Tenant, access, refreshToken));
@@ -831,6 +986,12 @@ public class AuthController : ControllerBase
                 return AuthLockoutHelper.PinFailedResult(remainingAttempts);
             }
 
+            var pinStatusCheck = await CheckAndHandleAccountStatusOnLoginAsync(freshUser, request.RestoreAccount, cancellationToken);
+            if (pinStatusCheck != null)
+            {
+                return pinStatusCheck;
+            }
+
             AuthLockoutHelper.ResetIpPinThrottle(clientIp);
 
             var access = _jwtTokenService.GenerateAccessToken(freshUser.Id, freshUser.TenantId, email: freshUser.Email, role: freshUser.Role);
@@ -842,8 +1003,28 @@ public class AuthController : ControllerBase
                 _timeProvider);
 
             AuthLockoutHelper.ResetPinLockout(freshUser);
-            freshUser.LastLoginAt = _timeProvider.GetUtcNow();
+            var now = _timeProvider.GetUtcNow();
+            freshUser.LastLoginAt = now;
+
+            string? pendingOtpCode = null;
+            if (!freshUser.EmailVerified &&
+                (string.IsNullOrEmpty(freshUser.EmailOtpHash) || !freshUser.EmailOtpExpiresAt.HasValue || freshUser.EmailOtpExpiresAt.Value < now))
+            {
+                pendingOtpCode = AuthOtpHelper.IssueOtp(freshUser, _timeProvider);
+            }
+
             await _context.SaveChangesAsync(cancellationToken);
+            if (!string.IsNullOrEmpty(pendingOtpCode) && _emailOtpSender != null)
+            {
+                try
+                {
+                    await _emailOtpSender.SendOtpAsync(freshUser.Email, pendingOtpCode, freshUser.OwnerName, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogError(ex, "Failed to send PIN login OTP email to {Email}. User can request resend.", freshUser.Email);
+                }
+            }
 
             return Ok(AuthResponseBuilder.Build(freshUser, freshUser.Tenant, access, refreshToken));
         }
@@ -1068,9 +1249,9 @@ public class AuthController : ControllerBase
         [FromBody] ChangePasswordRequest request,
         CancellationToken cancellationToken)
     {
-        if (request == null || !ModelState.IsValid || string.IsNullOrWhiteSpace(request.CurrentPassword) || string.IsNullOrWhiteSpace(request.NewPassword))
+        if (request == null || !ModelState.IsValid || string.IsNullOrWhiteSpace(request.NewPassword))
         {
-            return BadRequest(ModelState.IsValid ? (object)new { message = "Kailangan ng kasalukuyan at bagong password. / Current and new password are required." } : ModelState);
+            return BadRequest(ModelState.IsValid ? (object)new { message = "Kailangan ng bagong password (minimum 6 letra). / New password is required (minimum 6 chars)." } : ModelState);
         }
 
         var userId = AuthClaimsHelper.ResolveUserId(_currentUserService, HttpContext?.User);
@@ -1082,39 +1263,190 @@ public class AuthController : ControllerBase
         var user = await _context.Users.IgnoreQueryFilters()
             .FirstOrDefaultAsync(u => u.Id == userId.Value, cancellationToken);
 
-        if (user == null || string.IsNullOrEmpty(user.PasswordHash))
+        if (user == null)
         {
-            return Unauthorized(new { message = "Hindi natagpuan ang account o walang password. / User not found or password not configured." });
+            return Unauthorized(new { message = "Hindi natagpuan ang account. / User account not found." });
         }
 
-        if (AuthLockoutHelper.CheckPasswordLockout(user, _timeProvider, out var lockoutMinutes))
+        var hasExistingPassword = !string.IsNullOrEmpty(user.PasswordHash);
+        if (hasExistingPassword)
         {
-            return AuthLockoutHelper.PasswordLockedOutResult(lockoutMinutes);
-        }
-
-        var verifyResult = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.CurrentPassword);
-        if (verifyResult == PasswordVerificationResult.Failed)
-        {
-            AuthLockoutHelper.RecordPasswordFailure(user, _timeProvider, out var isLockedOut, out var lockMinutes, out var remainingAttempts);
-            await _context.SaveChangesAsync(cancellationToken);
-
-            if (isLockedOut)
+            if (string.IsNullOrWhiteSpace(request.CurrentPassword))
             {
-                return AuthLockoutHelper.PasswordLockedOutResult(lockMinutes, isInitial: true);
+                return BadRequest(new { message = "Kailangan ng kasalukuyang password. / Current password is required." });
             }
 
-            return AuthLockoutHelper.PasswordFailedResult(
-                remainingAttempts,
-                $"Maling kasalukuyang password. May natitira ka pang {remainingAttempts} pagsubok bago mag-lockout. / Invalid current password. {remainingAttempts} attempts remaining.");
+            if (AuthLockoutHelper.CheckPasswordLockout(user, _timeProvider, out var lockoutMinutes))
+            {
+                return AuthLockoutHelper.PasswordLockedOutResult(lockoutMinutes);
+            }
+
+            var verifyResult = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.CurrentPassword);
+            if (verifyResult == PasswordVerificationResult.Failed)
+            {
+                AuthLockoutHelper.RecordPasswordFailure(user, _timeProvider, out var isLockedOut, out var lockMinutes, out var remainingAttempts);
+                await _context.SaveChangesAsync(cancellationToken);
+
+                if (isLockedOut)
+                {
+                    return AuthLockoutHelper.PasswordLockedOutResult(lockMinutes, isInitial: true);
+                }
+
+                return AuthLockoutHelper.PasswordFailedResult(
+                    remainingAttempts,
+                    $"Maling kasalukuyang password. May natitira ka pang {remainingAttempts} pagsubok bago mag-lockout. / Invalid current password. {remainingAttempts} attempts remaining.");
+            }
         }
 
         user.PasswordHash = _passwordHasher.HashPassword(user, request.NewPassword);
         AuthLockoutHelper.ResetPasswordLockout(user);
 
+        string? responseRefreshToken = null;
+        string? currentFamilyId = null;
+        string? currentTokenId = null;
+        if (!string.IsNullOrWhiteSpace(request.RefreshToken) &&
+            _jwtTokenService.ValidateRefreshToken(request.RefreshToken, out var refUid, out _, out var tokenId, out var famId) &&
+            refUid == user.Id)
+        {
+            currentFamilyId = famId;
+            currentTokenId = tokenId;
+        }
+
+        if (currentFamilyId != null && currentTokenId != null)
+        {
+            await AuthRefreshTokenHelper.RevokeOtherSessionsForUserAsync(
+                _context, user, user.Id, currentFamilyId, _timeProvider, cancellationToken);
+            var (rToken, _, _, _) = await AuthRefreshTokenHelper.RotatePresentedRefreshTokenAsync(
+                _context, _jwtTokenService, user, user.TenantId, _timeProvider, currentTokenId, currentFamilyId, cancellationToken);
+            responseRefreshToken = rToken;
+        }
+        else
+        {
+            await AuthRefreshTokenHelper.RevokeAllForUserAsync(_context, user, user.Id, _timeProvider, cancellationToken);
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        if (responseRefreshToken != null)
+        {
+            var tenant = await _context.Tenants.IgnoreQueryFilters()
+                .FirstOrDefaultAsync(t => t.Id == user.TenantId, cancellationToken);
+            var access = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId, email: user.Email, role: user.Role);
+            return Ok(AuthResponseBuilder.Build(user, tenant, access, refreshToken: responseRefreshToken, ownerName: user.OwnerName));
+        }
+
+        return Ok(new { message = "Matagumpay na nabago ang password. Na-revoke ang lahat ng lumang sessions. / Password changed successfully. All previous sessions revoked." });
+    }
+
+    /// <summary>
+    /// Initiates password reset by issuing a 6-digit OTP to the registered email address.
+    /// Returns 200 generic message if email is not found to prevent user enumeration.
+    /// </summary>
+    [AllowAnonymous]
+    [EnableRateLimiting("AuthSensitive")]
+    [HttpPost("forgot-password")]
+    [Route("/auth/forgot-password")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> ForgotPassword(
+        [FromBody] ForgotPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request == null || !ModelState.IsValid || string.IsNullOrWhiteSpace(request.Email))
+        {
+            return BadRequest(ModelState.IsValid ? (object)new { message = "Kailangan ng wastong email address. / Valid email address is required." } : ModelState);
+        }
+
+        var cleanEmail = request.Email.Trim().ToLowerInvariant();
+        var user = await _context.Users.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.NormalizedEmail == cleanEmail, cancellationToken);
+
+        // Anti-enumeration: return success message even if account is not found or deleted
+        if (user == null || user.AccountStatus == FluentTindahan.Domain.Entities.User.StatusDeleted)
+        {
+            return Ok(new { message = "Kung may account para sa email na ito, nagpadala kami ng 6-digit verification code. / If an account exists for this email, we sent a 6-digit verification code." });
+        }
+
+        if (!AuthOtpHelper.CanResendOtp(user, _timeProvider, out _))
+        {
+            return Ok(new { message = "Kung may account para sa email na ito, nagpadala kami ng 6-digit verification code. / If an account exists for this email, we sent a 6-digit verification code." });
+        }
+
+        var otpCode = AuthOtpHelper.IssueOtp(user, _timeProvider);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        if (_emailOtpSender != null)
+        {
+            try
+            {
+                await _emailOtpSender.SendOtpAsync(user.Email, otpCode, user.OwnerName, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Failed to send forgot-password OTP email to {Email}", user.Email);
+            }
+        }
+
+        return Ok(new
+        {
+            message = "Nagpadala kami ng 6-digit verification code sa iyong email. / We sent a 6-digit verification code to your email."
+        });
+    }
+
+    /// <summary>
+    /// Resets the user's password using the 6-digit email verification OTP.
+    /// Revokes all existing refresh tokens and invalidates past sessions upon success.
+    /// </summary>
+    [AllowAnonymous]
+    [EnableRateLimiting("AuthSensitive")]
+    [HttpPost("reset-password")]
+    [Route("/auth/reset-password")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> ResetPassword(
+        [FromBody] ResetPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request == null || !ModelState.IsValid ||
+            string.IsNullOrWhiteSpace(request.Email) ||
+            string.IsNullOrWhiteSpace(request.Otp) ||
+            string.IsNullOrWhiteSpace(request.NewPassword))
+        {
+            return BadRequest(ModelState.IsValid ? (object)new { message = "Kailangan ng email, 6-digit code, at bagong password. / Email, 6-digit code, and new password are required." } : ModelState);
+        }
+
+        var cleanEmail = request.Email.Trim().ToLowerInvariant();
+        var user = await _context.Users.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.NormalizedEmail == cleanEmail, cancellationToken);
+
+        if (user == null || user.AccountStatus == FluentTindahan.Domain.Entities.User.StatusDeleted)
+        {
+            return BadRequest(new { message = "Hindi natagpuan ang account o hindi wasto ang verification code. / Account not found or invalid verification code." });
+        }
+
+        var otpStatus = AuthOtpHelper.VerifyOtp(user, request.Otp, _timeProvider);
+        if (otpStatus != OtpVerificationStatus.Success)
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+            return otpStatus switch
+            {
+                OtpVerificationStatus.InvalidFormat => BadRequest(new { message = "Kailangan ng 6-digit verification code. / 6-digit verification code required." }),
+                OtpVerificationStatus.MissingOrExpired => BadRequest(new { message = "Nag-expire na ang verification code o walang aktibong request. / Verification code has expired or is invalid." }),
+                OtpVerificationStatus.TooManyAttempts => StatusCode(StatusCodes.Status429TooManyRequests, new { message = "Masyadong maraming maling pagsubok. Humiling ng bagong code. / Too many failed attempts. Please request a new code." }),
+                _ => BadRequest(new { message = "Maling verification code. / Invalid verification code." })
+            };
+        }
+
+        user.PasswordHash = _passwordHasher.HashPassword(user, request.NewPassword);
+        AuthLockoutHelper.ResetPasswordLockout(user);
+        user.SessionsInvalidatedAt = _timeProvider.GetUtcNow();
+
         await AuthRefreshTokenHelper.RevokeAllForUserAsync(_context, user, user.Id, _timeProvider, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
 
-        return Ok(new { message = "Matagumpay na nabago ang password. Na-revoke ang lahat ng lumang sessions. / Password changed successfully. All previous sessions revoked." });
+        return Ok(new { message = "Matagumpay na na-reset ang iyong password. Maaari ka nang mag-login gamit ang bagong password. / Password reset successfully. You can now log in with your new password." });
     }
 
     /// <summary>
@@ -1207,6 +1539,11 @@ public class AuthController : ControllerBase
                 return BadRequest(new { message = "Kailangan ng wastong email address. / Valid email address is required." });
             }
 
+            if (IsDisposableEmail(normalizedEmail))
+            {
+                return BadRequest(new { message = "Hindi pinapayagan ang pansamantalang (disposable) email address. Mangyaring gumamit ng permanenteng email. / Disposable email addresses are not allowed. Please use a permanent email address." });
+            }
+
             if (!string.Equals(user.NormalizedEmail, normalizedEmail, StringComparison.OrdinalIgnoreCase))
             {
                 isEmailChanging = true;
@@ -1214,6 +1551,7 @@ public class AuthController : ControllerBase
         }
 
         string? responseRefreshToken = null;
+        string? pendingOtpCode = null;
 
         if (isEmailChanging)
         {
@@ -1319,6 +1657,8 @@ public class AuthController : ControllerBase
             }
             user.Email = cleanEmail!;
             user.NormalizedEmail = normalizedEmail!;
+            user.EmailVerified = false;
+            pendingOtpCode = AuthOtpHelper.IssueOtp(user, _timeProvider);
 
             // Revoke other refresh tokens on email change
             string? currentFamilyId = null;
@@ -1360,7 +1700,359 @@ public class AuthController : ControllerBase
             return Conflict(new { message = "May account nang nakarehistro gamit ang email na ito. / An account is already registered with this email." });
         }
 
+        if (!string.IsNullOrEmpty(pendingOtpCode) && _emailOtpSender != null)
+        {
+            try
+            {
+                await _emailOtpSender.SendOtpAsync(user.Email, pendingOtpCode, user.OwnerName, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Failed to send profile update OTP email to {Email}. User can request resend.", user.Email);
+            }
+        }
+
         var access = _jwtTokenService.GenerateAccessToken(user.Id, tenant.Id, email: user.Email, role: user.Role);
         return Ok(AuthResponseBuilder.Build(user, tenant, access, refreshToken: responseRefreshToken, ownerName: user.OwnerName));
+    }
+
+    /// <summary>
+    /// Verifies a 6-digit email OTP for a newly registered or email-updated account.
+    /// Can be called with an authenticated session or by supplying the email address.
+    /// </summary>
+    [HttpPost("verify-email-otp")]
+    [EnableRateLimiting("AuthSensitive")]
+    [ProducesResponseType(typeof(AuthResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    public async Task<ActionResult<AuthResponseDto>> VerifyEmailOtp(
+        [FromBody] VerifyEmailOtpRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request == null || !ModelState.IsValid || string.IsNullOrWhiteSpace(request.Otp))
+        {
+            return BadRequest(ModelState.IsValid ? (object)new { message = "Kailangan ng 6-digit OTP code. / A 6-digit OTP code is required." } : ModelState);
+        }
+
+        var user = await ResolveUserForOtpAsync(request.Email, cancellationToken);
+        if (user == null || user.Tenant == null)
+        {
+            return Unauthorized(new { message = "Hindi natagpuan ang account. / Account not found." });
+        }
+
+        if (user.EmailVerified)
+        {
+            return BadRequest(new { message = "Beripikado na ang email address na ito. / This email address is already verified." });
+        }
+
+        var status = AuthOtpHelper.VerifyOtp(user, request.Otp, _timeProvider);
+        switch (status)
+        {
+            case OtpVerificationStatus.InvalidFormat:
+                return BadRequest(new { message = "Kailangan ng 6-digit OTP code. / A 6-digit OTP code is required." });
+
+            case OtpVerificationStatus.MissingOrExpired:
+                return BadRequest(new { message = "Paso na o walang OTP code. Mangyaring humingi ng bagong code. / OTP code has expired or is missing. Please request a new code." });
+
+            case OtpVerificationStatus.TooManyAttempts:
+                await _context.SaveChangesAsync(cancellationToken);
+                return StatusCode(StatusCodes.Status429TooManyRequests, new
+                {
+                    message = "Masyadong maraming maling pagsubok sa OTP. Mangyaring humingi ng bagong code. / Too many failed OTP attempts. Please request a new code."
+                });
+
+            case OtpVerificationStatus.InvalidCode:
+                await _context.SaveChangesAsync(cancellationToken);
+                var remainingAttempts = Math.Max(0, AuthOtpHelper.MaxVerificationAttempts - user.EmailOtpAttempts);
+                return BadRequest(new
+                {
+                    message = $"Maling OTP code. May natitira ka pang {remainingAttempts} pagsubok. / Invalid OTP code. {remainingAttempts} attempts remaining.",
+                    remainingAttempts
+                });
+
+            default:
+                var access = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId, email: user.Email, role: user.Role);
+                var (refreshToken, _, _, _) = AuthRefreshTokenHelper.IssueRefreshToken(
+                    _context,
+                    _jwtTokenService,
+                    user,
+                    user.TenantId,
+                    _timeProvider);
+                await _context.SaveChangesAsync(cancellationToken);
+                return Ok(AuthResponseBuilder.Build(user, user.Tenant, access, refreshToken, user.OwnerName));
+        }
+    }
+
+    /// <summary>
+    /// Issues and dispatches a fresh 6-digit email verification OTP with a 60-second resend cooldown.
+    /// </summary>
+    [HttpPost("resend-email-otp")]
+    [EnableRateLimiting("AuthSensitive")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> ResendEmailOtp(
+        [FromBody] ResendEmailOtpRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var user = await ResolveUserForOtpAsync(request?.Email, cancellationToken);
+        if (user == null || user.Tenant == null)
+        {
+            return Unauthorized(new { message = "Hindi natagpuan ang account. / Account not found." });
+        }
+
+        if (user.EmailVerified)
+        {
+            return BadRequest(new { message = "Beripikado na ang email address na ito. / This email address is already verified." });
+        }
+
+        if (!AuthOtpHelper.CanResendOtp(user, _timeProvider, out var retryAfterSeconds))
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, new
+            {
+                message = $"Mangyaring maghintay ng {retryAfterSeconds} segundo bago humingi ng bagong OTP. / Please wait {retryAfterSeconds} seconds before requesting a new OTP.",
+                retryAfterSeconds
+            });
+        }
+
+        var otpCode = AuthOtpHelper.IssueOtp(user, _timeProvider);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        if (_emailOtpSender != null)
+        {
+            await _emailOtpSender.SendOtpAsync(user.Email, otpCode, user.OwnerName, cancellationToken);
+        }
+
+        return Ok(new
+        {
+            message = "Naipadala na ang bagong 6-digit OTP sa iyong email. / A new 6-digit OTP has been sent to your email."
+        });
+    }
+
+    private async Task<User?> ResolveUserForOtpAsync(string? email, CancellationToken cancellationToken)
+    {
+        var userId = AuthClaimsHelper.ResolveUserId(_currentUserService, HttpContext?.User);
+        if (userId.HasValue && userId.Value != Guid.Empty)
+        {
+            var byId = await _context.Users.IgnoreQueryFilters()
+                .Include(u => u.Tenant)
+                .FirstOrDefaultAsync(u => u.Id == userId.Value, cancellationToken);
+            if (byId != null)
+            {
+                return byId;
+            }
+        }
+
+        var normalizedEmail = NormalizeEmail(email);
+        if (string.IsNullOrWhiteSpace(normalizedEmail))
+        {
+            return null;
+        }
+
+        return await _context.Users.IgnoreQueryFilters()
+            .Include(u => u.Tenant)
+            .FirstOrDefaultAsync(u => u.NormalizedEmail == normalizedEmail, cancellationToken);
+    }
+
+    /// <summary>
+    /// Initiates self-service account deactivation (30-day grace period) or immediate permanent anonymization.
+    /// Requires step-up re-authentication via current password, PIN, or Google ID token.
+    /// Immediately revokes all active sessions and refresh tokens.
+    /// </summary>
+    [Authorize]
+    [EnableRateLimiting("AuthSensitive")]
+    [HttpPost("delete-account")]
+    [Route("/auth/delete-account")]
+    [ProducesResponseType(typeof(DeleteAccountResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    public async Task<ActionResult<DeleteAccountResponseDto>> DeleteAccount(
+        [FromBody] DeleteAccountRequest? request,
+        CancellationToken cancellationToken)
+    {
+        if (request == null)
+        {
+            return BadRequest(new { message = "Kailangan ng kumpirmasyon upang burahin ang account. / Confirmation is required to delete the account." });
+        }
+
+        var userId = AuthClaimsHelper.ResolveUserId(_currentUserService, HttpContext?.User);
+        if (!userId.HasValue || userId == Guid.Empty)
+        {
+            return Unauthorized(new { message = "User is not authenticated." });
+        }
+
+        var user = await _context.Users.IgnoreQueryFilters()
+            .Include(u => u.Tenant)
+            .FirstOrDefaultAsync(u => u.Id == userId.Value, cancellationToken);
+
+        if (user == null || string.Equals(user.AccountStatus, Domain.Entities.User.StatusDeleted, StringComparison.OrdinalIgnoreCase))
+        {
+            return Unauthorized(new { message = "Hindi natagpuan ang account. / User account not found." });
+        }
+
+        var verified = false;
+        var hasPassword = !string.IsNullOrEmpty(user.PasswordHash);
+        var hasPin = !string.IsNullOrEmpty(user.PinHash);
+        var hasGoogle = !string.IsNullOrEmpty(user.FirebaseUid);
+
+        if (!string.IsNullOrWhiteSpace(request.Password))
+        {
+            if (!hasPassword)
+            {
+                return BadRequest(new { message = "Walang naka-set na password ang account. / Account has no password configured." });
+            }
+
+            if (AuthLockoutHelper.CheckPasswordLockout(user, _timeProvider, out var lockoutMinutes))
+            {
+                return AuthLockoutHelper.PasswordLockedOutResult(lockoutMinutes);
+            }
+
+            var pwdVerify = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
+            if (pwdVerify == PasswordVerificationResult.Failed)
+            {
+                AuthLockoutHelper.RecordPasswordFailure(user, _timeProvider, out var isLockedOut, out var lockMinutes, out var remainingAttempts);
+                await _context.SaveChangesAsync(cancellationToken);
+                if (isLockedOut)
+                {
+                    return AuthLockoutHelper.PasswordLockedOutResult(lockMinutes, isInitial: true);
+                }
+
+                return AuthLockoutHelper.PasswordFailedResult(
+                    remainingAttempts,
+                    $"Maling password. May natitira ka pang {remainingAttempts} pagsubok bago mag-lockout. / Invalid password. {remainingAttempts} attempts remaining.");
+            }
+
+            AuthLockoutHelper.ResetPasswordLockout(user);
+            verified = true;
+        }
+        else if (!string.IsNullOrWhiteSpace(request.Pin))
+        {
+            if (!hasPin)
+            {
+                return BadRequest(new { message = "Walang naka-set na PIN ang account. / Account has no PIN configured." });
+            }
+
+            if (AuthLockoutHelper.CheckPinLockout(user, _timeProvider, out var pinLockoutMinutes))
+            {
+                return AuthLockoutHelper.PinLockedOutResult(pinLockoutMinutes);
+            }
+
+            var pinVerify = _passwordHasher.VerifyHashedPassword(user, user.PinHash!, request.Pin.Trim());
+            if (pinVerify == PasswordVerificationResult.Failed)
+            {
+                AuthLockoutHelper.RecordPinFailureInMemory(user, _timeProvider, out var isPinLockedOut, out var pinLockMinutes, out var remainingPinAttempts);
+                await _context.SaveChangesAsync(cancellationToken);
+                if (isPinLockedOut)
+                {
+                    return AuthLockoutHelper.PinLockedOutResult(pinLockMinutes, isInitial: true);
+                }
+
+                return AuthLockoutHelper.PinFailedResult(remainingPinAttempts);
+            }
+
+            AuthLockoutHelper.ResetPinLockout(user);
+            verified = true;
+        }
+        else if (!string.IsNullOrWhiteSpace(request.GoogleIdToken) || !string.IsNullOrWhiteSpace(request.GoogleAccessToken))
+        {
+            if (_googleAuthService == null)
+            {
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new { message = "Hindi available ang Google verification. / Google verification is unavailable." });
+            }
+
+            var googleUser = await _googleAuthService.VerifyGoogleTokenAsync(request.GoogleAccessToken, request.GoogleIdToken, cancellationToken);
+            if (googleUser == null)
+            {
+                return Unauthorized(new { message = "Hindi balido o nag-expire na ang Google token. / Invalid or expired Google token." });
+            }
+
+            var rawGoogleSubject = $"google:{googleUser.Subject}";
+            var googleSubject = rawGoogleSubject.Length > 128 ? rawGoogleSubject[..128] : rawGoogleSubject;
+            var matchesSubject = hasGoogle && (
+                string.Equals(user.FirebaseUid, googleSubject, StringComparison.Ordinal) ||
+                string.Equals(user.FirebaseUid, googleUser.Subject?.Trim(), StringComparison.Ordinal));
+            var matchesEmail = !string.IsNullOrWhiteSpace(googleUser.Email) &&
+                               string.Equals(user.NormalizedEmail, NormalizeEmail(googleUser.Email), StringComparison.OrdinalIgnoreCase);
+
+            if (!matchesSubject && !matchesEmail)
+            {
+                return Unauthorized(new { message = "Hindi tugma ang Google account sa kasalukuyang tindahan. / Google account does not match the current store account." });
+            }
+
+            verified = true;
+        }
+
+        if (!verified)
+        {
+            return BadRequest(new
+            {
+                message = "Kailangan ng kasalukuyang password, PIN, o Google re-authentication upang kumpirmahin ang pagbura ng account. / Current password, PIN, or Google re-authentication is required to confirm account deletion."
+            });
+        }
+
+        var now = _timeProvider.GetUtcNow();
+
+        if (request.Immediate)
+        {
+            await AccountDeletionHelper.AnonymizeUserAndTenantAsync(_context, user, user.Tenant, now, cancellationToken);
+            await _context.SaveChangesAsync(cancellationToken);
+
+            return Ok(new DeleteAccountResponseDto(
+                Domain.Entities.User.StatusDeleted,
+                null,
+                "Permanenteng binura at in-anonymize na ang iyong account. / Your account has been permanently deleted and anonymized."));
+        }
+
+        var scheduledAt = now.AddDays(AccountDeletionHelper.GracePeriodDays);
+        user.AccountStatus = Domain.Entities.User.StatusPendingDeletion;
+        user.DeletionScheduledAt = scheduledAt;
+        await AuthRefreshTokenHelper.RevokeAllForUserAsync(_context, user, user.Id, _timeProvider, cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return Ok(new DeleteAccountResponseDto(
+            Domain.Entities.User.StatusPendingDeletion,
+            scheduledAt,
+            "Naka-iskedyul na ang pagbura ng iyong account sa loob ng 30 araw. Maaari mo itong ibalik sa pamamagitan ng pag-login bago ang petsang ito. / Your account is scheduled for deletion in 30 days. You can restore it by signing in before this date."));
+    }
+
+    private async Task<ActionResult<AuthResponseDto>?> CheckAndHandleAccountStatusOnLoginAsync(
+        User user,
+        bool? restoreAccount,
+        CancellationToken cancellationToken)
+    {
+        if (string.Equals(user.AccountStatus, Domain.Entities.User.StatusDeleted, StringComparison.OrdinalIgnoreCase))
+        {
+            return Unauthorized(new { message = "Ang account na ito ay permanente nang binura. / This account has been permanently deleted." });
+        }
+
+        if (string.Equals(user.AccountStatus, Domain.Entities.User.StatusPendingDeletion, StringComparison.OrdinalIgnoreCase))
+        {
+            var now = _timeProvider.GetUtcNow();
+            if (user.DeletionScheduledAt.HasValue && user.DeletionScheduledAt.Value <= now)
+            {
+                await AccountDeletionHelper.AnonymizeUserAndTenantAsync(_context, user, user.Tenant, now, cancellationToken);
+                await _context.SaveChangesAsync(cancellationToken);
+                return Unauthorized(new { message = "Ang account na ito ay permanente nang binura matapos ang 30-day grace period. / This account has been permanently deleted after the 30-day grace period." });
+            }
+
+            if (restoreAccount == true)
+            {
+                user.AccountStatus = Domain.Entities.User.StatusActive;
+                user.DeletionScheduledAt = null;
+                return null;
+            }
+
+            return Conflict(new
+            {
+                message = "Naka-deactivate ang iyong account at nakatakdang burahin. Gusto mo bang ibalik ang iyong account? / Your account is deactivated and scheduled for deletion. Would you like to restore your account?",
+                pendingDeletion = true,
+                deletionScheduledAt = user.DeletionScheduledAt
+            });
+        }
+
+        return null;
     }
 }

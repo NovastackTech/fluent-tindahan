@@ -1289,6 +1289,69 @@ public class InfrastructureTests
         client.Timeout.Should().Be(TimeSpan.FromSeconds(10));
     }
 
+    [Fact]
+    public async Task SmtpEmailOtpSender_NoHost_InDevelopment_DoesNotThrow()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ASPNETCORE_ENVIRONMENT"] = "Development"
+            })
+            .Build();
+
+        var envMock = new Mock<IHostEnvironment>();
+        envMock.Setup(e => e.EnvironmentName).Returns(Environments.Development);
+        var loggerMock = new Mock<ILogger<SmtpEmailOtpSender>>();
+
+        var sender = new SmtpEmailOtpSender(config, loggerMock.Object, envMock.Object);
+
+        var act = () => sender.SendOtpAsync("user@example.com", "123456", "Dev Owner");
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task SmtpEmailOtpSender_NoHost_InDemoMode_DoesNotThrow()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ASPNETCORE_ENVIRONMENT"] = "Production",
+                ["DemoMode"] = "true"
+            })
+            .Build();
+
+        var envMock = new Mock<IHostEnvironment>();
+        envMock.Setup(e => e.EnvironmentName).Returns(Environments.Production);
+        var loggerMock = new Mock<ILogger<SmtpEmailOtpSender>>();
+
+        var sender = new SmtpEmailOtpSender(config, loggerMock.Object, envMock.Object);
+
+        var act = () => sender.SendOtpAsync("demo@example.com", "654321", "Demo Owner");
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task SmtpEmailOtpSender_NoHost_InProduction_ThrowsInvalidOperationException()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ASPNETCORE_ENVIRONMENT"] = "Production",
+                ["DemoMode"] = "false"
+            })
+            .Build();
+
+        var envMock = new Mock<IHostEnvironment>();
+        envMock.Setup(e => e.EnvironmentName).Returns(Environments.Production);
+        var loggerMock = new Mock<ILogger<SmtpEmailOtpSender>>();
+
+        var sender = new SmtpEmailOtpSender(config, loggerMock.Object, envMock.Object);
+
+        var act = () => sender.SendOtpAsync("prod@example.com", "999999", "Prod Owner");
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*SMTP host is not configured*");
+    }
+
     private sealed class MockHttpMessageHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> _asyncHandler;

@@ -75,7 +75,9 @@ vi.mock('../services/authService', async (importOriginal) => {
       token: 'mock-google-token',
       expiresAt: '2028-01-01',
       isNewUser: false
-    })
+    }),
+    forgotPassword: vi.fn().mockResolvedValue({ message: 'Reset code sent to email' }),
+    resetPassword: vi.fn().mockResolvedValue({ message: 'Password reset successfully' })
   };
 });
 
@@ -870,5 +872,248 @@ describe('LoginPage Component', () => {
       expect(onNavigate).toHaveBeenCalledWith('pos');
     });
   });
-});
 
+  it('prompts to restore account when login returns 409 pendingDeletion and restores on confirmation', async () => {
+    vi.mocked(authService.loginStore).mockRejectedValueOnce({
+      response: {
+        status: 409,
+        data: {
+          message: 'Your account is deactivated and scheduled for deletion.',
+          pendingDeletion: true,
+          deletionScheduledAt: '2026-11-20T00:00:00Z'
+        }
+      }
+    });
+
+    const { onNavigate } = renderLoginPage();
+
+    const emailInput = screen.getByPlaceholderText(t.landing.emailPlaceholder);
+    const passwordInput = screen.getByPlaceholderText(t.landing.passwordPlaceholder);
+    const submitBtn = screen.getByTestId('login-submit-btn');
+
+    fireEvent.change(emailInput, { target: { value: 'owner@tindahan.ph' } });
+    fireEvent.change(passwordInput, { target: { value: 'password123' } });
+    fireEvent.click(submitBtn);
+
+    const banner = await screen.findByTestId('login-pending-deletion-banner');
+    expect(banner).toBeInTheDocument();
+
+    const restoreBtn = screen.getByTestId('login-restore-account-btn');
+    fireEvent.click(restoreBtn);
+
+    await waitFor(() => {
+      expect(authService.loginStore).toHaveBeenLastCalledWith({
+        email: 'owner@tindahan.ph',
+        password: 'password123',
+        restoreAccount: true
+      });
+      expect(onNavigate).toHaveBeenCalledWith('pos');
+    });
+  });
+
+  it('routes to settings after sign-in when web delete-account link is activated', async () => {
+    const { onNavigate } = renderLoginPage();
+
+    const webDeleteLink = screen.getByTestId('login-web-delete-link');
+    fireEvent.click(webDeleteLink);
+
+    expect(screen.getByTestId('login-delete-intent-banner')).toBeInTheDocument();
+
+    const emailInput = screen.getByPlaceholderText(t.landing.emailPlaceholder);
+    const passwordInput = screen.getByPlaceholderText(t.landing.passwordPlaceholder);
+    const submitBtn = screen.getByTestId('login-submit-btn');
+
+    fireEvent.change(emailInput, { target: { value: 'owner@tindahan.ph' } });
+    fireEvent.change(passwordInput, { target: { value: 'password123' } });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(onNavigate).toHaveBeenCalledWith('settings');
+    });
+  });
+
+  it('renders Forgot Password flow, validates steps, and resets password', async () => {
+    const onNavigate = vi.fn();
+    renderLoginPage(onNavigate);
+
+    const forgotBtn = screen.getByTestId('login-forgot-password-btn');
+    expect(forgotBtn).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(forgotBtn);
+    });
+
+    const emailInput = screen.getByTestId('login-forgot-email-input');
+    const sendBtn = screen.getByTestId('login-forgot-send-btn');
+    expect(emailInput).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.change(emailInput, { target: { value: 'resetowner@tindahan.ph' } });
+      fireEvent.click(sendBtn);
+    });
+
+    await waitFor(() => {
+      expect(authService.forgotPassword).toHaveBeenCalledWith({
+        email: 'resetowner@tindahan.ph'
+      });
+    });
+
+    const otpInput = screen.getByTestId('login-reset-otp-input');
+    const newPasswordInput = screen.getByTestId('login-reset-new-password-input');
+    const confirmPasswordInput = screen.getByTestId('login-reset-confirm-password-input');
+    const resetBtn = screen.getByTestId('login-reset-submit-btn');
+
+    expect(otpInput).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.change(otpInput, { target: { value: '123456' } });
+      fireEvent.change(newPasswordInput, { target: { value: 'NewBrandPass123!' } });
+      fireEvent.change(confirmPasswordInput, { target: { value: 'NewBrandPass123!' } });
+      fireEvent.click(resetBtn);
+    });
+
+    await waitFor(() => {
+      expect(authService.resetPassword).toHaveBeenCalledWith({
+        email: 'resetowner@tindahan.ph',
+        otp: '123456',
+        newPassword: 'NewBrandPass123!'
+      });
+      expect(screen.getByTestId('login-reset-success-banner')).toBeInTheDocument();
+    });
+  });
+
+  it('displays only the active language when forgot password returns bilingual message', async () => {
+    vi.mocked(authService.forgotPassword).mockResolvedValueOnce({
+      message: 'Nagpadala kami ng 6-digit verification code sa iyong email. / We sent a 6-digit verification code to your email.'
+    });
+
+    act(() => {
+      useLanguageStore.getState().setLanguage('en');
+    });
+
+    const onNavigate = vi.fn();
+    const { unmount } = renderLoginPage(onNavigate);
+
+    const forgotBtn = screen.getByTestId('login-forgot-password-btn');
+    await act(async () => {
+      fireEvent.click(forgotBtn);
+    });
+
+    const emailInput = screen.getByTestId('login-forgot-email-input');
+    const sendBtn = screen.getByTestId('login-forgot-send-btn');
+    await act(async () => {
+      fireEvent.change(emailInput, { target: { value: 'test@tindahan.ph' } });
+      fireEvent.click(sendBtn);
+    });
+
+    await waitFor(() => {
+      const banner = screen.getByTestId('login-otp-info-banner');
+      expect(banner).toBeInTheDocument();
+      expect(banner.textContent).toBe('We sent a 6-digit verification code to your email.');
+      expect(banner.textContent).not.toContain('Nagpadala kami');
+    });
+
+    unmount();
+
+    vi.mocked(authService.forgotPassword).mockResolvedValueOnce({
+      message: 'Nagpadala kami ng 6-digit verification code sa iyong email. / We sent a 6-digit verification code to your email.'
+    });
+
+    act(() => {
+      useLanguageStore.getState().setLanguage('tl');
+    });
+
+    renderLoginPage(onNavigate);
+    const forgotBtnTl = screen.getByTestId('login-forgot-password-btn');
+    await act(async () => {
+      fireEvent.click(forgotBtnTl);
+    });
+
+    const emailInputTl = screen.getByTestId('login-forgot-email-input');
+    const sendBtnTl = screen.getByTestId('login-forgot-send-btn');
+    await act(async () => {
+      fireEvent.change(emailInputTl, { target: { value: 'test@tindahan.ph' } });
+      fireEvent.click(sendBtnTl);
+    });
+
+    await waitFor(() => {
+      const banner = screen.getByTestId('login-otp-info-banner');
+      expect(banner).toBeInTheDocument();
+      expect(banner.textContent).toBe('Nagpadala kami ng 6-digit verification code sa iyong email.');
+      expect(banner.textContent).not.toContain('We sent');
+    });
+  });
+
+  it('validates short password and confirmation mismatch inline on reset password form', async () => {
+    act(() => {
+      useLanguageStore.getState().setLanguage('en');
+    });
+
+    renderLoginPage();
+
+    const forgotBtn = screen.getByTestId('login-forgot-password-btn');
+    await act(async () => {
+      fireEvent.click(forgotBtn);
+    });
+
+    const emailInput = screen.getByTestId('login-forgot-email-input');
+    const sendBtn = screen.getByTestId('login-forgot-send-btn');
+    await act(async () => {
+      fireEvent.change(emailInput, { target: { value: 'test@tindahan.ph' } });
+      fireEvent.click(sendBtn);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('login-reset-otp-input')).toBeInTheDocument();
+    });
+
+    const otpInput = screen.getByTestId('login-reset-otp-input');
+    const newPasswordInput = screen.getByTestId('login-reset-new-password-input');
+    const confirmInput = screen.getByTestId('login-reset-confirm-password-input');
+    const submitBtn = screen.getByTestId('login-reset-submit-btn');
+
+    // Fill valid OTP
+    await act(async () => {
+      fireEvent.change(otpInput, { target: { value: '123456' } });
+    });
+
+    // Enter short password (< 6 chars)
+    await act(async () => {
+      fireEvent.change(newPasswordInput, { target: { value: '123' } });
+    });
+
+    // Length error should appear inline without clicking submit
+    expect(screen.getByText(translations.en.onboarding.passwordMinLength || 'Password must be at least 8 characters.')).toBeInTheDocument();
+    expect(submitBtn).toBeDisabled();
+
+    // Type valid password length (>= 6 chars)
+    await act(async () => {
+      fireEvent.change(newPasswordInput, { target: { value: 'validpass123' } });
+    });
+
+    // Short password error disappears
+    expect(screen.queryByText(translations.en.onboarding.passwordMinLength || 'Password must be at least 8 characters.')).not.toBeInTheDocument();
+
+    // Enter mismatched confirmation
+    await act(async () => {
+      fireEvent.change(confirmInput, { target: { value: 'differentpass' } });
+    });
+
+    // Mismatch error appears inline as soon as confirmation differs
+    expect(screen.getByText(translations.en.settings.passwordMismatchError)).toBeInTheDocument();
+    expect(submitBtn).toBeDisabled();
+
+    // Fix confirmation to match
+    await act(async () => {
+      fireEvent.change(confirmInput, { target: { value: 'validpass123' } });
+    });
+
+    // Mismatch error disappears and submit button becomes enabled
+    expect(screen.queryByText(translations.en.settings.passwordMismatchError)).not.toBeInTheDocument();
+    expect(submitBtn).not.toBeDisabled();
+
+    act(() => {
+      useLanguageStore.getState().setLanguage('tl');
+    });
+  });
+});

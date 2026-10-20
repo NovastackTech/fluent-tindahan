@@ -34,7 +34,9 @@ public static class AuthResponseBuilder
             access.Token,
             access.ExpiresAt,
             refreshToken,
-            isNewUser
+            isNewUser,
+            user.EmailVerified,
+            !user.EmailVerified && !string.IsNullOrWhiteSpace(user.Email)
         );
     }
 }

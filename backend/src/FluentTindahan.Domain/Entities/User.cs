@@ -5,6 +5,9 @@ namespace FluentTindahan.Domain.Entities;
 public class User : IMustHaveTenant
 {
     public const string NormalizedEmailUniqueIndexName = "IX_Users_NormalizedEmail";
+    public const string StatusActive = "ACTIVE";
+    public const string StatusPendingDeletion = "PENDING_DELETION";
+    public const string StatusDeleted = "DELETED";
 
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid TenantId { get; set; }
@@ -33,6 +36,21 @@ public class User : IMustHaveTenant
     /// </summary>
     public string? RefreshTokenIdHash { get; set; }
     public DateTimeOffset? RefreshTokenExpiresAt { get; set; }
+
+    /// <summary>
+    /// True once the owner proved mailbox ownership (6-digit email OTP or a verified Google identity).
+    /// </summary>
+    public bool EmailVerified { get; set; }
+    public string? EmailOtpHash { get; set; }
+    public DateTimeOffset? EmailOtpExpiresAt { get; set; }
+    public DateTimeOffset? EmailOtpSentAt { get; set; }
+    public int EmailOtpAttempts { get; set; }
+    /// <summary>
+    /// Access tokens issued before this instant are rejected (forced session invalidation).
+    /// </summary>
+    public DateTimeOffset? SessionsInvalidatedAt { get; set; }
+    public string AccountStatus { get; set; } = StatusActive;
+    public DateTimeOffset? DeletionScheduledAt { get; set; }
 
     public Tenant? Tenant { get; set; }
 }

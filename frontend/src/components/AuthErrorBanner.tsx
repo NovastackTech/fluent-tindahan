@@ -19,7 +19,7 @@ export interface AuthErrorBannerProps {
 
 export const AuthErrorBanner: React.FC<AuthErrorBannerProps> = ({
   authErrors,
-  language = 'tl',
+  language = 'en',
   errorSummaryRef,
   containerClassName,
   containerStyle,

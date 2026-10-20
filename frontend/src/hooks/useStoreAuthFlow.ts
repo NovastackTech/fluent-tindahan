@@ -3,7 +3,7 @@ import { useAuthStore } from '../state/authStore';
 import { useTranslation } from '../state/languageStore';
 import { db } from '../db/db';
 import { processSyncQueue } from '../sync/syncEngine';
-import type { AuthResponseDto } from '../services/authService';
+import { verifyEmailOtp, resendEmailOtp, type AuthResponseDto } from '../services/authService';
 import {
   executeStoreRegistration,
   executeStoreLogin,
@@ -46,6 +46,13 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
   const [pendingAuthPayload, setPendingAuthPayload] = useState<PendingAuthPayload | null>(null);
   const [isSyncingFirst, setIsSyncingFirst] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [pendingOtpEmail, setPendingOtpEmail] = useState<string | null>(null);
+  const [pendingDeletionInfo, setPendingDeletionInfo] = useState<{
+    scheduledAt: string | null;
+    retryWithRestore: () => Promise<boolean>;
+  } | null>(null);
+
+  const clearPendingDeletionInfo = () => setPendingDeletionInfo(null);
 
   const closeUnsyncedDialog = () => {
     setIsUnsyncedDialogOpen(false);
@@ -68,7 +75,11 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
         offerGcash: pendingAuthPayload.newUserPreferences?.offerGcash,
         includeStarterProducts: pendingAuthPayload.newUserPreferences?.includeStarterProducts
       });
-      options?.onSuccess?.(pendingAuthPayload.payload);
+      if (pendingAuthPayload.payload.requiresEmailVerification) {
+        setPendingOtpEmail(pendingAuthPayload.payload.email);
+      } else {
+        options?.onSuccess?.(pendingAuthPayload.payload);
+      }
     } finally {
       setIsSubmitting(false);
       setPendingAuthPayload(null);
@@ -98,7 +109,11 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
           offerGcash: pendingAuthPayload.newUserPreferences?.offerGcash,
           includeStarterProducts: pendingAuthPayload.newUserPreferences?.includeStarterProducts
         });
-        options?.onSuccess?.(pendingAuthPayload.payload);
+        if (pendingAuthPayload.payload.requiresEmailVerification) {
+          setPendingOtpEmail(pendingAuthPayload.payload.email);
+        } else {
+          options?.onSuccess?.(pendingAuthPayload.payload);
+        }
       }
     } catch (e) {
       console.warn('Sync attempt failed:', e);
@@ -111,6 +126,7 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
     setIsSubmitting(true);
     try {
       const res = await executeStoreLogin(params);
+      setPendingDeletionInfo(null);
       if (!res.success && res.authResult) {
         setPendingAuthPayload({
           payload: res.authResult,
@@ -121,11 +137,22 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
         setIsUnsyncedDialogOpen(true);
         return false;
       }
+      if (res.authResult?.requiresEmailVerification) {
+        setPendingOtpEmail(res.authResult.email || params.email.trim());
+        return true;
+      }
       options?.onSuccess?.(res.authResult);
       return true;
     } catch (apiErr: any) {
       const status = apiErr?.response?.status;
       const responseData = apiErr?.response?.data;
+      if (status === 409 && responseData?.pendingDeletion) {
+        setPendingDeletionInfo({
+          scheduledAt: responseData?.deletionScheduledAt || null,
+          retryWithRestore: () => handleStoreLogin({ ...params, restoreAccount: true })
+        });
+        return false;
+      }
       if (status === 429) {
         params.onError?.(responseData?.message || t.settings.invalidPinOrPassword);
       } else if (status === 401) {
@@ -148,12 +175,64 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
     try {
       const result = await executeStoreRegistration(params);
       if (result.success) {
-        options?.onSuccess?.();
+        if (result.requiresEmailVerification) {
+          setPendingOtpEmail(params.email.trim());
+        } else {
+          options?.onSuccess?.(result.authResult);
+        }
       }
       return result;
     } catch (err: any) {
       params.onError?.(err?.response?.data?.message || err?.message || t.onboarding.submitError);
       return { success: false };
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleVerifyEmailOtp = async (
+    otp: string,
+    onError?: (msg: string) => void
+  ): Promise<boolean> => {
+    const cleanedOtp = otp.replace(/\D/g, '').trim();
+    if (cleanedOtp.length !== 6) {
+      onError?.(t.onboarding.otpInvalid);
+      return false;
+    }
+    setIsSubmitting(true);
+    try {
+      const verifiedDto = await verifyEmailOtp({
+        email: pendingOtpEmail || undefined,
+        otp: cleanedOtp
+      });
+      await loginWithAuthPayload(verifiedDto);
+      setPendingOtpEmail(null);
+      options?.onSuccess?.(verifiedDto);
+      return true;
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || t.onboarding.otpInvalid;
+      onError?.(msg);
+      return false;
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleResendEmailOtp = async (
+    onSuccess?: (msg: string) => void,
+    onError?: (msg: string) => void
+  ): Promise<boolean> => {
+    setIsSubmitting(true);
+    try {
+      const res = await resendEmailOtp({
+        email: pendingOtpEmail || undefined
+      });
+      onSuccess?.(res?.message || t.onboarding.otpResentNotice);
+      return true;
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || t.onboarding.submitError;
+      onError?.(msg);
+      return false;
     } finally {
       setIsSubmitting(false);
     }
@@ -171,6 +250,7 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
         includeStarterProducts: params.includeStarterProducts,
         onSuccess: () => {
           success = true;
+          setPendingOtpEmail(null);
           options?.onSuccess?.();
         },
         onUnsyncedDetected: (count, payload, localPin, newUserPreferences) => {
@@ -199,11 +279,18 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
     isSyncingFirst,
     isSubmitting,
     setIsSubmitting,
+    pendingOtpEmail,
+    setPendingOtpEmail,
+    pendingDeletionInfo,
+    clearPendingDeletionInfo,
     closeUnsyncedDialog,
     handleConfirmWipeAndLogin,
     handleSyncFirst,
     handleStoreLogin,
     handleStoreRegistration,
+    handleVerifyEmailOtp,
+    handleResendEmailOtp,
     handleGoogleAuth
   };
 }
+

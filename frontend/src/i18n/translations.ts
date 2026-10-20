@@ -438,6 +438,35 @@ export interface Translations {
     unlockBtn: string;
     invalidPinOrPassword: string;
     pinLockedError: string;
+    deleteAccountBtn: string;
+    deleteAccountTitle: string;
+    deleteAccountDesc: string;
+    deleteModeGraceTitle: string;
+    deleteModeGraceDesc: string;
+    deleteModeImmediateTitle: string;
+    deleteModeImmediateDesc: string;
+    deleteRetentionNotice: string;
+    deleteSubWarning: string;
+    deleteUtangWarning: string;
+    deleteUnsyncedWarning: string;
+    deleteReauthLabel: string;
+    deleteReauthPasswordPlaceholder: string;
+    deleteReauthPinPlaceholder: string;
+    deleteConfirmDeactivateBtn: string;
+    deleteConfirmImmediateBtn: string;
+    deleteSuccessGrace: string;
+    deleteSuccessImmediate: string;
+    passwordLabel: string;
+    changePasswordBtn: string;
+    changePasswordTitle: string;
+    changePasswordDesc: string;
+    currentPasswordPlaceholder: string;
+    newPasswordLabel: string;
+    newPasswordPlaceholder: string;
+    confirmNewPasswordLabel: string;
+    confirmNewPasswordPlaceholder: string;
+    passwordMismatchError: string;
+    passwordChangedSuccess: string;
   };
   receipt: {
     watermark: string;
@@ -618,6 +647,17 @@ export interface Translations {
     ownerOnlyBusinessName: string;
     savedLocallyNotice: string;
     pendingProfileSync: string;
+    emailDisposableNotAllowed: string;
+    otpTitle: string;
+    otpSubtitle: string;
+    otpLabel: string;
+    otpPlaceholder: string;
+    otpInvalid: string;
+    otpVerifyBtn: string;
+    otpResendBtn: string;
+    otpResentNotice: string;
+    otpVerifiedSuccess: string;
+    otpBackBtn: string;
   };
   landing: {
     heroBadge: string;
@@ -742,6 +782,21 @@ export interface Translations {
     signUpWithGoogle: string;
     orDivider: string;
     googleAuthFailed: string;
+    pendingDeletionTitle: string;
+    pendingDeletionDesc: string;
+    restoreAccountBtn: string;
+    cancelRestoreBtn: string;
+    webDeleteAccountPrompt: string;
+    webDeleteIntentBanner: string;
+    forgotPasswordLink: string;
+    forgotPasswordTitle: string;
+    forgotPasswordSubtitle: string;
+    sendResetCodeBtn: string;
+    resetPasswordTitle: string;
+    resetPasswordSubtitle: string;
+    resetPasswordBtn: string;
+    resetPasswordSuccessBanner: string;
+    backToLoginBtn: string;
   };
 }
 

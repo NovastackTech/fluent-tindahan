@@ -34,6 +34,7 @@ export interface LoginFormFieldsProps {
   toggleTestId?: string;
   toggleStyle?: React.CSSProperties;
   toggleClassName?: string;
+  onForgotPassword?: () => void;
 }
 
 export const LoginFormFields: React.FC<LoginFormFieldsProps> = ({
@@ -54,7 +55,8 @@ export const LoginFormFields: React.FC<LoginFormFieldsProps> = ({
   t,
   toggleTestId,
   toggleStyle,
-  toggleClassName
+  toggleClassName,
+  onForgotPassword
 }) => {
   const emailId = idPrefix === 'landing' ? 'landing-login-email' : `${idPrefix}-email`;
   const passwordId = idPrefix === 'landing' ? 'landing-login-password' : `${idPrefix}-password`;
@@ -156,7 +158,14 @@ export const LoginFormFields: React.FC<LoginFormFieldsProps> = ({
 
       <div
         className={toggleClassName}
-        style={toggleStyle || (toggleClassName ? undefined : { marginBottom: tokens.spacingVerticalM })}
+        style={toggleStyle || (toggleClassName ? undefined : {
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: tokens.spacingVerticalM,
+          flexWrap: 'wrap',
+          gap: '8px'
+        })}
       >
         <Button
           appearance="transparent"
@@ -171,6 +180,18 @@ export const LoginFormFields: React.FC<LoginFormFieldsProps> = ({
         >
           {loginMode === 'password' ? t.landing.usePinToggle : t.landing.usePasswordToggle}
         </Button>
+        {loginMode === 'password' && onForgotPassword && (
+          <Button
+            appearance="transparent"
+            size="small"
+            type="button"
+            onClick={onForgotPassword}
+            data-testid="login-forgot-password-btn"
+            style={{ color: tokens.colorBrandForeground1 }}
+          >
+            {t.login.forgotPasswordLink}
+          </Button>
+        )}
       </div>
     </>
   );

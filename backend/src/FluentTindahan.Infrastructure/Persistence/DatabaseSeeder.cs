@@ -76,6 +76,7 @@ public static class DatabaseSeeder
                     Phone = "09171234567",
                     Role = "Owner",
                     FirebaseUid = "demo-firebase-uid",
+                    EmailVerified = true,
                     CreatedAt = DateTimeOffset.UtcNow
                 };
                 user.PasswordHash = passwordHasher.HashPassword(user, passwordToUse);

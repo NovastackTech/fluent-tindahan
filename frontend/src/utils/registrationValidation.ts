@@ -12,12 +12,47 @@ export interface RegistrationValidationTranslations {
   onboarding: {
     storeNameRequired: string;
     emailInvalid: string;
+    emailDisposableNotAllowed?: string;
     passwordRequired: string;
     passwordStrengthError: string;
     confirmPasswordRequired: string;
     passwordMismatch: string;
     pinInvalid: string;
   };
+}
+
+const DISPOSABLE_EMAIL_DOMAINS = new Set([
+  '10minutemail.com', '10minutemail.net', '10minutemail.org', '20minutemail.com',
+  '33mail.com', 'anonaddy.com', 'anonaddy.me', 'burnermail.io', 'discard.email',
+  'discardmail.com', 'dispostable.com', 'dropmail.me', 'emailondeck.com',
+  'fakeinbox.com', 'fakemailgenerator.com', 'generator.email', 'getairmail.com',
+  'getnada.com', 'grr.la', 'guerrillamail.biz', 'guerrillamail.com',
+  'guerrillamail.de', 'guerrillamail.info', 'guerrillamail.net', 'guerrillamail.org',
+  'guerrillamailblock.com', 'harakirimail.com', 'inboxkitten.com', 'jetable.org',
+  'mailcatch.com', 'maildrop.cc', 'mailforspam.com', 'mailinator.com',
+  'mailinator.net', 'mailinator.org', 'mailnesia.com', 'mailnull.com',
+  'mailsac.com', 'mailtemp.info', 'meltmail.com', 'mintemail.com',
+  'moakt.com', 'mohmal.com', 'mytemp.email', 'mytrashmail.com', 'nada.email',
+  'sharklasers.com', 'spam4.me', 'spambox.us', 'spamgourmet.com', 'temp-mail.com',
+  'temp-mail.org', 'temp-mail.ru', 'tempail.com', 'tempemail.com', 'tempinbox.com',
+  'tempmail.co', 'tempmail.com', 'tempmail.de', 'tempmail.eu', 'tempmail.net',
+  'tempmail.org', 'tempmail.us', 'tempmailo.com', 'throwawaymail.com',
+  'trashmail.com', 'trashmail.de', 'trashmail.me', 'trashmail.net', 'trashmail.org',
+  'yopmail.com', 'yopmail.fr', 'yopmail.net'
+]);
+
+export function isDisposableEmail(email: string): boolean {
+  const trimmed = email.trim().toLowerCase();
+  const atIdx = trimmed.lastIndexOf('@');
+  if (atIdx < 0 || atIdx >= trimmed.length - 1) return false;
+  let domain = trimmed.slice(atIdx + 1).replace(/^\.+|\.+$/g, '');
+  while (domain) {
+    if (DISPOSABLE_EMAIL_DOMAINS.has(domain)) return true;
+    const dotIdx = domain.indexOf('.');
+    if (dotIdx < 0) break;
+    domain = domain.slice(dotIdx + 1);
+  }
+  return false;
 }
 
 export function validateRegistrationInput(
@@ -45,6 +80,9 @@ export function validateRegistrationInput(
   }
   if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
     errors.push(t.onboarding.emailInvalid);
+    fieldErrors.email = true;
+  } else if (isDisposableEmail(trimmedEmail)) {
+    errors.push(t.onboarding.emailDisposableNotAllowed || t.onboarding.emailInvalid);
     fieldErrors.email = true;
   }
   if (!password) {

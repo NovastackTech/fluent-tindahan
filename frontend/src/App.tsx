@@ -50,8 +50,12 @@ function getInitialNavTab(): NavTab {
   if (typeof window === 'undefined') return 'dashboard';
   const params = new URLSearchParams(window.location.search);
   const tabParam = params.get('tab')?.toLowerCase();
+  const intentParam = params.get('intent')?.toLowerCase();
   if (tabParam === 'signup' || tabParam === 'register') {
     return 'login';
+  }
+  if (tabParam === 'delete-account' || intentParam === 'delete-account') {
+    return 'settings';
   }
   const validTabs: NavTab[] = ['dashboard', 'pos', 'inventory', 'utang', 'gcash', 'import', 'settings', 'landing', 'login'];
   if (tabParam && validTabs.includes(tabParam as NavTab)) {
@@ -60,6 +64,9 @@ function getInitialNavTab(): NavTab {
   const path = window.location.pathname.replace(/^\//, '').toLowerCase();
   if (path === 'signup' || path === 'register') {
     return 'login';
+  }
+  if (path === 'delete-account') {
+    return 'settings';
   }
   if (validTabs.includes(path as NavTab)) {
     return path as NavTab;
@@ -105,6 +112,9 @@ export const App: React.FC = () => {
     setActiveTab(newTab);
     if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
       const url = new URL(window.location.href);
+      if (newTab === 'login' && (url.searchParams.get('tab') === 'delete-account' || url.pathname.replace(/^\//, '').toLowerCase() === 'delete-account')) {
+        url.searchParams.set('intent', 'delete-account');
+      }
       url.searchParams.set('tab', newTab);
       window.history.replaceState(null, '', url.pathname + url.search);
     }

@@ -5,9 +5,11 @@ import { DashboardPage } from './DashboardPage';
 import { sariSariLightTheme } from '../theme/theme';
 import { db } from '../db/db';
 import { useAuthStore } from '../state/authStore';
+import { useLanguageStore } from '../state/languageStore';
 
 describe('DashboardPage', () => {
   beforeEach(async () => {
+    useLanguageStore.setState({ language: 'tl' });
     useAuthStore.setState({ tenantId: 't-1' });
     await db.sales.clear();
     await db.customers.clear();

@@ -86,9 +86,10 @@ public class AuthControllerTests
         IJwtTokenService? jwtService = null,
         ICurrentUserService? currentUserService = null,
         TimeProvider? timeProvider = null,
-        IGoogleAuthService? googleAuthService = null)
+        IGoogleAuthService? googleAuthService = null,
+        IEmailOtpSender? emailOtpSender = null)
     {
-        return new AuthController(context, jwtService ?? DefaultJwtService, currentUserService, timeProvider, googleAuthService);
+        return new AuthController(context, jwtService ?? DefaultJwtService, currentUserService, timeProvider, googleAuthService, emailOtpSender);
     }
 
     private static void SetAuthenticatedUser(
@@ -3335,6 +3336,7 @@ public class AuthControllerTests
             TenantId = existingTenantId,
             Email = "suki@gmail.com",
             NormalizedEmail = "suki@gmail.com",
+            EmailVerified = true,
             FirebaseUid = string.Empty,
             Role = "Owner",
             CreatedAt = DateTimeOffset.UtcNow
@@ -3365,6 +3367,7 @@ public class AuthControllerTests
 
         var updatedUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == existingUserId);
         updatedUser.FirebaseUid.Should().Be("google:99887766");
+        updatedUser.PasswordHash.Should().NotBeEmpty();
     }
 
     [Fact]
@@ -3693,6 +3696,735 @@ public class AuthControllerTests
         }, CancellationToken.None);
 
         successResult.Should().BeOfType<OkObjectResult>();
+    }
+
+    [Theory]
+    [InlineData("owner@mailinator.com")]
+    [InlineData("owner@sub.yopmail.com")]
+    [InlineData("owner@10minutemail.com")]
+    [InlineData("owner@guerrillamail.com")]
+    public async Task Register_DisposableEmail_ReturnsBadRequest(string disposableEmail)
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        var result = await controller.Register(new AuthController.RegisterRequest
+        {
+            TenantId = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
+            BusinessName = "Burner Tindahan",
+            Email = disposableEmail,
+            Password = "Password123!"
+        }, CancellationToken.None);
+
+        var badRequest = result.Result.Should().BeOfType<BadRequestObjectResult>().Subject;
+        badRequest.Value!.ToString().Should().Contain("Disposable email addresses are not allowed");
+    }
+
+    [Fact]
+    public async Task Register_PasswordSignup_RequiresEmailOtpVerificationAndVerifyOtpSucceeds()
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var now = new DateTimeOffset(2026, 10, 20, 0, 0, 0, TimeSpan.Zero);
+        var timeProvider = new MutableTimeProvider(now);
+        string? capturedOtp = null;
+
+        var otpSenderMock = new Mock<IEmailOtpSender>();
+        otpSenderMock
+            .Setup(s => s.SendOtpAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Callback<string, string, string?, CancellationToken>((_, otp, _, _) => capturedOtp = otp)
+            .Returns(Task.CompletedTask);
+
+        var tenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        userMock.Setup(u => u.TenantId).Returns(tenantId);
+        userMock.Setup(u => u.UserId).Returns(userId);
+
+        var controller = CreateController(
+            context,
+            currentUserService: userMock.Object,
+            timeProvider: timeProvider,
+            emailOtpSender: otpSenderMock.Object);
+
+        var registerResult = await controller.Register(new AuthController.RegisterRequest
+        {
+            TenantId = tenantId,
+            UserId = userId,
+            BusinessName = "Suki Tindahan",
+            Email = "suki.otp@example.ph",
+            Password = "Password123!"
+        }, CancellationToken.None);
+
+        var okRegister = registerResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var registerDto = okRegister.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        registerDto.EmailVerified.Should().BeFalse();
+        registerDto.RequiresEmailVerification.Should().BeTrue();
+        capturedOtp.Should().NotBeNullOrWhiteSpace().And.HaveLength(6);
+
+        SetAuthenticatedUser(controller, userId, tenantId, email: "suki.otp@example.ph");
+
+        // Wrong OTP fails and increments attempts
+        var wrongOtpResult = await controller.VerifyEmailOtp(new AuthController.VerifyEmailOtpRequest
+        {
+            Otp = "000000" == capturedOtp ? "999999" : "000000"
+        }, CancellationToken.None);
+        wrongOtpResult.Result.Should().BeOfType<BadRequestObjectResult>();
+
+        // Correct OTP verifies the account and clears OTP fields
+        var verifyResult = await controller.VerifyEmailOtp(new AuthController.VerifyEmailOtpRequest
+        {
+            Otp = capturedOtp!
+        }, CancellationToken.None);
+
+        var okVerify = verifyResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var verifyDto = okVerify.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        verifyDto.EmailVerified.Should().BeTrue();
+        verifyDto.RequiresEmailVerification.Should().BeFalse();
+
+        var verifiedUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
+        verifiedUser.EmailVerified.Should().BeTrue();
+        verifiedUser.EmailOtpHash.Should().BeNull();
+        verifiedUser.EmailOtpExpiresAt.Should().BeNull();
+
+        // Subsequent verify call on already-verified account returns 400 BadRequest and mints no tokens
+        var alreadyVerifiedResult = await controller.VerifyEmailOtp(new AuthController.VerifyEmailOtpRequest
+        {
+            Otp = "123456"
+        }, CancellationToken.None);
+        alreadyVerifiedResult.Result.Should().BeOfType<BadRequestObjectResult>();
+
+        // Unauthenticated caller attempting takeover with already-verified email is rejected
+        var takeoverController = CreateController(context);
+        var takeoverResult = await takeoverController.VerifyEmailOtp(new AuthController.VerifyEmailOtpRequest
+        {
+            Email = "suki.otp@example.ph",
+            Otp = "000000"
+        }, CancellationToken.None);
+        takeoverResult.Result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
+    public async Task ResendEmailOtp_EnforcesCooldownAndSendsNewOtpAfterCooldown()
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var now = new DateTimeOffset(2026, 10, 20, 0, 0, 0, TimeSpan.Zero);
+        var timeProvider = new MutableTimeProvider(now);
+        string? latestOtp = null;
+
+        var otpSenderMock = new Mock<IEmailOtpSender>();
+        otpSenderMock
+            .Setup(s => s.SendOtpAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Callback<string, string, string?, CancellationToken>((_, otp, _, _) => latestOtp = otp)
+            .Returns(Task.CompletedTask);
+
+        var tenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        userMock.Setup(u => u.TenantId).Returns(tenantId);
+        userMock.Setup(u => u.UserId).Returns(userId);
+
+        var controller = CreateController(
+            context,
+            currentUserService: userMock.Object,
+            timeProvider: timeProvider,
+            emailOtpSender: otpSenderMock.Object);
+
+        await controller.Register(new AuthController.RegisterRequest
+        {
+            TenantId = tenantId,
+            UserId = userId,
+            BusinessName = "Cooldown Store",
+            Email = "cooldown@example.ph",
+            Password = "Password123!"
+        }, CancellationToken.None);
+
+        SetAuthenticatedUser(controller, userId, tenantId, email: "cooldown@example.ph");
+
+        // Immediate resend within 60s fails with 429
+        var earlyResend = await controller.ResendEmailOtp(null, CancellationToken.None);
+        var tooManyRequests = earlyResend.Should().BeOfType<ObjectResult>().Subject;
+        tooManyRequests.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+
+        // Advance past 60s cooldown
+        timeProvider.Advance(TimeSpan.FromSeconds(61));
+        var validResend = await controller.ResendEmailOtp(null, CancellationToken.None);
+        validResend.Should().BeOfType<OkObjectResult>();
+        latestOtp.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task UpdateProfile_EmailChange_BlocksDisposableAndRequiresReVerification()
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var now = new DateTimeOffset(2026, 10, 20, 0, 0, 0, TimeSpan.Zero);
+        var timeProvider = new MutableTimeProvider(now);
+        string? newEmailOtp = null;
+
+        var otpSenderMock = new Mock<IEmailOtpSender>();
+        otpSenderMock
+            .Setup(s => s.SendOtpAsync("updated@example.ph", It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Callback<string, string, string?, CancellationToken>((_, otp, _, _) => newEmailOtp = otp)
+            .Returns(Task.CompletedTask);
+
+        var tenantId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        userMock.Setup(u => u.TenantId).Returns(tenantId);
+        userMock.Setup(u => u.UserId).Returns(userId);
+
+        var tenant = new Tenant
+        {
+            Id = tenantId,
+            BusinessName = "Verified Store",
+            Tier = PlanTier.Libre,
+            CreatedAt = now
+        };
+        var user = new User
+        {
+            Id = userId,
+            TenantId = tenantId,
+            Email = "original@example.ph",
+            NormalizedEmail = "original@example.ph",
+            EmailVerified = true,
+            FirebaseUid = "google:123",
+            Role = "Owner",
+            CreatedAt = now
+        };
+        context.Tenants.Add(tenant);
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        var controller = CreateController(
+            context,
+            currentUserService: userMock.Object,
+            timeProvider: timeProvider,
+            emailOtpSender: otpSenderMock.Object);
+        SetAuthenticatedUser(controller, userId, tenantId, email: "original@example.ph");
+
+        // 1. Changing to a disposable email fails
+        var disposableResult = await controller.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "Verified Store",
+            Email = "burner@yopmail.com"
+        }, CancellationToken.None);
+        disposableResult.Result.Should().BeOfType<BadRequestObjectResult>();
+
+        // 2. Changing to a valid new email sets EmailVerified = false and dispatches OTP
+        var updateResult = await controller.UpdateProfile(new AuthController.UpdateProfileRequest
+        {
+            BusinessName = "Verified Store",
+            Email = "updated@example.ph"
+        }, CancellationToken.None);
+
+        var okUpdate = updateResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = okUpdate.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        dto.Email.Should().Be("updated@example.ph");
+        dto.EmailVerified.Should().BeFalse();
+        dto.RequiresEmailVerification.Should().BeTrue();
+        newEmailOtp.Should().NotBeNullOrWhiteSpace().And.HaveLength(6);
+    }
+
+    [Fact]
+    public async Task GoogleAuth_ExistingUnverifiedAccount_OverwritesCredentialsAndInvalidatesActiveSessions()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var now = new DateTimeOffset(2026, 10, 20, 0, 0, 0, TimeSpan.Zero);
+        var timeProvider = new MutableTimeProvider(now);
+        var jwtService = CreateJwtTokenService(timeProvider: timeProvider);
+
+        var controller = CreateController(context, jwtService: jwtService, timeProvider: timeProvider);
+        var unverifiedTenantId = Guid.NewGuid();
+        var unverifiedUserId = Guid.NewGuid();
+
+        // 1. Attacker registers an unverified account with victim's email and sets password + PIN
+        var registerResult = await controller.Register(new AuthController.RegisterRequest
+        {
+            TenantId = unverifiedTenantId,
+            UserId = unverifiedUserId,
+            BusinessName = "Squatter Store",
+            Email = "victim@gmail.com",
+            Password = "AttackerPassword123!",
+            Pin = "9999"
+        }, CancellationToken.None);
+
+        var registerOk = registerResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var attackerSession = registerOk.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        attackerSession.EmailVerified.Should().BeFalse();
+
+        // 2. Advance time by 10 seconds; real owner signs in via Google OAuth (email_verified: true)
+        timeProvider.Advance(TimeSpan.FromSeconds(10));
+        var googleServiceMock = new Mock<IGoogleAuthService>();
+        googleServiceMock
+            .Setup(g => g.VerifyGoogleTokenAsync("google-valid-token", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GoogleUserInfo("google-real-owner-sub", "victim@gmail.com", true, "Real Owner", "Real"));
+
+        var googleController = CreateController(
+            context,
+            jwtService: jwtService,
+            timeProvider: timeProvider,
+            googleAuthService: googleServiceMock.Object);
+
+        var googleResult = await googleController.GoogleAuth(new AuthController.GoogleAuthRequest
+        {
+            AccessToken = "google-valid-token"
+        }, CancellationToken.None);
+
+        var googleOk = googleResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var googleDto = googleOk.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        googleDto.EmailVerified.Should().BeTrue();
+        googleDto.RequiresEmailVerification.Should().BeFalse();
+        googleDto.HasPin.Should().BeFalse();
+
+        // 3. Verify unverified account's credentials & OTP were wiped and SessionsInvalidatedAt set
+        var updatedUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == unverifiedUserId);
+        updatedUser.EmailVerified.Should().BeTrue();
+        updatedUser.PasswordHash.Should().BeEmpty();
+        updatedUser.PinHash.Should().BeNull();
+        updatedUser.EmailOtpHash.Should().BeNull();
+        updatedUser.SessionsInvalidatedAt.Should().Be(timeProvider.GetUtcNow());
+
+        // 4. Attacker's prior refresh token is revoked and rejected
+        var refreshResult = await googleController.Refresh(new AuthController.RefreshTokenRequest
+        {
+            RefreshToken = attackerSession.RefreshToken!
+        }, CancellationToken.None);
+        refreshResult.Result.Should().BeOfType<UnauthorizedObjectResult>();
+
+        // 5. Attacker's prior password and PIN can no longer authenticate
+        var loginPasswordResult = await googleController.Login(new AuthController.LoginRequest
+        {
+            Email = "victim@gmail.com",
+            Password = "AttackerPassword123!"
+        }, CancellationToken.None);
+        loginPasswordResult.Result.Should().BeOfType<UnauthorizedObjectResult>();
+
+        var loginPinResult = await googleController.LoginPin(new AuthController.LoginPinRequest
+        {
+            Email = "victim@gmail.com",
+            Pin = "9999"
+        }, CancellationToken.None);
+        loginPinResult.Result.Should().BeOfType<UnauthorizedObjectResult>();
+    }
+
+    [Fact]
+    public async Task DeleteAccount_30DayDeactivation_BlocksLoginUntilRestored()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var (authController, userId, tenantId) = await SetupAuthenticatedTestStoreAsync(
+            context,
+            email: "deactivate@tindahan.ph",
+            businessName: "Deactivate Store",
+            password: "Password123!",
+            pin: "1234");
+
+        // 1. Wrong password fails re-authentication
+        var wrongPwdResult = await authController.DeleteAccount(new AuthController.DeleteAccountRequest
+        {
+            Password = "WrongPassword!",
+            Immediate = false
+        }, CancellationToken.None);
+        wrongPwdResult.Result.Should().BeOfType<UnauthorizedObjectResult>();
+
+        // 2. Valid password schedules 30-day deletion and revokes sessions
+        var deleteResult = await authController.DeleteAccount(new AuthController.DeleteAccountRequest
+        {
+            Password = "Password123!",
+            Immediate = false
+        }, CancellationToken.None);
+
+        var okDelete = deleteResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = okDelete.Value.Should().BeOfType<AuthController.DeleteAccountResponseDto>().Subject;
+        dto.Status.Should().Be(User.StatusPendingDeletion);
+        dto.DeletionScheduledAt.Should().NotBeNull();
+
+        var dbUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
+        dbUser.AccountStatus.Should().Be(User.StatusPendingDeletion);
+        dbUser.DeletionScheduledAt.Should().NotBeNull();
+
+        // 3. Login without RestoreAccount returns 409 Conflict with pendingDeletion = true
+        var publicController = CreateController(context);
+        var loginBlocked = await publicController.Login(new AuthController.LoginRequest
+        {
+            Email = "deactivate@tindahan.ph",
+            Password = "Password123!"
+        }, CancellationToken.None);
+
+        var conflict = loginBlocked.Result.Should().BeOfType<ConflictObjectResult>().Subject;
+        var conflictJson = JsonSerializer.Serialize(conflict.Value);
+        conflictJson.Should().Contain("pendingDeletion");
+
+        // 4. Login with RestoreAccount = true restores account to ACTIVE and returns tokens
+        var loginRestore = await publicController.Login(new AuthController.LoginRequest
+        {
+            Email = "deactivate@tindahan.ph",
+            Password = "Password123!",
+            RestoreAccount = true
+        }, CancellationToken.None);
+
+        loginRestore.Result.Should().BeOfType<OkObjectResult>();
+        var restoredUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
+        restoredUser.AccountStatus.Should().Be(User.StatusActive);
+        restoredUser.DeletionScheduledAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task DeleteAccount_ImmediateAnonymization_ScrubsPiiAndRetainsFinancialLedgers()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var (authController, userId, tenantId) = await SetupAuthenticatedTestStoreAsync(
+            context,
+            email: "immediate@tindahan.ph",
+            businessName: "Immediate Delete Store",
+            ownerName: "Juan Dela Cruz",
+            phone: "09171234567",
+            password: "Password123!",
+            pin: "4321");
+
+        var customerId = Guid.NewGuid();
+        context.Customers.Add(new Customer
+        {
+            Id = customerId,
+            TenantId = tenantId,
+            Name = "Suki Pedro",
+            Phone = "09189998877",
+            UpdatedAt = DateTimeOffset.UtcNow
+        });
+
+        var productId = Guid.NewGuid();
+        context.Products.Add(new Product
+        {
+            Id = productId,
+            TenantId = tenantId,
+            Name = "Lucky Me Pancit Canton",
+            Price = 15m,
+            UpdatedAt = DateTimeOffset.UtcNow
+        });
+
+        var saleId = Guid.NewGuid();
+        context.Sales.Add(new Sale
+        {
+            Id = saleId,
+            TenantId = tenantId,
+            TotalAmount = 30m,
+            PaymentMethod = "Cash"
+        });
+
+        var utangId = Guid.NewGuid();
+        context.UtangLedgers.Add(new UtangLedger
+        {
+            Id = utangId,
+            TenantId = tenantId,
+            CustomerId = customerId,
+            Amount = 50m,
+            Type = "Credit"
+        });
+
+        await context.SaveChangesAsync();
+
+        // Immediate deletion using PIN re-authentication
+        var deleteResult = await authController.DeleteAccount(new AuthController.DeleteAccountRequest
+        {
+            Pin = "4321",
+            Immediate = true
+        }, CancellationToken.None);
+
+        var okDelete = deleteResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var dto = okDelete.Value.Should().BeOfType<AuthController.DeleteAccountResponseDto>().Subject;
+        dto.Status.Should().Be(User.StatusDeleted);
+        dto.DeletionScheduledAt.Should().BeNull();
+
+        // Verify PII scrubbed on User, Tenant, Customer and Product soft-deleted
+        var dbUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId);
+        dbUser.AccountStatus.Should().Be(User.StatusDeleted);
+        dbUser.Email.Should().EndWith("@anonymized.local");
+        dbUser.OwnerName.Should().Be("Deleted User");
+        dbUser.Phone.Should().BeEmpty();
+        dbUser.PasswordHash.Should().BeEmpty();
+        dbUser.PinHash.Should().BeNull();
+
+        var dbTenant = await context.Tenants.IgnoreQueryFilters().FirstAsync(t => t.Id == tenantId);
+        dbTenant.BusinessName.Should().Be("Deleted Store");
+        dbTenant.Tier.Should().Be(FluentTindahan.Domain.Enums.PlanTier.Libre);
+
+        var dbCustomer = await context.Customers.IgnoreQueryFilters().FirstAsync(c => c.Id == customerId);
+        dbCustomer.Name.Should().Be("Deleted Customer");
+        dbCustomer.Phone.Should().BeEmpty();
+        dbCustomer.IsDeleted.Should().BeTrue();
+
+        var dbProduct = await context.Products.IgnoreQueryFilters().FirstAsync(p => p.Id == productId);
+        dbProduct.IsDeleted.Should().BeTrue();
+
+        // Verify append-only financial ledgers (Sale, UtangLedger) remain intact per Rule 4
+        var dbSale = await context.Sales.IgnoreQueryFilters().FirstOrDefaultAsync(s => s.Id == saleId);
+        dbSale.Should().NotBeNull();
+        dbSale!.TotalAmount.Should().Be(30m);
+
+        var dbUtang = await context.UtangLedgers.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == utangId);
+        dbUtang.Should().NotBeNull();
+        dbUtang!.Amount.Should().Be(50m);
+
+        // Verify original email is freed for new registration
+        var publicController = CreateController(context);
+        var reRegister = await publicController.Register(new AuthController.RegisterRequest
+        {
+            Email = "immediate@tindahan.ph",
+            Password = "NewPassword123!",
+            BusinessName = "Fresh Tindahan"
+        }, CancellationToken.None);
+        reRegister.Result.Should().BeOfType<OkObjectResult>();
+    }
+
+    [Fact]
+    public async Task SubscriptionMonitorService_ProcessExpiredAccountDeletions_AnonymizesExpiredAccountsOnly()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var now = DateTimeOffset.UtcNow;
+
+        var (_, expiredUserId, expiredTenantId) = await SetupAuthenticatedTestStoreAsync(
+            context,
+            email: "expired@tindahan.ph",
+            businessName: "Expired Grace Store",
+            password: "Password123!");
+
+        var (_, activeGraceUserId, _) = await SetupAuthenticatedTestStoreAsync(
+            context,
+            email: "activegrace@tindahan.ph",
+            businessName: "Active Grace Store",
+            password: "Password123!");
+
+        var expiredUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == expiredUserId);
+        expiredUser.AccountStatus = User.StatusPendingDeletion;
+        expiredUser.DeletionScheduledAt = now.AddDays(-1);
+
+        var activeGraceUser = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == activeGraceUserId);
+        activeGraceUser.AccountStatus = User.StatusPendingDeletion;
+        activeGraceUser.DeletionScheduledAt = now.AddDays(15);
+
+        await context.SaveChangesAsync();
+
+        var serviceProviderMock = new Mock<IServiceProvider>();
+        serviceProviderMock.Setup(sp => sp.GetService(typeof(AppDbContext))).Returns(context);
+
+        var scopeMock = new Mock<Microsoft.Extensions.DependencyInjection.IServiceScope>();
+        scopeMock.Setup(s => s.ServiceProvider).Returns(serviceProviderMock.Object);
+
+        var scopeFactoryMock = new Mock<Microsoft.Extensions.DependencyInjection.IServiceScopeFactory>();
+        scopeFactoryMock.Setup(f => f.CreateScope()).Returns(scopeMock.Object);
+
+        var config = new ConfigurationBuilder().Build();
+        var monitor = new SubscriptionMonitorService(
+            scopeFactoryMock.Object,
+            config,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<SubscriptionMonitorService>.Instance);
+
+        await monitor.ProcessExpiredAccountDeletionsAsync(CancellationToken.None);
+
+        var updatedExpired = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == expiredUserId);
+        updatedExpired.AccountStatus.Should().Be(User.StatusDeleted);
+        updatedExpired.Email.Should().EndWith("@anonymized.local");
+
+        var updatedTenant = await context.Tenants.IgnoreQueryFilters().FirstAsync(t => t.Id == expiredTenantId);
+        updatedTenant.BusinessName.Should().Be("Deleted Store");
+
+        var updatedActiveGrace = await context.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == activeGraceUserId);
+        updatedActiveGrace.AccountStatus.Should().Be(User.StatusPendingDeletion);
+        updatedActiveGrace.Email.Should().Be("activegrace@tindahan.ph");
+    }
+
+    [Fact]
+    public async Task ChangePassword_WithRefreshToken_RevokesOtherSessionsAndReturnsAuthDto()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var timeProvider = new MutableTimeProvider(DateTimeOffset.UtcNow);
+        var controller = CreateController(context, timeProvider: timeProvider);
+
+        var regResult = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "sessionkeep@tindahan.ph",
+            Password = "OldPassword123!",
+            BusinessName = "Session Keep Store"
+        }, CancellationToken.None);
+        var regDto = ((OkObjectResult)regResult.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        var originalRefreshToken = regDto.RefreshToken!;
+
+        SetAuthenticatedUser(controller, regDto.UserId, regDto.TenantId, regDto.Email);
+
+        var changeResult = await controller.ChangePassword(new AuthController.ChangePasswordRequest
+        {
+            CurrentPassword = "OldPassword123!",
+            NewPassword = "NewPassword999!",
+            RefreshToken = originalRefreshToken
+        }, CancellationToken.None);
+
+        var okResult = changeResult.Should().BeOfType<OkObjectResult>().Subject;
+        var authDto = okResult.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        authDto.Token.Should().NotBeNullOrWhiteSpace();
+        authDto.RefreshToken.Should().NotBeNullOrWhiteSpace().And.NotBe(originalRefreshToken);
+    }
+
+    [Fact]
+    public async Task ForgotPassword_ExistingUser_IssuesOtpAndDispatchesEmail()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var timeProvider = new MutableTimeProvider(DateTimeOffset.UtcNow);
+        var otpSenderMock = new Mock<IEmailOtpSender>();
+        string? dispatchedOtp = null;
+        otpSenderMock.Setup(s => s.SendOtpAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Callback<string, string, string?, CancellationToken>((_, otp, _, _) => dispatchedOtp = otp)
+            .Returns(Task.CompletedTask);
+
+        var controller = CreateController(context, timeProvider: timeProvider, emailOtpSender: otpSenderMock.Object);
+
+        await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "forgotuser@tindahan.ph",
+            Password = "Password123!",
+            BusinessName = "Forgot Password Store"
+        }, CancellationToken.None);
+
+        timeProvider.Advance(TimeSpan.FromSeconds(61));
+
+        var forgotResult = await controller.ForgotPassword(new AuthController.ForgotPasswordRequest
+        {
+            Email = "forgotuser@tindahan.ph"
+        }, CancellationToken.None);
+
+        forgotResult.Should().BeOfType<OkObjectResult>();
+        dispatchedOtp.Should().NotBeNullOrWhiteSpace().And.HaveLength(6);
+
+        // Anti-enumeration: cooldown returns generic 200 without dispatching a new email
+        dispatchedOtp = null;
+        var cooldownResult = await controller.ForgotPassword(new AuthController.ForgotPasswordRequest
+        {
+            Email = "forgotuser@tindahan.ph"
+        }, CancellationToken.None);
+        cooldownResult.Should().BeOfType<OkObjectResult>();
+        dispatchedOtp.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ForgotPassword_NonexistentUser_ReturnsGenericOk_AntiEnumeration()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        var forgotResult = await controller.ForgotPassword(new AuthController.ForgotPasswordRequest
+        {
+            Email = "ghost@tindahan.ph"
+        }, CancellationToken.None);
+
+        forgotResult.Should().BeOfType<OkObjectResult>();
+    }
+
+    [Fact]
+    public async Task RegisterAndLogin_WhenEmailSenderThrows_DoesNotReturn500()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var failingOtpSender = new Mock<IEmailOtpSender>();
+        failingOtpSender
+            .Setup(s => s.SendOtpAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new System.Net.Mail.SmtpException("Connection refused"));
+
+        var controller = CreateController(context, emailOtpSender: failingOtpSender.Object);
+
+        // Register succeeds despite SMTP failure
+        var regResult = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "smtp.fail@tindahan.ph",
+            Password = "Password123!",
+            BusinessName = "Offline SMTP Store"
+        }, CancellationToken.None);
+
+        var regOk = regResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var regDto = regOk.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        regDto.Email.Should().Be("smtp.fail@tindahan.ph");
+        regDto.RequiresEmailVerification.Should().BeTrue();
+
+        // Login succeeds despite SMTP failure
+        var loginResult = await controller.Login(new AuthController.LoginRequest
+        {
+            Email = "smtp.fail@tindahan.ph",
+            Password = "Password123!"
+        }, CancellationToken.None);
+
+        var loginOk = loginResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var loginDto = loginOk.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        loginDto.Email.Should().Be("smtp.fail@tindahan.ph");
+    }
+
+    [Fact]
+    public async Task ResetPassword_ValidOtp_UpdatesPasswordHashAndInvalidatesSessions()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var timeProvider = new MutableTimeProvider(DateTimeOffset.UtcNow);
+        var otpSenderMock = new Mock<IEmailOtpSender>();
+        string? dispatchedOtp = null;
+        otpSenderMock.Setup(s => s.SendOtpAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Callback<string, string, string?, CancellationToken>((_, otp, _, _) => dispatchedOtp = otp)
+            .Returns(Task.CompletedTask);
+
+        var controller = CreateController(context, timeProvider: timeProvider, emailOtpSender: otpSenderMock.Object);
+
+        var regResult = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "resetme@tindahan.ph",
+            Password = "OldPassword123!",
+            BusinessName = "Reset Password Store"
+        }, CancellationToken.None);
+        var regDto = ((OkObjectResult)regResult.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        var oldRefreshToken = regDto.RefreshToken!;
+        timeProvider.Advance(TimeSpan.FromSeconds(61));
+
+        // Request forgot password OTP
+        await controller.ForgotPassword(new AuthController.ForgotPasswordRequest
+        {
+            Email = "resetme@tindahan.ph"
+        }, CancellationToken.None);
+
+        dispatchedOtp.Should().NotBeNull();
+
+        // Wrong OTP fails
+        var wrongOtpResult = await controller.ResetPassword(new AuthController.ResetPasswordRequest
+        {
+            Email = "resetme@tindahan.ph",
+            Otp = "999999",
+            NewPassword = "BrandNewPassword123!"
+        }, CancellationToken.None);
+        wrongOtpResult.Should().BeOfType<BadRequestObjectResult>();
+
+        // Correct OTP resets password
+        var resetResult = await controller.ResetPassword(new AuthController.ResetPasswordRequest
+        {
+            Email = "resetme@tindahan.ph",
+            Otp = dispatchedOtp!,
+            NewPassword = "BrandNewPassword123!"
+        }, CancellationToken.None);
+        resetResult.Should().BeOfType<OkObjectResult>();
+
+        // Old refresh token is revoked
+        var refreshResult = await controller.Refresh(new AuthController.RefreshTokenRequest
+        {
+            RefreshToken = oldRefreshToken
+        }, CancellationToken.None);
+        refreshResult.Result.Should().BeOfType<UnauthorizedObjectResult>();
+
+        // Login with old password fails
+        var oldLogin = await controller.Login(new AuthController.LoginRequest
+        {
+            Email = "resetme@tindahan.ph",
+            Password = "OldPassword123!"
+        }, CancellationToken.None);
+        oldLogin.Result.Should().BeOfType<UnauthorizedObjectResult>();
+
+        // Login with new password succeeds
+        var newLogin = await controller.Login(new AuthController.LoginRequest
+        {
+            Email = "resetme@tindahan.ph",
+            Password = "BrandNewPassword123!"
+        }, CancellationToken.None);
+        newLogin.Result.Should().BeOfType<OkObjectResult>();
     }
 }
 

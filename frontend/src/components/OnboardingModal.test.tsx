@@ -6,6 +6,7 @@ import { sariSariLightTheme } from '../theme/theme';
 import { DEMO_BUSINESS_NAME, DEMO_OWNER, DEMO_PHONE, useAuthStore } from '../state/authStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
 import { calculateGCashFee, DEFAULT_GCASH_FEE_TIERS, useGCashFeeStore } from '../state/gcashFeeStore';
+import { useLanguageStore } from '../state/languageStore';
 import { db } from '../db/db';
 import * as authService from '../services/authService';
 import * as syncEngine from '../sync/syncEngine';
@@ -132,6 +133,7 @@ describe('OnboardingModal', () => {
       isActive: false,
       daysRemaining: null
     });
+    useLanguageStore.setState({ language: 'tl' });
     vi.clearAllMocks();
   });
 
