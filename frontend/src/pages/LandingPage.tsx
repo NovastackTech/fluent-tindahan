@@ -38,7 +38,7 @@ import type { NavTab } from '../components/Navigation';
 import { useTranslation } from '../state/languageStore';
 import { useAuthStore } from '../state/authStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
-import { updateQueueCounts } from '../sync/syncEngine';
+import { resetSyncStore, updateQueueCounts } from '../sync/syncEngine';
 import { useStoreAuthFlow } from '../hooks/useStoreAuthFlow';
 import { ConfirmUnsyncedLoginDialog } from '../components/ConfirmUnsyncedLoginDialog';
 import { seedDexieDatabaseIfNeeded, DEFAULT_TENANT_ID } from '../db/seedData';
@@ -497,13 +497,15 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
         userEmail: 'demo@fluent-tindahan.ph',
         tenantId: DEFAULT_TENANT_ID,
         userId: '22222222-2222-2222-2222-222222222222',
-        hasPin: false
+        hasPin: false,
+        isDemo: true
       });
       useSubscriptionStore.setState({
         tier: 'Libre',
         subscriptionEndDate: null,
         isActive: false
       });
+      resetSyncStore();
       await updateQueueCounts();
       onNavigate('pos');
     } catch (err) {
