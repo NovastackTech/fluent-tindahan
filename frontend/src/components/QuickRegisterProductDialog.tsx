@@ -144,10 +144,15 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
 
   if (!isOpen || !unrecognizedBarcode) return null;
 
-  const costNum = Number(String(cost).replace(/,/g, '')) || 0;
-  const priceNum = Number(String(price).replace(/,/g, '')) || 0;
-  const unitProfit = Math.max(0, priceNum - costNum);
-  const marginPct = priceNum > 0 ? ((priceNum - costNum) / priceNum) * 100 : 0;
+  const costClean = String(cost).replace(/,/g, '').trim();
+  const priceClean = String(price).replace(/,/g, '').trim();
+  const costNum = costClean === '' ? 0 : Number(costClean);
+  const priceNum = priceClean === '' ? 0 : Number(priceClean);
+  const isCostValid = !Number.isNaN(costNum) && costNum >= 0;
+  const isPriceValid = !Number.isNaN(priceNum) && priceNum > 0;
+  const isLiveMarginValid = isCostValid && isPriceValid;
+  const unitProfit = isLiveMarginValid ? Math.max(0, priceNum - costNum) : 0;
+  const marginPct = isLiveMarginValid ? ((priceNum - costNum) / priceNum) * 100 : null;
 
   const handleSave = async () => {
     setNameError('');
@@ -451,26 +456,34 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
                   size={300}
                   style={{
                     color:
-                      unitProfit > 0
+                      !isLiveMarginValid
+                        ? tokens.colorNeutralForeground3
+                        : unitProfit > 0
                         ? tokens.colorPaletteGreenForeground1
                         : priceNum < costNum
                         ? tokens.colorPaletteRedForeground1
                         : tokens.colorNeutralForeground1
                   }}
                 >
-                  {formatPeso(unitProfit)}
+                  {isLiveMarginValid ? formatPeso(unitProfit) : '—'}
                 </Text>
               </div>
               <div className={styles.marginPreviewRow}>
                 <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
                   {t.inventory.marginPreview}
                 </Text>
-                <Badge
-                  appearance="filled"
-                  color={marginPct >= 20 ? 'success' : marginPct >= 10 ? 'warning' : 'danger'}
-                >
-                  {marginPct.toFixed(1)}%
-                </Badge>
+                {marginPct !== null ? (
+                  <Badge
+                    appearance="filled"
+                    color={marginPct >= 20 ? 'success' : marginPct >= 10 ? 'warning' : 'danger'}
+                  >
+                    {marginPct.toFixed(1)}%
+                  </Badge>
+                ) : (
+                  <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+                    —
+                  </Text>
+                )}
               </div>
             </div>
           </DialogContent>
