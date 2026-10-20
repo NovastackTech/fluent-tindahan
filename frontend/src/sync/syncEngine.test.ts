@@ -1174,4 +1174,40 @@ describe('syncEngine', () => {
     window.dispatchEvent(new Event('online'));
     expect(useSyncStore.getState().isOnline).toBe(true);
   });
+
+  describe('demo mode isolation (DEV-62)', () => {
+    beforeEach(() => {
+      useAuthStore.setState({
+        isDemo: true,
+        userEmail: 'demo@fluent-tindahan.ph',
+        businessName: "Aling Nena's Demo Tindahan",
+        isOnboarded: true
+      });
+    });
+
+    it('does not enqueue mutations in demo mode', async () => {
+      const syncId = await enqueueSync('Sale', 'Insert', { id: 'demo-sale-1', total: 100 });
+      expect(syncId).toBeTruthy();
+      expect(await db.syncQueue.count()).toBe(0);
+      expect(useSyncStore.getState().pendingCount).toBe(0);
+    });
+
+    it('does not send batches to server in demo mode', async () => {
+      const result = await processSyncQueue({ force: true });
+      expect(result).toEqual({ processed: 0, conflicts: 0, errors: 0 });
+      expect(apiClient.post).not.toHaveBeenCalled();
+    });
+
+    it('does not restore data from server in demo mode', async () => {
+      await restoreTenantDataFromServer();
+      expect(apiClient.get).not.toHaveBeenCalled();
+    });
+
+    it('keeps queue counts at 0 when updateQueueCounts is called in demo mode', async () => {
+      useSyncStore.setState({ pendingCount: 5, deadLetterCount: 2 });
+      await updateQueueCounts();
+      expect(useSyncStore.getState().pendingCount).toBe(0);
+      expect(useSyncStore.getState().deadLetterCount).toBe(0);
+    });
+  });
 });

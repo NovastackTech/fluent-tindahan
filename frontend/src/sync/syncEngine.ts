@@ -26,7 +26,7 @@ import {
   TenantAccountMismatchError,
   TenantProvisioningError
 } from '../services/apiClient';
-import { useAuthStore } from '../state/authStore';
+import { isDemoMode, useAuthStore } from '../state/authStore';
 import { useLanguageStore } from '../state/languageStore';
 import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
 import { createClientUuid } from '../utils/uuid';
@@ -105,7 +105,22 @@ useSyncStore.subscribe((state, prevState) => {
   }
 });
 
+export function resetSyncStore(): void {
+  useSyncStore.setState({
+    isSyncing: false,
+    pendingCount: 0,
+    deadLetterCount: 0,
+    lastErrorMessage: null,
+    authBlockedSessionKey: null,
+    batchFailureCount: 0,
+    nextRetryAt: null
+  });
+}
+
 useAuthStore.subscribe((authState, prevAuthState) => {
+  if (!authState.isOnboarded && prevAuthState?.isOnboarded) {
+    resetSyncStore();
+  }
   const currentTenant = authState.tenantId?.trim();
   const prevTenant = prevAuthState?.tenantId?.trim();
   if (currentTenant && prevTenant && currentTenant.toLowerCase() !== prevTenant.toLowerCase()) {
@@ -147,6 +162,9 @@ export async function addSyncRecord(
   action: 'Insert' | 'Update' | 'Delete',
   payload: any
 ): Promise<string> {
+  if (isDemoMode()) {
+    return createClientUuid();
+  }
   const syncId = createClientUuid();
   const record: SyncQueueRecord = {
     id: syncId,
@@ -164,6 +182,9 @@ export async function addSyncRecord(
 }
 
 export async function kickSync() {
+  if (isDemoMode()) {
+    return;
+  }
   await updateQueueCounts();
 
   // If online, kick off sync asynchronously
@@ -177,6 +198,9 @@ export async function enqueueSync(
   action: 'Insert' | 'Update' | 'Delete',
   payload: any
 ): Promise<string> {
+  if (isDemoMode()) {
+    return createClientUuid();
+  }
   const syncId = await addSyncRecord(entity, action, payload);
   await kickSync();
   return syncId;
@@ -209,6 +233,10 @@ export async function recoverStaleInFlightSyncItems(now = Date.now()): Promise<n
 }
 
 export async function updateQueueCounts() {
+  if (isDemoMode()) {
+    useSyncStore.getState().setCounts(0, 0);
+    return;
+  }
   const pendingQueue = await db.syncQueue.count();
   const profilePending = hasPendingProfileUpdate() ? 1 : 0;
   const pending = pendingQueue + profilePending;
@@ -226,6 +254,9 @@ function getAuthSessionKey(): string {
 }
 
 export async function processSyncQueue(options?: { force?: boolean }): Promise<{ processed: number; conflicts: number; errors: number }> {
+  if (isDemoMode()) {
+    return { processed: 0, conflicts: 0, errors: 0 };
+  }
   const auth = useAuthStore.getState();
   if (!auth.isOnboardingStatusReady || !auth.isOnboarded) {
     return { processed: 0, conflicts: 0, errors: 0 };
@@ -962,6 +993,9 @@ export async function pullSalesFromServer(): Promise<number> {
 }
 
 export async function restoreTenantDataFromServer(): Promise<void> {
+  if (isDemoMode()) {
+    return;
+  }
   await Promise.all([
     pullCatalogFromServer(),
     pullCustomersFromServer(),

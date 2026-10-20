@@ -34,6 +34,7 @@ import { ConfirmUnsyncedLoginDialog } from '../components/ConfirmUnsyncedLoginDi
 import { useTranslation } from '../state/languageStore';
 import { useAuthStore } from '../state/authStore';
 import { seedDexieDatabaseIfNeeded, DEFAULT_TENANT_ID } from '../db/seedData';
+import { resetSyncStore, updateQueueCounts } from '../sync/syncEngine';
 import { RegistrationFormFields } from '../components/RegistrationFormFields';
 import { LoginFormFields } from '../components/LoginFormFields';
 import { AuthErrorBanner } from '../components/AuthErrorBanner';
@@ -447,8 +448,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
         userEmail: 'demo@fluent-tindahan.ph',
         tenantId: DEFAULT_TENANT_ID,
         userId: '22222222-2222-2222-2222-222222222222',
-        hasPin: false
+        hasPin: false,
+        isDemo: true
       });
+      resetSyncStore();
+      await updateQueueCounts();
       onNavigate('pos');
     } catch (err: any) {
       console.error('Demo initialization failed:', err);
