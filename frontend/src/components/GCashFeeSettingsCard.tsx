@@ -55,7 +55,7 @@ export const GCashFeeSettingsCard: React.FC<GCashFeeSettingsCardProps> = ({
     <Card className={className ?? styles.card}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
         <PhoneLaptopRegular fontSize={20} />
-        <Text weight="bold" size={400}>{t.settings.gcashFeeSection}</Text>
+        <Text as="h2" weight="bold" size={400}>{t.settings.gcashFeeSection}</Text>
       </div>
       <Text size={200} style={{ color: tokens.colorNeutralForeground3, marginBottom: '12px', display: 'block' }}>
         {t.settings.gcashFeeDesc}
