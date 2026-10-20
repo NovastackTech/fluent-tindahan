@@ -4506,6 +4506,75 @@ public class AuthControllerTests
         }, CancellationToken.None);
         pinLoginAttempt.Result.Should().BeOfType<UnauthorizedObjectResult>();
     }
+
+    [Theory]
+    [InlineData("short7!")]
+    [InlineData("nouppernumber")]
+    [InlineData("12345678")]
+    public async Task ChangePassword_InvalidPasswordStrength_ReturnsBadRequest(string invalidPassword)
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        var regResult = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "strength.test@tindahan.ph",
+            Password = "ValidPassword123!",
+            BusinessName = "Strength Test Store"
+        }, CancellationToken.None);
+        var regDto = ((OkObjectResult)regResult.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        SetAuthenticatedUser(controller, regDto.UserId, regDto.TenantId, regDto.Email);
+
+        var changeResult = await controller.ChangePassword(new AuthController.ChangePasswordRequest
+        {
+            CurrentPassword = "ValidPassword123!",
+            NewPassword = invalidPassword
+        }, CancellationToken.None);
+
+        changeResult.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Theory]
+    [InlineData("short7!")]
+    [InlineData("12345678")]
+    public async Task ResetPassword_InvalidPasswordStrength_ReturnsBadRequest(string invalidPassword)
+    {
+        var (context, _) = CreateInMemoryContext();
+        var timeProvider = new MutableTimeProvider(DateTimeOffset.UtcNow);
+        var otpSenderMock = new Mock<IEmailOtpSender>();
+        string? dispatchedOtp = null;
+        otpSenderMock.Setup(s => s.SendOtpAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Callback<string, string, string?, CancellationToken>((_, otp, _, _) => dispatchedOtp = otp)
+            .Returns(Task.CompletedTask);
+
+        var controller = CreateController(context, timeProvider: timeProvider, emailOtpSender: otpSenderMock.Object);
+
+        await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "strength.reset@tindahan.ph",
+            Password = "ValidPassword123!",
+            BusinessName = "Strength Reset Store"
+        }, CancellationToken.None);
+
+        timeProvider.Advance(TimeSpan.FromSeconds(61));
+
+        await controller.ForgotPassword(new AuthController.ForgotPasswordRequest
+        {
+            Email = "strength.reset@tindahan.ph"
+        }, CancellationToken.None);
+
+        dispatchedOtp.Should().NotBeNull();
+
+        var resetResult = await controller.ResetPassword(new AuthController.ResetPasswordRequest
+        {
+            Email = "strength.reset@tindahan.ph",
+            Otp = dispatchedOtp!,
+            NewPassword = invalidPassword
+        }, CancellationToken.None);
+
+        resetResult.Should().BeOfType<BadRequestObjectResult>();
+    }
 }
 
 

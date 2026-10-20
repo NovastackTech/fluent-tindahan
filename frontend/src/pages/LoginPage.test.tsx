@@ -1043,6 +1043,36 @@ describe('LoginPage Component', () => {
     });
   });
 
+  it('rejects 7-character new password in reset password form (EV-02 #143)', async () => {
+    renderLoginPage();
+
+    const forgotBtn = screen.getByRole('button', { name: /Nakalimutan ang Password|Forgot Password/i });
+    await act(async () => {
+      fireEvent.click(forgotBtn);
+    });
+
+    const emailInput = screen.getByTestId('login-forgot-email-input');
+    const sendBtn = screen.getByTestId('login-forgot-send-btn');
+    await act(async () => {
+      fireEvent.change(emailInput, { target: { value: 'resetowner@tindahan.ph' } });
+      fireEvent.click(sendBtn);
+    });
+
+    const otpInput = screen.getByTestId('login-reset-otp-input');
+    const newPasswordInput = screen.getByTestId('login-reset-new-password-input');
+    const confirmPasswordInput = screen.getByTestId('login-reset-confirm-password-input');
+    const resetBtn = screen.getByTestId('login-reset-submit-btn');
+
+    await act(async () => {
+      fireEvent.change(otpInput, { target: { value: '123456' } });
+      fireEvent.change(newPasswordInput, { target: { value: 'Short7!' } });
+      fireEvent.change(confirmPasswordInput, { target: { value: 'Short7!' } });
+    });
+
+    expect(resetBtn).toBeDisabled();
+    expect(authService.resetPassword).not.toHaveBeenCalled();
+  });
+
   it('displays only the active language when forgot password returns bilingual message', async () => {
     vi.mocked(authService.forgotPassword).mockResolvedValueOnce({
       message: 'Nagpadala kami ng 6-digit verification code sa iyong email. / We sent a 6-digit verification code to your email.'
@@ -1143,17 +1173,17 @@ describe('LoginPage Component', () => {
       fireEvent.change(newPasswordInput, { target: { value: '123' } });
     });
 
-    // Length error should appear inline without clicking submit
-    expect(screen.getByText(translations.en.onboarding.passwordMinLength || 'Password must be at least 8 characters.')).toBeInTheDocument();
+    // Strength error should appear inline without clicking submit
+    expect(screen.getByText(translations.en.onboarding.passwordStrengthError)).toBeInTheDocument();
     expect(submitBtn).toBeDisabled();
 
-    // Type valid password length (>= 6 chars)
+    // Type valid password (>= 8 chars with letters & numbers)
     await act(async () => {
       fireEvent.change(newPasswordInput, { target: { value: 'validpass123' } });
     });
 
-    // Short password error disappears
-    expect(screen.queryByText(translations.en.onboarding.passwordMinLength || 'Password must be at least 8 characters.')).not.toBeInTheDocument();
+    // Short/invalid password error disappears
+    expect(screen.queryByText(translations.en.onboarding.passwordStrengthError)).not.toBeInTheDocument();
 
     // Enter mismatched confirmation
     await act(async () => {
