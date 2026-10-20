@@ -680,5 +680,26 @@ describe('GCashPage', () => {
     expect(screen.getByTestId('today-gcash-fees-total')).toHaveTextContent('₱20.00');
     expect(kickSync).toHaveBeenCalled();
   });
+
+  it('clears success message when duplicate reference number is entered (issue #136)', async () => {
+    renderGCash();
+
+    // 1. Save initial transaction
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Halaga.*Amount|Amount/i }), { target: { value: '500' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /Reference Number/i }), { target: { value: 'REF-DUP-TEST' } });
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Transaksyon|Save Transaction/i }));
+
+    // Success message is displayed
+    expect(await screen.findByTestId('gcash-save-success')).toBeInTheDocument();
+
+    // 2. Enter the same reference number again
+    fireEvent.change(screen.getByRole('textbox', { name: /Reference Number/i }), { target: { value: 'REF-DUP-TEST' } });
+
+    // Duplicate ref warning appears
+    expect(await screen.findByText(/Ginamit na ang reference number|already used/i)).toBeInTheDocument();
+
+    // Success message must be cleared and no longer visible
+    expect(screen.queryByTestId('gcash-save-success')).not.toBeInTheDocument();
+  });
 });
 
