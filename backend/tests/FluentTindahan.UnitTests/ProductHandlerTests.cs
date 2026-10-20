@@ -97,7 +97,7 @@ public class ProductHandlerTests
 
     [Theory]
     [InlineData(1_000_000)]
-    [InlineData(-1)]
+    [InlineData(-1_000_000)]
     public async Task CreateProduct_InvalidStockQty_ThrowsArgumentException(int invalidStock)
     {
         var (context, userMock) = CreateInMemoryContext();
@@ -112,7 +112,7 @@ public class ProductHandlerTests
 
         var act = () => handler.Handle(command, CancellationToken.None);
         await act.Should().ThrowAsync<ArgumentException>()
-            .WithMessage("*Stock quantity must be between 0 and 999,999*");
+            .WithMessage("*Stock quantity must be between -999,999 and 999,999*");
     }
 
     [Theory]

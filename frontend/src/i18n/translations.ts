@@ -309,6 +309,7 @@ export interface Translations {
     noProductsFound: string;
     lowStockBadge: string;
     outOfStockBadge: string;
+    oversoldBadge: string;
     inStockBadge: string;
     customRestock: string;
   };
