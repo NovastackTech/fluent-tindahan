@@ -28,6 +28,12 @@ vi.mock('../services/authService', async (importOriginal) => {
       status: 'PENDING_DELETION',
       deletionScheduledAt: '2026-11-20T00:00:00Z',
       message: 'Scheduled for deletion'
+    }),
+    changePassword: vi.fn().mockResolvedValue({
+      token: 'mock-fresh-jwt-token',
+      expiresAt: '2026-10-21T00:00:00Z',
+      refreshToken: 'mock-fresh-refresh-token',
+      message: 'Password changed successfully'
     })
   };
 });
@@ -808,6 +814,54 @@ describe('SettingsPage', () => {
       });
       expect(useAuthStore.getState().isOnboarded).toBe(false);
       expect(onNavigate).toHaveBeenCalledWith('login');
+    });
+  });
+
+  it('opens ChangePasswordDialog and successfully changes password', async () => {
+    renderSettings();
+
+    const changePasswordBtn = screen.getByTestId('settings-change-password-btn');
+    expect(changePasswordBtn).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(changePasswordBtn);
+    });
+
+    const currentInput = screen.getByTestId('change-password-current-input');
+    const newInput = screen.getByTestId('change-password-new-input');
+    const confirmInput = screen.getByTestId('change-password-confirm-input');
+
+    expect(currentInput).toBeInTheDocument();
+    expect(newInput).toBeInTheDocument();
+    expect(confirmInput).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.change(currentInput, { target: { value: 'OldPassword123!' } });
+      fireEvent.change(newInput, { target: { value: 'NewPassword999!' } });
+      fireEvent.change(confirmInput, { target: { value: 'MismatchPassword!' } });
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('change-password-save-btn'));
+    });
+
+    expect(screen.getByTestId('change-password-error-banner')).toHaveTextContent(/Hindi magkatugma|do not match/i);
+
+    await act(async () => {
+      fireEvent.change(confirmInput, { target: { value: 'NewPassword999!' } });
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('change-password-save-btn'));
+    });
+
+    await waitFor(() => {
+      expect(authService.changePassword).toHaveBeenCalledWith({
+        currentPassword: 'OldPassword123!',
+        newPassword: 'NewPassword999!',
+        refreshToken: undefined
+      });
+      expect(useAuthStore.getState().firebaseToken).toBe('mock-fresh-jwt-token');
     });
   });
 });

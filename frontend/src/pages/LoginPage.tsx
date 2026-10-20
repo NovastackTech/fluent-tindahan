@@ -20,7 +20,11 @@ import {
   ArrowRightRegular,
   SparkleRegular,
   ArrowLeftRegular,
-  CheckmarkCircleRegular
+  CheckmarkCircleRegular,
+  LockClosedRegular,
+  EyeRegular,
+  EyeOffRegular,
+  MailRegular
 } from '@fluentui/react-icons';
 import type { NavTab } from '../components/Navigation';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -35,6 +39,7 @@ import { LoginFormFields } from '../components/LoginFormFields';
 import { AuthErrorBanner } from '../components/AuthErrorBanner';
 import { validateRegistrationInput, validateLoginInput } from '../utils/registrationValidation';
 import { GoogleAuthButton } from '../components/GoogleAuthButton';
+import { forgotPassword, resetPassword } from '../services/authService';
 
 export interface LoginPageProps {
   onNavigate: (tab: NavTab) => void;
@@ -224,6 +229,31 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
     ? localStorage.getItem('fluent_tindahan_last_email_v1') || ''
     : '';
   const [loginEmailVal, setLoginEmailVal] = useState(initialEmail);
+
+  // Forgot / Reset Password state
+  const [isForgotPassword, setIsForgotPassword] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab')?.toLowerCase();
+    return tab === 'forgot' || tab === 'reset-password';
+  });
+  const [forgotStep, setForgotStep] = useState<'email' | 'otp'>('email');
+  const [forgotEmail, setForgotEmail] = useState(initialEmail);
+  const [forgotOtp, setForgotOtp] = useState('');
+  const [forgotNewPassword, setForgotNewPassword] = useState('');
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
+  const [showForgotNewPassword, setShowForgotNewPassword] = useState(false);
+  const [showForgotConfirmPassword, setShowForgotConfirmPassword] = useState(false);
+  const [forgotSuccessBanner, setForgotSuccessBanner] = useState('');
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setResendCooldown((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
   const [loginPasswordVal, setLoginPasswordVal] = useState('');
   const [loginPinVal, setLoginPinVal] = useState('');
 
@@ -322,6 +352,90 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
     );
   };
 
+  const handleForgotEmailSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSubmitting) return;
+    setAuthErrors([]);
+    setOtpInfoMsg('');
+
+    const cleanEmail = forgotEmail.trim();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setAuthErrors([t.onboarding.emailInvalid || 'Please enter a valid email address.']);
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const res = await forgotPassword({ email: cleanEmail });
+      setOtpInfoMsg(res.message);
+      setForgotStep('otp');
+      setResendCooldown(60);
+    } catch (err: any) {
+      setAuthErrors([err?.response?.data?.message || err?.message || 'Failed to send reset code.']);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleForgotResetSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSubmitting) return;
+    setAuthErrors([]);
+
+    if (forgotOtp.trim().length !== 6) {
+      setAuthErrors([t.onboarding.otpInvalid || 'Please enter a 6-digit verification code.']);
+      return;
+    }
+
+    if (forgotNewPassword.length < 6) {
+      setAuthErrors([t.onboarding.passwordMinLength || 'Password must be at least 6 characters.']);
+      return;
+    }
+
+    if (forgotNewPassword !== forgotConfirmPassword) {
+      setAuthErrors([t.settings.passwordMismatchError || 'Passwords do not match.']);
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await resetPassword({
+        email: forgotEmail.trim(),
+        otp: forgotOtp.trim(),
+        newPassword: forgotNewPassword
+      });
+      setLoginEmailVal(forgotEmail.trim());
+      setLoginPasswordVal('');
+      setForgotSuccessBanner(t.login.resetPasswordSuccessBanner);
+      setIsForgotPassword(false);
+      setForgotStep('email');
+      setForgotOtp('');
+      setForgotNewPassword('');
+      setForgotConfirmPassword('');
+      setActiveTab('login');
+    } catch (err: any) {
+      setAuthErrors([err?.response?.data?.message || err?.message || 'Failed to reset password.']);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleForgotResend = async () => {
+    if (isSubmitting || resendCooldown > 0) return;
+    setAuthErrors([]);
+    setOtpInfoMsg('');
+    setIsSubmitting(true);
+    try {
+      const res = await forgotPassword({ email: forgotEmail.trim() });
+      setOtpInfoMsg(res.message);
+      setResendCooldown(60);
+    } catch (err: any) {
+      setAuthErrors([err?.response?.data?.message || err?.message || 'Failed to resend code.']);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleExploreDemo = async () => {
     setIsSubmitting(true);
     try {
@@ -376,20 +490,28 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
           <Text as="h1" size={500} weight="bold" style={{ display: 'block', marginBottom: '4px' }}>
             {pendingOtpEmail
               ? t.onboarding.otpTitle
-              : activeTab === 'register'
-                ? t.login.signUpPageTitle
-                : t.login.pageTitle}
+              : isForgotPassword
+                ? forgotStep === 'email'
+                  ? t.login.forgotPasswordTitle
+                  : t.login.resetPasswordTitle
+                : activeTab === 'register'
+                  ? t.login.signUpPageTitle
+                  : t.login.pageTitle}
           </Text>
           <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
             {pendingOtpEmail
               ? t.onboarding.otpSubtitle.replace('{email}', pendingOtpEmail)
-              : activeTab === 'register'
-                ? t.login.signUpPageSubtitle
-                : t.login.pageSubtitle}
+              : isForgotPassword
+                ? forgotStep === 'email'
+                  ? t.login.forgotPasswordSubtitle
+                  : t.login.resetPasswordSubtitle.replace('{email}', forgotEmail)
+                : activeTab === 'register'
+                  ? t.login.signUpPageSubtitle
+                  : t.login.pageSubtitle}
           </Text>
         </div>
 
-        {!pendingOtpEmail && (
+        {!pendingOtpEmail && !isForgotPassword && (
           <TabList
             selectedValue={activeTab}
             onTabSelect={(_, data) => {
@@ -527,7 +649,188 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
           </div>
         )}
 
-        {pendingOtpEmail ? (
+        {forgotSuccessBanner && !isForgotPassword && (
+          <div
+            style={{
+              backgroundColor: tokens.colorPaletteGreenBackground1,
+              color: tokens.colorPaletteGreenForeground1,
+              border: `1px solid ${tokens.colorPaletteGreenBorder1}`,
+              borderRadius: tokens.borderRadiusMedium,
+              padding: `${tokens.spacingVerticalS} ${tokens.spacingHorizontalM}`,
+              marginBottom: tokens.spacingVerticalM,
+              fontSize: tokens.fontSizeBase200
+            }}
+            role="status"
+            data-testid="login-reset-success-banner"
+          >
+            {forgotSuccessBanner}
+          </div>
+        )}
+
+        {isForgotPassword ? (
+          forgotStep === 'email' ? (
+            <form onSubmit={handleForgotEmailSubmit} noValidate data-testid="login-forgot-email-form">
+              <Field label={t.landing.emailLabel} required style={{ marginBottom: tokens.spacingVerticalL }}>
+                <Input
+                  type="email"
+                  value={forgotEmail}
+                  onChange={(_, d) => {
+                    setForgotEmail(d.value);
+                    if (authErrors.length) setAuthErrors([]);
+                  }}
+                  placeholder={t.landing.emailPlaceholder}
+                  contentBefore={<MailRegular />}
+                  autoFocus
+                  data-testid="login-forgot-email-input"
+                  required
+                />
+              </Field>
+              <Button
+                appearance="primary"
+                size="large"
+                type="submit"
+                disabled={isSubmitting || !forgotEmail.trim()}
+                icon={isSubmitting ? <Spinner size="extra-tiny" /> : <ArrowRightRegular />}
+                style={{ width: '100%', marginBottom: tokens.spacingVerticalS }}
+                data-testid="login-forgot-send-btn"
+              >
+                {t.login.sendResetCodeBtn}
+              </Button>
+              <Button
+                appearance="subtle"
+                type="button"
+                disabled={isSubmitting}
+                onClick={() => {
+                  setIsForgotPassword(false);
+                  setAuthErrors([]);
+                  setOtpInfoMsg('');
+                }}
+                style={{ width: '100%' }}
+                data-testid="login-forgot-back-btn"
+              >
+                {t.login.backToLoginBtn}
+              </Button>
+            </form>
+          ) : (
+            <form onSubmit={handleForgotResetSubmit} noValidate data-testid="login-forgot-reset-form">
+              <Field label={t.onboarding.otpLabel} required style={{ marginBottom: tokens.spacingVerticalM }}>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  value={forgotOtp}
+                  onChange={(_, d) => {
+                    setForgotOtp(d.value.replace(/\D/g, '').slice(0, 6));
+                    if (authErrors.length) setAuthErrors([]);
+                  }}
+                  placeholder={t.onboarding.otpPlaceholder}
+                  contentBefore={<KeyRegular />}
+                  autoFocus
+                  data-testid="login-reset-otp-input"
+                  required
+                />
+              </Field>
+
+              <Field
+                label={t.settings.newPasswordLabel}
+                required
+                hint={t.settings.newPasswordPlaceholder}
+                style={{ marginBottom: tokens.spacingVerticalM }}
+              >
+                <Input
+                  type={showForgotNewPassword ? 'text' : 'password'}
+                  value={forgotNewPassword}
+                  onChange={(_, d) => {
+                    setForgotNewPassword(d.value);
+                    if (authErrors.length) setAuthErrors([]);
+                  }}
+                  placeholder={t.settings.newPasswordPlaceholder}
+                  contentBefore={<LockClosedRegular />}
+                  contentAfter={
+                    <Button
+                      appearance="subtle"
+                      size="small"
+                      icon={showForgotNewPassword ? <EyeOffRegular /> : <EyeRegular />}
+                      onClick={() => setShowForgotNewPassword(!showForgotNewPassword)}
+                      type="button"
+                      aria-label="Toggle new password visibility"
+                    />
+                  }
+                  data-testid="login-reset-new-password-input"
+                  required
+                />
+              </Field>
+
+              <Field
+                label={t.settings.confirmNewPasswordLabel}
+                required
+                style={{ marginBottom: tokens.spacingVerticalM }}
+              >
+                <Input
+                  type={showForgotConfirmPassword ? 'text' : 'password'}
+                  value={forgotConfirmPassword}
+                  onChange={(_, d) => {
+                    setForgotConfirmPassword(d.value);
+                    if (authErrors.length) setAuthErrors([]);
+                  }}
+                  placeholder={t.settings.confirmNewPasswordPlaceholder}
+                  contentBefore={<LockClosedRegular />}
+                  contentAfter={
+                    <Button
+                      appearance="subtle"
+                      size="small"
+                      icon={showForgotConfirmPassword ? <EyeOffRegular /> : <EyeRegular />}
+                      onClick={() => setShowForgotConfirmPassword(!showForgotConfirmPassword)}
+                      type="button"
+                      aria-label="Toggle confirm password visibility"
+                    />
+                  }
+                  data-testid="login-reset-confirm-password-input"
+                  required
+                />
+              </Field>
+
+              <Button
+                appearance="primary"
+                size="large"
+                type="submit"
+                disabled={isSubmitting || forgotOtp.trim().length !== 6 || forgotNewPassword.length < 6 || !forgotConfirmPassword}
+                icon={isSubmitting ? <Spinner size="extra-tiny" /> : <CheckmarkCircleRegular />}
+                style={{ width: '100%', marginBottom: tokens.spacingVerticalS }}
+                data-testid="login-reset-submit-btn"
+              >
+                {t.login.resetPasswordBtn}
+              </Button>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: tokens.spacingHorizontalS }}>
+                <Button
+                  appearance="subtle"
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={() => {
+                    setIsForgotPassword(false);
+                    setForgotStep('email');
+                    setAuthErrors([]);
+                    setOtpInfoMsg('');
+                  }}
+                  data-testid="login-reset-back-btn"
+                >
+                  {t.login.backToLoginBtn}
+                </Button>
+                <Button
+                  appearance="secondary"
+                  type="button"
+                  disabled={isSubmitting || resendCooldown > 0}
+                  onClick={handleForgotResend}
+                  data-testid="login-reset-resend-btn"
+                >
+                  {resendCooldown > 0 ? `${t.onboarding.otpResendBtn} (${resendCooldown}s)` : t.onboarding.otpResendBtn}
+                </Button>
+              </div>
+            </form>
+          )
+        ) : pendingOtpEmail ? (
           <form onSubmit={handleOtpSubmit} noValidate data-testid="login-otp-form">
             <Field label={t.onboarding.otpLabel} required style={{ marginBottom: tokens.spacingVerticalM }}>
               <Input
@@ -603,6 +906,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
               t={t}
               toggleTestId="login-toggle-mode-btn"
               toggleClassName={styles.modeToggleRow}
+              onForgotPassword={() => {
+                setIsForgotPassword(true);
+                setForgotStep('email');
+                setForgotEmail(loginEmailVal || initialEmail);
+                setAuthErrors([]);
+                setOtpInfoMsg('');
+              }}
             />
 
             <Button

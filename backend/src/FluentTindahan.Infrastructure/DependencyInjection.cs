@@ -59,7 +59,7 @@ public static class DependencyInjection
 
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<IJwtTokenService, JwtTokenService>();
-        services.TryAddScoped<IEmailOtpSender, LoggingEmailOtpSender>();
+        services.TryAddScoped<IEmailOtpSender, SmtpEmailOtpSender>();
         services.AddHttpClient<IPaymentGatewayService, PayMongoPaymentGatewayService>();
         services.AddHttpClient<IGoogleAuthService, GoogleAuthService>(client =>
         {

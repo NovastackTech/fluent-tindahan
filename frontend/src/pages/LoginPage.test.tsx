@@ -75,7 +75,9 @@ vi.mock('../services/authService', async (importOriginal) => {
       token: 'mock-google-token',
       expiresAt: '2028-01-01',
       isNewUser: false
-    })
+    }),
+    forgotPassword: vi.fn().mockResolvedValue({ message: 'Reset code sent to email' }),
+    resetPassword: vi.fn().mockResolvedValue({ message: 'Password reset successfully' })
   };
 });
 
@@ -929,5 +931,54 @@ describe('LoginPage Component', () => {
       expect(onNavigate).toHaveBeenCalledWith('settings');
     });
   });
-});
 
+  it('renders Forgot Password flow, validates steps, and resets password', async () => {
+    const onNavigate = vi.fn();
+    renderLoginPage(onNavigate);
+
+    const forgotBtn = screen.getByTestId('login-forgot-password-btn');
+    expect(forgotBtn).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(forgotBtn);
+    });
+
+    const emailInput = screen.getByTestId('login-forgot-email-input');
+    const sendBtn = screen.getByTestId('login-forgot-send-btn');
+    expect(emailInput).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.change(emailInput, { target: { value: 'resetowner@tindahan.ph' } });
+      fireEvent.click(sendBtn);
+    });
+
+    await waitFor(() => {
+      expect(authService.forgotPassword).toHaveBeenCalledWith({
+        email: 'resetowner@tindahan.ph'
+      });
+    });
+
+    const otpInput = screen.getByTestId('login-reset-otp-input');
+    const newPasswordInput = screen.getByTestId('login-reset-new-password-input');
+    const confirmPasswordInput = screen.getByTestId('login-reset-confirm-password-input');
+    const resetBtn = screen.getByTestId('login-reset-submit-btn');
+
+    expect(otpInput).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.change(otpInput, { target: { value: '123456' } });
+      fireEvent.change(newPasswordInput, { target: { value: 'NewBrandPass123!' } });
+      fireEvent.change(confirmPasswordInput, { target: { value: 'NewBrandPass123!' } });
+      fireEvent.click(resetBtn);
+    });
+
+    await waitFor(() => {
+      expect(authService.resetPassword).toHaveBeenCalledWith({
+        email: 'resetowner@tindahan.ph',
+        otp: '123456',
+        newPassword: 'NewBrandPass123!'
+      });
+      expect(screen.getByTestId('login-reset-success-banner')).toBeInTheDocument();
+    });
+  });
+});

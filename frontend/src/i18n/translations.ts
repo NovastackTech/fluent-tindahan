@@ -454,6 +454,17 @@ export interface Translations {
     deleteConfirmImmediateBtn: string;
     deleteSuccessGrace: string;
     deleteSuccessImmediate: string;
+    passwordLabel: string;
+    changePasswordBtn: string;
+    changePasswordTitle: string;
+    changePasswordDesc: string;
+    currentPasswordPlaceholder: string;
+    newPasswordLabel: string;
+    newPasswordPlaceholder: string;
+    confirmNewPasswordLabel: string;
+    confirmNewPasswordPlaceholder: string;
+    passwordMismatchError: string;
+    passwordChangedSuccess: string;
   };
   receipt: {
     watermark: string;
@@ -775,6 +786,15 @@ export interface Translations {
     cancelRestoreBtn: string;
     webDeleteAccountPrompt: string;
     webDeleteIntentBanner: string;
+    forgotPasswordLink: string;
+    forgotPasswordTitle: string;
+    forgotPasswordSubtitle: string;
+    sendResetCodeBtn: string;
+    resetPasswordTitle: string;
+    resetPasswordSubtitle: string;
+    resetPasswordBtn: string;
+    resetPasswordSuccessBanner: string;
+    backToLoginBtn: string;
   };
 }
 

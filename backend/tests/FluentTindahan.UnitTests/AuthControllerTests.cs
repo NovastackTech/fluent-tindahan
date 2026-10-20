@@ -4162,6 +4162,162 @@ public class AuthControllerTests
         updatedActiveGrace.AccountStatus.Should().Be(User.StatusPendingDeletion);
         updatedActiveGrace.Email.Should().Be("activegrace@tindahan.ph");
     }
+
+    [Fact]
+    public async Task ChangePassword_WithRefreshToken_RevokesOtherSessionsAndReturnsAuthDto()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var timeProvider = new MutableTimeProvider(DateTimeOffset.UtcNow);
+        var controller = CreateController(context, timeProvider: timeProvider);
+
+        var regResult = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "sessionkeep@tindahan.ph",
+            Password = "OldPassword123!",
+            BusinessName = "Session Keep Store"
+        }, CancellationToken.None);
+        var regDto = ((OkObjectResult)regResult.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        var originalRefreshToken = regDto.RefreshToken!;
+
+        SetAuthenticatedUser(controller, regDto.UserId, regDto.TenantId, regDto.Email);
+
+        var changeResult = await controller.ChangePassword(new AuthController.ChangePasswordRequest
+        {
+            CurrentPassword = "OldPassword123!",
+            NewPassword = "NewPassword999!",
+            RefreshToken = originalRefreshToken
+        }, CancellationToken.None);
+
+        var okResult = changeResult.Should().BeOfType<OkObjectResult>().Subject;
+        var authDto = okResult.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        authDto.Token.Should().NotBeNullOrWhiteSpace();
+        authDto.RefreshToken.Should().NotBeNullOrWhiteSpace().And.NotBe(originalRefreshToken);
+    }
+
+    [Fact]
+    public async Task ForgotPassword_ExistingUser_IssuesOtpAndDispatchesEmail()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var timeProvider = new MutableTimeProvider(DateTimeOffset.UtcNow);
+        var otpSenderMock = new Mock<IEmailOtpSender>();
+        string? dispatchedOtp = null;
+        otpSenderMock.Setup(s => s.SendOtpAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Callback<string, string, string?, CancellationToken>((_, otp, _, _) => dispatchedOtp = otp)
+            .Returns(Task.CompletedTask);
+
+        var controller = CreateController(context, timeProvider: timeProvider, emailOtpSender: otpSenderMock.Object);
+
+        await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "forgotuser@tindahan.ph",
+            Password = "Password123!",
+            BusinessName = "Forgot Password Store"
+        }, CancellationToken.None);
+
+        timeProvider.Advance(TimeSpan.FromSeconds(61));
+
+        var forgotResult = await controller.ForgotPassword(new AuthController.ForgotPasswordRequest
+        {
+            Email = "forgotuser@tindahan.ph"
+        }, CancellationToken.None);
+
+        forgotResult.Should().BeOfType<OkObjectResult>();
+        dispatchedOtp.Should().NotBeNullOrWhiteSpace().And.HaveLength(6);
+
+        // Enforces cooldown on immediate second request
+        var cooldownResult = await controller.ForgotPassword(new AuthController.ForgotPasswordRequest
+        {
+            Email = "forgotuser@tindahan.ph"
+        }, CancellationToken.None);
+        cooldownResult.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(429);
+    }
+
+    [Fact]
+    public async Task ForgotPassword_NonexistentUser_ReturnsGenericOk_AntiEnumeration()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        var forgotResult = await controller.ForgotPassword(new AuthController.ForgotPasswordRequest
+        {
+            Email = "ghost@tindahan.ph"
+        }, CancellationToken.None);
+
+        forgotResult.Should().BeOfType<OkObjectResult>();
+    }
+
+    [Fact]
+    public async Task ResetPassword_ValidOtp_UpdatesPasswordHashAndInvalidatesSessions()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var timeProvider = new MutableTimeProvider(DateTimeOffset.UtcNow);
+        var otpSenderMock = new Mock<IEmailOtpSender>();
+        string? dispatchedOtp = null;
+        otpSenderMock.Setup(s => s.SendOtpAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Callback<string, string, string?, CancellationToken>((_, otp, _, _) => dispatchedOtp = otp)
+            .Returns(Task.CompletedTask);
+
+        var controller = CreateController(context, timeProvider: timeProvider, emailOtpSender: otpSenderMock.Object);
+
+        var regResult = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "resetme@tindahan.ph",
+            Password = "OldPassword123!",
+            BusinessName = "Reset Password Store"
+        }, CancellationToken.None);
+        var regDto = ((OkObjectResult)regResult.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        var oldRefreshToken = regDto.RefreshToken!;
+        timeProvider.Advance(TimeSpan.FromSeconds(61));
+
+        // Request forgot password OTP
+        await controller.ForgotPassword(new AuthController.ForgotPasswordRequest
+        {
+            Email = "resetme@tindahan.ph"
+        }, CancellationToken.None);
+
+        dispatchedOtp.Should().NotBeNull();
+
+        // Wrong OTP fails
+        var wrongOtpResult = await controller.ResetPassword(new AuthController.ResetPasswordRequest
+        {
+            Email = "resetme@tindahan.ph",
+            Otp = "999999",
+            NewPassword = "BrandNewPassword123!"
+        }, CancellationToken.None);
+        wrongOtpResult.Should().BeOfType<BadRequestObjectResult>();
+
+        // Correct OTP resets password
+        var resetResult = await controller.ResetPassword(new AuthController.ResetPasswordRequest
+        {
+            Email = "resetme@tindahan.ph",
+            Otp = dispatchedOtp!,
+            NewPassword = "BrandNewPassword123!"
+        }, CancellationToken.None);
+        resetResult.Should().BeOfType<OkObjectResult>();
+
+        // Old refresh token is revoked
+        var refreshResult = await controller.Refresh(new AuthController.RefreshTokenRequest
+        {
+            RefreshToken = oldRefreshToken
+        }, CancellationToken.None);
+        refreshResult.Result.Should().BeOfType<UnauthorizedObjectResult>();
+
+        // Login with old password fails
+        var oldLogin = await controller.Login(new AuthController.LoginRequest
+        {
+            Email = "resetme@tindahan.ph",
+            Password = "OldPassword123!"
+        }, CancellationToken.None);
+        oldLogin.Result.Should().BeOfType<UnauthorizedObjectResult>();
+
+        // Login with new password succeeds
+        var newLogin = await controller.Login(new AuthController.LoginRequest
+        {
+            Email = "resetme@tindahan.ph",
+            Password = "BrandNewPassword123!"
+        }, CancellationToken.None);
+        newLogin.Result.Should().BeOfType<OkObjectResult>();
+    }
 }
 
 

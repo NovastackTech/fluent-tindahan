@@ -65,6 +65,7 @@ import { SafeLogoutDialog } from '../components/SafeLogoutDialog';
 import { useSafeLogout } from '../components/useSafeLogout';
 import { PinManagementDialog } from '../components/PinManagementDialog';
 import { DeleteAccountDialog } from '../components/DeleteAccountDialog';
+import { ChangePasswordDialog } from '../components/ChangePasswordDialog';
 import { GCashFeeSettingsCard } from '../components/GCashFeeSettingsCard';
 
 const useStyles = makeStyles({
@@ -172,6 +173,11 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
     if (typeof window === 'undefined') return false;
     const params = new URLSearchParams(window.location.search);
     return params.get('tab') === 'delete-account' || params.get('intent') === 'delete-account';
+  });
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const params = new URLSearchParams(window.location.search);
+    return params.get('tab') === 'change-password' || params.get('intent') === 'change-password';
   });
 
   useEffect(() => {
@@ -779,6 +785,21 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
           </div>
         </div>
         <div className={styles.infoRow}>
+          <Text size={200}>{t.settings.passwordLabel}</Text>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px', flexWrap: 'wrap' }}>
+            <Button
+              size="small"
+              appearance="subtle"
+              icon={<LockClosedRegular />}
+              style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+              onClick={() => setIsChangePasswordOpen(true)}
+              data-testid="settings-change-password-btn"
+            >
+              {t.settings.changePasswordBtn}
+            </Button>
+          </div>
+        </div>
+        <div className={styles.infoRow}>
           <Text size={200}>{t.settings.tenantId}:</Text>
           <Text size={200} style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{tenantId}</Text>
         </div>
@@ -894,6 +915,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
       <PinManagementDialog
         open={isPinDialogOpen}
         onOpenChange={setIsPinDialogOpen}
+      />
+
+      {/* Change Password Dialog */}
+      <ChangePasswordDialog
+        open={isChangePasswordOpen}
+        onOpenChange={setIsChangePasswordOpen}
       />
 
       {/* Self-Service Account Deactivation / Deletion Dialog */}

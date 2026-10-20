@@ -465,7 +465,18 @@ export const en: Translations = {
       deleteConfirmDeactivateBtn: 'Deactivate for 30 Days',
       deleteConfirmImmediateBtn: 'Permanently Delete Account',
       deleteSuccessGrace: 'Your account has been deactivated and scheduled for deletion in 30 days. Sign in anytime within 30 days to restore it.',
-      deleteSuccessImmediate: 'Your account and personal data have been permanently deleted and anonymized.'
+      deleteSuccessImmediate: 'Your account and personal data have been permanently deleted and anonymized.',
+      passwordLabel: 'Password',
+      changePasswordBtn: 'Change Password',
+      changePasswordTitle: 'Change Password',
+      changePasswordDesc: 'Enter your current password and choose a new secure password (minimum 6 characters).',
+      currentPasswordPlaceholder: 'Enter current password',
+      newPasswordLabel: 'New Password',
+      newPasswordPlaceholder: 'At least 6 characters',
+      confirmNewPasswordLabel: 'Confirm New Password',
+      confirmNewPasswordPlaceholder: 'Re-enter new password',
+      passwordMismatchError: 'New passwords do not match.',
+      passwordChangedSuccess: 'Password changed successfully.'
     },
     receipt: {
       watermark: 'NOT AN OFFICIAL RECEIPT\nFOR ACKNOWLEDGMENT ONLY',
@@ -777,6 +788,15 @@ export const en: Translations = {
       restoreAccountBtn: 'Restore My Account & Sign In',
       cancelRestoreBtn: 'Keep Deactivated',
       webDeleteAccountPrompt: 'Need to delete your account via the web? Sign in to go directly to Account Deletion settings.',
-      webDeleteIntentBanner: 'Sign in to verify your identity and continue to Account Deactivation / Deletion.'
+      webDeleteIntentBanner: 'Sign in to verify your identity and continue to Account Deactivation / Deletion.',
+      forgotPasswordLink: 'Forgot password?',
+      forgotPasswordTitle: 'Reset Password',
+      forgotPasswordSubtitle: 'Enter your registered email to receive a 6-digit verification code.',
+      sendResetCodeBtn: 'Send Reset Code',
+      resetPasswordTitle: 'Set New Password',
+      resetPasswordSubtitle: 'Enter the 6-digit code sent to {email} and choose a new password.',
+      resetPasswordBtn: 'Reset Password',
+      resetPasswordSuccessBanner: 'Password reset successfully. You can now log in with your new password.',
+      backToLoginBtn: 'Back to Login'
     }
 };

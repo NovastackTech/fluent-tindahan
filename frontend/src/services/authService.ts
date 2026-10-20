@@ -70,6 +70,22 @@ export interface DeleteAccountResponseDto {
   message: string;
 }
 
+export interface ChangePasswordRequestPayload {
+  currentPassword?: string;
+  newPassword: string;
+  refreshToken?: string;
+}
+
+export interface ForgotPasswordRequestPayload {
+  email: string;
+}
+
+export interface ResetPasswordRequestPayload {
+  email: string;
+  otp: string;
+  newPassword: string;
+}
+
 export interface UpdateProfileRequestPayload {
   businessName?: string | null;
   ownerName?: string | null;
@@ -252,13 +268,40 @@ export async function verifyEmailOtp(payload: { email?: string; otp: string }): 
   return response.data;
 }
 
-export async function resendEmailOtp(payload?: { email?: string }): Promise<{ message: string }> {
-  const response = await apiClient.post<{ message: string }>('/auth/resend-email-otp', payload ?? {});
+export async function resendEmailOtp(payload?: { email?: string }): Promise<{ message: string; devOtpCode?: string | null }> {
+  const response = await apiClient.post<{ message: string; devOtpCode?: string | null }>('/auth/resend-email-otp', payload ?? {});
   return response.data;
 }
 
 export async function deleteAccount(payload: DeleteAccountRequestPayload): Promise<DeleteAccountResponseDto> {
   const response = await apiClient.post<DeleteAccountResponseDto>('/auth/delete-account', payload);
+  return response.data;
+}
+
+export async function changePassword(payload: ChangePasswordRequestPayload): Promise<AuthResponseDto | { message: string }> {
+  const storedRefreshToken = typeof localStorage !== 'undefined'
+    ? localStorage.getItem('fluent_tindahan_refresh_token_v1')
+    : null;
+  const requestPayload: ChangePasswordRequestPayload = {
+    ...payload,
+    refreshToken: payload.refreshToken || storedRefreshToken || undefined
+  };
+  const response = await apiClient.post<AuthResponseDto | { message: string }>('/auth/change-password', requestPayload);
+  return response.data;
+}
+
+export interface ForgotPasswordResponseDto {
+  message: string;
+
+}
+
+export async function forgotPassword(payload: ForgotPasswordRequestPayload): Promise<ForgotPasswordResponseDto> {
+  const response = await apiClient.post<ForgotPasswordResponseDto>('/auth/forgot-password', payload);
+  return response.data;
+}
+
+export async function resetPassword(payload: ResetPasswordRequestPayload): Promise<{ message: string }> {
+  const response = await apiClient.post<{ message: string }>('/auth/reset-password', payload);
   return response.data;
 }
 

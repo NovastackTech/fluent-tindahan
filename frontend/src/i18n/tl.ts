@@ -465,7 +465,18 @@ export const tl: Translations = {
       deleteConfirmDeactivateBtn: 'I-deactivate sa Loob ng 30 Araw',
       deleteConfirmImmediateBtn: 'Permanenteng Burahin ang Account',
       deleteSuccessGrace: 'Na-deactivate na ang iyong account at nakatakdang burahin sa loob ng 30 araw. Mag-sign in lamang sa loob ng 30 araw kung nais mo itong ibalik.',
-      deleteSuccessImmediate: 'Permanenteng nabura at na-anonymize na ang iyong account at personal na datos.'
+      deleteSuccessImmediate: 'Permanenteng nabura at na-anonymize na ang iyong account at personal na datos.',
+      passwordLabel: 'Password',
+      changePasswordBtn: 'Palitan ang Password',
+      changePasswordTitle: 'Palitan ang Password',
+      changePasswordDesc: 'Ilagay ang iyong kasalukuyang password at pumili ng bagong ligtas na password (minimum 6 letra).',
+      currentPasswordPlaceholder: 'Ilagay ang kasalukuyang password',
+      newPasswordLabel: 'Bagong Password',
+      newPasswordPlaceholder: 'Hindi bababa sa 6 letra',
+      confirmNewPasswordLabel: 'Kumpirmahin ang Bagong Password',
+      confirmNewPasswordPlaceholder: 'I-type muli ang bagong password',
+      passwordMismatchError: 'Hindi magkatugma ang mga bagong password.',
+      passwordChangedSuccess: 'Matagumpay na napalitan ang password.'
     },
     receipt: {
       watermark: 'HINDI OPISYAL NA RESIBO\nPARA SA PAGKILALA LAMANG',
@@ -777,6 +788,15 @@ export const tl: Translations = {
       restoreAccountBtn: 'Ibalik ang Account at Mag-sign In',
       cancelRestoreBtn: 'Panatilihing Naka-deactivate',
       webDeleteAccountPrompt: 'Kailangan bang burahin ang iyong account sa web? Mag-sign in upang direktang pumunta sa Account Deletion settings.',
-      webDeleteIntentBanner: 'Mag-sign in upang i-verify ang iyong pagkakakilanlan at magpatuloy sa Pag-deactivate / Pagbura ng Account.'
+      webDeleteIntentBanner: 'Mag-sign in upang i-verify ang iyong pagkakakilanlan at magpatuloy sa Pag-deactivate / Pagbura ng Account.',
+      forgotPasswordLink: 'Nakalimutan ang password?',
+      forgotPasswordTitle: 'I-reset ang Password',
+      forgotPasswordSubtitle: 'Ilagay ang iyong rehistradong email upang makatanggap ng 6-digit verification code.',
+      sendResetCodeBtn: 'Ipadala ang Reset Code',
+      resetPasswordTitle: 'Magtakda ng Bagong Password',
+      resetPasswordSubtitle: 'Ilagay ang 6-digit code na ipinadala sa {email} at pumili ng bagong password.',
+      resetPasswordBtn: 'I-reset ang Password',
+      resetPasswordSuccessBanner: 'Matagumpay na na-reset ang iyong password. Maaari ka nang mag-login gamit ang bagong password.',
+      backToLoginBtn: 'Bumalik sa Login'
     }
 };
