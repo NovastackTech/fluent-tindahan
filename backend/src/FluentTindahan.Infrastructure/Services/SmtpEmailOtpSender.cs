@@ -1,9 +1,9 @@
 using System.Net;
 using System.Net.Mail;
+using FluentTindahan.Application.Common.Interfaces;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using FluentTindahan.Application.Common.Interfaces;
 
 namespace FluentTindahan.Infrastructure.Services;
 
@@ -108,8 +108,7 @@ public sealed class SmtpEmailOtpSender : IEmailOtpSender
     <span style=""font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 32px; font-weight: 700; letter-spacing: 8px; color: #0F6CBD;"">{otpCode}</span>
   </div>
   <p style=""color: #616161; font-size: 13px; line-height: 1.5; margin-bottom: 24px;"">
-    Ang code na ito ay may bisa sa loob ng <strong>10 minuto</strong>. Huwag itong ibahagi kaninuman.
-  </p>
+    Ang code na ito ay may bisa sa loob ng <strong>10 minuto</strong>. Huwag itong ibahagi kaninuman.</p>
   <hr style=""border: none; border-top: 1px solid #edebe9; margin: 20px 0;"" />
   <p style=""color: #8a8886; font-size: 12px; text-align: center; margin: 0;"">
     Fluent Tindahan &bull; Offline-First Sari-Sari Store Management
