@@ -139,7 +139,7 @@ describe('InventoryPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Produkto|Add Product/i }));
     fireEvent.click(screen.getByRole('button', { name: /I-save|Save/i }));
 
-    expect(screen.getByRole('alert')).toHaveTextContent('Ilagay ang pangalan ng produkto.');
+    expect(screen.getByText('Ilagay ang pangalan ng produkto.')).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }))
       .toHaveAttribute('aria-invalid', 'true');
     expect(alertSpy).not.toHaveBeenCalled();
@@ -161,17 +161,17 @@ describe('InventoryPage', () => {
     expect(alertSpy).not.toHaveBeenCalled();
     expect(await db.products.where('name').equals('No Price Product').count()).toBe(0);
 
-    // Blank the name and re-submit: name error should show and price error should be cleared
+    // Blank the name and re-submit: both name and price errors should show
     fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }), {
       target: { value: '' }
     });
     fireEvent.click(screen.getByRole('button', { name: /I-save|Save/i }));
 
-    expect(screen.getByRole('alert')).toHaveTextContent(/Ilagay ang pangalan ng produkto|Product name is required/i);
+    expect(screen.getByText(/Ilagay ang pangalan ng produkto|Product name is required/i)).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }))
       .toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByRole('spinbutton', { name: /Presyo ng Tinda|Retail Price/i }))
-      .toHaveAttribute('aria-invalid', 'false');
+      .toHaveAttribute('aria-invalid', 'true');
 
     alertSpy.mockRestore();
   });
@@ -196,19 +196,39 @@ describe('InventoryPage', () => {
     expect(alertSpy).not.toHaveBeenCalled();
     expect(await db.products.where('name').equals('Negative Cost Product').count()).toBe(0);
 
-    // Blank the name and re-submit: name error should show and cost error should be cleared
+    // Blank the name and re-submit: both name and cost errors should show
     fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }), {
       target: { value: '' }
     });
     fireEvent.click(screen.getByRole('button', { name: /I-save|Save/i }));
 
-    expect(screen.getByRole('alert')).toHaveTextContent(/Ilagay ang pangalan ng produkto|Product name is required/i);
+    expect(screen.getByText(/Ilagay ang pangalan ng produkto|Product name is required/i)).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }))
       .toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByRole('spinbutton', { name: /Puhunan|Cost Price/i }))
-      .toHaveAttribute('aria-invalid', 'false');
+      .toHaveAttribute('aria-invalid', 'true');
 
     alertSpy.mockRestore();
+  });
+
+  it('shows both cost and price errors simultaneously when both are negative', async () => {
+    renderInventory();
+    fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Produkto|Add Product/i }));
+    fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }), {
+      target: { value: 'Invalid Product' }
+    });
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Puhunan|Cost Price/i }), {
+      target: { value: '-5' }
+    });
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Presyo ng Tinda|Retail Price/i }), {
+      target: { value: '-10' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: /I-save|Save/i }));
+
+    expect(screen.getByText(/Hindi maaaring negatibo ang puhunan|Cost price cannot be negative/i)).toBeInTheDocument();
+    expect(screen.getByText(/Dapat mas mataas sa ₱0|Retail price must be greater than ₱0/i)).toBeInTheDocument();
+    expect(screen.getByRole('spinbutton', { name: /Puhunan|Cost Price/i })).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('spinbutton', { name: /Presyo ng Tinda|Retail Price/i })).toHaveAttribute('aria-invalid', 'true');
   });
 
   it('creates and saves a new product to Dexie via modal', async () => {

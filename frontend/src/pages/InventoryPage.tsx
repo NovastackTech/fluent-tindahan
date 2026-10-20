@@ -703,9 +703,11 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
     setFormPriceError('');
     setFormStockError('');
 
+    let hasError = false;
+
     if (!formName.trim()) {
       setFormNameError(t.inventory.productNameRequired);
-      return;
+      hasError = true;
     }
     const costClean = typeof formCost === 'string' ? formCost.replace(/,/g, '').trim() : formCost;
     const priceClean = typeof formPrice === 'string' ? formPrice.replace(/,/g, '').trim() : formPrice;
@@ -716,28 +718,29 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
 
     if (costNum < 0) {
       setFormCostError(t.inventory.costCannotBeNegative);
-      return;
-    }
-    if (costNum > MAX_PRODUCT_COST) {
+      hasError = true;
+    } else if (costNum > MAX_PRODUCT_COST) {
       setFormCostError(t.inventory.costExceedsMax);
-      return;
+      hasError = true;
     }
 
     if (priceNum <= 0) {
       setFormPriceError(t.inventory.priceMustBePositive);
-      return;
-    }
-    if (priceNum > MAX_PRODUCT_PRICE) {
+      hasError = true;
+    } else if (priceNum > MAX_PRODUCT_PRICE) {
       setFormPriceError(t.inventory.priceExceedsMax);
-      return;
+      hasError = true;
     }
 
     if (stockNum < 0) {
       setFormStockError(language === 'tl' ? 'Hindi maaaring negatibo ang stock.' : 'Stock quantity cannot be negative.');
-      return;
-    }
-    if (stockNum > MAX_PRODUCT_STOCK) {
+      hasError = true;
+    } else if (stockNum > MAX_PRODUCT_STOCK) {
       setFormStockError(t.inventory.stockExceedsMax);
+      hasError = true;
+    }
+
+    if (hasError) {
       return;
     }
 
