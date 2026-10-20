@@ -347,5 +347,19 @@ describe('InventoryPage', () => {
     expect(screen.getByRole('button', { name: /Mag-import ng CSV|Import CSV/i })).toHaveAttribute('aria-label');
     expect(screen.getByRole('button', { name: /Buksan ang Scanner|Open Scanner/i })).toHaveAttribute('aria-label');
   });
+
+  it('does not display invalid margin percentage when cost is negative', async () => {
+    renderInventory();
+    fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Produkto|Add Product/i }));
+
+    const costInput = screen.getByRole('spinbutton', { name: /Puhunan|Unit Cost/i });
+    const priceInput = screen.getByRole('spinbutton', { name: /Presyo ng Tinda|Retail Price/i });
+
+    fireEvent.change(costInput, { target: { value: '-5' } });
+    fireEvent.change(priceInput, { target: { value: '10' } });
+
+    expect(screen.queryByText('150.0%')).not.toBeInTheDocument();
+    expect(screen.getAllByText('—').length).toBe(2);
+  });
 });
 
