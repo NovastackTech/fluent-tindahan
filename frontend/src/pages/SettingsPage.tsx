@@ -204,7 +204,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
   return (
     <div className={styles.container}>
       <div style={{ marginBottom: tokens.spacingVerticalM }}>
-        <Text size={500} weight="bold">{t.settings.title}</Text>
+        <Text as="h1" size={500} weight="bold">{t.settings.title}</Text>
         <Text size={300} style={{ color: tokens.colorNeutralForeground3, display: 'block' }}>
           {t.settings.subtitle}
         </Text>
@@ -214,7 +214,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
       <Card className={styles.card}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
           <GlobeRegular fontSize={20} />
-          <Text weight="bold" size={400}>{t.settings.languageSection}</Text>
+          <Text as="h2" weight="bold" size={400}>{t.settings.languageSection}</Text>
         </div>
         <Text size={200} style={{ color: tokens.colorNeutralForeground3, marginBottom: '12px', display: 'block' }}>
           {t.settings.languageDesc}
@@ -239,7 +239,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
       <Card className={styles.card}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
           <DesktopRegular fontSize={20} />
-          <Text weight="bold" size={400}>{t.settings.themeSection}</Text>
+          <Text as="h2" weight="bold" size={400}>{t.settings.themeSection}</Text>
         </div>
         <Text size={200} style={{ color: tokens.colorNeutralForeground3, marginBottom: '12px', display: 'block' }}>
           {t.settings.themeDesc}
@@ -273,7 +273,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
       <Card className={styles.card}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
           <BoxRegular fontSize={20} />
-          <Text weight="bold" size={400}>{t.settings.stockPolicySection}</Text>
+          <Text as="h2" weight="bold" size={400}>{t.settings.stockPolicySection}</Text>
         </div>
         <Text size={200} style={{ color: tokens.colorNeutralForeground3, marginBottom: '12px', display: 'block' }}>
           {t.settings.stockPolicyDesc}
@@ -307,7 +307,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
       <Card className={styles.card}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
           <PrintRegular fontSize={20} />
-          <Text weight="bold" size={400}>{t.settings.printerSection}</Text>
+          <Text as="h2" weight="bold" size={400}>{t.settings.printerSection}</Text>
         </div>
         <Text size={200} style={{ color: tokens.colorNeutralForeground3, marginBottom: '12px', display: 'block' }}>
           {t.settings.printerDesc}
@@ -362,7 +362,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <SparkleRegular fontSize={20} color={tokens.colorPaletteGoldForeground2} />
-            <Text weight="bold" size={400}>{t.subscription.planSection}</Text>
+            <Text as="h2" weight="bold" size={400}>{t.subscription.planSection}</Text>
           </div>
           <Badge
             appearance="filled"
@@ -454,7 +454,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
       <Card className={styles.card}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
           <PhoneLaptopRegular fontSize={20} />
-          <Text weight="bold" size={400}>{t.pwa.pwaSection}</Text>
+          <Text as="h2" weight="bold" size={400}>{t.pwa.pwaSection}</Text>
         </div>
         <Text size={200} style={{ color: tokens.colorNeutralForeground3, marginBottom: '12px', display: 'block' }}>
           {t.pwa.pwaDesc}
@@ -501,7 +501,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
       <Card className={styles.card}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
           <DatabaseRegular fontSize={20} />
-          <Text weight="bold" size={400}>{t.settings.storageSection}</Text>
+          <Text as="h2" weight="bold" size={400}>{t.settings.storageSection}</Text>
         </div>
         <div className={styles.infoRow}>
           <Text size={200}>{t.settings.persistentStorage}:</Text>
@@ -523,7 +523,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
       <Card className={styles.card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
           <div>
-            <Text weight="bold" size={400}>{t.settings.syncSection}</Text>
+            <Text as="h2" weight="bold" size={400}>{t.settings.syncSection}</Text>
             <Text size={100} style={{ color: tokens.colorNeutralForeground3, display: 'block' }}>
               Last sync: {lastSyncedAt ? lastSyncedAt.toLocaleString() : 'Never'}
             </Text>
@@ -595,7 +595,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
         <Card className={styles.card} style={{ borderLeft: `4px solid ${tokens.colorPaletteRedBorderActive}` }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Text weight="bold" size={400} style={{ color: tokens.colorPaletteRedForeground1 }}>
+              <Text as="h2" weight="bold" size={400} style={{ color: tokens.colorPaletteRedForeground1 }}>
                 {t.settings.dlqTitle}
               </Text>
               <Badge appearance="filled" color="danger">
@@ -671,7 +671,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
       <Card className={styles.card}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
           <ShieldCheckmarkRegular fontSize={20} />
-          <Text weight="bold" size={400}>{t.disclaimer.legalCardTitle}</Text>
+          <Text as="h2" weight="bold" size={400}>{t.disclaimer.legalCardTitle}</Text>
         </div>
         <Text size={200} style={{ color: tokens.colorNeutralForeground3, marginBottom: '12px', display: 'block' }}>
           {t.disclaimer.legalCardDesc}
@@ -717,7 +717,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
       {/* Account & Multi-tenant isolation / Store & Device Details */}
       <Card className={styles.card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
-          <Text weight="bold" size={400}>
+          <Text as="h2" weight="bold" size={400}>
             {t.settings.deviceInfoSection}
           </Text>
           <div style={{ display: 'flex', gap: '8px' }}>

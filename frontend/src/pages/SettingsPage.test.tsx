@@ -94,6 +94,16 @@ describe('SettingsPage', () => {
     expect(screen.getByText(/Aling Nena's Tindahan & GCash/)).toBeInTheDocument();
   });
 
+  it('renders page and section titles with semantic heading elements (h1 and h2)', () => {
+    renderSettings();
+
+    const h1 = screen.getByRole('heading', { level: 1, name: /Mga Setting|Settings/i });
+    expect(h1).toBeInTheDocument();
+
+    const h2Headings = screen.getAllByRole('heading', { level: 2 });
+    expect(h2Headings.length).toBeGreaterThanOrEqual(8);
+  });
+
   it('renders Store & Device Details at the bottom of the page containing the logout button', () => {
     renderSettings();
 

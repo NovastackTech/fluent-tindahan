@@ -63,6 +63,7 @@ describe('SessionLockModal', () => {
     expect(screen.getByText(/Naka-lock ang Kaha/i)).toBeInTheDocument();
     expect(screen.getByText(/Aling Nena's Store • owner@tindahan\.ph/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '1' })).toBeInTheDocument();
+    expect(screen.getByLabelText(/Quick POS PIN/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /I-unlock ang Kaha/i })).toBeInTheDocument();
   });
 
