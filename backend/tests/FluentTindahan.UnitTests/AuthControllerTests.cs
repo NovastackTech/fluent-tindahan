@@ -3733,6 +3733,22 @@ public class AuthControllerTests
         verifiedUser.EmailVerified.Should().BeTrue();
         verifiedUser.EmailOtpHash.Should().BeNull();
         verifiedUser.EmailOtpExpiresAt.Should().BeNull();
+
+        // Subsequent verify call on already-verified account returns 400 BadRequest and mints no tokens
+        var alreadyVerifiedResult = await controller.VerifyEmailOtp(new AuthController.VerifyEmailOtpRequest
+        {
+            Otp = "123456"
+        }, CancellationToken.None);
+        alreadyVerifiedResult.Result.Should().BeOfType<BadRequestObjectResult>();
+
+        // Unauthenticated caller attempting takeover with already-verified email is rejected
+        var takeoverController = CreateController(context);
+        var takeoverResult = await takeoverController.VerifyEmailOtp(new AuthController.VerifyEmailOtpRequest
+        {
+            Email = "suki.otp@example.ph",
+            Otp = "000000"
+        }, CancellationToken.None);
+        takeoverResult.Result.Should().BeOfType<BadRequestObjectResult>();
     }
 
     [Fact]
@@ -4224,12 +4240,14 @@ public class AuthControllerTests
         forgotResult.Should().BeOfType<OkObjectResult>();
         dispatchedOtp.Should().NotBeNullOrWhiteSpace().And.HaveLength(6);
 
-        // Enforces cooldown on immediate second request
+        // Anti-enumeration: cooldown returns generic 200 without dispatching a new email
+        dispatchedOtp = null;
         var cooldownResult = await controller.ForgotPassword(new AuthController.ForgotPasswordRequest
         {
             Email = "forgotuser@tindahan.ph"
         }, CancellationToken.None);
-        cooldownResult.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(429);
+        cooldownResult.Should().BeOfType<OkObjectResult>();
+        dispatchedOtp.Should().BeNull();
     }
 
     [Fact]
@@ -4244,6 +4262,42 @@ public class AuthControllerTests
         }, CancellationToken.None);
 
         forgotResult.Should().BeOfType<OkObjectResult>();
+    }
+
+    [Fact]
+    public async Task RegisterAndLogin_WhenEmailSenderThrows_DoesNotReturn500()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var failingOtpSender = new Mock<IEmailOtpSender>();
+        failingOtpSender
+            .Setup(s => s.SendOtpAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new System.Net.Mail.SmtpException("Connection refused"));
+
+        var controller = CreateController(context, emailOtpSender: failingOtpSender.Object);
+
+        // Register succeeds despite SMTP failure
+        var regResult = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "smtp.fail@tindahan.ph",
+            Password = "Password123!",
+            BusinessName = "Offline SMTP Store"
+        }, CancellationToken.None);
+
+        var regOk = regResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var regDto = regOk.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        regDto.Email.Should().Be("smtp.fail@tindahan.ph");
+        regDto.RequiresEmailVerification.Should().BeTrue();
+
+        // Login succeeds despite SMTP failure
+        var loginResult = await controller.Login(new AuthController.LoginRequest
+        {
+            Email = "smtp.fail@tindahan.ph",
+            Password = "Password123!"
+        }, CancellationToken.None);
+
+        var loginOk = loginResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var loginDto = loginOk.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        loginDto.Email.Should().Be("smtp.fail@tindahan.ph");
     }
 
     [Fact]

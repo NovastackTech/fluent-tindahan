@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Mail;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using FluentTindahan.Application.Common.Interfaces;
 
@@ -10,12 +11,21 @@ public sealed class SmtpEmailOtpSender : IEmailOtpSender
 {
     private readonly IConfiguration _configuration;
     private readonly ILogger<SmtpEmailOtpSender> _logger;
+    private readonly IHostEnvironment? _environment;
 
-    public SmtpEmailOtpSender(IConfiguration configuration, ILogger<SmtpEmailOtpSender> logger)
+    public SmtpEmailOtpSender(
+        IConfiguration configuration,
+        ILogger<SmtpEmailOtpSender> logger,
+        IHostEnvironment? environment = null)
     {
         _configuration = configuration;
         _logger = logger;
+        _environment = environment;
     }
+
+    private bool IsDevelopment() =>
+        _environment?.IsDevelopment() ??
+        string.Equals(_configuration["ASPNETCORE_ENVIRONMENT"], "Development", StringComparison.OrdinalIgnoreCase);
 
     public async Task SendOtpAsync(
         string email,
@@ -36,15 +46,23 @@ public sealed class SmtpEmailOtpSender : IEmailOtpSender
 
         var recipientName = string.IsNullOrWhiteSpace(ownerName) ? "Store Owner" : ownerName.Trim();
 
-        // Fallback to console log if SMTP host is not configured
+        // Fallback to console log if SMTP host is not configured (only allowed in Development)
         if (string.IsNullOrWhiteSpace(host))
         {
-            _logger.LogWarning(
-                "[DEV/OFFLINE] SMTP host is not configured (Smtp:Host / SMTP_HOST). Email OTP dispatched for {Email} ({OwnerName}): {OtpCode}",
-                email,
-                recipientName,
-                otpCode);
-            return;
+            if (IsDevelopment())
+            {
+                _logger.LogWarning(
+                    "[DEV/OFFLINE] SMTP host is not configured (Smtp:Host / SMTP_HOST). Email OTP dispatched for {Email} ({OwnerName}): {OtpCode}",
+                    email,
+                    recipientName,
+                    otpCode);
+                return;
+            }
+
+            _logger.LogError(
+                "SMTP host is not configured (Smtp:Host / SMTP_HOST). Cannot send email OTP to {Email}",
+                email);
+            throw new InvalidOperationException("SMTP host is not configured (Smtp:Host / SMTP_HOST).");
         }
 
         try
@@ -99,17 +117,28 @@ public sealed class SmtpEmailOtpSender : IEmailOtpSender
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                "Failed to send OTP email to {Email} via SMTP {Host}:{Port}. Fallback OTP code: {OtpCode}",
-                email,
-                host,
-                port,
-                otpCode);
+            if (IsDevelopment())
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to send OTP email to {Email} via SMTP {Host}:{Port}. Dev fallback OTP code: {OtpCode}",
+                    email,
+                    host,
+                    port,
+                    otpCode);
+            }
+            else
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to send OTP email to {Email} via SMTP {Host}:{Port}",
+                    email,
+                    host,
+                    port);
+            }
 
             // In development or demo mode, do not fail the request when SMTP host is offline
-            var isDemoOrDev = _configuration["DemoMode"] == "true" ||
-                              string.Equals(_configuration["ASPNETCORE_ENVIRONMENT"], "Development", StringComparison.OrdinalIgnoreCase);
+            var isDemoOrDev = _configuration["DemoMode"] == "true" || IsDevelopment();
 
             if (!isDemoOrDev)
             {
