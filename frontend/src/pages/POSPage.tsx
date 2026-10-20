@@ -596,6 +596,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
   };
 
   const openCheckout = () => {
+    if (cartItems.length === 0) return;
     applyExactCash();
     setIsCartOpen(false);
     setIsCheckoutOpen(true);
@@ -1283,6 +1284,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
             <DialogActions>
               <Button
                 appearance="subtle"
+                disabled={cartItems.length === 0}
                 onClick={() => {
                   clearCart();
                   setIsStockOverridden(false);
@@ -1292,8 +1294,9 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
               </Button>
               <Button
                 appearance="primary"
-                disabled={!isStockAllowed}
+                disabled={!isStockAllowed || cartItems.length === 0}
                 onClick={() => {
+                  if (cartItems.length === 0) return;
                   if (!isStockAllowed) {
                     showToast(stockError, 'warning');
                     return;
