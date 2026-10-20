@@ -27,6 +27,11 @@ public sealed class SmtpEmailOtpSender : IEmailOtpSender
         _environment?.IsDevelopment() ??
         string.Equals(_configuration["ASPNETCORE_ENVIRONMENT"], "Development", StringComparison.OrdinalIgnoreCase);
 
+    private bool IsDemoOrDev() =>
+        IsDevelopment() ||
+        string.Equals(_configuration["DemoMode"], "true", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(_configuration["DEMO_MODE"], "true", StringComparison.OrdinalIgnoreCase);
+
     public async Task SendOtpAsync(
         string email,
         string otpCode,
@@ -46,10 +51,10 @@ public sealed class SmtpEmailOtpSender : IEmailOtpSender
 
         var recipientName = string.IsNullOrWhiteSpace(ownerName) ? "Store Owner" : ownerName.Trim();
 
-        // Fallback to console log if SMTP host is not configured (only allowed in Development)
+        // Fallback to console log if SMTP host is not configured (allowed in Development or DemoMode)
         if (string.IsNullOrWhiteSpace(host))
         {
-            if (IsDevelopment())
+            if (IsDemoOrDev())
             {
                 _logger.LogWarning(
                     "[DEV/OFFLINE] SMTP host is not configured (Smtp:Host / SMTP_HOST). Email OTP dispatched for {Email} ({OwnerName}): {OtpCode}",
@@ -117,11 +122,11 @@ public sealed class SmtpEmailOtpSender : IEmailOtpSender
         }
         catch (Exception ex)
         {
-            if (IsDevelopment())
+            if (IsDemoOrDev())
             {
                 _logger.LogError(
                     ex,
-                    "Failed to send OTP email to {Email} via SMTP {Host}:{Port}. Dev fallback OTP code: {OtpCode}",
+                    "Failed to send OTP email to {Email} via SMTP {Host}:{Port}. Dev/Demo fallback OTP code: {OtpCode}",
                     email,
                     host,
                     port,
@@ -138,9 +143,7 @@ public sealed class SmtpEmailOtpSender : IEmailOtpSender
             }
 
             // In development or demo mode, do not fail the request when SMTP host is offline
-            var isDemoOrDev = _configuration["DemoMode"] == "true" || IsDevelopment();
-
-            if (!isDemoOrDev)
+            if (!IsDemoOrDev())
             {
                 throw;
             }

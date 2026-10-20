@@ -47,6 +47,11 @@ services:
       PayMongo__SecretKey: ${PAYMONGO_SECRET_KEY:-}
       PayMongo__WebhookSecret: ${PAYMONGO_WEBHOOK_SECRET:-}
       PayMongo__FrontendOrigin: ${PAYMONGO_FRONTEND_ORIGIN:-http://localhost}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
       interval: 30s
