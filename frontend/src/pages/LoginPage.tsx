@@ -34,6 +34,7 @@ import { ConfirmUnsyncedLoginDialog } from '../components/ConfirmUnsyncedLoginDi
 import { useTranslation } from '../state/languageStore';
 import { useAuthStore } from '../state/authStore';
 import { seedDexieDatabaseIfNeeded, DEFAULT_TENANT_ID } from '../db/seedData';
+import { resetSyncStore, updateQueueCounts } from '../sync/syncEngine';
 import { RegistrationFormFields } from '../components/RegistrationFormFields';
 import { LoginFormFields } from '../components/LoginFormFields';
 import { AuthErrorBanner } from '../components/AuthErrorBanner';
@@ -41,6 +42,7 @@ import { validateRegistrationInput, validateLoginInput } from '../utils/registra
 import { GoogleAuthButton } from '../components/GoogleAuthButton';
 import { forgotPassword, resetPassword } from '../services/authService';
 import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
+import { evaluatePasswordStrength } from '../utils/passwordStrength';
 
 export interface LoginPageProps {
   onNavigate: (tab: NavTab) => void;
@@ -388,8 +390,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
       return;
     }
 
-    if (forgotNewPassword.length < 6) {
-      setAuthErrors([t.onboarding.passwordMinLength || 'Password must be at least 6 characters.']);
+    const strength = evaluatePasswordStrength(forgotNewPassword);
+    if (!strength.isValid) {
+      setAuthErrors([t.onboarding.passwordStrengthError || 'Password must be at least 8 characters and contain both letters and numbers.']);
       return;
     }
 
@@ -405,6 +408,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
         otp: forgotOtp.trim(),
         newPassword: forgotNewPassword
       });
+      useAuthStore.getState().setFirebaseToken(null);
+      useAuthStore.getState().setRefreshToken(null);
+      useAuthStore.getState().setReauthRequired(false);
       setLoginEmailVal(forgotEmail.trim());
       setLoginPasswordVal('');
       setForgotSuccessBanner(t.login.resetPasswordSuccessBanner);
@@ -440,15 +446,23 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   const handleExploreDemo = async () => {
     setIsSubmitting(true);
     try {
-      await seedDexieDatabaseIfNeeded(false, DEFAULT_TENANT_ID, false, "Aling Nena's Demo Tindahan");
+      const res = await useAuthStore.getState().logout(false);
+      if (!res.success) {
+        setAuthError(t.banner.offlineDesc);
+        return;
+      }
+      await seedDexieDatabaseIfNeeded(true, DEFAULT_TENANT_ID, false, "Aling Nena's Demo Tindahan");
       completeOnboarding({
         businessName: "Aling Nena's Demo Tindahan",
         ownerName: 'Nena Santos',
         userEmail: 'demo@fluent-tindahan.ph',
         tenantId: DEFAULT_TENANT_ID,
         userId: '22222222-2222-2222-2222-222222222222',
-        hasPin: false
+        hasPin: false,
+        isDemo: true
       });
+      resetSyncStore();
+      await updateQueueCounts();
       onNavigate('pos');
     } catch (err: any) {
       console.error('Demo initialization failed:', err);
@@ -737,10 +751,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
                 label={t.settings.newPasswordLabel}
                 required
                 hint={t.settings.newPasswordPlaceholder}
-                validationState={forgotNewPassword && forgotNewPassword.length < 6 ? 'error' : undefined}
+                validationState={forgotNewPassword && !evaluatePasswordStrength(forgotNewPassword).isValid ? 'error' : undefined}
                 validationMessage={
-                  forgotNewPassword && forgotNewPassword.length < 6
-                    ? t.onboarding.passwordMinLength || 'Password must be at least 6 characters.'
+                  forgotNewPassword && !evaluatePasswordStrength(forgotNewPassword).isValid
+                    ? t.onboarding.passwordStrengthError || 'Password must be at least 8 characters and contain both letters and numbers.'
                     : undefined
                 }
                 style={{ marginBottom: tokens.spacingVerticalM }}
@@ -813,7 +827,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
                 disabled={
                   isSubmitting ||
                   forgotOtp.trim().length !== 6 ||
-                  forgotNewPassword.length < 6 ||
+                  !evaluatePasswordStrength(forgotNewPassword).isValid ||
                   !forgotConfirmPassword ||
                   forgotConfirmPassword !== forgotNewPassword
                 }

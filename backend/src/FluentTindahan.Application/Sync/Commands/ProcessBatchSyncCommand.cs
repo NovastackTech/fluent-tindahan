@@ -355,9 +355,9 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
             throw new ArgumentException($"Cost price must be between ₱0.00 and ₱{MaxAllowedPrice:N2}.");
         }
         const int MaxAllowedStock = 999_999;
-        if (raw.StockQty < 0 || raw.StockQty > MaxAllowedStock)
+        if (raw.StockQty < -MaxAllowedStock || raw.StockQty > MaxAllowedStock)
         {
-            throw new ArgumentException($"Stock quantity must be between 0 and {MaxAllowedStock:N0}.");
+            throw new ArgumentException($"Stock quantity must be between -{MaxAllowedStock:N0} and {MaxAllowedStock:N0}.");
         }
 
         if (existing == null)

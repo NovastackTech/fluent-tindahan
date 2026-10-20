@@ -596,6 +596,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
   };
 
   const openCheckout = () => {
+    if (cartItems.length === 0) return;
     applyExactCash();
     setIsCartOpen(false);
     setIsCheckoutOpen(true);
@@ -834,11 +835,11 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
         await db.sales.add(saleRecord);
         await db.saleItems.bulkAdd(saleItemRecords);
 
-        // Deduct stock in Dexie (clamped to 0 to prevent negative stock in offline-first mode)
+        // Deduct stock in Dexie (allow negative stock to accurately record oversells under Warn Only)
         for (const item of cartItems) {
           const prod = await db.products.get(item.productId);
           if (prod && prod.stockQty !== undefined) {
-            const nextStock = Math.max(0, prod.stockQty - item.qty);
+            const nextStock = prod.stockQty - item.qty;
             const updated: ProductRecord = {
               ...prod,
               stockQty: nextStock,
@@ -1283,6 +1284,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
             <DialogActions>
               <Button
                 appearance="subtle"
+                disabled={cartItems.length === 0}
                 onClick={() => {
                   clearCart();
                   setIsStockOverridden(false);
@@ -1292,8 +1294,9 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
               </Button>
               <Button
                 appearance="primary"
-                disabled={!isStockAllowed}
+                disabled={!isStockAllowed || cartItems.length === 0}
                 onClick={() => {
+                  if (cartItems.length === 0) return;
                   if (!isStockAllowed) {
                     showToast(stockError, 'warning');
                     return;

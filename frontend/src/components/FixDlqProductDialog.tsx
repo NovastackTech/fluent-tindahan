@@ -170,10 +170,15 @@ export const FixDlqProductDialog: React.FC<FixDlqProductDialogProps> = ({
 
   if (!isOpen || !item) return null;
 
-  const costNum = Number(cost) || 0;
-  const priceNum = Number(price) || 0;
-  const profit = Math.max(0, priceNum - costNum);
-  const marginPct = priceNum > 0 ? Math.round((profit / priceNum) * 100) : 0;
+  const costClean = String(cost).replace(/,/g, '').trim();
+  const priceClean = String(price).replace(/,/g, '').trim();
+  const rawCost = costClean === '' ? 0 : Number(costClean);
+  const rawPrice = priceClean === '' ? 0 : Number(priceClean);
+  const isCostValid = !Number.isNaN(rawCost) && rawCost >= 0;
+  const isPriceValid = !Number.isNaN(rawPrice) && rawPrice > 0;
+  const isLiveMarginValid = isCostValid && isPriceValid;
+  const profit = isLiveMarginValid ? Math.max(0, rawPrice - rawCost) : 0;
+  const marginPct = isLiveMarginValid ? Math.round(((rawPrice - rawCost) / rawPrice) * 100) : null;
 
   const handleSaveAndRetry = async () => {
     setNameError('');
@@ -357,13 +362,19 @@ export const FixDlqProductDialog: React.FC<FixDlqProductDialogProps> = ({
                 <Text size={200} weight="semibold">
                   {t.inventory.colProfit}:
                 </Text>
-                <Text size={200} weight="bold" style={{ color: tokens.colorPaletteGreenForeground1 }}>
-                  {formatPeso(profit)}
+                <Text size={200} weight="bold" style={{ color: isLiveMarginValid ? tokens.colorPaletteGreenForeground1 : tokens.colorNeutralForeground3 }}>
+                  {isLiveMarginValid ? formatPeso(profit) : '—'}
                 </Text>
               </div>
-              <Badge appearance="filled" color={marginPct >= 20 ? 'success' : marginPct > 0 ? 'warning' : 'danger'}>
-                {marginPct}% {t.inventory.colMargin}
-              </Badge>
+              {marginPct !== null ? (
+                <Badge appearance="filled" color={marginPct >= 20 ? 'success' : marginPct > 0 ? 'warning' : 'danger'}>
+                  {marginPct}% {t.inventory.colMargin}
+                </Badge>
+              ) : (
+                <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+                  —
+                </Text>
+              )}
             </div>
 
             <div className={styles.formGrid}>

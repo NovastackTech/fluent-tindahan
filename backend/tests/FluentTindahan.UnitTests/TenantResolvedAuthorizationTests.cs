@@ -31,10 +31,32 @@ public class TenantResolvedAuthorizationTests
     {
         var currentUser = new Mock<ICurrentUserService>();
         currentUser.Setup(service => service.TenantId).Returns(Guid.Empty);
+        currentUser.Setup(service => service.EmailVerified).Returns(true);
         var requirement = new TenantResolvedRequirement();
         var context = new AuthorizationHandlerContext(
             new[] { requirement },
             new ClaimsPrincipal(),
+            resource: null);
+
+        await new TenantResolvedHandler(currentUser.Object).HandleAsync(context);
+
+        context.HasSucceeded.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task DoesNotSucceedWhenEmailVerifiedClaimIsFalse()
+    {
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.Setup(service => service.TenantId).Returns(Guid.NewGuid());
+        currentUser.Setup(service => service.EmailVerified).Returns(true);
+        var requirement = new TenantResolvedRequirement();
+        var user = new ClaimsPrincipal(new ClaimsIdentity(new[]
+        {
+            new Claim("email_verified", "false")
+        }));
+        var context = new AuthorizationHandlerContext(
+            new[] { requirement },
+            user,
             resource: null);
 
         await new TenantResolvedHandler(currentUser.Object).HandleAsync(context);

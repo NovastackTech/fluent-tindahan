@@ -1,10 +1,13 @@
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using FluentTindahan.Application.Sales;
+using FluentTindahan.WebApi.Authorization;
 
 namespace FluentTindahan.WebApi.Controllers;
 
 [ApiController]
+[Authorize(Policy = AuthorizationPolicies.TenantResolved)]
 [Route("api/[controller]")]
 public class SalesController : ControllerBase
 {

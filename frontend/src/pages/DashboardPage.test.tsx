@@ -231,5 +231,30 @@ describe('DashboardPage', () => {
       expect(screen.getByTestId('today-gcash-fees')).toHaveTextContent('₱20.00');
     });
   });
+
+  it('renders Recent Sales sorted by timestamp (newest first)', async () => {
+    const timeEarly = '2026-10-19T20:49:00.000Z';
+    const timeMid = '2026-10-19T20:50:00.000Z';
+    const timeLatest = '2026-10-19T20:53:00.000Z';
+
+    // Insert out of chronological order
+    await db.sales.bulkAdd([
+      { id: 'sale-mid', tenantId: 't-1', userId: 'u-1', totalAmount: 50, paymentMethod: 'Cash', date: timeMid },
+      { id: 'sale-early', tenantId: 't-1', userId: 'u-1', totalAmount: 20, paymentMethod: 'Cash', date: timeEarly },
+      { id: 'sale-latest', tenantId: 't-1', userId: 'u-1', totalAmount: 100, paymentMethod: 'Cash', date: timeLatest }
+    ]);
+
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByText(/Ref #sale-l/i)).toBeInTheDocument();
+    });
+
+    const renderedSales = screen.getAllByText(/Ref #sale-/i);
+    expect(renderedSales).toHaveLength(3);
+    expect(renderedSales[0]).toHaveTextContent('Ref #sale-l'); // 20:53
+    expect(renderedSales[1]).toHaveTextContent('Ref #sale-m'); // 20:50
+    expect(renderedSales[2]).toHaveTextContent('Ref #sale-e'); // 20:49
+  });
 });
 

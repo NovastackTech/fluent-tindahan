@@ -18,6 +18,7 @@ import { useAuthStore } from '../state/authStore';
 import { useTranslation } from '../state/languageStore';
 import { changePassword, type AuthResponseDto } from '../services/authService';
 import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
+import { evaluatePasswordStrength } from '../utils/passwordStrength';
 
 export interface ChangePasswordDialogProps {
   open: boolean;
@@ -57,8 +58,9 @@ export const ChangePasswordDialog: React.FC<ChangePasswordDialogProps> = ({
   };
 
   const handleSavePassword = async () => {
-    if (!newPassword || newPassword.length < 6) {
-      setErrorMsg(t.onboarding.passwordMinLength || 'Password must be at least 6 characters.');
+    const strength = evaluatePasswordStrength(newPassword);
+    if (!strength.isValid) {
+      setErrorMsg(t.onboarding.passwordStrengthError || 'Password must be at least 8 characters and contain both letters and numbers.');
       return;
     }
 
@@ -188,6 +190,12 @@ export const ChangePasswordDialog: React.FC<ChangePasswordDialogProps> = ({
               label={t.settings.newPasswordLabel}
               required
               hint={t.settings.newPasswordPlaceholder}
+              validationState={newPassword && !evaluatePasswordStrength(newPassword).isValid ? 'error' : undefined}
+              validationMessage={
+                newPassword && !evaluatePasswordStrength(newPassword).isValid
+                  ? t.onboarding.passwordStrengthError || 'Password must be at least 8 characters and contain both letters and numbers.'
+                  : undefined
+              }
               style={{ marginBottom: tokens.spacingVerticalM }}
             >
               <Input

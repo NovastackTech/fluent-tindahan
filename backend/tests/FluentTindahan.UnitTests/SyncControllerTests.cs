@@ -231,7 +231,55 @@ public class SyncControllerTests
         syncResult.ProcessedCount.Should().Be(0);
         var itemResult = syncResult.Results.Should().ContainSingle().Subject;
         itemResult.Status.Should().Be("Failed");
-        itemResult.Error.Should().Contain("Stock quantity must be between 0 and 999,999.");
+        itemResult.Error.Should().Contain("Stock quantity must be between -999,999 and 999,999.");
+    }
+
+    [Fact]
+    public async Task ProcessBatchSync_OversoldProduct_NegativeStockQuantity_Succeeds()
+    {
+        var tenantId = Guid.NewGuid();
+        var contextOptions = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.Setup(service => service.TenantId).Returns(tenantId);
+        currentUser.Setup(service => service.UserId).Returns(Guid.NewGuid());
+        currentUser.Setup(service => service.IsAuthenticated).Returns(true);
+        await using var context = new AppDbContext(contextOptions, currentUser.Object);
+
+        var syncHandler = new ProcessBatchSyncCommandHandler(
+            context,
+            currentUser.Object,
+            NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+
+        var batch = new BatchSyncRequestDto
+        {
+            DeviceId = Guid.NewGuid(),
+            Operations = new List<SyncOperationDto>
+            {
+                new()
+                {
+                    SyncId = "oversold-product",
+                    Entity = "Product",
+                    Action = "Insert",
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Payload = JsonSerializer.SerializeToElement(new
+                    {
+                        id = Guid.NewGuid(),
+                        name = "Oversold Item",
+                        price = 20m,
+                        cost = 10m,
+                        stockQty = -3
+                    })
+                }
+            }
+        };
+
+        var syncResult = await syncHandler.Handle(new ProcessBatchSyncCommand(batch), CancellationToken.None);
+
+        syncResult.ProcessedCount.Should().Be(1);
+        var itemResult = syncResult.Results.Should().ContainSingle().Subject;
+        itemResult.Status.Should().Be("Success");
     }
 
     [Fact]

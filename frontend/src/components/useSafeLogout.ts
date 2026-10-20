@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { db } from '../db/db';
 import { useAuthStore } from '../state/authStore';
-import { processSyncQueue } from '../sync/syncEngine';
+import { processSyncQueue, resetSyncStore, updateQueueCounts } from '../sync/syncEngine';
 
 async function countPendingSyncItems(): Promise<number> {
   try {
@@ -56,6 +56,8 @@ export function useSafeLogout(options?: UseSafeLogoutOptions) {
     setIsLogoutConfirmOpen(false);
     onLoggedOut?.();
     await logout(true);
+    resetSyncStore();
+    await updateQueueCounts();
   }, [logout, onLoggedOut]);
 
   return {

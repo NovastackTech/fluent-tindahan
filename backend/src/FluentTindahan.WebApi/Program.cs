@@ -116,7 +116,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                     var userState = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(
                         Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.Users)
                             .Where(u => u.Id == userId)
-                            .Select(u => new { u.SessionsInvalidatedAt, u.AccountStatus }),
+                            .Select(u => new { u.SessionsInvalidatedAt, u.AccountStatus, u.EmailVerified, u.Email }),
                         context.HttpContext.RequestAborted);
 
                     if (userState != null)
@@ -133,7 +133,19 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                             if (issuedAt < userState.SessionsInvalidatedAt.Value.AddSeconds(-1))
                             {
                                 context.Fail("Session has been invalidated.");
+                                return;
                             }
+                        }
+
+                        if (context.Principal?.Identity is System.Security.Claims.ClaimsIdentity identity)
+                        {
+                            var existingClaim = identity.FindFirst("email_verified");
+                            if (existingClaim != null)
+                            {
+                                identity.RemoveClaim(existingClaim);
+                            }
+                            var effectiveVerified = userState.EmailVerified || string.IsNullOrWhiteSpace(userState.Email);
+                            identity.AddClaim(new System.Security.Claims.Claim("email_verified", effectiveVerified ? "true" : "false"));
                         }
                     }
                 }

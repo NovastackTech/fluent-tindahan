@@ -167,10 +167,10 @@ export const SessionLockModal: React.FC = () => {
                 const rawMsg = apiErr?.response?.data?.message || t.settings.invalidPinOrPassword;
                 const lockMsg = typeof rawMsg === 'string'
                   ? rawMsg
-                      .replace(/email o PIN code/gi, 'PIN code')
-                      .replace(/email or PIN code/gi, 'PIN code')
-                      .replace(/email o PIN/gi, 'PIN')
-                      .replace(/email or PIN/gi, 'PIN')
+                    .replace(/email o PIN code/gi, 'PIN code')
+                    .replace(/email or PIN code/gi, 'PIN code')
+                    .replace(/email o PIN/gi, 'PIN')
+                    .replace(/email or PIN/gi, 'PIN')
                   : rawMsg;
                 setError(lockMsg);
               }
@@ -235,7 +235,7 @@ export const SessionLockModal: React.FC = () => {
 
             {!usePassword ? (
               <div>
-                <Field validationState={displayedError ? 'error' : undefined}>
+                <Field label={t.landing.pinLabel}>
                   <Input
                     type="password"
                     inputMode="numeric"
@@ -249,6 +249,7 @@ export const SessionLockModal: React.FC = () => {
                       }
                     }}
                     placeholder="••••"
+                    aria-label={t.landing.pinLabel}
                     style={{ textAlign: 'center', fontSize: '24px', letterSpacing: '8px' }}
                     contentBefore={<KeyRegular />}
                     autoFocus

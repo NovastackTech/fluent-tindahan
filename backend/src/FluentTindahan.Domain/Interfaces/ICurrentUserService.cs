@@ -11,4 +11,5 @@ public interface ICurrentUserService
     string? FirebaseUid { get; }
     string? Role { get; }
     bool IsAuthenticated { get; }
+    bool EmailVerified { get; }
 }

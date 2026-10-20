@@ -33,6 +33,7 @@ const useStyles = makeStyles({
 
 export const OfflineSyncBanner: React.FC = () => {
   const styles = useStyles();
+  const isOnboarded = useAuthStore((state) => state.isOnboarded);
   const { isOnline, isSyncing, pendingCount, deadLetterCount, lastErrorMessage } = useSyncStore();
   const reauthRequired = useAuthStore((state) => state.reauthRequired);
   const { t, language } = useTranslation();
@@ -40,6 +41,10 @@ export const OfflineSyncBanner: React.FC = () => {
 
   const [isRetrying, setIsRetrying] = React.useState(false);
   const pendingProfile = hasPendingProfileUpdate();
+
+  if (!isOnboarded) {
+    return null;
+  }
 
   if (isOnline && pendingCount === 0 && deadLetterCount === 0 && !lastErrorMessage && !pendingProfile && !reauthRequired) {
     return null;
