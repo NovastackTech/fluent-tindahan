@@ -965,6 +965,12 @@ describe('LoginPage Component', () => {
 
     expect(otpInput).toBeInTheDocument();
 
+    useAuthStore.setState({
+      firebaseToken: 'old-access-token',
+      refreshToken: 'old-refresh-token',
+      reauthRequired: true
+    });
+
     await act(async () => {
       fireEvent.change(otpInput, { target: { value: '123456' } });
       fireEvent.change(newPasswordInput, { target: { value: 'NewBrandPass123!' } });
@@ -978,6 +984,9 @@ describe('LoginPage Component', () => {
         otp: '123456',
         newPassword: 'NewBrandPass123!'
       });
+      expect(useAuthStore.getState().firebaseToken).toBeNull();
+      expect(useAuthStore.getState().refreshToken).toBeNull();
+      expect(useAuthStore.getState().reauthRequired).toBe(false);
       expect(screen.getByTestId('login-reset-success-banner')).toBeInTheDocument();
     });
   });

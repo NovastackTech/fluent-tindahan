@@ -46,7 +46,7 @@ export class SessionReauthRequiredError extends Error {
 const ACCESS_TOKEN_REFRESH_SKEW_MS = 60_000;
 const REFRESH_LOCK_KEY = 'fluent_tindahan_refresh_lock_v1';
 const REFRESH_LOCK_TTL_MS = 15_000;
-const PUBLIC_AUTH_PATH = /\/auth\/(login-pin|login|register|google|refresh|logout)(?:\?|$)/;
+const PUBLIC_AUTH_PATH = /\/auth\/(login-pin|login|register|google|refresh|logout|reset-password|forgot-password|verify-email-otp|resend-email-otp)(?:\?|$)/;
 
 interface JwtPayload {
   sub?: unknown;
@@ -521,7 +521,8 @@ async function provisionTenantSession({
 }
 
 apiClient.interceptors.request.use(async (config) => {
-  if (!isPublicAuthRequest(config.url)) {
+  const isPublic = isPublicAuthRequest(config.url);
+  if (!isPublic) {
     await ensureAccessTokenFresh();
   }
 
@@ -531,7 +532,7 @@ apiClient.interceptors.request.use(async (config) => {
     config.headers['X-Tenant-Id'] = tenantId;
   }
 
-  if (firebaseToken && isAccessTokenUsable(firebaseToken)) {
+  if (!isPublic && firebaseToken && isAccessTokenUsable(firebaseToken)) {
     config.headers['Authorization'] = `Bearer ${firebaseToken}`;
   }
 

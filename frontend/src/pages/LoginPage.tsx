@@ -405,6 +405,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
         otp: forgotOtp.trim(),
         newPassword: forgotNewPassword
       });
+      useAuthStore.getState().setFirebaseToken(null);
+      useAuthStore.getState().setRefreshToken(null);
+      useAuthStore.getState().setReauthRequired(false);
       setLoginEmailVal(forgotEmail.trim());
       setLoginPasswordVal('');
       setForgotSuccessBanner(t.login.resetPasswordSuccessBanner);

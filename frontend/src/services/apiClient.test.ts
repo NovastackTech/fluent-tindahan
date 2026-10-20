@@ -69,6 +69,33 @@ describe('apiClient', () => {
     expect(updated.headers['Authorization']).toBe('Bearer jwt-bearer-xyz');
   });
 
+  it('request interceptor does not inject Authorization Bearer header for public auth requests', async () => {
+    useAuthStore.setState({
+      tenantId: 'tenant-456',
+      firebaseToken: 'jwt-bearer-xyz'
+    });
+
+    const interceptor = (apiClient.interceptors.request as any).handlers[0];
+    const publicEndpoints = [
+      '/auth/login',
+      '/auth/login-pin',
+      '/auth/register',
+      '/auth/google',
+      '/auth/refresh',
+      '/auth/reset-password',
+      '/auth/forgot-password',
+      '/auth/verify-email-otp',
+      '/auth/resend-email-otp'
+    ];
+
+    for (const url of publicEndpoints) {
+      const config: any = { url, headers: {} };
+      const updated = await interceptor.fulfilled(config);
+      expect(updated.headers['Authorization']).toBeUndefined();
+      expect(updated.headers['X-Tenant-Id']).toBe('tenant-456');
+    }
+  });
+
   it('provisions the current tenant and owner before remote writes', async () => {
     const tenantId = crypto.randomUUID();
     const userId = crypto.randomUUID();
