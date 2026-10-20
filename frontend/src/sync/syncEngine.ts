@@ -644,7 +644,7 @@ export async function retryDeadLetterItem(
 
       const isPriceInvalid = isNaN(priceNum) || priceNum < MIN_PRODUCT_PRICE || priceNum > MAX_PRODUCT_PRICE;
       const isCostInvalid = isNaN(costNum) || costNum < MIN_PRODUCT_COST || costNum > MAX_PRODUCT_COST;
-      const isStockInvalid = isNaN(stockNum) || stockNum < MIN_PRODUCT_STOCK || stockNum > MAX_PRODUCT_STOCK;
+      const isStockInvalid = isNaN(stockNum) || stockNum < -MAX_PRODUCT_STOCK || stockNum > MAX_PRODUCT_STOCK;
 
       if (isPriceInvalid || isCostInvalid || isStockInvalid) {
         // Do NOT auto-clamp and do NOT rewrite data. Item remains safely in DLQ.

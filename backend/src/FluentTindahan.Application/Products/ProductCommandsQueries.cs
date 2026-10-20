@@ -86,9 +86,9 @@ public class CreateProductCommandHandler : IRequestHandler<CreateProductCommand,
             throw new ArgumentException($"Cost price must be between ₱0.00 and ₱{MaxAllowedPrice:N2}.", nameof(request.Cost));
         }
         const int MaxAllowedStock = 999_999;
-        if (request.StockQty < 0 || request.StockQty > MaxAllowedStock)
+        if (request.StockQty < -MaxAllowedStock || request.StockQty > MaxAllowedStock)
         {
-            throw new ArgumentException($"Stock quantity must be between 0 and {MaxAllowedStock:N0}.", nameof(request.StockQty));
+            throw new ArgumentException($"Stock quantity must be between -{MaxAllowedStock:N0} and {MaxAllowedStock:N0}.", nameof(request.StockQty));
         }
 
         var product = new Product

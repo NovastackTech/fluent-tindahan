@@ -330,6 +330,7 @@ export const tl: Translations = {
     noProductsFound: 'Walang natagpuang produkto na tumutugma sa filter.',
     lowStockBadge: 'Paubos na',
     outOfStockBadge: 'Ubos na',
+    oversoldBadge: 'Oversold',
     inStockBadge: 'May Stock',
     customRestock: 'Magdagdag ng Stock'
   },
