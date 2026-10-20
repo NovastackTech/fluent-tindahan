@@ -500,6 +500,7 @@ public class AuthController : ControllerBase
     /// Registers a new store and owner identity using email and password.
     /// Preserves client-supplied TenantId and UserId when provided to align local Dexie records.
     /// </summary>
+    [AllowAnonymous]
     [HttpPost("register")]
     [EnableRateLimiting("AnonymousDemoProvision")]
     [ProducesResponseType(typeof(AuthResponseDto), StatusCodes.Status200OK)]
@@ -571,6 +572,7 @@ public class AuthController : ControllerBase
     /// Links existing verified email/password accounts if emails match, overwrites credentials and invalidates
     /// active sessions when an existing matching email account is unverified, or provisions a new store with client UUIDs.
     /// </summary>
+    [AllowAnonymous]
     [HttpPost("google")]
     [EnableRateLimiting("AuthSensitive")]
     [ProducesResponseType(typeof(AuthResponseDto), StatusCodes.Status200OK)]
@@ -792,6 +794,7 @@ public class AuthController : ControllerBase
     /// Logs in an existing store owner using email and password.
     /// Protects against brute-force attacks via rate limiting and password lockout after 5 failures for 15 minutes.
     /// </summary>
+    [AllowAnonymous]
     [HttpPost("login")]
     [EnableRateLimiting("AuthSensitive")]
     [ProducesResponseType(typeof(AuthResponseDto), StatusCodes.Status200OK)]
@@ -896,6 +899,7 @@ public class AuthController : ControllerBase
     /// Protects against brute-force attacks via per-IP throttling alongside per-account lockout (5 failures = 15 minutes lockout),
     /// and atomic/concurrency-protected failure counter updates to prevent parallel bypass.
     /// </summary>
+    [AllowAnonymous]
     [HttpPost("login-pin")]
     [EnableRateLimiting("PinLogin")]
     [ProducesResponseType(typeof(AuthResponseDto), StatusCodes.Status200OK)]
@@ -1157,6 +1161,7 @@ public class AuthController : ControllerBase
     /// allows a short grace window for the previous token (transient network glitch), and
     /// revokes only the affected family on reuse.
     /// </summary>
+    [AllowAnonymous]
     [HttpPost("refresh")]
     [EnableRateLimiting("AuthSensitive")]
     [ProducesResponseType(typeof(AuthResponseDto), StatusCodes.Status200OK)]

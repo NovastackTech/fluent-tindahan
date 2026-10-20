@@ -4416,7 +4416,8 @@ public class AuthControllerTests
             Email = "resetme@tindahan.ph",
             Password = "OldPassword123!"
         }, CancellationToken.None);
-        oldLogin.Result.Should().BeOfType<UnauthorizedObjectResult>();
+        var oldLoginResult = oldLogin.Result.Should().BeOfType<UnauthorizedObjectResult>().Subject;
+        oldLoginResult.Value?.ToString().Should().Contain("Invalid email or password");
 
         // Login with new password succeeds
         var newLogin = await controller.Login(new AuthController.LoginRequest
