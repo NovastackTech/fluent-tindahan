@@ -1396,6 +1396,7 @@ public class AuthController : ControllerBase
 
     /// <summary>
     /// Resets the user's password using the 6-digit email verification OTP.
+    /// Proving control of the registered inbox via email OTP marks the user as email-verified (EmailVerified = true).
     /// Revokes all existing refresh tokens and invalidates past sessions upon success.
     /// </summary>
     [AllowAnonymous]
@@ -1440,6 +1441,8 @@ public class AuthController : ControllerBase
         }
 
         user.PasswordHash = _passwordHasher.HashPassword(user, request.NewPassword);
+        // Validating the OTP delivered to the inbox proves control of the email address.
+        user.EmailVerified = true;
         AuthLockoutHelper.ResetPasswordLockout(user);
         user.SessionsInvalidatedAt = _timeProvider.GetUtcNow();
 
