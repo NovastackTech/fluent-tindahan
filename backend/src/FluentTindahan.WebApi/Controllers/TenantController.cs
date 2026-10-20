@@ -217,7 +217,8 @@ public class TenantController : ControllerBase
                 ownerId,
                 tenantId,
                 email: user.Email,
-                role: user.Role);
+                role: user.Role,
+                emailVerified: user.EmailVerified);
             token = accToken;
 
             // Security invariant: Only issue a refresh token and persist its hash for newly created users
@@ -265,7 +266,8 @@ public class TenantController : ControllerBase
                         ownerId,
                         tenantId,
                         email: existingOwner.Email,
-                        role: existingOwner.Role);
+                        role: existingOwner.Role,
+                        emailVerified: existingOwner.EmailVerified);
                     return Ok(new ProvisionTenantResponse(tenantId, ownerId, existingTenant.Tier, accToken, null));
                 }
 

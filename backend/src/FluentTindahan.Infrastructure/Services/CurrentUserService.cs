@@ -198,4 +198,30 @@ public class CurrentUserService : ICurrentUserService
 
     public bool IsAuthenticated =>
         _httpContextAccessor.HttpContext?.User.Identity?.IsAuthenticated ?? false;
+
+    public bool EmailVerified
+    {
+        get
+        {
+            var httpContext = _httpContextAccessor.HttpContext;
+            if (httpContext == null)
+            {
+                return IsDevelopmentOrDemoMode();
+            }
+
+            if (!IsAuthenticated && IsDevelopmentOrDemoMode())
+            {
+                return true;
+            }
+
+            var user = httpContext.User;
+            var claim = user?.FindFirst("email_verified")?.Value;
+            if (bool.TryParse(claim, out var parsed))
+            {
+                return parsed;
+            }
+
+            return true;
+        }
+    }
 }

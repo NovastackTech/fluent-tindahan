@@ -26,6 +26,12 @@ public sealed class TenantResolvedHandler : AuthorizationHandler<TenantResolvedR
     {
         if (_currentUserService.TenantId != Guid.Empty)
         {
+            var emailVerifiedClaim = context.User?.FindFirst("email_verified")?.Value;
+            if (string.Equals(emailVerifiedClaim, "false", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.CompletedTask;
+            }
+
             context.Succeed(requirement);
         }
 

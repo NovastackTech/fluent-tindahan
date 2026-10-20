@@ -206,6 +206,10 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
         otp: cleanedOtp
       });
       await loginWithAuthPayload(verifiedDto);
+      await finalizeSuccessfulLogin(verifiedDto.tenantId, {
+        isNewUser: verifiedDto.isNewUser,
+        businessName: verifiedDto.businessName
+      });
       setPendingOtpEmail(null);
       options?.onSuccess?.(verifiedDto);
       return true;

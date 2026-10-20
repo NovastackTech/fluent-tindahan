@@ -450,7 +450,7 @@ public class AuthController : ControllerBase
         CancellationToken cancellationToken,
         string? pendingOtpCode = null)
     {
-        var access = _jwtTokenService.GenerateAccessToken(user.Id, tenant.Id, email: user.Email, role: user.Role);
+        var access = _jwtTokenService.GenerateAccessToken(user.Id, tenant.Id, email: user.Email, role: user.Role, emailVerified: user.EmailVerified);
         var (refreshToken, _, _, _) = AuthRefreshTokenHelper.IssueRefreshToken(
             _context,
             _jwtTokenService,
@@ -865,7 +865,7 @@ public class AuthController : ControllerBase
             pendingOtpCode = AuthOtpHelper.IssueOtp(user, _timeProvider);
         }
 
-        var access = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId, email: user.Email, role: user.Role);
+        var access = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId, email: user.Email, role: user.Role, emailVerified: user.EmailVerified);
         var (refreshToken, _, _, _) = AuthRefreshTokenHelper.IssueRefreshToken(
             _context,
             _jwtTokenService,
@@ -994,7 +994,7 @@ public class AuthController : ControllerBase
 
             AuthLockoutHelper.ResetIpPinThrottle(clientIp);
 
-            var access = _jwtTokenService.GenerateAccessToken(freshUser.Id, freshUser.TenantId, email: freshUser.Email, role: freshUser.Role);
+            var access = _jwtTokenService.GenerateAccessToken(freshUser.Id, freshUser.TenantId, email: freshUser.Email, role: freshUser.Role, emailVerified: freshUser.EmailVerified);
             var (refreshToken, _, _, _) = AuthRefreshTokenHelper.IssueRefreshToken(
                 _context,
                 _jwtTokenService,
@@ -1178,7 +1178,7 @@ public class AuthController : ControllerBase
         }
 
         var user = result.User!;
-        var access = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId, email: user.Email, role: user.Role);
+        var access = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId, email: user.Email, role: user.Role, emailVerified: user.EmailVerified);
 
         return Ok(AuthResponseBuilder.Build(user, user.Tenant, access, result.NewRefreshToken));
     }
@@ -1331,7 +1331,7 @@ public class AuthController : ControllerBase
         {
             var tenant = await _context.Tenants.IgnoreQueryFilters()
                 .FirstOrDefaultAsync(t => t.Id == user.TenantId, cancellationToken);
-            var access = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId, email: user.Email, role: user.Role);
+            var access = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId, email: user.Email, role: user.Role, emailVerified: user.EmailVerified);
             return Ok(AuthResponseBuilder.Build(user, tenant, access, refreshToken: responseRefreshToken, ownerName: user.OwnerName));
         }
 
@@ -1712,7 +1712,7 @@ public class AuthController : ControllerBase
             }
         }
 
-        var access = _jwtTokenService.GenerateAccessToken(user.Id, tenant.Id, email: user.Email, role: user.Role);
+        var access = _jwtTokenService.GenerateAccessToken(user.Id, tenant.Id, email: user.Email, role: user.Role, emailVerified: user.EmailVerified);
         return Ok(AuthResponseBuilder.Build(user, tenant, access, refreshToken: responseRefreshToken, ownerName: user.OwnerName));
     }
 
@@ -1772,7 +1772,7 @@ public class AuthController : ControllerBase
                 });
 
             default:
-                var access = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId, email: user.Email, role: user.Role);
+                var access = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId, email: user.Email, role: user.Role, emailVerified: true);
                 var (refreshToken, _, _, _) = AuthRefreshTokenHelper.IssueRefreshToken(
                     _context,
                     _jwtTokenService,
