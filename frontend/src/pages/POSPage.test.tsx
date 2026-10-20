@@ -1257,7 +1257,7 @@ describe('POSPage', () => {
 
   it('disables checkout button when cart is empty (issue #134)', async () => {
     useCartStore.getState().addItem({
-      productId: 'p-1',
+      id: 'p-1',
       name: 'Lucky Me Pancit Canton Kalamansi',
       price: 16,
       maxStock: 20
