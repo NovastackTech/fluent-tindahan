@@ -61,6 +61,7 @@ jobs:
     name: Deploy to Alibaba SAS
     needs: [validate]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment:
       name: production
       url: https://tindahan-dev.novastack-inc.online
@@ -132,7 +133,7 @@ jobs:
           printf '%s\n' "$SAS_SSH_KEY" > ~/.ssh/id_sas
           chmod 600 ~/.ssh/id_sas
           ssh-keyscan -p "$SAS_PORT" -H "$SAS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
-          SSH_CMD="ssh -i ~/.ssh/id_sas -p $SAS_PORT -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30"
+          SSH_CMD="ssh -i ~/.ssh/id_sas -p $SAS_PORT -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes"
 
           echo "Connecting to $SAS_USER@$SAS_HOST:$SAS_PORT..."
 
