@@ -327,5 +327,13 @@ describe('InventoryPage', () => {
     expect(screen.getByRole('button', { name: /Mag-import ng CSV|Import CSV/i })).toHaveAttribute('aria-label');
     expect(screen.getByRole('button', { name: /Buksan ang Scanner|Open Scanner/i })).toHaveAttribute('aria-label');
   });
+
+  it('does not mark Category as required with an asterisk', () => {
+    renderInventory();
+    fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Produkto|Add Product/i }));
+
+    expect(screen.queryByText(/Kategorya:\*|Category:\*/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/^Kategorya$|^Category$/i)).toBeInTheDocument();
+  });
 });
 
