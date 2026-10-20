@@ -394,4 +394,28 @@ describe('App', () => {
     const badgeAfter = await screen.findByTestId('product-cap-badge');
     expect(badgeAfter).toHaveTextContent('Full');
   });
+
+  it('normalizes invalid ?tab= query parameter to dashboard in URL and state', () => {
+    useAuthStore.setState({
+      isOnboarded: true,
+      isOnboardingStatusReady: true
+    });
+
+    const replaceStateSpy = vi.spyOn(window.history, 'replaceState');
+    Object.defineProperty(window, 'location', {
+      value: {
+        ...originalLocation,
+        href: 'http://localhost:5173/?tab=bogus',
+        pathname: '/',
+        search: '?tab=bogus'
+      },
+      configurable: true,
+      writable: true
+    });
+
+    render(<App />);
+
+    expect(replaceStateSpy).toHaveBeenCalledWith(null, '', '/?tab=dashboard');
+    replaceStateSpy.mockRestore();
+  });
 });

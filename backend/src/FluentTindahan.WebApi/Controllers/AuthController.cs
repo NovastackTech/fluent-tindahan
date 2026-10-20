@@ -70,6 +70,11 @@ public class AuthController : ControllerBase
     public static bool IsDisposableEmail(string? email) => AuthEmailNormalizer.IsDisposableEmail(email);
     public static bool IsUniqueEmailViolation(DbUpdateException ex) => DbConstraintHelper.IsUniqueEmailViolation(ex);
     public static bool IsUniqueConstraintViolation(DbUpdateException ex) => DbConstraintHelper.IsUniqueConstraintViolation(ex);
+    public static bool IsValidPassword(string? password)
+    {
+        if (string.IsNullOrWhiteSpace(password) || password.Length < 8) return false;
+        return password.Any(char.IsLetter) && password.Any(char.IsDigit);
+    }
 
     #endregion
 
@@ -80,7 +85,8 @@ public class AuthController : ControllerBase
         [Required, EmailAddress, StringLength(256)]
         public string Email { get; init; } = string.Empty;
 
-        [Required, StringLength(100, MinimumLength = 6)]
+        [Required, StringLength(100, MinimumLength = 8, ErrorMessage = "Password must be at least 8 characters.")]
+        [RegularExpression(@"^(?=.*[a-zA-Z])(?=.*\d).{8,}$", ErrorMessage = "Password must be at least 8 characters and contain both letters and numbers.")]
         public string Password { get; init; } = string.Empty;
 
         [RegularExpression(@"^\d{4,6}$", ErrorMessage = "PIN must be between 4 and 6 digits.")]
@@ -149,7 +155,8 @@ public class AuthController : ControllerBase
     {
         public string? CurrentPassword { get; init; }
 
-        [Required, MinLength(6, ErrorMessage = "Password must be at least 6 characters.")]
+        [Required, MinLength(8, ErrorMessage = "Password must be at least 8 characters.")]
+        [RegularExpression(@"^(?=.*[a-zA-Z])(?=.*\d).{8,}$", ErrorMessage = "Password must be at least 8 characters and contain both letters and numbers.")]
         public string NewPassword { get; init; } = string.Empty;
 
         public string? RefreshToken { get; init; }
@@ -169,7 +176,8 @@ public class AuthController : ControllerBase
         [Required, StringLength(6, MinimumLength = 6)]
         public string Otp { get; init; } = string.Empty;
 
-        [Required, MinLength(6, ErrorMessage = "Password must be at least 6 characters.")]
+        [Required, MinLength(8, ErrorMessage = "Password must be at least 8 characters.")]
+        [RegularExpression(@"^(?=.*[a-zA-Z])(?=.*\d).{8,}$", ErrorMessage = "Password must be at least 8 characters and contain both letters and numbers.")]
         public string NewPassword { get; init; } = string.Empty;
     }
 
@@ -450,7 +458,7 @@ public class AuthController : ControllerBase
         CancellationToken cancellationToken,
         string? pendingOtpCode = null)
     {
-        var access = _jwtTokenService.GenerateAccessToken(user.Id, tenant.Id, email: user.Email, role: user.Role);
+        var access = _jwtTokenService.GenerateAccessToken(user.Id, tenant.Id, email: user.Email, role: user.Role, emailVerified: user.EmailVerified);
         var (refreshToken, _, _, _) = AuthRefreshTokenHelper.IssueRefreshToken(
             _context,
             _jwtTokenService,
@@ -500,6 +508,7 @@ public class AuthController : ControllerBase
     /// Registers a new store and owner identity using email and password.
     /// Preserves client-supplied TenantId and UserId when provided to align local Dexie records.
     /// </summary>
+    [AllowAnonymous]
     [HttpPost("register")]
     [EnableRateLimiting("AnonymousDemoProvision")]
     [ProducesResponseType(typeof(AuthResponseDto), StatusCodes.Status200OK)]
@@ -509,9 +518,9 @@ public class AuthController : ControllerBase
         [FromBody] RegisterRequest request,
         CancellationToken cancellationToken)
     {
-        if (request == null || !ModelState.IsValid || string.IsNullOrWhiteSpace(request.Password))
+        if (request == null || !ModelState.IsValid || string.IsNullOrWhiteSpace(request.Password) || !IsValidPassword(request.Password))
         {
-            return BadRequest(ModelState.IsValid ? (object)new { message = "Kailangan ng password (minimum 6 letra). / Password is required (minimum 6 chars)." } : ModelState);
+            return BadRequest(ModelState.IsValid ? (object)new { message = "Kailangan ng password (minimum 8 characters na may letra at numero). / Password is required (minimum 8 chars with letters & numbers)." } : ModelState);
         }
 
         var displayEmail = CleanDisplayEmail(request.Email);
@@ -571,6 +580,7 @@ public class AuthController : ControllerBase
     /// Links existing verified email/password accounts if emails match, overwrites credentials and invalidates
     /// active sessions when an existing matching email account is unverified, or provisions a new store with client UUIDs.
     /// </summary>
+    [AllowAnonymous]
     [HttpPost("google")]
     [EnableRateLimiting("AuthSensitive")]
     [ProducesResponseType(typeof(AuthResponseDto), StatusCodes.Status200OK)]
@@ -792,6 +802,7 @@ public class AuthController : ControllerBase
     /// Logs in an existing store owner using email and password.
     /// Protects against brute-force attacks via rate limiting and password lockout after 5 failures for 15 minutes.
     /// </summary>
+    [AllowAnonymous]
     [HttpPost("login")]
     [EnableRateLimiting("AuthSensitive")]
     [ProducesResponseType(typeof(AuthResponseDto), StatusCodes.Status200OK)]
@@ -865,7 +876,7 @@ public class AuthController : ControllerBase
             pendingOtpCode = AuthOtpHelper.IssueOtp(user, _timeProvider);
         }
 
-        var access = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId, email: user.Email, role: user.Role);
+        var access = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId, email: user.Email, role: user.Role, emailVerified: user.EmailVerified);
         var (refreshToken, _, _, _) = AuthRefreshTokenHelper.IssueRefreshToken(
             _context,
             _jwtTokenService,
@@ -896,6 +907,7 @@ public class AuthController : ControllerBase
     /// Protects against brute-force attacks via per-IP throttling alongside per-account lockout (5 failures = 15 minutes lockout),
     /// and atomic/concurrency-protected failure counter updates to prevent parallel bypass.
     /// </summary>
+    [AllowAnonymous]
     [HttpPost("login-pin")]
     [EnableRateLimiting("PinLogin")]
     [ProducesResponseType(typeof(AuthResponseDto), StatusCodes.Status200OK)]
@@ -994,7 +1006,7 @@ public class AuthController : ControllerBase
 
             AuthLockoutHelper.ResetIpPinThrottle(clientIp);
 
-            var access = _jwtTokenService.GenerateAccessToken(freshUser.Id, freshUser.TenantId, email: freshUser.Email, role: freshUser.Role);
+            var access = _jwtTokenService.GenerateAccessToken(freshUser.Id, freshUser.TenantId, email: freshUser.Email, role: freshUser.Role, emailVerified: freshUser.EmailVerified);
             var (refreshToken, _, _, _) = AuthRefreshTokenHelper.IssueRefreshToken(
                 _context,
                 _jwtTokenService,
@@ -1157,6 +1169,7 @@ public class AuthController : ControllerBase
     /// allows a short grace window for the previous token (transient network glitch), and
     /// revokes only the affected family on reuse.
     /// </summary>
+    [AllowAnonymous]
     [HttpPost("refresh")]
     [EnableRateLimiting("AuthSensitive")]
     [ProducesResponseType(typeof(AuthResponseDto), StatusCodes.Status200OK)]
@@ -1178,7 +1191,7 @@ public class AuthController : ControllerBase
         }
 
         var user = result.User!;
-        var access = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId, email: user.Email, role: user.Role);
+        var access = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId, email: user.Email, role: user.Role, emailVerified: user.EmailVerified);
 
         return Ok(AuthResponseBuilder.Build(user, user.Tenant, access, result.NewRefreshToken));
     }
@@ -1249,9 +1262,9 @@ public class AuthController : ControllerBase
         [FromBody] ChangePasswordRequest request,
         CancellationToken cancellationToken)
     {
-        if (request == null || !ModelState.IsValid || string.IsNullOrWhiteSpace(request.NewPassword))
+        if (request == null || !ModelState.IsValid || string.IsNullOrWhiteSpace(request.NewPassword) || !IsValidPassword(request.NewPassword))
         {
-            return BadRequest(ModelState.IsValid ? (object)new { message = "Kailangan ng bagong password (minimum 6 letra). / New password is required (minimum 6 chars)." } : ModelState);
+            return BadRequest(ModelState.IsValid ? (object)new { message = "Kailangan ng bagong password (minimum 8 characters na may letra at numero). / New password is required (minimum 8 chars with letters & numbers)." } : ModelState);
         }
 
         var userId = AuthClaimsHelper.ResolveUserId(_currentUserService, HttpContext?.User);
@@ -1331,7 +1344,7 @@ public class AuthController : ControllerBase
         {
             var tenant = await _context.Tenants.IgnoreQueryFilters()
                 .FirstOrDefaultAsync(t => t.Id == user.TenantId, cancellationToken);
-            var access = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId, email: user.Email, role: user.Role);
+            var access = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId, email: user.Email, role: user.Role, emailVerified: user.EmailVerified);
             return Ok(AuthResponseBuilder.Build(user, tenant, access, refreshToken: responseRefreshToken, ownerName: user.OwnerName));
         }
 
@@ -1396,6 +1409,7 @@ public class AuthController : ControllerBase
 
     /// <summary>
     /// Resets the user's password using the 6-digit email verification OTP.
+    /// Proving control of the registered inbox via email OTP marks the user as email-verified (EmailVerified = true).
     /// Revokes all existing refresh tokens and invalidates past sessions upon success.
     /// </summary>
     [AllowAnonymous]
@@ -1412,9 +1426,10 @@ public class AuthController : ControllerBase
         if (request == null || !ModelState.IsValid ||
             string.IsNullOrWhiteSpace(request.Email) ||
             string.IsNullOrWhiteSpace(request.Otp) ||
-            string.IsNullOrWhiteSpace(request.NewPassword))
+            string.IsNullOrWhiteSpace(request.NewPassword) ||
+            !IsValidPassword(request.NewPassword))
         {
-            return BadRequest(ModelState.IsValid ? (object)new { message = "Kailangan ng email, 6-digit code, at bagong password. / Email, 6-digit code, and new password are required." } : ModelState);
+            return BadRequest(ModelState.IsValid ? (object)new { message = "Kailangan ng email, 6-digit code, at bagong password (minimum 8 characters na may letra at numero). / Email, 6-digit code, and new password (minimum 8 chars with letters & numbers) are required." } : ModelState);
         }
 
         var cleanEmail = request.Email.Trim().ToLowerInvariant();
@@ -1425,6 +1440,8 @@ public class AuthController : ControllerBase
         {
             return BadRequest(new { message = "Hindi natagpuan ang account o hindi wasto ang verification code. / Account not found or invalid verification code." });
         }
+
+        var wasUnverified = !user.EmailVerified;
 
         var otpStatus = AuthOtpHelper.VerifyOtp(user, request.Otp, _timeProvider);
         if (otpStatus != OtpVerificationStatus.Success)
@@ -1440,6 +1457,11 @@ public class AuthController : ControllerBase
         }
 
         user.PasswordHash = _passwordHasher.HashPassword(user, request.NewPassword);
+        // AuthOtpHelper.VerifyOtp already marked EmailVerified = true (inbox ownership proven).
+        if (wasUnverified)
+        {
+            user.PinHash = null;
+        }
         AuthLockoutHelper.ResetPasswordLockout(user);
         user.SessionsInvalidatedAt = _timeProvider.GetUtcNow();
 
@@ -1712,7 +1734,7 @@ public class AuthController : ControllerBase
             }
         }
 
-        var access = _jwtTokenService.GenerateAccessToken(user.Id, tenant.Id, email: user.Email, role: user.Role);
+        var access = _jwtTokenService.GenerateAccessToken(user.Id, tenant.Id, email: user.Email, role: user.Role, emailVerified: user.EmailVerified);
         return Ok(AuthResponseBuilder.Build(user, tenant, access, refreshToken: responseRefreshToken, ownerName: user.OwnerName));
     }
 
@@ -1772,7 +1794,7 @@ public class AuthController : ControllerBase
                 });
 
             default:
-                var access = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId, email: user.Email, role: user.Role);
+                var access = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId, email: user.Email, role: user.Role, emailVerified: true);
                 var (refreshToken, _, _, _) = AuthRefreshTokenHelper.IssueRefreshToken(
                     _context,
                     _jwtTokenService,

@@ -227,7 +227,7 @@ export const SessionLockModal: React.FC = () => {
 
             {!usePassword ? (
               <div>
-                <Field>
+                <Field label={t.landing.pinLabel}>
                   <Input
                     type="password"
                     inputMode="numeric"
@@ -235,6 +235,7 @@ export const SessionLockModal: React.FC = () => {
                     value={pin}
                     onChange={(_, data) => setPin(data.value.replace(/\D/g, '').slice(0, 6))}
                     placeholder="••••"
+                    aria-label={t.landing.pinLabel}
                     style={{ textAlign: 'center', fontSize: '24px', letterSpacing: '8px' }}
                     contentBefore={<KeyRegular />}
                     autoFocus

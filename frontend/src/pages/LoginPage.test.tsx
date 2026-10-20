@@ -197,6 +197,58 @@ describe('LoginPage Component', () => {
     });
   });
 
+  it('does not load tenant data or onboard when login requires email verification, and preserves clean demo state on explore demo', async () => {
+    vi.mocked(authService.loginStore).mockResolvedValueOnce({
+      tenantId: 'unverified-qa-tenant',
+      userId: 'unverified-qa-user',
+      email: 'unverified-qa@tindahan.ph',
+      businessName: 'Unverified QA Tindahan',
+      ownerName: 'QA Tester',
+      phone: '09171234567',
+      role: 'Owner',
+      tier: 'Libre',
+      planTier: 'Libre',
+      subscriptionEndDate: null,
+      hasPin: false,
+      token: 'unverified-qa-token',
+      expiresAt: '2028-01-01',
+      requiresEmailVerification: true,
+      emailVerified: false
+    });
+
+    const { onNavigate } = renderLoginPage();
+
+    const emailInput = screen.getByPlaceholderText(t.landing.emailPlaceholder);
+    const passwordInput = screen.getByPlaceholderText(t.landing.passwordPlaceholder);
+    const submitBtn = screen.getByTestId('login-submit-btn');
+
+    fireEvent.change(emailInput, { target: { value: 'unverified-qa@tindahan.ph' } });
+    fireEvent.change(passwordInput, { target: { value: 'password123' } });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(t.onboarding.otpTitle)).toBeInTheDocument();
+      expect(syncEngine.restoreTenantDataFromServer).not.toHaveBeenCalled();
+      expect(useAuthStore.getState().isOnboarded).toBe(false);
+    });
+
+    // Abandon OTP and click 'Explore with Sample Demo Data'
+    const demoBtn = screen.getByTestId('login-demo-btn');
+    fireEvent.click(demoBtn);
+
+    await waitFor(() => {
+      expect(seedData.seedDexieDatabaseIfNeeded).toHaveBeenCalledWith(
+        true,
+        seedData.DEFAULT_TENANT_ID,
+        false,
+        "Aling Nena's Demo Tindahan"
+      );
+      expect(useAuthStore.getState().tenantId).toBe(seedData.DEFAULT_TENANT_ID);
+      expect(useAuthStore.getState().isOnboarded).toBe(true);
+      expect(onNavigate).toHaveBeenCalledWith('pos');
+    });
+  });
+
   it('shows error banner when credentials fail', async () => {
     vi.mocked(authService.loginStore).mockRejectedValueOnce({
       response: { data: { message: 'Maling email o password' } }
@@ -965,6 +1017,12 @@ describe('LoginPage Component', () => {
 
     expect(otpInput).toBeInTheDocument();
 
+    useAuthStore.setState({
+      firebaseToken: 'old-access-token',
+      refreshToken: 'old-refresh-token',
+      reauthRequired: true
+    });
+
     await act(async () => {
       fireEvent.change(otpInput, { target: { value: '123456' } });
       fireEvent.change(newPasswordInput, { target: { value: 'NewBrandPass123!' } });
@@ -978,8 +1036,41 @@ describe('LoginPage Component', () => {
         otp: '123456',
         newPassword: 'NewBrandPass123!'
       });
+      expect(useAuthStore.getState().firebaseToken).toBeNull();
+      expect(useAuthStore.getState().refreshToken).toBeNull();
+      expect(useAuthStore.getState().reauthRequired).toBe(false);
       expect(screen.getByTestId('login-reset-success-banner')).toBeInTheDocument();
     });
+  });
+
+  it('rejects 7-character new password in reset password form (EV-02 #143)', async () => {
+    renderLoginPage();
+
+    const forgotBtn = screen.getByRole('button', { name: /Nakalimutan ang Password|Forgot Password/i });
+    await act(async () => {
+      fireEvent.click(forgotBtn);
+    });
+
+    const emailInput = screen.getByTestId('login-forgot-email-input');
+    const sendBtn = screen.getByTestId('login-forgot-send-btn');
+    await act(async () => {
+      fireEvent.change(emailInput, { target: { value: 'resetowner@tindahan.ph' } });
+      fireEvent.click(sendBtn);
+    });
+
+    const otpInput = screen.getByTestId('login-reset-otp-input');
+    const newPasswordInput = screen.getByTestId('login-reset-new-password-input');
+    const confirmPasswordInput = screen.getByTestId('login-reset-confirm-password-input');
+    const resetBtn = screen.getByTestId('login-reset-submit-btn');
+
+    await act(async () => {
+      fireEvent.change(otpInput, { target: { value: '123456' } });
+      fireEvent.change(newPasswordInput, { target: { value: 'Short7!' } });
+      fireEvent.change(confirmPasswordInput, { target: { value: 'Short7!' } });
+    });
+
+    expect(resetBtn).toBeDisabled();
+    expect(authService.resetPassword).not.toHaveBeenCalled();
   });
 
   it('displays only the active language when forgot password returns bilingual message', async () => {
@@ -1082,17 +1173,17 @@ describe('LoginPage Component', () => {
       fireEvent.change(newPasswordInput, { target: { value: '123' } });
     });
 
-    // Length error should appear inline without clicking submit
-    expect(screen.getByText(translations.en.onboarding.passwordMinLength || 'Password must be at least 8 characters.')).toBeInTheDocument();
+    // Strength error should appear inline without clicking submit
+    expect(screen.getByText(translations.en.onboarding.passwordStrengthError)).toBeInTheDocument();
     expect(submitBtn).toBeDisabled();
 
-    // Type valid password length (>= 6 chars)
+    // Type valid password (>= 8 chars with letters & numbers)
     await act(async () => {
       fireEvent.change(newPasswordInput, { target: { value: 'validpass123' } });
     });
 
-    // Short password error disappears
-    expect(screen.queryByText(translations.en.onboarding.passwordMinLength || 'Password must be at least 8 characters.')).not.toBeInTheDocument();
+    // Short/invalid password error disappears
+    expect(screen.queryByText(translations.en.onboarding.passwordStrengthError)).not.toBeInTheDocument();
 
     // Enter mismatched confirmation
     await act(async () => {

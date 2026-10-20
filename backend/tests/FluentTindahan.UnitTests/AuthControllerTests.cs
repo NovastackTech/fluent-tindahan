@@ -4416,7 +4416,8 @@ public class AuthControllerTests
             Email = "resetme@tindahan.ph",
             Password = "OldPassword123!"
         }, CancellationToken.None);
-        oldLogin.Result.Should().BeOfType<UnauthorizedObjectResult>();
+        var oldLoginResult = oldLogin.Result.Should().BeOfType<UnauthorizedObjectResult>().Subject;
+        oldLoginResult.Value?.ToString().Should().Contain("Invalid email or password");
 
         // Login with new password succeeds
         var newLogin = await controller.Login(new AuthController.LoginRequest
@@ -4424,7 +4425,155 @@ public class AuthControllerTests
             Email = "resetme@tindahan.ph",
             Password = "BrandNewPassword123!"
         }, CancellationToken.None);
-        newLogin.Result.Should().BeOfType<OkObjectResult>();
+        var newLoginDto = ((OkObjectResult)newLogin.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        newLoginDto.EmailVerified.Should().BeTrue();
+        newLoginDto.RequiresEmailVerification.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ResetPassword_UnverifiedAccount_MarksEmailVerifiedAndClearsVerificationRequirementOnSubsequentLogin()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var timeProvider = new MutableTimeProvider(DateTimeOffset.UtcNow);
+        var otpSenderMock = new Mock<IEmailOtpSender>();
+        string? resetOtp = null;
+        otpSenderMock.Setup(s => s.SendOtpAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Callback<string, string, string?, CancellationToken>((_, otp, _, _) => resetOtp = otp)
+            .Returns(Task.CompletedTask);
+
+        var controller = CreateController(context, timeProvider: timeProvider, emailOtpSender: otpSenderMock.Object);
+
+        // 1. Sign up a new account (unverified by default) with a PIN
+        var regResult = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "unverified@tindahan.ph",
+            Password = "InitialPassword123!",
+            Pin = "1234",
+            BusinessName = "Unverified Tindahan"
+        }, CancellationToken.None);
+        var regDto = ((OkObjectResult)regResult.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        regDto.EmailVerified.Should().BeFalse();
+        regDto.RequiresEmailVerification.Should().BeTrue();
+        regDto.HasPin.Should().BeTrue();
+
+        timeProvider.Advance(TimeSpan.FromSeconds(65));
+
+        // 2. Logging in before reset returns RequiresEmailVerification = true
+        var initialLogin = await controller.Login(new AuthController.LoginRequest
+        {
+            Email = "unverified@tindahan.ph",
+            Password = "InitialPassword123!"
+        }, CancellationToken.None);
+        var initialLoginDto = ((OkObjectResult)initialLogin.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        initialLoginDto.EmailVerified.Should().BeFalse();
+        initialLoginDto.RequiresEmailVerification.Should().BeTrue();
+        initialLoginDto.HasPin.Should().BeTrue();
+
+        // 3. User requests password reset OTP
+        timeProvider.Advance(TimeSpan.FromSeconds(65));
+        await controller.ForgotPassword(new AuthController.ForgotPasswordRequest
+        {
+            Email = "unverified@tindahan.ph"
+        }, CancellationToken.None);
+
+        resetOtp.Should().NotBeNullOrWhiteSpace();
+
+        // 4. User completes password reset with the email OTP
+        var resetResult = await controller.ResetPassword(new AuthController.ResetPasswordRequest
+        {
+            Email = "unverified@tindahan.ph",
+            Otp = resetOtp!,
+            NewPassword = "BrandNewPassword456!"
+        }, CancellationToken.None);
+        resetResult.Should().BeOfType<OkObjectResult>();
+
+        // 5. Subsequent login with new password has EmailVerified = true, RequiresEmailVerification = false, and HasPin = false (squatter PIN cleared)
+        var subsequentLogin = await controller.Login(new AuthController.LoginRequest
+        {
+            Email = "unverified@tindahan.ph",
+            Password = "BrandNewPassword456!"
+        }, CancellationToken.None);
+        var subsequentLoginDto = ((OkObjectResult)subsequentLogin.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        subsequentLoginDto.EmailVerified.Should().BeTrue();
+        subsequentLoginDto.RequiresEmailVerification.Should().BeFalse();
+        subsequentLoginDto.HasPin.Should().BeFalse();
+
+        // 6. Attempting to log in with the old squatter PIN now fails
+        var pinLoginAttempt = await controller.LoginPin(new AuthController.LoginPinRequest
+        {
+            Email = "unverified@tindahan.ph",
+            Pin = "1234"
+        }, CancellationToken.None);
+        pinLoginAttempt.Result.Should().BeOfType<UnauthorizedObjectResult>();
+    }
+
+    [Theory]
+    [InlineData("short7!")]
+    [InlineData("nouppernumber")]
+    [InlineData("12345678")]
+    public async Task ChangePassword_InvalidPasswordStrength_ReturnsBadRequest(string invalidPassword)
+    {
+        var (context, _) = CreateInMemoryContext();
+        var controller = CreateController(context);
+
+        var regResult = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "strength.test@tindahan.ph",
+            Password = "ValidPassword123!",
+            BusinessName = "Strength Test Store"
+        }, CancellationToken.None);
+        var regDto = ((OkObjectResult)regResult.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+
+        SetAuthenticatedUser(controller, regDto.UserId, regDto.TenantId, regDto.Email);
+
+        var changeResult = await controller.ChangePassword(new AuthController.ChangePasswordRequest
+        {
+            CurrentPassword = "ValidPassword123!",
+            NewPassword = invalidPassword
+        }, CancellationToken.None);
+
+        changeResult.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Theory]
+    [InlineData("short7!")]
+    [InlineData("12345678")]
+    public async Task ResetPassword_InvalidPasswordStrength_ReturnsBadRequest(string invalidPassword)
+    {
+        var (context, _) = CreateInMemoryContext();
+        var timeProvider = new MutableTimeProvider(DateTimeOffset.UtcNow);
+        var otpSenderMock = new Mock<IEmailOtpSender>();
+        string? dispatchedOtp = null;
+        otpSenderMock.Setup(s => s.SendOtpAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Callback<string, string, string?, CancellationToken>((_, otp, _, _) => dispatchedOtp = otp)
+            .Returns(Task.CompletedTask);
+
+        var controller = CreateController(context, timeProvider: timeProvider, emailOtpSender: otpSenderMock.Object);
+
+        await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "strength.reset@tindahan.ph",
+            Password = "ValidPassword123!",
+            BusinessName = "Strength Reset Store"
+        }, CancellationToken.None);
+
+        timeProvider.Advance(TimeSpan.FromSeconds(61));
+
+        await controller.ForgotPassword(new AuthController.ForgotPasswordRequest
+        {
+            Email = "strength.reset@tindahan.ph"
+        }, CancellationToken.None);
+
+        dispatchedOtp.Should().NotBeNull();
+
+        var resetResult = await controller.ResetPassword(new AuthController.ResetPasswordRequest
+        {
+            Email = "strength.reset@tindahan.ph",
+            Otp = dispatchedOtp!,
+            NewPassword = invalidPassword
+        }, CancellationToken.None);
+
+        resetResult.Should().BeOfType<BadRequestObjectResult>();
     }
 }
 

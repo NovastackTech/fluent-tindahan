@@ -46,6 +46,8 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage').then(m => ({ defa
 const LandingPage = lazy(() => import('./pages/LandingPage').then(m => ({ default: m.LandingPage })));
 const LoginPage = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })));
 
+const VALID_NAV_TABS: NavTab[] = ['dashboard', 'pos', 'inventory', 'utang', 'gcash', 'import', 'settings', 'landing', 'login'];
+
 function getInitialNavTab(): NavTab {
   if (typeof window === 'undefined') return 'dashboard';
   const params = new URLSearchParams(window.location.search);
@@ -57,8 +59,7 @@ function getInitialNavTab(): NavTab {
   if (tabParam === 'delete-account' || intentParam === 'delete-account') {
     return 'settings';
   }
-  const validTabs: NavTab[] = ['dashboard', 'pos', 'inventory', 'utang', 'gcash', 'import', 'settings', 'landing', 'login'];
-  if (tabParam && validTabs.includes(tabParam as NavTab)) {
+  if (tabParam && VALID_NAV_TABS.includes(tabParam as NavTab)) {
     return tabParam as NavTab;
   }
   const path = window.location.pathname.replace(/^\//, '').toLowerCase();
@@ -68,7 +69,7 @@ function getInitialNavTab(): NavTab {
   if (path === 'delete-account') {
     return 'settings';
   }
-  if (validTabs.includes(path as NavTab)) {
+  if (VALID_NAV_TABS.includes(path as NavTab)) {
     return path as NavTab;
   }
   return 'dashboard';
@@ -119,6 +120,16 @@ export const App: React.FC = () => {
       window.history.replaceState(null, '', url.pathname + url.search);
     }
   };
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.history?.replaceState) return;
+    const url = new URL(window.location.href);
+    const rawTab = url.searchParams.get('tab')?.toLowerCase();
+    if (rawTab && !VALID_NAV_TABS.includes(rawTab as NavTab) && rawTab !== 'signup' && rawTab !== 'register' && rawTab !== 'delete-account') {
+      url.searchParams.set('tab', activeTab);
+      window.history.replaceState(null, '', url.pathname + url.search);
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     if (!isOnboardingStatusReady) return;

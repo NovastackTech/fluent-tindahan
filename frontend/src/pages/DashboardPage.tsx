@@ -138,7 +138,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   const totalGCashVolume = todayGCash.reduce((sum, g) => sum + g.amount, 0);
   const totalGCashFees = todayGCash.reduce((sum, g) => sum + g.fee, 0);
 
-  const recentSales = (sales || []).slice(-5).reverse();
+  const recentSales = [...(sales || [])]
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 5);
 
   return (
     <div className={styles.container}>

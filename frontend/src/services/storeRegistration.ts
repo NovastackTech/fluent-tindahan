@@ -189,6 +189,14 @@ export async function executeStoreLogin(
   }
 
   const localPin = params.loginMode === 'pin' ? (params.pin || '').trim() : undefined;
+  if (authResult.requiresEmailVerification) {
+    return {
+      success: true,
+      authResult,
+      localPin
+    };
+  }
+
   const loginRes = await useAuthStore.getState().loginWithAuthPayload(
     authResult,
     localPin,

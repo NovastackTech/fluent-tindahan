@@ -179,8 +179,6 @@ export const GCashPage: React.FC = () => {
       : Promise.resolve(undefined),
     [tenantId, enteredRefNorm]
   );
-  // Ignore a stale live-query hit after the field is cleared. Otherwise the row
-  // just saved disables the button until the empty-reference query catches up.
   const hasDuplicateRef = Boolean(enteredRefNorm) && Boolean(duplicateRefTxn);
 
   const isAmountValid = numAmount > 0 && numAmount <= MAX_GCASH_AMOUNT && !amountError;
@@ -597,7 +595,10 @@ export const GCashPage: React.FC = () => {
                 aria-label={t.gcash.refNoLabel}
                 style={{ width: '100%', marginTop: '4px' }}
                 value={refNo}
-                onChange={(_, data) => setRefNo(data.value)}
+                onChange={(_, data) => {
+                  setRefNo(data.value);
+                  if (successMessage) setSuccessMessage(null);
+                }}
                 placeholder={t.gcash.refNoPlaceholder}
                 aria-invalid={hasDuplicateRef}
                 aria-describedby={hasDuplicateRef ? 'gcash-duplicate-ref-warning' : undefined}
@@ -675,7 +676,7 @@ export const GCashPage: React.FC = () => {
             </div>
           )}
 
-          {successMessage && (
+          {!hasDuplicateRef && !formErrorMessage && successMessage && (
             <div role="status" data-testid="gcash-save-success" style={{ marginTop: '12px' }}>
               <MessageBar intent="success" layout="multiline">
                 <MessageBarBody>{successMessage}</MessageBarBody>

@@ -99,7 +99,6 @@ jobs:
           SAS_USER: ${{ secrets.SAS_USER || 'root' }}
           SAS_PORT: ${{ secrets.SAS_PORT || 22 }}
           SAS_SSH_KEY: ${{ secrets.SAS_SSH_KEY }}
-          SAS_PASSWORD: ${{ secrets.SAS_PASSWORD }}
           SAS_APP_DIR: ${{ secrets.SAS_APP_DIR || '/opt/fluent-tindahan' }}
           PUBLIC_HOST: ${{ secrets.PUBLIC_HOST || 'tindahan-dev.novastack-inc.online' }}
           PUBLIC_ORIGIN: ${{ secrets.PUBLIC_ORIGIN || 'https://tindahan-dev.novastack-inc.online' }}
@@ -125,20 +124,15 @@ jobs:
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
 
-          if [ -n "${SAS_SSH_KEY:-}" ]; then
-            printf '%s\n' "$SAS_SSH_KEY" > ~/.ssh/id_sas
-            chmod 600 ~/.ssh/id_sas
-            ssh-keyscan -p "$SAS_PORT" -H "$SAS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
-            SSH_CMD="ssh -i ~/.ssh/id_sas -p $SAS_PORT -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30"
-          elif [ -n "${SAS_PASSWORD:-}" ]; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
-            ssh-keyscan -p "$SAS_PORT" -H "$SAS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
-            export SSHPASS="$SAS_PASSWORD"
-            SSH_CMD="sshpass -e ssh -p $SAS_PORT -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30"
-          else
-            echo "::error::Neither SAS_SSH_KEY nor SAS_PASSWORD secret is configured."
+          if [ -z "${SAS_SSH_KEY:-}" ]; then
+            echo "::error::SAS_SSH_KEY secret is not configured."
             exit 1
           fi
+
+          printf '%s\n' "$SAS_SSH_KEY" > ~/.ssh/id_sas
+          chmod 600 ~/.ssh/id_sas
+          ssh-keyscan -p "$SAS_PORT" -H "$SAS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          SSH_CMD="ssh -i ~/.ssh/id_sas -p $SAS_PORT -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30"
 
           echo "Connecting to $SAS_USER@$SAS_HOST:$SAS_PORT..."
 

@@ -66,7 +66,7 @@ You enter the root SSH password once. The script packages the project (no `.git`
 A GitHub Actions CD workflow is configured at [`.github/workflows/cd.yml`](../../.github/workflows/cd.yml).
 - **Trigger**: Automatically runs on `push` to `main`, or on-demand via **Actions > CD (Alibaba Cloud SAS) > Run workflow**.
 - **Pipeline**: Runs frontend lint/tests/build and backend .NET unit tests. Upon validation, packages and streams the archive to `/opt/fluent-tindahan` over SSH, merges secrets, runs `install.sh`, and validates `https://tindahan-dev.novastack-inc.online/api/health`.
-- **Credentials**: Configured in GitHub Repository Secrets (`SAS_HOST`, `SAS_USER`, `SAS_PORT`, `SAS_SSH_KEY` or `SAS_PASSWORD`, `PAYMONGO_*`, `GOOGLE_CLIENT_ID`, `SMTP_*` [`SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME`, `SMTP_ENABLE_SSL`]).
+- **Credentials**: Configured in GitHub Repository Secrets (`SAS_HOST`, `SAS_USER`, `SAS_PORT`, `SAS_SSH_KEY`, `PAYMONGO_*`, `GOOGLE_CLIENT_ID`, `SMTP_*` [`SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME`, `SMTP_ENABLE_SSL`]).
 
 ## 4. Reverse proxy and HTTPS (automatic)
 

@@ -29,6 +29,7 @@ export interface OnboardingPayload extends StoreProfilePayload {
   hasPin?: boolean;
   localPin?: string;
   token?: string;
+  isDemo?: boolean;
 }
 
 export interface LogoutResult {
@@ -81,6 +82,8 @@ interface AuthState {
   setHasPin: (hasPin: boolean) => void;
   setLocalPinVerifier: (verifier: string | null) => void;
   setIsSessionLocked: (locked: boolean) => void;
+  isDemo: boolean;
+  setIsDemo: (isDemo: boolean) => void;
   offlineFailedPinAttempts: number;
   offlinePinLockoutEnd: string | null;
   recordOfflinePinFailure: () => { attempts: number; isLockedOut: boolean; lockoutMinutes: number };
@@ -138,6 +141,7 @@ export const STORAGE_KEY_TOKEN = 'fluent_tindahan_auth_token_v1';
 export const LEGACY_STORAGE_KEY_FIREBASE_TOKEN = 'fluent_tindahan_firebase_token_v1';
 export const STORAGE_KEY_REFRESH_TOKEN = 'fluent_tindahan_refresh_token_v1';
 export const STORAGE_KEY_REAUTH_REQUIRED = 'fluent_tindahan_reauth_required_v1';
+export const STORAGE_KEY_IS_DEMO = 'fluent_tindahan_is_demo_v1';
 
 const initialConsent = localStorage.getItem(STORAGE_KEY_CONSENT) === 'true';
 const initialTermsVersion = localStorage.getItem(STORAGE_KEY_TERMS_VERSION);
@@ -160,6 +164,8 @@ const initialUserPhone = localStorage.getItem(STORAGE_KEY_USER_PHONE) ?? DEMO_PH
 const initialToken = localStorage.getItem(STORAGE_KEY_TOKEN) ?? localStorage.getItem(LEGACY_STORAGE_KEY_FIREBASE_TOKEN);
 const initialRefreshToken = localStorage.getItem(STORAGE_KEY_REFRESH_TOKEN);
 const initialReauthRequired = localStorage.getItem(STORAGE_KEY_REAUTH_REQUIRED) === 'true';
+const initialIsDemo = localStorage.getItem(STORAGE_KEY_IS_DEMO) === 'true'
+  || initialUserEmail === 'demo@fluent-tindahan.ph';
 const hasSavedStoreProfile = Boolean(
   localStorage.getItem(STORAGE_KEY_STORE_NAME)
   || localStorage.getItem(STORAGE_KEY_OWNER_NAME)
@@ -213,6 +219,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   consentAccepted: initialConsent,
   termsAcceptedVersion: initialTermsVersion,
   isPrivacyNoticeOpen: false,
+  isDemo: initialIsDemo,
+  setIsDemo: (isDemo: boolean) => set({ isDemo }),
   isOnboarded: initialOnboarded,
   isOnboardingStatusReady: initialOnboarded,
   isOnboardingOpen: false,
@@ -522,11 +530,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       localStorage.removeItem(getSyncStorageKey(tenantId));
     }
 
+    const isDemo = Boolean(payload.isDemo || userEmail === 'demo@fluent-tindahan.ph');
+    if (isDemo) {
+      localStorage.setItem(STORAGE_KEY_IS_DEMO, 'true');
+    } else {
+      localStorage.removeItem(STORAGE_KEY_IS_DEMO);
+    }
+
     set({
       tenantId,
       userId,
       userEmail,
       hasPin,
+      isDemo,
       ...(startsNewTenant ? {
         locallyCreatedTenantId: tenantId,
         serverConfirmedTenantId: null,
@@ -652,6 +668,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
     localStorage.setItem(STORAGE_KEY_ONBOARDED, 'true');
     localStorage.removeItem(STORAGE_KEY_SESSION_LOCKED);
+    localStorage.removeItem(STORAGE_KEY_IS_DEMO);
 
     set({
       tenantId: payload.tenantId,
@@ -660,6 +677,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       hasPin: payload.hasPin,
       localPinVerifier: localVerifier,
       isSessionLocked: false,
+      isDemo: false,
       offlineFailedPinAttempts: 0,
       offlinePinLockoutEnd: null,
       serverConfirmedTenantId: payload.tenantId,
@@ -737,7 +755,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       STORAGE_KEY_CONFIRMED_USER_ID,
       STORAGE_KEY_OFFLINE_PIN_FAILURES,
       STORAGE_KEY_OFFLINE_PIN_LOCKOUT_END,
-      STORAGE_KEY_PENDING_PROFILE_UPDATE
+      STORAGE_KEY_PENDING_PROFILE_UPDATE,
+      STORAGE_KEY_IS_DEMO
     ];
     for (const key of keysToRemove) {
       localStorage.removeItem(key);
@@ -751,6 +770,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       hasPin: false,
       localPinVerifier: null,
       isSessionLocked: false,
+      isDemo: false,
       offlineFailedPinAttempts: 0,
       offlinePinLockoutEnd: null,
       locallyCreatedTenantId: null,
@@ -788,4 +808,9 @@ if (typeof window !== 'undefined') {
     }
     useAuthStore.getState().adoptStoredSessionTokens();
   });
+}
+
+export function isDemoMode(): boolean {
+  const auth = useAuthStore.getState();
+  return Boolean(auth.isDemo || auth.userEmail === 'demo@fluent-tindahan.ph');
 }

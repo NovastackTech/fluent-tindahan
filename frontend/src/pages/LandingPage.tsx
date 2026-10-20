@@ -38,7 +38,7 @@ import type { NavTab } from '../components/Navigation';
 import { useTranslation } from '../state/languageStore';
 import { useAuthStore } from '../state/authStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
-import { updateQueueCounts } from '../sync/syncEngine';
+import { resetSyncStore, updateQueueCounts } from '../sync/syncEngine';
 import { useStoreAuthFlow } from '../hooks/useStoreAuthFlow';
 import { ConfirmUnsyncedLoginDialog } from '../components/ConfirmUnsyncedLoginDialog';
 import { seedDexieDatabaseIfNeeded, DEFAULT_TENANT_ID } from '../db/seedData';
@@ -490,20 +490,27 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
   const handleExploreDemo = async () => {
     setIsSubmitting(true);
     try {
-      await seedDexieDatabaseIfNeeded(false, DEFAULT_TENANT_ID, false, "Aling Nena's Demo Tindahan");
+      const res = await useAuthStore.getState().logout(false);
+      if (!res.success) {
+        setAuthErrors([t.banner.offlineDesc]);
+        return;
+      }
+      await seedDexieDatabaseIfNeeded(true, DEFAULT_TENANT_ID, false, "Aling Nena's Demo Tindahan");
       completeOnboarding({
         businessName: "Aling Nena's Demo Tindahan",
         ownerName: 'Nena Santos',
         userEmail: 'demo@fluent-tindahan.ph',
         tenantId: DEFAULT_TENANT_ID,
         userId: '22222222-2222-2222-2222-222222222222',
-        hasPin: false
+        hasPin: false,
+        isDemo: true
       });
       useSubscriptionStore.setState({
         tier: 'Libre',
         subscriptionEndDate: null,
         isActive: false
       });
+      resetSyncStore();
       await updateQueueCounts();
       onNavigate('pos');
     } catch (err) {

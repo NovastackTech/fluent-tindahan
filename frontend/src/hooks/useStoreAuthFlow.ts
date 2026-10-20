@@ -55,6 +55,7 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
   const [isSyncingFirst, setIsSyncingFirst] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pendingOtpEmail, setPendingOtpEmail] = useState<string | null>(null);
+  const [pendingOtpLocalPin, setPendingOtpLocalPin] = useState<string | undefined>(undefined);
   const [pendingDeletionInfo, setPendingDeletionInfo] = useState<{
     scheduledAt: string | null;
     retryWithRestore: () => Promise<boolean>;
@@ -65,6 +66,7 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
   const closeUnsyncedDialog = () => {
     setIsUnsyncedDialogOpen(false);
     setPendingAuthPayload(null);
+    setPendingOtpLocalPin(undefined);
   };
 
   const handleConfirmWipeAndLogin = async () => {
@@ -148,17 +150,22 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
       const res = await executeStoreLogin(params);
       setPendingDeletionInfo(null);
       if (!res.success && res.authResult) {
-        setPendingAuthPayload({
-          payload: res.authResult,
-          localPin: res.localPin,
-          newUserPreferences: res.newUserPreferences
-        });
-        setUnsyncedLoginCount(res.unsyncedCount || 0);
-        setIsUnsyncedDialogOpen(true);
+        if (isMountedRef.current && typeof window !== 'undefined') {
+          setPendingAuthPayload({
+            payload: res.authResult,
+            localPin: res.localPin,
+            newUserPreferences: res.newUserPreferences
+          });
+          setUnsyncedLoginCount(res.unsyncedCount || 0);
+          setIsUnsyncedDialogOpen(true);
+        }
         return false;
       }
       if (res.authResult?.requiresEmailVerification) {
-        setPendingOtpEmail(res.authResult.email || params.email.trim());
+        if (isMountedRef.current && typeof window !== 'undefined') {
+          setPendingOtpEmail(res.authResult.email || params.email.trim());
+          setPendingOtpLocalPin(res.localPin);
+        }
         return true;
       }
       options?.onSuccess?.(res.authResult);
@@ -200,6 +207,7 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
         if (result.requiresEmailVerification) {
           if (isMountedRef.current && typeof window !== 'undefined') {
             setPendingOtpEmail(params.email.trim());
+            setPendingOtpLocalPin(params.pin);
           }
         } else {
           options?.onSuccess?.(result.authResult);
@@ -231,9 +239,24 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
         email: pendingOtpEmail || undefined,
         otp: cleanedOtp
       });
-      await loginWithAuthPayload(verifiedDto);
+      const loginRes = await loginWithAuthPayload(verifiedDto, pendingOtpLocalPin);
+      if (!loginRes.success) {
+        if (isMountedRef.current && typeof window !== 'undefined') {
+          setPendingAuthPayload({ payload: { ...verifiedDto, requiresEmailVerification: false }, localPin: pendingOtpLocalPin });
+          setUnsyncedLoginCount(loginRes.unsyncedCount || 0);
+          setIsUnsyncedDialogOpen(true);
+          setPendingOtpEmail(null);
+          setPendingOtpLocalPin(undefined);
+        }
+        return true;
+      }
+      await finalizeSuccessfulLogin(verifiedDto.tenantId, {
+        isNewUser: verifiedDto.isNewUser,
+        businessName: verifiedDto.businessName
+      });
       if (isMountedRef.current && typeof window !== 'undefined') {
         setPendingOtpEmail(null);
+        setPendingOtpLocalPin(undefined);
       }
       options?.onSuccess?.(verifiedDto);
       return true;

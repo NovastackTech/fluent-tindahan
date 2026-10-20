@@ -71,7 +71,8 @@ public class JwtTokenService : IJwtTokenService
         Guid userId,
         Guid tenantId,
         string? email = null,
-        string? role = null)
+        string? role = null,
+        bool emailVerified = true)
     {
         var now = _timeProvider.GetUtcNow();
         var expiresAt = now.AddMinutes(_expiryMinutes);
@@ -88,7 +89,8 @@ public class JwtTokenService : IJwtTokenService
             new Claim("aud", _audience),
             new Claim("token_type", "access"),
             new Claim(ClaimTypes.Role, effectiveRole),
-            new Claim("role", effectiveRole)
+            new Claim("role", effectiveRole),
+            new Claim("email_verified", emailVerified ? "true" : "false")
         };
 
         var notBefore = expiresAt < now ? expiresAt.AddMinutes(-5).UtcDateTime : now.UtcDateTime;

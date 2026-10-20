@@ -57,6 +57,7 @@ import { queuePendingProfileUpdate, clearPendingProfileUpdate } from '../service
 import { GoogleAuthButton } from './GoogleAuthButton';
 import { useStoreAuthFlow } from '../hooks/useStoreAuthFlow';
 import { isDisposableEmail } from '../utils/registrationValidation';
+import { evaluatePasswordStrength } from '../utils/passwordStrength';
 
 const useStyles = makeStyles({
   surface: {
@@ -449,8 +450,8 @@ export const OnboardingModal: React.FC = () => {
       if (!formPassword) {
         setPasswordError(t.onboarding.passwordRequired);
         isValid = false;
-      } else if (formPassword.length < 6) {
-        setPasswordError(t.onboarding.passwordMinLength);
+      } else if (!evaluatePasswordStrength(formPassword).isValid) {
+        setPasswordError(t.onboarding.passwordStrengthError);
         isValid = false;
       } else {
         setPasswordError('');

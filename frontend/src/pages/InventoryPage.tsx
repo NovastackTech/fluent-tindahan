@@ -609,7 +609,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
         return stock > 0 && stock <= 5;
       }
       if (stockFilter === 'out') {
-        return stock === 0;
+        return stock <= 0;
       }
       if (stockFilter === 'in') {
         return stock > 5;
@@ -622,7 +622,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
   // Quick Restock Handler (+6, +12, +24)
   const handleQuickRestock = useCallback(async (product: ProductRecord, increment: number) => {
     try {
-      const newStock = Math.max(0, (product.stockQty || 0) + increment);
+      const newStock = (product.stockQty || 0) + increment;
       const nowIso = new Date().toISOString();
       const updatedProduct: ProductRecord = {
         ...product,
@@ -703,9 +703,11 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
     setFormPriceError('');
     setFormStockError('');
 
+    let hasError = false;
+
     if (!formName.trim()) {
       setFormNameError(t.inventory.productNameRequired);
-      return;
+      hasError = true;
     }
     const costClean = typeof formCost === 'string' ? formCost.replace(/,/g, '').trim() : formCost;
     const priceClean = typeof formPrice === 'string' ? formPrice.replace(/,/g, '').trim() : formPrice;
@@ -716,28 +718,29 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
 
     if (costNum < 0) {
       setFormCostError(t.inventory.costCannotBeNegative);
-      return;
-    }
-    if (costNum > MAX_PRODUCT_COST) {
+      hasError = true;
+    } else if (costNum > MAX_PRODUCT_COST) {
       setFormCostError(t.inventory.costExceedsMax);
-      return;
+      hasError = true;
     }
 
     if (priceNum <= 0) {
       setFormPriceError(t.inventory.priceMustBePositive);
-      return;
-    }
-    if (priceNum > MAX_PRODUCT_PRICE) {
+      hasError = true;
+    } else if (priceNum > MAX_PRODUCT_PRICE) {
       setFormPriceError(t.inventory.priceExceedsMax);
-      return;
+      hasError = true;
     }
 
     if (stockNum < 0) {
       setFormStockError(language === 'tl' ? 'Hindi maaaring negatibo ang stock.' : 'Stock quantity cannot be negative.');
-      return;
-    }
-    if (stockNum > MAX_PRODUCT_STOCK) {
+      hasError = true;
+    } else if (stockNum > MAX_PRODUCT_STOCK) {
       setFormStockError(t.inventory.stockExceedsMax);
+      hasError = true;
+    }
+
+    if (hasError) {
       return;
     }
 
@@ -814,10 +817,15 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
   };
 
   // Modal live margin preview
-  const liveCost = Number(formCost) || 0;
-  const livePrice = Number(formPrice) || 0;
-  const liveProfit = Math.max(0, livePrice - liveCost);
-  const liveMarginPct = livePrice > 0 ? ((livePrice - liveCost) / livePrice) * 100 : 0;
+  const costClean = typeof formCost === 'string' ? formCost.replace(/,/g, '').trim() : formCost;
+  const priceClean = typeof formPrice === 'string' ? formPrice.replace(/,/g, '').trim() : formPrice;
+  const rawCost = costClean === '' ? 0 : Number(costClean);
+  const rawPrice = priceClean === '' ? 0 : Number(priceClean);
+  const isCostValid = !Number.isNaN(rawCost) && rawCost >= 0;
+  const isPriceValid = !Number.isNaN(rawPrice) && rawPrice > 0;
+  const isLiveMarginValid = isCostValid && isPriceValid;
+  const liveProfit = isLiveMarginValid ? Math.max(0, rawPrice - rawCost) : 0;
+  const liveMarginPct = isLiveMarginValid ? ((rawPrice - rawCost) / rawPrice) * 100 : null;
 
   return (
     <div className={styles.container}>
@@ -1133,10 +1141,12 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                         <div className={styles.stockBadgeCell}>
                           <Badge
                             appearance="filled"
-                            color={stock === 0 ? 'danger' : stock <= 5 ? 'warning' : 'success'}
+                            color={stock <= 0 ? 'danger' : stock <= 5 ? 'warning' : 'success'}
                             size="medium"
                           >
-                            {stock === 0
+                            {stock < 0
+                              ? `${stock} - ${t.inventory.oversoldBadge}`
+                              : stock === 0
                               ? t.inventory.outOfStockBadge
                               : stock <= 5
                               ? `${stock} - ${t.inventory.lowStockBadge}`
@@ -1281,10 +1291,12 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
 
                   <Badge
                     appearance="filled"
-                    color={stock === 0 ? 'danger' : stock <= 5 ? 'warning' : 'success'}
+                    color={stock <= 0 ? 'danger' : stock <= 5 ? 'warning' : 'success'}
                     size="medium"
                   >
-                    {stock === 0
+                    {stock < 0
+                      ? `${stock} - ${t.inventory.oversoldBadge}`
+                      : stock === 0
                       ? t.inventory.outOfStockBadge
                       : stock <= 5
                       ? `${stock} - ${t.inventory.lowStockBadge}`
@@ -1593,26 +1605,34 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                     size={300}
                     style={{
                       color:
-                        liveProfit > 0
+                        !isLiveMarginValid
+                          ? tokens.colorNeutralForeground3
+                          : liveProfit > 0
                           ? tokens.colorPaletteGreenForeground1
-                          : livePrice < liveCost
+                          : rawPrice < rawCost
                           ? tokens.colorPaletteRedForeground1
                           : tokens.colorNeutralForeground1
                     }}
                   >
-                    {formatPeso(liveProfit)}
+                    {isLiveMarginValid ? formatPeso(liveProfit) : '—'}
                   </Text>
                 </div>
                 <div className={styles.marginPreviewRow}>
                   <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
                     {t.inventory.marginPreview}
                   </Text>
-                  <Badge
-                    appearance="filled"
-                    color={liveMarginPct >= 20 ? 'success' : liveMarginPct >= 10 ? 'warning' : 'danger'}
-                  >
-                    {liveMarginPct.toFixed(1)}%
-                  </Badge>
+                  {liveMarginPct !== null ? (
+                    <Badge
+                      appearance="filled"
+                      color={liveMarginPct >= 20 ? 'success' : liveMarginPct >= 10 ? 'warning' : 'danger'}
+                    >
+                      {liveMarginPct.toFixed(1)}%
+                    </Badge>
+                  ) : (
+                    <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+                      —
+                    </Text>
+                  )}
                 </div>
               </div>
             </DialogContent>

@@ -75,6 +75,40 @@ describe('useSafeLogout', () => {
     expect(onLoggedOut).toHaveBeenCalledTimes(1);
   });
 
+  it('clears dead letter queue and resets sync store counts on confirmed logout', async () => {
+    await db.deadLetterQueue.add({
+      id: 'dlq-test-1',
+      entity: 'Sale',
+      action: 'Insert',
+      timestamp: new Date().toISOString(),
+      payload: { id: 's-1' },
+      retryCount: 3,
+      errorMessage: 'Rejected product',
+      failedAt: new Date().toISOString()
+    });
+    syncEngine.useSyncStore.setState({
+      deadLetterCount: 1,
+      pendingCount: 2,
+      lastErrorMessage: 'Nalipat sa Dead Letter Queue ang 1 transaksyon: Rejected product'
+    });
+
+    render(<SafeLogoutHarness />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'start-logout' }));
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId('safe-logout-confirm-btn'));
+    });
+
+    await waitFor(async () => {
+      expect(await db.deadLetterQueue.count()).toBe(0);
+      expect(syncEngine.useSyncStore.getState().deadLetterCount).toBe(0);
+      expect(syncEngine.useSyncStore.getState().pendingCount).toBe(0);
+      expect(syncEngine.useSyncStore.getState().lastErrorMessage).toBeNull();
+    });
+  });
+
   it('keeps the session when logout is cancelled', async () => {
     render(<SafeLogoutHarness />);
 

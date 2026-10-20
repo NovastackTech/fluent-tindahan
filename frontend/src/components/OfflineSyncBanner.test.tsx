@@ -17,7 +17,7 @@ describe('OfflineSyncBanner', () => {
       deadLetterCount: 0,
       lastErrorMessage: null
     });
-    useAuthStore.setState({ reauthRequired: false, reauthRequested: false });
+    useAuthStore.setState({ reauthRequired: false, reauthRequested: false, isOnboarded: true });
   });
 
   const renderBanner = () => {
@@ -27,6 +27,13 @@ describe('OfflineSyncBanner', () => {
       </FluentProvider>
     );
   };
+
+  it('renders nothing when not onboarded (e.g. login or landing screen) even with dead letters', () => {
+    useAuthStore.setState({ isOnboarded: false });
+    useSyncStore.setState({ isOnline: true, deadLetterCount: 6, lastErrorMessage: 'Poison pill' });
+    const { container } = renderBanner();
+    expect(container.firstChild).toBeEmptyDOMElement();
+  });
 
   it('renders nothing when fully online and queue is clear', () => {
     const { container } = renderBanner();

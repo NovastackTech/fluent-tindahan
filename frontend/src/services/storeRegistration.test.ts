@@ -229,6 +229,39 @@ describe('storeRegistration services', () => {
       expect(result.unsyncedCount).toBe(5);
       expect(result.authResult).toBeDefined();
     });
+
+    it('does not log in to authStore or finalize data sync when login requires email verification', async () => {
+      vi.mocked(authService.loginStore).mockResolvedValueOnce({
+        tenantId: 'unverified-tenant',
+        userId: 'unverified-user',
+        email: 'unverified@tindahan.ph',
+        businessName: 'Unverified Store',
+        ownerName: 'Pending Owner',
+        phone: '09171234567',
+        role: 'Owner',
+        tier: 'Libre',
+        planTier: 'Libre',
+        subscriptionEndDate: null,
+        hasPin: false,
+        token: 'unverified-token',
+        expiresAt: '2028-01-01',
+        requiresEmailVerification: true,
+        emailVerified: false
+      });
+
+      const loginSpy = vi.spyOn(useAuthStore.getState(), 'loginWithAuthPayload');
+
+      const result = await executeStoreLogin({
+        email: 'unverified@tindahan.ph',
+        loginMode: 'password',
+        password: 'password123'
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.authResult?.requiresEmailVerification).toBe(true);
+      expect(loginSpy).not.toHaveBeenCalled();
+      expect(syncEngine.restoreTenantDataFromServer).not.toHaveBeenCalled();
+    });
   });
 
   describe('executeGoogleAuth', () => {
