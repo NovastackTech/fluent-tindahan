@@ -17,6 +17,7 @@ import { EyeRegular, EyeOffRegular, LockClosedRegular } from '@fluentui/react-ic
 import { useAuthStore } from '../state/authStore';
 import { useTranslation } from '../state/languageStore';
 import { changePassword, type AuthResponseDto } from '../services/authService';
+import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
 
 export interface ChangePasswordDialogProps {
   open: boolean;
@@ -30,7 +31,7 @@ export const ChangePasswordDialog: React.FC<ChangePasswordDialogProps> = ({
   onClose
 }) => {
   const { setFirebaseToken } = useAuthStore();
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -134,7 +135,7 @@ export const ChangePasswordDialog: React.FC<ChangePasswordDialogProps> = ({
                 role="alert"
                 data-testid="change-password-error-banner"
               >
-                {errorMsg}
+                {getLocalizedSyncErrorMessage(errorMsg, language) || errorMsg}
               </div>
             )}
 
@@ -152,7 +153,7 @@ export const ChangePasswordDialog: React.FC<ChangePasswordDialogProps> = ({
                 role="status"
                 data-testid="change-password-success-banner"
               >
-                {successMsg}
+                {getLocalizedSyncErrorMessage(successMsg, language) || successMsg}
               </div>
             )}
 

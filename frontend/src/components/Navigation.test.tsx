@@ -4,9 +4,11 @@ import { FluentProvider } from '@fluentui/react-components';
 import { Navigation, type NavTab } from './Navigation';
 import { sariSariLightTheme } from '../theme/theme';
 import { useCartStore } from '../state/cartStore';
+import { useLanguageStore } from '../state/languageStore';
 
 describe('Navigation', () => {
   beforeEach(() => {
+    useLanguageStore.setState({ language: 'tl' });
     useCartStore.setState({ items: [] });
   });
 

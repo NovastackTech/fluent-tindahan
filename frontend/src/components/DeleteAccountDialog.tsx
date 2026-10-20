@@ -12,6 +12,7 @@ import {
   Text,
   Spinner,
   Badge,
+  makeStyles,
   tokens
 } from '@fluentui/react-components';
 import {
@@ -30,6 +31,39 @@ import { useTranslation } from '../state/languageStore';
 import { deleteAccount } from '../services/authService';
 import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
 
+const useStyles = makeStyles({
+  surface: {
+    maxWidth: '520px',
+    width: '95vw',
+    overflow: 'hidden',
+    boxSizing: 'border-box'
+  },
+  actions: {
+    gridColumn: '1 / -1',
+    justifySelf: 'stretch',
+    display: 'flex',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    width: '100%',
+    minWidth: 0,
+    gap: tokens.spacingHorizontalS,
+    marginTop: tokens.spacingVerticalS
+  },
+  confirmBtn: {
+    backgroundColor: tokens.colorPaletteRedBackground3,
+    color: tokens.colorPaletteRedForegroundInverted,
+    '&:disabled': {
+      color: tokens.colorPaletteRedForegroundInverted
+    },
+    whiteSpace: 'normal',
+    height: 'auto',
+    minWidth: 0,
+    maxWidth: '100%',
+    textAlign: 'center'
+  }
+});
+
 export interface DeleteAccountDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -45,6 +79,7 @@ export const DeleteAccountDialog: React.FC<DeleteAccountDialogProps> = ({
   const { tier } = useSubscriptionStore();
   const { isOnline, isSyncing } = useSyncStore();
   const { t, language } = useTranslation();
+  const styles = useStyles();
 
   const [mode, setMode] = useState<'grace' | 'immediate'>('grace');
   const [authMethod, setAuthMethod] = useState<'password' | 'pin'>('password');
@@ -142,7 +177,7 @@ export const DeleteAccountDialog: React.FC<DeleteAccountDialogProps> = ({
         }
       }}
     >
-      <DialogSurface style={{ maxWidth: '520px', width: '95vw' }}>
+      <DialogSurface className={styles.surface}>
         <DialogBody>
           <DialogTitle>{t.settings.deleteAccountTitle}</DialogTitle>
           <DialogContent
@@ -383,18 +418,7 @@ export const DeleteAccountDialog: React.FC<DeleteAccountDialogProps> = ({
             </div>
           </DialogContent>
 
-          <DialogActions
-            fluid
-            style={{
-              gridColumn: '1 / -1',
-              display: 'flex',
-              flexWrap: 'wrap',
-              justifyContent: 'flex-end',
-              alignItems: 'center',
-              gap: '8px',
-              marginTop: '8px'
-            }}
-          >
+          <DialogActions fluid className={styles.actions}>
             <Button appearance="secondary" onClick={handleClose} disabled={isSubmitting}>
               {t.common.cancel}
             </Button>
@@ -404,11 +428,7 @@ export const DeleteAccountDialog: React.FC<DeleteAccountDialogProps> = ({
               icon={isSubmitting ? <Spinner size="extra-tiny" /> : <DeleteRegular />}
               onClick={handleSubmit}
               data-testid="confirm-delete-account-btn"
-              style={{
-                backgroundColor: tokens.colorPaletteRedBackground3,
-                color: tokens.colorPaletteRedForegroundInverted,
-                whiteSpace: 'nowrap'
-              }}
+              className={styles.confirmBtn}
             >
               {mode === 'immediate'
                 ? t.settings.deleteConfirmImmediateBtn

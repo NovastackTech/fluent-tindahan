@@ -6,9 +6,11 @@ import { sariSariLightTheme } from '../theme/theme';
 import { db } from '../db/db';
 import { useAuthStore } from '../state/authStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
+import { useLanguageStore } from '../state/languageStore';
 
 describe('QuickRegisterProductDialog', () => {
   beforeEach(async () => {
+    useLanguageStore.setState({ language: 'tl' });
     useAuthStore.setState({ tenantId: 'quick-register-tenant' });
     useSubscriptionStore.setState({ tier: 'Libre' });
     await db.products.clear();

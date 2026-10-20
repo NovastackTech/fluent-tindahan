@@ -10,9 +10,9 @@ interface LanguageState {
 const getSavedLanguage = (): Language => {
   try {
     const saved = localStorage.getItem('fluent_tindahan_language');
-    return saved === 'en' ? 'en' : 'tl';
+    return saved === 'tl' ? 'tl' : 'en';
   } catch {
-    return 'tl';
+    return 'en';
   }
 };
 
@@ -26,7 +26,7 @@ export const useLanguageStore = create<LanguageState>((set) => ({
   },
   toggleLanguage: () =>
     set((state) => {
-      const next: Language = state.language === 'tl' ? 'en' : 'tl';
+      const next: Language = state.language === 'en' ? 'tl' : 'en';
       try {
         localStorage.setItem('fluent_tindahan_language', next);
       } catch {}

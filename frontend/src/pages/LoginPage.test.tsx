@@ -981,4 +981,66 @@ describe('LoginPage Component', () => {
       expect(screen.getByTestId('login-reset-success-banner')).toBeInTheDocument();
     });
   });
+
+  it('displays only the active language when forgot password returns bilingual message', async () => {
+    vi.mocked(authService.forgotPassword).mockResolvedValueOnce({
+      message: 'Nagpadala kami ng 6-digit verification code sa iyong email. / We sent a 6-digit verification code to your email.'
+    });
+
+    act(() => {
+      useLanguageStore.getState().setLanguage('en');
+    });
+
+    const onNavigate = vi.fn();
+    const { unmount } = renderLoginPage(onNavigate);
+
+    const forgotBtn = screen.getByTestId('login-forgot-password-btn');
+    await act(async () => {
+      fireEvent.click(forgotBtn);
+    });
+
+    const emailInput = screen.getByTestId('login-forgot-email-input');
+    const sendBtn = screen.getByTestId('login-forgot-send-btn');
+    await act(async () => {
+      fireEvent.change(emailInput, { target: { value: 'test@tindahan.ph' } });
+      fireEvent.click(sendBtn);
+    });
+
+    await waitFor(() => {
+      const banner = screen.getByTestId('login-otp-info-banner');
+      expect(banner).toBeInTheDocument();
+      expect(banner.textContent).toBe('We sent a 6-digit verification code to your email.');
+      expect(banner.textContent).not.toContain('Nagpadala kami');
+    });
+
+    unmount();
+
+    vi.mocked(authService.forgotPassword).mockResolvedValueOnce({
+      message: 'Nagpadala kami ng 6-digit verification code sa iyong email. / We sent a 6-digit verification code to your email.'
+    });
+
+    act(() => {
+      useLanguageStore.getState().setLanguage('tl');
+    });
+
+    renderLoginPage(onNavigate);
+    const forgotBtnTl = screen.getByTestId('login-forgot-password-btn');
+    await act(async () => {
+      fireEvent.click(forgotBtnTl);
+    });
+
+    const emailInputTl = screen.getByTestId('login-forgot-email-input');
+    const sendBtnTl = screen.getByTestId('login-forgot-send-btn');
+    await act(async () => {
+      fireEvent.change(emailInputTl, { target: { value: 'test@tindahan.ph' } });
+      fireEvent.click(sendBtnTl);
+    });
+
+    await waitFor(() => {
+      const banner = screen.getByTestId('login-otp-info-banner');
+      expect(banner).toBeInTheDocument();
+      expect(banner.textContent).toBe('Nagpadala kami ng 6-digit verification code sa iyong email.');
+      expect(banner.textContent).not.toContain('We sent');
+    });
+  });
 });

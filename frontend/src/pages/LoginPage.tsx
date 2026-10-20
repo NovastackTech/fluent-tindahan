@@ -40,6 +40,7 @@ import { AuthErrorBanner } from '../components/AuthErrorBanner';
 import { validateRegistrationInput, validateLoginInput } from '../utils/registrationValidation';
 import { GoogleAuthButton } from '../components/GoogleAuthButton';
 import { forgotPassword, resetPassword } from '../services/authService';
+import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
 
 export interface LoginPageProps {
   onNavigate: (tab: NavTab) => void;
@@ -623,7 +624,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
             role="status"
             data-testid="login-otp-info-banner"
           >
-            {otpInfoMsg}
+            {getLocalizedSyncErrorMessage(otpInfoMsg, language) || otpInfoMsg}
           </div>
         )}
 

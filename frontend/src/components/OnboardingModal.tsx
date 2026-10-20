@@ -760,7 +760,7 @@ export const OnboardingModal: React.FC = () => {
                 size={200}
                 className={mergeClasses(styles.statusNotice, styles.warningNotice)}
               >
-                {offlineNotice}
+                {getLocalizedSyncErrorMessage(offlineNotice, language) || offlineNotice}
               </Text>
             )}
 

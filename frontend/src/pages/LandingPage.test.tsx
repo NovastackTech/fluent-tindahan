@@ -4,6 +4,7 @@ import { FluentProvider } from '@fluentui/react-components';
 import { LandingPage } from './LandingPage';
 import { sariSariLightTheme } from '../theme/theme';
 import { useAuthStore } from '../state/authStore';
+import { useLanguageStore } from '../state/languageStore';
 import { translations } from '../i18n/translations';
 import * as authService from '../services/authService';
 import * as seedData from '../db/seedData';
@@ -84,6 +85,7 @@ describe('LandingPage Component', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    useLanguageStore.setState({ language: 'tl' });
     useAuthStore.setState({
       isOnboarded: false,
       isOnboardingStatusReady: true,
