@@ -12,6 +12,8 @@ export interface Translations {
     dlqWarning: string;
     differentAccountSyncBlocked: string;
     tenantProvisioningSyncBlocked: string;
+    sessionReauthRequired: string;
+    signInAgain: string;
     forceSync: string;
     themeToggleDark: string;
     themeToggleLight: string;

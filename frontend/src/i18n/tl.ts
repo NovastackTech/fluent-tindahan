@@ -42,6 +42,8 @@ export const tl: Translations = {
       dlqWarning: 'mga bagsak na item sa Dead Letter queue',
       differentAccountSyncBlocked: 'Naka-link ang tindahan sa device na ito sa ibang account. Mag-sign in muli sa tamang account para mag-sync. Nananatili sa device na ito ang mga nakabinbing pagbabago.',
       tenantProvisioningSyncBlocked: 'Hindi ma-verify ang tindahan sa server. Mag-sign in muli o kontakin ang suporta bago mag-sync. Nananatili sa device na ito ang mga nakabinbing pagbabago.',
+      sessionReauthRequired: 'Paso na ang session. Mag-sign in muli para mag-sync. Nananatili sa device na ito ang mga nakabinbing pagbabago.',
+      signInAgain: 'Mag-sign in muli',
       forceSync: 'Puwersahing mag-sync ngayon',
       themeToggleDark: 'Lumipat sa Dark theme',
       themeToggleLight: 'Lumipat sa Light theme',

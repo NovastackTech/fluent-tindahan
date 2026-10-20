@@ -21,6 +21,8 @@ import {
 import {
   apiClient,
   ensureTenantProvisioned,
+  isAccessTokenUsable,
+  SessionReauthRequiredError,
   TenantAccountMismatchError,
   TenantProvisioningError
 } from '../services/apiClient';
@@ -230,6 +232,15 @@ export async function processSyncQueue(options?: { force?: boolean }): Promise<{
   }
 
   const isForce = Boolean(options?.force);
+
+  const session = useAuthStore.getState();
+  if (session.reauthRequired && !isAccessTokenUsable(session.firebaseToken)) {
+    const message = new SessionReauthRequiredError().message;
+    if (useSyncStore.getState().lastErrorMessage !== message) {
+      useSyncStore.getState().setLastErrorMessage(message);
+    }
+    return { processed: 0, conflicts: 0, errors: 0 };
+  }
 
   // Attempt to sync pending profile update if queued
   if (hasPendingProfileUpdate()) {
@@ -460,7 +471,11 @@ export async function processSyncQueue(options?: { force?: boolean }): Promise<{
     return { processed: successCount, conflicts: conflictCount, errors: failCount };
   } catch (err: any) {
     console.error('Batch sync network/server failure:', err);
-    if (err instanceof TenantAccountMismatchError || err instanceof TenantProvisioningError) {
+    if (
+      err instanceof SessionReauthRequiredError
+      || err instanceof TenantAccountMismatchError
+      || err instanceof TenantProvisioningError
+    ) {
       useSyncStore.setState({
         authBlockedSessionKey: authSessionKey,
         batchFailureCount: 0,

@@ -91,11 +91,17 @@ export const App: React.FC = () => {
   const isOnboarded = useAuthStore((s) => s.isOnboarded);
   const isOnboardingStatusReady = useAuthStore((s) => s.isOnboardingStatusReady);
   const isOnboardingOpen = useAuthStore((s) => s.isOnboardingOpen);
+  const reauthRequested = useAuthStore((s) => s.reauthRequested);
   const [activeTab, setActiveTab] = useState<NavTab>(getInitialNavTab);
   const [billingSuccessMessage, setBillingSuccessMessage] = useState<string | null>(null);
   const storeServicesStarted = useRef(false);
 
+  const visibleTab: NavTab = reauthRequested ? 'login' : activeTab;
+
   const handleTabChange = (newTab: NavTab) => {
+    if (useAuthStore.getState().reauthRequested) {
+      useAuthStore.getState().clearReauthRequest();
+    }
     setActiveTab(newTab);
     if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
       const url = new URL(window.location.href);
@@ -264,7 +270,7 @@ const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string) || 'f
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
       <FluentProvider theme={isDarkMode ? sariSariDarkTheme : sariSariLightTheme}>
         <div className={styles.appContainer}>
-        <Header onNavigate={handleTabChange} activeTab={activeTab} />
+        <Header onNavigate={handleTabChange} activeTab={visibleTab} />
         <PwaUpdateToast />
         <PwaInstallBanner />
         <OfflineSyncBanner />
@@ -294,19 +300,19 @@ const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string) || 'f
               <Spinner label="Naglo-load..." size="medium" />
             </div>
           }>
-            {activeTab === 'dashboard' && <DashboardPage onNavigate={handleTabChange} />}
-            {activeTab === 'pos' && <POSPage onNavigate={handleTabChange} />}
-            {activeTab === 'inventory' && <InventoryPage onNavigate={handleTabChange} />}
-            {activeTab === 'utang' && <UtangPage />}
-            {activeTab === 'gcash' && <GCashPage />}
-            {activeTab === 'import' && <ImportPage />}
-            {activeTab === 'settings' && <SettingsPage onNavigate={handleTabChange} />}
-            {activeTab === 'landing' && <LandingPage onNavigate={handleTabChange} />}
-            {activeTab === 'login' && <LoginPage onNavigate={handleTabChange} />}
+            {visibleTab === 'dashboard' && <DashboardPage onNavigate={handleTabChange} />}
+            {visibleTab === 'pos' && <POSPage onNavigate={handleTabChange} />}
+            {visibleTab === 'inventory' && <InventoryPage onNavigate={handleTabChange} />}
+            {visibleTab === 'utang' && <UtangPage />}
+            {visibleTab === 'gcash' && <GCashPage />}
+            {visibleTab === 'import' && <ImportPage />}
+            {visibleTab === 'settings' && <SettingsPage onNavigate={handleTabChange} />}
+            {visibleTab === 'landing' && <LandingPage onNavigate={handleTabChange} />}
+            {visibleTab === 'login' && <LoginPage onNavigate={handleTabChange} />}
           </Suspense>
         </main>
 
-        {activeTab !== 'landing' && activeTab !== 'login' && <Navigation activeTab={activeTab} onTabChange={handleTabChange} />}
+        {visibleTab !== 'landing' && visibleTab !== 'login' && <Navigation activeTab={visibleTab} onTabChange={handleTabChange} />}
         <PrivacyConsentDialog />
         {isOnboardingOpen && <OnboardingModal />}
         <SessionLockModal />

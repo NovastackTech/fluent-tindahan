@@ -12,6 +12,7 @@ import {
 import { ArrowSyncRegular, ArrowClockwiseRegular, DismissRegular } from '@fluentui/react-icons';
 import { useSyncStore, processSyncQueue, retryDeadLetterItem } from '../sync/syncEngine';
 import { db } from '../db/db';
+import { useAuthStore } from '../state/authStore';
 import { useTranslation } from '../state/languageStore';
 import { hasPendingProfileUpdate } from '../services/profileSync';
 import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
@@ -33,15 +34,24 @@ const useStyles = makeStyles({
 export const OfflineSyncBanner: React.FC = () => {
   const styles = useStyles();
   const { isOnline, isSyncing, pendingCount, deadLetterCount, lastErrorMessage } = useSyncStore();
+  const reauthRequired = useAuthStore((state) => state.reauthRequired);
   const { t, language } = useTranslation();
   const displayedErrorMessage = getLocalizedSyncErrorMessage(lastErrorMessage, language) || lastErrorMessage;
 
   const [isRetrying, setIsRetrying] = React.useState(false);
   const pendingProfile = hasPendingProfileUpdate();
 
-  if (isOnline && pendingCount === 0 && deadLetterCount === 0 && !lastErrorMessage && !pendingProfile) {
+  if (isOnline && pendingCount === 0 && deadLetterCount === 0 && !lastErrorMessage && !pendingProfile && !reauthRequired) {
     return null;
   }
+
+  const handleSyncOrReauth = () => {
+    if (reauthRequired) {
+      useAuthStore.getState().requestReauth();
+      return;
+    }
+    void processSyncQueue({ force: true });
+  };
 
   const handleRetryAllDeadLetter = async () => {
     if (isRetrying) return;
@@ -97,10 +107,10 @@ export const OfflineSyncBanner: React.FC = () => {
                   size="small"
                   appearance="subtle"
                   icon={<ArrowSyncRegular />}
-                  disabled={isSyncing}
-                  onClick={() => processSyncQueue({ force: true })}
+                  disabled={isSyncing && !reauthRequired}
+                  onClick={handleSyncOrReauth}
                 >
-                  {isSyncing ? t.common.syncing : t.common.forceSync}
+                  {reauthRequired ? t.common.signInAgain : (isSyncing ? t.common.syncing : t.common.forceSync)}
                 </Button>
               }
             />
@@ -120,10 +130,10 @@ export const OfflineSyncBanner: React.FC = () => {
                 size="small"
                 appearance="subtle"
                 icon={<ArrowSyncRegular />}
-                disabled={isSyncing}
-                onClick={() => processSyncQueue({ force: true })}
+                disabled={isSyncing && !reauthRequired}
+                onClick={handleSyncOrReauth}
               >
-                {isSyncing ? t.common.syncing : t.common.forceSync}
+                {reauthRequired ? t.common.signInAgain : (isSyncing ? t.common.syncing : t.common.forceSync)}
               </Button>
             }
           />
@@ -152,21 +162,32 @@ export const OfflineSyncBanner: React.FC = () => {
         </MessageBar>
       )}
 
-      {deadLetterCount === 0 && lastErrorMessage && (
+      {deadLetterCount === 0 && (lastErrorMessage || reauthRequired) && (
         <MessageBar intent="error" layout="multiline">
           <MessageBarBody>
             <MessageBarTitle>{language === 'tl' ? 'Problema sa Pag-sync' : 'Sync Error'}</MessageBarTitle>
-            {displayedErrorMessage}
+            {displayedErrorMessage || t.common.sessionReauthRequired}
           </MessageBarBody>
           <MessageBarActions
             containerAction={
-              <Button
-                size="small"
-                appearance="subtle"
-                aria-label={t.common.close || 'Isara'}
-                icon={<DismissRegular />}
-                onClick={() => useSyncStore.getState().setLastErrorMessage(null)}
-              />
+              <>
+                {reauthRequired && (
+                  <Button
+                    size="small"
+                    appearance="primary"
+                    onClick={() => useAuthStore.getState().requestReauth()}
+                  >
+                    {t.common.signInAgain}
+                  </Button>
+                )}
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  aria-label={t.common.close || 'Isara'}
+                  icon={<DismissRegular />}
+                  onClick={() => useSyncStore.getState().setLastErrorMessage(null)}
+                />
+              </>
             }
           />
         </MessageBar>

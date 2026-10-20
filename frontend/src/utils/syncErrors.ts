@@ -16,6 +16,10 @@ const EXACT_ERROR_MAPPINGS: ExactErrorMapping[] = [
     tl: translations.tl.common.tenantProvisioningSyncBlocked,
     en: translations.en.common.tenantProvisioningSyncBlocked
   },
+  {
+    tl: translations.tl.common.sessionReauthRequired,
+    en: translations.en.common.sessionReauthRequired
+  },
   // DLQ items require correction in Settings
   {
     tl: 'May mga produkto sa Dead Letter Queue na kailangang ayusin sa Settings bago ma-sync.',

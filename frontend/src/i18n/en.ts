@@ -42,6 +42,8 @@ export const en: Translations = {
       dlqWarning: 'failed items in Dead Letter queue',
       differentAccountSyncBlocked: 'This device’s store is linked to a different account. Sign in to the matching account to sync. Pending changes remain on this device.',
       tenantProvisioningSyncBlocked: 'The server could not verify this store. Sign in again or contact support before syncing. Pending changes remain on this device.',
+      sessionReauthRequired: 'Your sign-in session expired. Sign in again to sync. Pending changes stay on this device.',
+      signInAgain: 'Sign in again',
       forceSync: 'Force sync now',
       themeToggleDark: 'Switch to Dark theme',
       themeToggleLight: 'Switch to Light theme',
