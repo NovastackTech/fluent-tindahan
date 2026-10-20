@@ -239,9 +239,9 @@ describe('DashboardPage', () => {
 
     // Insert out of chronological order
     await db.sales.bulkAdd([
-      { id: 'sale-mid', tenantId: 't-1', totalAmount: 50, paymentMethod: 'Cash', date: timeMid },
-      { id: 'sale-early', tenantId: 't-1', totalAmount: 20, paymentMethod: 'Cash', date: timeEarly },
-      { id: 'sale-latest', tenantId: 't-1', totalAmount: 100, paymentMethod: 'Cash', date: timeLatest }
+      { id: 'sale-mid', tenantId: 't-1', userId: 'u-1', totalAmount: 50, paymentMethod: 'Cash', date: timeMid },
+      { id: 'sale-early', tenantId: 't-1', userId: 'u-1', totalAmount: 20, paymentMethod: 'Cash', date: timeEarly },
+      { id: 'sale-latest', tenantId: 't-1', userId: 'u-1', totalAmount: 100, paymentMethod: 'Cash', date: timeLatest }
     ]);
 
     renderDashboard();
