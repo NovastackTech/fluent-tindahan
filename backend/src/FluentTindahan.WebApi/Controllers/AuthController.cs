@@ -1427,6 +1427,8 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = "Hindi natagpuan ang account o hindi wasto ang verification code. / Account not found or invalid verification code." });
         }
 
+        var wasUnverified = !user.EmailVerified;
+
         var otpStatus = AuthOtpHelper.VerifyOtp(user, request.Otp, _timeProvider);
         if (otpStatus != OtpVerificationStatus.Success)
         {
@@ -1441,8 +1443,11 @@ public class AuthController : ControllerBase
         }
 
         user.PasswordHash = _passwordHasher.HashPassword(user, request.NewPassword);
-        // Validating the OTP delivered to the inbox proves control of the email address.
-        user.EmailVerified = true;
+        // AuthOtpHelper.VerifyOtp already marked EmailVerified = true (inbox ownership proven).
+        if (wasUnverified)
+        {
+            user.PinHash = null;
+        }
         AuthLockoutHelper.ResetPasswordLockout(user);
         user.SessionsInvalidatedAt = _timeProvider.GetUtcNow();
 

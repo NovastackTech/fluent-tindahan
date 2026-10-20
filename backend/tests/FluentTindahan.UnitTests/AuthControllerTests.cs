@@ -4442,16 +4442,18 @@ public class AuthControllerTests
 
         var controller = CreateController(context, timeProvider: timeProvider, emailOtpSender: otpSenderMock.Object);
 
-        // 1. Sign up a new account (unverified by default)
+        // 1. Sign up a new account (unverified by default) with a PIN
         var regResult = await controller.Register(new AuthController.RegisterRequest
         {
             Email = "unverified@tindahan.ph",
             Password = "InitialPassword123!",
+            Pin = "1234",
             BusinessName = "Unverified Tindahan"
         }, CancellationToken.None);
         var regDto = ((OkObjectResult)regResult.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
         regDto.EmailVerified.Should().BeFalse();
         regDto.RequiresEmailVerification.Should().BeTrue();
+        regDto.HasPin.Should().BeTrue();
 
         timeProvider.Advance(TimeSpan.FromSeconds(65));
 
@@ -4464,6 +4466,7 @@ public class AuthControllerTests
         var initialLoginDto = ((OkObjectResult)initialLogin.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
         initialLoginDto.EmailVerified.Should().BeFalse();
         initialLoginDto.RequiresEmailVerification.Should().BeTrue();
+        initialLoginDto.HasPin.Should().BeTrue();
 
         // 3. User requests password reset OTP
         timeProvider.Advance(TimeSpan.FromSeconds(65));
@@ -4483,7 +4486,7 @@ public class AuthControllerTests
         }, CancellationToken.None);
         resetResult.Should().BeOfType<OkObjectResult>();
 
-        // 5. Subsequent login with new password has EmailVerified = true and RequiresEmailVerification = false
+        // 5. Subsequent login with new password has EmailVerified = true, RequiresEmailVerification = false, and HasPin = false (squatter PIN cleared)
         var subsequentLogin = await controller.Login(new AuthController.LoginRequest
         {
             Email = "unverified@tindahan.ph",
@@ -4492,6 +4495,15 @@ public class AuthControllerTests
         var subsequentLoginDto = ((OkObjectResult)subsequentLogin.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
         subsequentLoginDto.EmailVerified.Should().BeTrue();
         subsequentLoginDto.RequiresEmailVerification.Should().BeFalse();
+        subsequentLoginDto.HasPin.Should().BeFalse();
+
+        // 6. Attempting to log in with the old squatter PIN now fails
+        var pinLoginAttempt = await controller.LoginPin(new AuthController.LoginPinRequest
+        {
+            Email = "unverified@tindahan.ph",
+            Pin = "1234"
+        }, CancellationToken.None);
+        pinLoginAttempt.Result.Should().BeOfType<UnauthorizedObjectResult>();
     }
 }
 
