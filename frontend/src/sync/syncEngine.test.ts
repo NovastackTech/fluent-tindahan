@@ -24,6 +24,7 @@ import { db } from '../db/db';
 import {
   apiClient,
   ensureTenantProvisioned,
+  SessionReauthRequiredError,
   TenantAccountMismatchError,
   TenantProvisioningError
 } from '../services/apiClient';
@@ -39,6 +40,13 @@ vi.mock('../services/apiClient', () => ({
       this.status = status;
     }
   },
+  SessionReauthRequiredError: class SessionReauthRequiredError extends Error {
+    constructor() {
+      super('Sign in again to sync. Pending changes stay on this device.');
+      this.name = 'SessionReauthRequiredError';
+    }
+  },
+  isAccessTokenUsable: (token: string | null) => Boolean(token),
   apiClient: {
     post: vi.fn(),
     put: vi.fn(),
@@ -71,6 +79,9 @@ describe('syncEngine', () => {
     useAuthStore.setState({
       tenantId: DEFAULT_TENANT_ID,
       firebaseToken: null,
+      refreshToken: null,
+      reauthRequired: false,
+      reauthRequested: false,
       isOnboarded: true,
       isOnboardingStatusReady: true
     });
@@ -285,6 +296,30 @@ describe('syncEngine', () => {
     expect(useSyncStore.getState().authBlockedSessionKey).not.toBeNull();
     expect(useSyncStore.getState().batchFailureCount).toBe(0);
     expect(useSyncStore.getState().nextRetryAt).toBeNull();
+    expect(apiClient.post).not.toHaveBeenCalled();
+    expect(await db.syncQueue.get(syncId)).toMatchObject({ status: 'Pending', retryCount: 0 });
+  });
+
+  it('keeps the queue when the session must be signed in again and does not retry', async () => {
+    const syncId = await enqueueSync('Sale', 'Insert', { id: 'sale-reauth', total: 25 });
+    const error = new SessionReauthRequiredError();
+    (ensureTenantProvisioned as any).mockRejectedValueOnce(error);
+
+    const result = await processSyncQueue();
+
+    expect(result).toEqual({ processed: 0, conflicts: 0, errors: 1 });
+    expect(useSyncStore.getState().lastErrorMessage).toBe(error.message);
+    expect(useSyncStore.getState().authBlockedSessionKey).not.toBeNull();
+    expect(await db.syncQueue.get(syncId)).toMatchObject({ status: 'Pending', retryCount: 0 });
+
+    useAuthStore.setState({ reauthRequired: true, firebaseToken: null });
+    (ensureTenantProvisioned as any).mockClear();
+    (apiClient.post as any).mockClear();
+
+    const forced = await processSyncQueue({ force: true });
+
+    expect(forced).toEqual({ processed: 0, conflicts: 0, errors: 0 });
+    expect(ensureTenantProvisioned).not.toHaveBeenCalled();
     expect(apiClient.post).not.toHaveBeenCalled();
     expect(await db.syncQueue.get(syncId)).toMatchObject({ status: 'Pending', retryCount: 0 });
   });

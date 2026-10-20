@@ -4,6 +4,7 @@ import { FluentProvider } from '@fluentui/react-components';
 import { OfflineSyncBanner } from './OfflineSyncBanner';
 import { sariSariLightTheme } from '../theme/theme';
 import { useSyncStore } from '../sync/syncEngine';
+import { useAuthStore } from '../state/authStore';
 import { useLanguageStore } from '../state/languageStore';
 import { translations } from '../i18n/translations';
 
@@ -16,6 +17,7 @@ describe('OfflineSyncBanner', () => {
       deadLetterCount: 0,
       lastErrorMessage: null
     });
+    useAuthStore.setState({ reauthRequired: false, reauthRequested: false });
   });
 
   const renderBanner = () => {
@@ -63,6 +65,26 @@ describe('OfflineSyncBanner', () => {
     const retryBtn = screen.getByRole('button', { name: /Subukan(g)? Muli|Retry/i });
     expect(retryBtn).toBeInTheDocument();
     expect(retryBtn).not.toBeDisabled();
+  });
+
+  it('offers sign-in without forcing another sync when the session must be renewed', () => {
+    useAuthStore.setState({ reauthRequired: true });
+    useSyncStore.setState({
+      isOnline: true,
+      isSyncing: false,
+      pendingCount: 3,
+      deadLetterCount: 0,
+      lastErrorMessage: null
+    });
+    renderBanner();
+
+    const signInButtons = screen.getAllByRole('button', { name: /Mag-sign in muli|Sign in again/i });
+    expect(signInButtons.length).toBeGreaterThan(0);
+    signInButtons[0].click();
+
+    expect(useAuthStore.getState().reauthRequested).toBe(true);
+    expect(useSyncStore.getState().isSyncing).toBe(false);
+    expect(window.location.search).toContain('tab=login');
   });
 
   it('renders sync error with dismiss button and clears on click', () => {

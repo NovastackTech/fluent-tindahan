@@ -1541,6 +1541,60 @@ public class AuthControllerTests
     }
 
     [Fact]
+    public async Task ExpiredAccessToken_IsRejectedByApiValidation_AndRefreshIssuesAValidAccessToken()
+    {
+        // Access tokens last 60 minutes. Issue one far enough in the past that the API's
+        // 1-minute clock skew still treats it as expired, while the 30-day refresh token remains valid.
+        var issuedAt = DateTimeOffset.UtcNow.AddMinutes(-70);
+        var timeProvider = new MutableTimeProvider(issuedAt);
+        var (context, _) = CreateInMemoryContext();
+        var jwtService = CreateJwtTokenService(timeProvider: timeProvider);
+        var controller = CreateController(context, jwtService, timeProvider: timeProvider);
+
+        var registerResult = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "expired.access@tindahan.ph",
+            Password = "Password123!",
+            BusinessName = "Expired Access Store"
+        }, CancellationToken.None);
+
+        var registerDto = ((OkObjectResult)registerResult.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        registerDto.Token.Should().NotBeNullOrWhiteSpace();
+        registerDto.RefreshToken.Should().NotBeNullOrWhiteSpace();
+
+        var validationParameters = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(TestJwtSecret)),
+            ValidateIssuer = true,
+            ValidIssuer = TestIssuer,
+            ValidateAudience = true,
+            ValidAudience = TestAudience,
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromMinutes(1)
+        };
+
+        var tokenHandler = new JwtSecurityTokenHandler();
+        var expired = () => tokenHandler.ValidateToken(registerDto.Token, validationParameters, out _);
+        expired.Should().Throw<SecurityTokenExpiredException>();
+
+        timeProvider.SetUtcNow(DateTimeOffset.UtcNow);
+        var refreshResult = await controller.Refresh(new AuthController.RefreshTokenRequest
+        {
+            RefreshToken = registerDto.RefreshToken!
+        }, CancellationToken.None);
+
+        refreshResult.Result.Should().BeOfType<OkObjectResult>();
+        var refreshDto = ((OkObjectResult)refreshResult.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        refreshDto.Token.Should().NotBe(registerDto.Token);
+        refreshDto.RefreshToken.Should().NotBeNullOrWhiteSpace();
+
+        var principal = tokenHandler.ValidateToken(refreshDto.Token, validationParameters, out var validatedToken);
+        validatedToken.Should().BeOfType<JwtSecurityToken>();
+        principal.FindFirst("tenant_id")!.Value.Should().Be(registerDto.TenantId.ToString());
+    }
+
+    [Fact]
     public async Task RefreshToken_RotatesOnUse_And_ReusedOldTokenIsRejectedAndRevokesSession()
     {
         var startTime = DateTimeOffset.UtcNow;

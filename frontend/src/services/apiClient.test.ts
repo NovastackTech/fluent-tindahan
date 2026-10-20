@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   apiClient,
   ensureTenantProvisioned,
+  resetTenantProvisionCache,
+  SessionReauthRequiredError,
   TenantAccountMismatchError,
   TenantProvisioningError
 } from './apiClient';
@@ -14,6 +16,7 @@ describe('apiClient', () => {
   beforeEach(async () => {
     vi.restoreAllMocks();
     localStorage.clear();
+    resetTenantProvisionCache();
     await db.tenants.clear();
     await db.products.clear();
     await db.syncQueue.clear();
@@ -25,6 +28,12 @@ describe('apiClient', () => {
       serverConfirmedTenantId: null,
       serverConfirmedUserId: null,
       firebaseToken: null,
+      refreshToken: null,
+      reauthRequired: false,
+      reauthRequested: false,
+      businessName: 'Ate Rose Tindahan',
+      userPhone: '09181234567',
+      userEmail: '',
       isOnboarded: true,
       isOnboardingStatusReady: true
     });
@@ -408,14 +417,11 @@ describe('apiClient', () => {
         response: { status: 401 },
         config: originalRequest
       })
-    ).rejects.toEqual(
-      expect.objectContaining({
-        response: expect.objectContaining({ status: 401 })
-      })
-    );
+    ).rejects.toBeInstanceOf(SessionReauthRequiredError);
 
     expect(useAuthStore.getState().firebaseToken).toBeNull();
     expect(useAuthStore.getState().refreshToken).toBeNull();
+    expect(useAuthStore.getState().reauthRequired).toBe(true);
 
     axiosPostSpy.mockRestore();
   });
@@ -442,14 +448,11 @@ describe('apiClient', () => {
         response: { status: 401 },
         config: originalRequest
       })
-    ).rejects.toEqual(
-      expect.objectContaining({
-        response: expect.objectContaining({ status: 403 })
-      })
-    );
+    ).rejects.toBeInstanceOf(SessionReauthRequiredError);
 
     expect(useAuthStore.getState().firebaseToken).toBeNull();
     expect(useAuthStore.getState().refreshToken).toBeNull();
+    expect(useAuthStore.getState().reauthRequired).toBe(true);
 
     axiosPostSpy.mockRestore();
   });
@@ -562,6 +565,199 @@ describe('apiClient', () => {
 
     axiosPostSpy.mockRestore();
     apiClientSpy.mockRestore();
+  });
+
+  function makeJwt(payload: Record<string, unknown>): string {
+    const encode = (value: object) => btoa(JSON.stringify(value))
+      .replace(/=/g, '')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_');
+    return `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode(payload)}.sig`;
+  }
+
+  function headerValue(config: { headers?: { get?: (name: string) => unknown; Authorization?: unknown } }): string {
+    const headers = config.headers;
+    const raw = headers?.get?.('Authorization') ?? headers?.Authorization;
+    return typeof raw === 'string' ? raw : '';
+  }
+
+  it('refreshes an expired access token before provisioning and keeps the local queue', async () => {
+    const axios = (await import('axios')).default;
+    const tenantId = crypto.randomUUID();
+    const userId = crypto.randomUUID();
+    const expiredToken = makeJwt({ sub: userId, exp: Math.floor(Date.now() / 1000) - 120 });
+    const freshToken = makeJwt({ sub: userId, exp: Math.floor(Date.now() / 1000) + 3600 });
+    useAuthStore.setState({
+      tenantId,
+      userId,
+      firebaseToken: expiredToken,
+      refreshToken: 'valid-refresh-token',
+      serverConfirmedTenantId: tenantId,
+      serverConfirmedUserId: userId
+    });
+    await db.syncQueue.put({
+      id: 'queued-sale',
+      entity: 'Sale',
+      action: 'Insert',
+      timestamp: new Date().toISOString(),
+      payload: { id: 'sale-1', tenantId, total: 40 },
+      status: 'Pending',
+      retryCount: 0
+    });
+
+    const refreshSpy = vi.spyOn(axios, 'post').mockResolvedValueOnce({
+      data: { token: freshToken, refreshToken: 'rotated-refresh-token' }
+    });
+    const previousAdapter = apiClient.defaults.adapter;
+    const provisionHeaders: string[] = [];
+    apiClient.defaults.adapter = async (config) => {
+      provisionHeaders.push(headerValue(config));
+      return {
+        status: 200,
+        statusText: 'OK',
+        data: { tenantId, userId },
+        headers: {},
+        config
+      } as any;
+    };
+
+    try {
+      await ensureTenantProvisioned();
+      expect(refreshSpy).toHaveBeenCalledTimes(1);
+      expect(refreshSpy).toHaveBeenCalledWith(
+        '/api/auth/refresh',
+        { refreshToken: 'valid-refresh-token' },
+        expect.any(Object)
+      );
+      expect(provisionHeaders).toEqual([`Bearer ${freshToken}`]);
+    } finally {
+      apiClient.defaults.adapter = previousAdapter;
+      refreshSpy.mockRestore();
+    }
+
+    expect(useAuthStore.getState().firebaseToken).toBe(freshToken);
+    expect(useAuthStore.getState().refreshToken).toBe('rotated-refresh-token');
+    expect(useAuthStore.getState().reauthRequired).toBe(false);
+    expect(useAuthStore.getState().serverConfirmedUserId).toBe(userId);
+    expect(await db.syncQueue.get('queued-sale')).toMatchObject({ status: 'Pending' });
+  });
+
+  it('stops after an invalid refresh token and keeps queued changes for the same account', async () => {
+    const axios = (await import('axios')).default;
+    const tenantId = crypto.randomUUID();
+    const userId = crypto.randomUUID();
+    const expiredToken = makeJwt({ sub: userId, exp: Math.floor(Date.now() / 1000) - 120 });
+    const freshToken = makeJwt({ sub: userId, exp: Math.floor(Date.now() / 1000) + 3600 });
+    useAuthStore.setState({
+      tenantId,
+      userId,
+      firebaseToken: expiredToken,
+      refreshToken: 'revoked-refresh-token',
+      serverConfirmedTenantId: tenantId,
+      serverConfirmedUserId: userId
+    });
+    await db.syncQueue.put({
+      id: 'queued-sale',
+      entity: 'Sale',
+      action: 'Insert',
+      timestamp: new Date().toISOString(),
+      payload: { id: 'sale-1', tenantId, total: 40 },
+      status: 'Pending',
+      retryCount: 0
+    });
+
+    let refreshCalls = 0;
+    const refreshSpy = vi.spyOn(axios, 'post').mockImplementation(async () => {
+      refreshCalls += 1;
+      throw { response: { status: 401, data: { message: 'Invalid or already used refresh token' } } };
+    });
+    const previousAdapter = apiClient.defaults.adapter;
+    let provisionCalls = 0;
+    apiClient.defaults.adapter = async () => {
+      provisionCalls += 1;
+      throw new Error('provision should not be called');
+    };
+
+    try {
+      await expect(ensureTenantProvisioned()).rejects.toBeInstanceOf(SessionReauthRequiredError);
+      await expect(ensureTenantProvisioned()).rejects.toBeInstanceOf(SessionReauthRequiredError);
+    } finally {
+      apiClient.defaults.adapter = previousAdapter;
+      refreshSpy.mockRestore();
+    }
+
+    expect(refreshCalls).toBe(1);
+    expect(provisionCalls).toBe(0);
+    expect(useAuthStore.getState().firebaseToken).toBeNull();
+    expect(useAuthStore.getState().refreshToken).toBeNull();
+    expect(useAuthStore.getState().reauthRequired).toBe(true);
+    expect(await db.syncQueue.get('queued-sale')).toMatchObject({ status: 'Pending', retryCount: 0 });
+
+    const login = await useAuthStore.getState().loginWithAuthPayload({
+      tenantId,
+      userId,
+      email: 'ate@tindahan.ph',
+      businessName: 'Ate Rose Tindahan',
+      ownerName: 'Ate Rose',
+      phone: '09181234567',
+      role: 'Owner',
+      tier: 'Libre',
+      planTier: 'Libre',
+      subscriptionEndDate: null,
+      hasPin: false,
+      token: freshToken,
+      refreshToken: 'login-refresh-token',
+      expiresAt: new Date(Date.now() + 3600_000).toISOString()
+    });
+
+    expect(login).toEqual({ success: true, unsyncedCount: 0 });
+    expect(useAuthStore.getState().reauthRequired).toBe(false);
+    expect(useAuthStore.getState().firebaseToken).toBe(freshToken);
+    expect(await db.syncQueue.get('queued-sale')).toMatchObject({ status: 'Pending', retryCount: 0 });
+  });
+
+  it('uses a newer access token stored by another tab instead of rotating again', async () => {
+    const axios = (await import('axios')).default;
+    const tenantId = crypto.randomUUID();
+    const userId = crypto.randomUUID();
+    const expiredToken = makeJwt({ sub: userId, exp: Math.floor(Date.now() / 1000) - 120 });
+    const freshToken = makeJwt({ sub: userId, exp: Math.floor(Date.now() / 1000) + 3600 });
+    useAuthStore.getState().setFirebaseToken(freshToken);
+    useAuthStore.getState().setRefreshToken('rotated-by-other-tab');
+    useAuthStore.setState({
+      tenantId,
+      userId,
+      firebaseToken: expiredToken,
+      refreshToken: 'stale-refresh-token',
+      businessName: 'Ate Rose Tindahan',
+      userPhone: '09181234567'
+    });
+
+    const refreshSpy = vi.spyOn(axios, 'post');
+    const previousAdapter = apiClient.defaults.adapter;
+    const provisionHeaders: string[] = [];
+    apiClient.defaults.adapter = async (config) => {
+      provisionHeaders.push(headerValue(config));
+      return {
+        status: 200,
+        statusText: 'OK',
+        data: { tenantId, userId },
+        headers: {},
+        config
+      } as any;
+    };
+
+    try {
+      await ensureTenantProvisioned();
+    } finally {
+      apiClient.defaults.adapter = previousAdapter;
+      refreshSpy.mockRestore();
+    }
+
+    expect(refreshSpy).not.toHaveBeenCalled();
+    expect(provisionHeaders).toEqual([`Bearer ${freshToken}`]);
+    expect(useAuthStore.getState().firebaseToken).toBe(freshToken);
+    expect(useAuthStore.getState().refreshToken).toBe('rotated-by-other-tab');
   });
 });
 
