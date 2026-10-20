@@ -164,7 +164,15 @@ export const SessionLockModal: React.FC = () => {
               if (failure.isLockedOut) {
                 setError(t.settings.pinLockedError.replace('{minutes}', String(failure.lockoutMinutes || 15)));
               } else {
-                setError(apiErr?.response?.data?.message || t.settings.invalidPinOrPassword);
+                const rawMsg = apiErr?.response?.data?.message || t.settings.invalidPinOrPassword;
+                const lockMsg = typeof rawMsg === 'string'
+                  ? rawMsg
+                    .replace(/email o PIN code/gi, 'PIN code')
+                    .replace(/email or PIN code/gi, 'PIN code')
+                    .replace(/email o PIN/gi, 'PIN')
+                    .replace(/email or PIN/gi, 'PIN')
+                  : rawMsg;
+                setError(lockMsg);
               }
             }
             setPin('');
@@ -234,12 +242,19 @@ export const SessionLockModal: React.FC = () => {
                     maxLength={6}
                     value={pin}
                     onChange={(_, data) => setPin(data.value.replace(/\D/g, '').slice(0, 6))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && pin.length >= 4 && !isVerifying && !isLocked) {
+                        e.preventDefault();
+                        void handleUnlock();
+                      }
+                    }}
                     placeholder="••••"
                     aria-label={t.landing.pinLabel}
                     style={{ textAlign: 'center', fontSize: '24px', letterSpacing: '8px' }}
                     contentBefore={<KeyRegular />}
                     autoFocus
                     disabled={isVerifying || isLocked}
+                    aria-invalid={Boolean(displayedError)}
                   />
                 </Field>
 
