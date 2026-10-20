@@ -59,6 +59,10 @@ interface AuthState {
   subscriptionEndDate: string | null;
   firebaseToken: string | null;
   refreshToken: string | null;
+  /** Access token could not be renewed. Sign in again without clearing local data. */
+  reauthRequired: boolean;
+  /** UI asked to open the login screen for that sign-in. */
+  reauthRequested: boolean;
   consentAccepted: boolean;
   termsAcceptedVersion: string | null;
   isPrivacyNoticeOpen: boolean;
@@ -91,6 +95,10 @@ interface AuthState {
   setSubscription: (tier: PlanTier, subscriptionEndDate?: string | null) => void;
   setFirebaseToken: (token: string | null) => void;
   setRefreshToken: (token: string | null) => void;
+  setReauthRequired: (required: boolean) => void;
+  requestReauth: () => void;
+  clearReauthRequest: () => void;
+  adoptStoredSessionTokens: () => void;
   openOnboarding: (mode?: 'initial' | 'edit') => void;
   resolveOnboardingStatus: (hasExistingStore: boolean) => void;
   closeOnboarding: () => void;
@@ -129,6 +137,7 @@ export const STORAGE_KEY_ONBOARDED = 'fluent_tindahan_onboarded_v1';
 export const STORAGE_KEY_TOKEN = 'fluent_tindahan_auth_token_v1';
 export const LEGACY_STORAGE_KEY_FIREBASE_TOKEN = 'fluent_tindahan_firebase_token_v1';
 export const STORAGE_KEY_REFRESH_TOKEN = 'fluent_tindahan_refresh_token_v1';
+export const STORAGE_KEY_REAUTH_REQUIRED = 'fluent_tindahan_reauth_required_v1';
 
 const initialConsent = localStorage.getItem(STORAGE_KEY_CONSENT) === 'true';
 const initialTermsVersion = localStorage.getItem(STORAGE_KEY_TERMS_VERSION);
@@ -150,6 +159,7 @@ const initialOwnerName = localStorage.getItem(STORAGE_KEY_OWNER_NAME) ?? DEMO_OW
 const initialUserPhone = localStorage.getItem(STORAGE_KEY_USER_PHONE) ?? DEMO_PHONE;
 const initialToken = localStorage.getItem(STORAGE_KEY_TOKEN) ?? localStorage.getItem(LEGACY_STORAGE_KEY_FIREBASE_TOKEN);
 const initialRefreshToken = localStorage.getItem(STORAGE_KEY_REFRESH_TOKEN);
+const initialReauthRequired = localStorage.getItem(STORAGE_KEY_REAUTH_REQUIRED) === 'true';
 const hasSavedStoreProfile = Boolean(
   localStorage.getItem(STORAGE_KEY_STORE_NAME)
   || localStorage.getItem(STORAGE_KEY_OWNER_NAME)
@@ -196,6 +206,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   subscriptionEndDate: initialSubsEnd,
   firebaseToken: initialToken,
   refreshToken: initialRefreshToken,
+  reauthRequired: initialReauthRequired,
+  reauthRequested: false,
   offlineFailedPinAttempts: isNaN(initialOfflineFailures) ? 0 : initialOfflineFailures,
   offlinePinLockoutEnd: initialOfflineLockoutEnd,
   consentAccepted: initialConsent,
@@ -411,6 +423,39 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ refreshToken: token });
   },
 
+  setReauthRequired: (required: boolean) => {
+    if (required) {
+      localStorage.setItem(STORAGE_KEY_REAUTH_REQUIRED, 'true');
+      set({ reauthRequired: true });
+      return;
+    }
+    localStorage.removeItem(STORAGE_KEY_REAUTH_REQUIRED);
+    set({ reauthRequired: false, reauthRequested: false });
+  },
+
+  requestReauth: () => {
+    localStorage.setItem(STORAGE_KEY_REAUTH_REQUIRED, 'true');
+    set({ reauthRequired: true, reauthRequested: true });
+    if (typeof window !== 'undefined' && window.history?.replaceState) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', 'login');
+      window.history.replaceState(null, '', url.pathname + url.search);
+    }
+  },
+
+  clearReauthRequest: () => set({ reauthRequested: false }),
+
+  adoptStoredSessionTokens: () => {
+    const token = localStorage.getItem(STORAGE_KEY_TOKEN) ?? localStorage.getItem(LEGACY_STORAGE_KEY_FIREBASE_TOKEN);
+    const refresh = localStorage.getItem(STORAGE_KEY_REFRESH_TOKEN);
+    const current = get();
+    if (token === current.firebaseToken && refresh === current.refreshToken) return;
+    set({
+      firebaseToken: token,
+      refreshToken: refresh
+    });
+  },
+
   openOnboarding: (mode: 'initial' | 'edit' = 'initial') => {
     set({ isOnboardingOpen: true, onboardingMode: mode });
   },
@@ -598,6 +643,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (payload.refreshToken) {
       localStorage.setItem(STORAGE_KEY_REFRESH_TOKEN, payload.refreshToken);
     }
+    localStorage.removeItem(STORAGE_KEY_REAUTH_REQUIRED);
     localStorage.setItem(STORAGE_KEY_TIER, payload.tier);
     if (payload.subscriptionEndDate) {
       localStorage.setItem(STORAGE_KEY_SUBS_END, payload.subscriptionEndDate);
@@ -627,6 +673,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       subscriptionEndDate: payload.subscriptionEndDate,
       firebaseToken: payload.token,
       refreshToken: payload.refreshToken ?? get().refreshToken,
+      reauthRequired: false,
+      reauthRequested: false,
       isOnboarded: true,
       isOnboardingStatusReady: true,
       isOnboardingOpen: false
@@ -681,6 +729,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       STORAGE_KEY_TOKEN,
       LEGACY_STORAGE_KEY_FIREBASE_TOKEN,
       STORAGE_KEY_REFRESH_TOKEN,
+      STORAGE_KEY_REAUTH_REQUIRED,
       STORAGE_KEY_TIER,
       STORAGE_KEY_SUBS_END,
       STORAGE_KEY_LOCAL_TENANT_ID,
@@ -715,6 +764,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       subscriptionEndDate: null,
       firebaseToken: null,
       refreshToken: null,
+      reauthRequired: false,
+      reauthRequested: false,
       isOnboarded: false,
       isOnboardingStatusReady: true,
       isOnboardingOpen: false,
@@ -724,3 +775,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     return { success: true, unsyncedCount: 0 };
   }
 }));
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (
+      event.key !== null
+      && event.key !== STORAGE_KEY_TOKEN
+      && event.key !== LEGACY_STORAGE_KEY_FIREBASE_TOKEN
+      && event.key !== STORAGE_KEY_REFRESH_TOKEN
+    ) {
+      return;
+    }
+    useAuthStore.getState().adoptStoredSessionTokens();
+  });
+}

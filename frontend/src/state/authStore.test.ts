@@ -449,7 +449,9 @@ describe('authStore', () => {
       ...newTenantPayload,
       tenantId: 'original-tenant-id'
     };
+    useAuthStore.getState().setReauthRequired(true);
     const sameResult = await useAuthStore.getState().loginWithAuthPayload(sameTenantPayload, undefined, false);
+    expect(useAuthStore.getState().reauthRequired).toBe(false);
     expect(sameResult.success).toBe(true);
     expect(sameResult.unsyncedCount).toBe(0);
     expect(await db.syncQueue.count()).toBe(1); // queue still preserved!

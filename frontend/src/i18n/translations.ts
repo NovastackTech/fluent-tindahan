@@ -12,6 +12,8 @@ export interface Translations {
     dlqWarning: string;
     differentAccountSyncBlocked: string;
     tenantProvisioningSyncBlocked: string;
+    sessionReauthRequired: string;
+    signInAgain: string;
     forceSync: string;
     themeToggleDark: string;
     themeToggleLight: string;
@@ -461,7 +463,6 @@ export interface Translations {
     currentPasswordPlaceholder: string;
     newPasswordLabel: string;
     newPasswordPlaceholder: string;
-    newPasswordMinLength: string;
     confirmNewPasswordLabel: string;
     confirmNewPasswordPlaceholder: string;
     passwordMismatchError: string;

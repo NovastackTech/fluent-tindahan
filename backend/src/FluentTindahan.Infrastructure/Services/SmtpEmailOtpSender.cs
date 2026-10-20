@@ -1,8 +1,9 @@
 using System.Net;
 using System.Net.Mail;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
 using FluentTindahan.Application.Common.Interfaces;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace FluentTindahan.Infrastructure.Services;
 
@@ -10,12 +11,26 @@ public sealed class SmtpEmailOtpSender : IEmailOtpSender
 {
     private readonly IConfiguration _configuration;
     private readonly ILogger<SmtpEmailOtpSender> _logger;
+    private readonly IHostEnvironment? _environment;
 
-    public SmtpEmailOtpSender(IConfiguration configuration, ILogger<SmtpEmailOtpSender> logger)
+    public SmtpEmailOtpSender(
+        IConfiguration configuration,
+        ILogger<SmtpEmailOtpSender> logger,
+        IHostEnvironment? environment = null)
     {
         _configuration = configuration;
         _logger = logger;
+        _environment = environment;
     }
+
+    private bool IsDevelopment() =>
+        _environment?.IsDevelopment() ??
+        string.Equals(_configuration["ASPNETCORE_ENVIRONMENT"], "Development", StringComparison.OrdinalIgnoreCase);
+
+    private bool IsDemoOrDev() =>
+        IsDevelopment() ||
+        string.Equals(_configuration["DemoMode"], "true", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(_configuration["DEMO_MODE"], "true", StringComparison.OrdinalIgnoreCase);
 
     public async Task SendOtpAsync(
         string email,
@@ -36,17 +51,23 @@ public sealed class SmtpEmailOtpSender : IEmailOtpSender
 
         var recipientName = string.IsNullOrWhiteSpace(ownerName) ? "Store Owner" : ownerName.Trim();
 
-        var isDemoOrDev = _configuration["DemoMode"] == "true" ||
-                          string.Equals(_configuration["ASPNETCORE_ENVIRONMENT"], "Development", StringComparison.OrdinalIgnoreCase);
-
-        // Fallback to console log if SMTP host is not configured
+        // Fallback to console log if SMTP host is not configured (allowed in Development or DemoMode)
         if (string.IsNullOrWhiteSpace(host))
         {
-            if (!isDemoOrDev)
-                throw new InvalidOperationException("SMTP is not configured.");
+            if (IsDemoOrDev())
+            {
+                _logger.LogWarning(
+                    "[DEV/OFFLINE] SMTP host is not configured (Smtp:Host / SMTP_HOST). Email OTP dispatched for {Email} ({OwnerName}): {OtpCode}",
+                    email,
+                    recipientName,
+                    otpCode);
+                return;
+            }
 
-            _logger.LogWarning("[DEV] SMTP not configured. OTP for {Email}: {OtpCode}", email, otpCode);
-            return;
+            _logger.LogError(
+                "SMTP host is not configured (Smtp:Host / SMTP_HOST). Cannot send email OTP to {Email}",
+                email);
+            throw new InvalidOperationException("SMTP host is not configured (Smtp:Host / SMTP_HOST).");
         }
 
         try
@@ -87,8 +108,7 @@ public sealed class SmtpEmailOtpSender : IEmailOtpSender
     <span style=""font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 32px; font-weight: 700; letter-spacing: 8px; color: #0F6CBD;"">{otpCode}</span>
   </div>
   <p style=""color: #616161; font-size: 13px; line-height: 1.5; margin-bottom: 24px;"">
-    Ang code na ito ay may bisa sa loob ng <strong>10 minuto</strong>. Huwag itong ibahagi kaninuman.
-  </p>
+    Ang code na ito ay may bisa sa loob ng <strong>10 minuto</strong>. Huwag itong ibahagi kaninuman.</p>
   <hr style=""border: none; border-top: 1px solid #edebe9; margin: 20px 0;"" />
   <p style=""color: #8a8886; font-size: 12px; text-align: center; margin: 0;"">
     Fluent Tindahan &bull; Offline-First Sari-Sari Store Management
@@ -101,15 +121,28 @@ public sealed class SmtpEmailOtpSender : IEmailOtpSender
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                "Failed to send OTP email to {Email} via SMTP {Host}:{Port}",
-                email,
-                host,
-                port);
+            if (IsDemoOrDev())
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to send OTP email to {Email} via SMTP {Host}:{Port}. Dev/Demo fallback OTP code: {OtpCode}",
+                    email,
+                    host,
+                    port,
+                    otpCode);
+            }
+            else
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to send OTP email to {Email} via SMTP {Host}:{Port}",
+                    email,
+                    host,
+                    port);
+            }
 
             // In development or demo mode, do not fail the request when SMTP host is offline
-            if (!isDemoOrDev)
+            if (!IsDemoOrDev())
             {
                 throw;
             }

@@ -3,14 +3,6 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Hosting;
-using Microsoft.IdentityModel.Tokens;
-using Moq;
 using FluentTindahan.Application.Common.Interfaces;
 using FluentTindahan.Domain.Entities;
 using FluentTindahan.Domain.Enums;
@@ -19,6 +11,14 @@ using FluentTindahan.Infrastructure.Persistence;
 using FluentTindahan.Infrastructure.Services;
 using FluentTindahan.WebApi.Controllers;
 using FluentTindahan.WebApi.Controllers.Helpers;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
+using Microsoft.IdentityModel.Tokens;
+using Moq;
 using Npgsql;
 using Xunit;
 
@@ -1539,6 +1539,60 @@ public class AuthControllerTests
         }, CancellationToken.None);
 
         result.Result.Should().BeOfType<UnauthorizedObjectResult>();
+    }
+
+    [Fact]
+    public async Task ExpiredAccessToken_IsRejectedByApiValidation_AndRefreshIssuesAValidAccessToken()
+    {
+        // Access tokens last 60 minutes. Issue one far enough in the past that the API's
+        // 1-minute clock skew still treats it as expired, while the 30-day refresh token remains valid.
+        var issuedAt = DateTimeOffset.UtcNow.AddMinutes(-70);
+        var timeProvider = new MutableTimeProvider(issuedAt);
+        var (context, _) = CreateInMemoryContext();
+        var jwtService = CreateJwtTokenService(timeProvider: timeProvider);
+        var controller = CreateController(context, jwtService, timeProvider: timeProvider);
+
+        var registerResult = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "expired.access@tindahan.ph",
+            Password = "Password123!",
+            BusinessName = "Expired Access Store"
+        }, CancellationToken.None);
+
+        var registerDto = ((OkObjectResult)registerResult.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        registerDto.Token.Should().NotBeNullOrWhiteSpace();
+        registerDto.RefreshToken.Should().NotBeNullOrWhiteSpace();
+
+        var validationParameters = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(TestJwtSecret)),
+            ValidateIssuer = true,
+            ValidIssuer = TestIssuer,
+            ValidateAudience = true,
+            ValidAudience = TestAudience,
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromMinutes(1)
+        };
+
+        var tokenHandler = new JwtSecurityTokenHandler();
+        var expired = () => tokenHandler.ValidateToken(registerDto.Token, validationParameters, out _);
+        expired.Should().Throw<SecurityTokenExpiredException>();
+
+        timeProvider.SetUtcNow(DateTimeOffset.UtcNow);
+        var refreshResult = await controller.Refresh(new AuthController.RefreshTokenRequest
+        {
+            RefreshToken = registerDto.RefreshToken!
+        }, CancellationToken.None);
+
+        refreshResult.Result.Should().BeOfType<OkObjectResult>();
+        var refreshDto = ((OkObjectResult)refreshResult.Result!).Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        refreshDto.Token.Should().NotBe(registerDto.Token);
+        refreshDto.RefreshToken.Should().NotBeNullOrWhiteSpace();
+
+        var principal = tokenHandler.ValidateToken(refreshDto.Token, validationParameters, out var validatedToken);
+        validatedToken.Should().BeOfType<JwtSecurityToken>();
+        principal.FindFirst("tenant_id")!.Value.Should().Be(registerDto.TenantId.ToString());
     }
 
     [Fact]
@@ -3733,6 +3787,22 @@ public class AuthControllerTests
         verifiedUser.EmailVerified.Should().BeTrue();
         verifiedUser.EmailOtpHash.Should().BeNull();
         verifiedUser.EmailOtpExpiresAt.Should().BeNull();
+
+        // Subsequent verify call on already-verified account returns 400 BadRequest and mints no tokens
+        var alreadyVerifiedResult = await controller.VerifyEmailOtp(new AuthController.VerifyEmailOtpRequest
+        {
+            Otp = "123456"
+        }, CancellationToken.None);
+        alreadyVerifiedResult.Result.Should().BeOfType<BadRequestObjectResult>();
+
+        // Unauthenticated caller attempting takeover with already-verified email is rejected
+        var takeoverController = CreateController(context);
+        var takeoverResult = await takeoverController.VerifyEmailOtp(new AuthController.VerifyEmailOtpRequest
+        {
+            Email = "suki.otp@example.ph",
+            Otp = "000000"
+        }, CancellationToken.None);
+        takeoverResult.Result.Should().BeOfType<BadRequestObjectResult>();
     }
 
     [Fact]
@@ -4224,12 +4294,14 @@ public class AuthControllerTests
         forgotResult.Should().BeOfType<OkObjectResult>();
         dispatchedOtp.Should().NotBeNullOrWhiteSpace().And.HaveLength(6);
 
-        // Enforces cooldown on immediate second request
+        // Anti-enumeration: cooldown returns generic 200 without dispatching a new email
+        dispatchedOtp = null;
         var cooldownResult = await controller.ForgotPassword(new AuthController.ForgotPasswordRequest
         {
             Email = "forgotuser@tindahan.ph"
         }, CancellationToken.None);
-        cooldownResult.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(429);
+        cooldownResult.Should().BeOfType<OkObjectResult>();
+        dispatchedOtp.Should().BeNull();
     }
 
     [Fact]
@@ -4244,6 +4316,42 @@ public class AuthControllerTests
         }, CancellationToken.None);
 
         forgotResult.Should().BeOfType<OkObjectResult>();
+    }
+
+    [Fact]
+    public async Task RegisterAndLogin_WhenEmailSenderThrows_DoesNotReturn500()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var failingOtpSender = new Mock<IEmailOtpSender>();
+        failingOtpSender
+            .Setup(s => s.SendOtpAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new System.Net.Mail.SmtpException("Connection refused"));
+
+        var controller = CreateController(context, emailOtpSender: failingOtpSender.Object);
+
+        // Register succeeds despite SMTP failure
+        var regResult = await controller.Register(new AuthController.RegisterRequest
+        {
+            Email = "smtp.fail@tindahan.ph",
+            Password = "Password123!",
+            BusinessName = "Offline SMTP Store"
+        }, CancellationToken.None);
+
+        var regOk = regResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var regDto = regOk.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        regDto.Email.Should().Be("smtp.fail@tindahan.ph");
+        regDto.RequiresEmailVerification.Should().BeTrue();
+
+        // Login succeeds despite SMTP failure
+        var loginResult = await controller.Login(new AuthController.LoginRequest
+        {
+            Email = "smtp.fail@tindahan.ph",
+            Password = "Password123!"
+        }, CancellationToken.None);
+
+        var loginOk = loginResult.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var loginDto = loginOk.Value.Should().BeOfType<AuthController.AuthResponseDto>().Subject;
+        loginDto.Email.Should().Be("smtp.fail@tindahan.ph");
     }
 
     [Fact]

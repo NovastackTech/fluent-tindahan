@@ -1,5 +1,5 @@
-import axios from 'axios';
-import { useAuthStore } from '../state/authStore';
+import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
+import { STORAGE_KEY_REFRESH_TOKEN, STORAGE_KEY_TOKEN, useAuthStore } from '../state/authStore';
 import { db } from '../db/db';
 import { useGCashFeeStore } from '../state/gcashFeeStore';
 import { useLanguageStore } from '../state/languageStore';
@@ -35,22 +35,292 @@ export class TenantProvisioningError extends Error {
   }
 }
 
-function getAuthenticatedUserId(token: string): string | null {
-  const payloadSegment = token.split('.')[1];
-  if (!payloadSegment) return null;
+/** The refresh token cannot renew this session. Local queues stay on the device. */
+export class SessionReauthRequiredError extends Error {
+  constructor() {
+    super(translations[useLanguageStore.getState().language].common.sessionReauthRequired);
+    this.name = 'SessionReauthRequiredError';
+  }
+}
 
+const ACCESS_TOKEN_REFRESH_SKEW_MS = 60_000;
+const REFRESH_LOCK_KEY = 'fluent_tindahan_refresh_lock_v1';
+const REFRESH_LOCK_TTL_MS = 15_000;
+const PUBLIC_AUTH_PATH = /\/auth\/(login-pin|login|register|google|refresh|logout)(?:\?|$)/;
+
+interface JwtPayload {
+  sub?: unknown;
+  exp?: unknown;
+}
+
+export function resetTenantProvisionCache(): void {
+  provisionedSessions.clear();
+  provisioningPromises.clear();
+}
+
+function decodeJwtPayload(segment: string): JwtPayload | null {
   try {
-    const base64 = payloadSegment.replace(/-/g, '+').replace(/_/g, '/');
-    const payload = JSON.parse(globalThis.atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '='))) as {
-      sub?: unknown;
-    };
-    return typeof payload.sub === 'string' && GUID_PATTERN.test(payload.sub) ? payload.sub : null;
+    const base64 = segment.replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(globalThis.atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '='))) as JwtPayload;
   } catch {
     return null;
   }
 }
 
+export function isAccessTokenUsable(token: string | null, nowMs = Date.now()): boolean {
+  if (!token) return false;
+  const parts = token.split('.');
+  if (parts.length < 2 || !parts[1]) return true;
+  const payload = decodeJwtPayload(parts[1]);
+  if (!payload) return false;
+  if (typeof payload.exp !== 'number') return true;
+  return payload.exp * 1000 - nowMs > ACCESS_TOKEN_REFRESH_SKEW_MS;
+}
+
+function tokenExpiryMs(token: string | null): number | null {
+  if (!token) return null;
+  const parts = token.split('.');
+  if (parts.length < 2 || !parts[1]) return null;
+  const payload = decodeJwtPayload(parts[1]);
+  return payload && typeof payload.exp === 'number' ? payload.exp * 1000 : null;
+}
+
+function preferAccessToken(memory: string | null, stored: string | null): string | null {
+  if (!stored || stored === memory) return memory || stored;
+  const memoryOk = isAccessTokenUsable(memory);
+  const storedOk = isAccessTokenUsable(stored);
+  if (storedOk && !memoryOk) return stored;
+  if (memoryOk && !storedOk) return memory;
+  if (storedOk && memoryOk) {
+    return (tokenExpiryMs(stored) ?? 0) >= (tokenExpiryMs(memory) ?? 0) ? stored : memory;
+  }
+  return stored || memory;
+}
+
+function readStorage(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function latestAccessToken(): string | null {
+  const memory = useAuthStore.getState().firebaseToken;
+  const stored = readStorage(STORAGE_KEY_TOKEN);
+  const chosen = preferAccessToken(memory, stored);
+  if (chosen && chosen !== memory) {
+    const storedRefresh = readStorage(STORAGE_KEY_REFRESH_TOKEN);
+    useAuthStore.setState({
+      firebaseToken: chosen,
+      ...(storedRefresh ? { refreshToken: storedRefresh } : {})
+    });
+  }
+  return chosen;
+}
+
+function latestRefreshToken(): string | null {
+  const memory = useAuthStore.getState().refreshToken;
+  const stored = readStorage(STORAGE_KEY_REFRESH_TOKEN);
+  if (stored && stored !== memory) {
+    useAuthStore.setState({ refreshToken: stored });
+    return stored;
+  }
+  return memory || stored;
+}
+
+function isPublicAuthRequest(url?: string): boolean {
+  return typeof url === 'string' && PUBLIC_AUTH_PATH.test(url);
+}
+
+function getErrorStatus(err: unknown): number | undefined {
+  const status = (err as { response?: { status?: unknown } })?.response?.status;
+  return typeof status === 'number' ? status : undefined;
+}
+
+function authorizationToken(headers: unknown): string | null {
+  if (!headers || typeof headers !== 'object') return null;
+  const bag = headers as { Authorization?: unknown; authorization?: unknown; get?: (name: string) => unknown };
+  const raw = bag.get?.('Authorization') ?? bag.Authorization ?? bag.authorization;
+  if (typeof raw !== 'string') return null;
+  const match = raw.match(/^Bearer\s+(.+)$/i);
+  return match?.[1] ?? null;
+}
+
+interface RefreshOptions {
+  force?: boolean;
+  rejectedAccessToken?: string | null;
+}
+
+let refreshPromise: Promise<void> | null = null;
+
+function startRefresh(options: RefreshOptions): Promise<void> {
+  if (!refreshPromise) {
+    refreshPromise = refreshAccessToken(options).finally(() => {
+      refreshPromise = null;
+    });
+  }
+  return refreshPromise;
+}
+
+export function ensureAccessTokenFresh(): Promise<void> | void {
+  const token = latestAccessToken();
+  if (useAuthStore.getState().reauthRequired && !isAccessTokenUsable(token)) {
+    throw new SessionReauthRequiredError();
+  }
+  if (isAccessTokenUsable(token)) {
+    if (useAuthStore.getState().reauthRequired) {
+      useAuthStore.getState().setReauthRequired(false);
+    }
+    return;
+  }
+  if (!latestRefreshToken()) return;
+  return startRefresh({ force: true, rejectedAccessToken: token });
+}
+
+function acquireRefreshLock(owner: string): boolean {
+  const now = Date.now();
+  const existing = readStorage(REFRESH_LOCK_KEY);
+  if (existing) {
+    try {
+      const parsed = JSON.parse(existing) as { owner?: string; expiresAt?: number };
+      if (parsed.owner && parsed.owner !== owner && typeof parsed.expiresAt === 'number' && parsed.expiresAt > now) {
+        return false;
+      }
+    } catch {
+      // Replace a corrupt lock.
+    }
+  }
+  try {
+    localStorage.setItem(REFRESH_LOCK_KEY, JSON.stringify({ owner, expiresAt: now + REFRESH_LOCK_TTL_MS }));
+  } catch {
+    return true;
+  }
+  return readStorage(REFRESH_LOCK_KEY)?.includes(owner) ?? false;
+}
+
+function releaseRefreshLock(owner: string): void {
+  if (readStorage(REFRESH_LOCK_KEY)?.includes(owner)) {
+    try {
+      localStorage.removeItem(REFRESH_LOCK_KEY);
+    } catch {
+      // The lock expires on its own.
+    }
+  }
+}
+
+async function waitForPeerRefresh(rejectedAccessToken: string | null): Promise<boolean> {
+  const started = Date.now();
+  while (Date.now() - started < 5000) {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const token = latestAccessToken();
+    if (isAccessTokenUsable(token) && token !== rejectedAccessToken) return true;
+  }
+  return false;
+}
+
+function markRefreshInvalid(presentedRefreshToken: string): void {
+  const storedRefresh = readStorage(STORAGE_KEY_REFRESH_TOKEN);
+  const memoryRefresh = useAuthStore.getState().refreshToken;
+  const latest = storedRefresh || memoryRefresh;
+  const access = latestAccessToken();
+  if (latest && latest !== presentedRefreshToken && isAccessTokenUsable(access)) {
+    if (useAuthStore.getState().reauthRequired) {
+      useAuthStore.getState().setReauthRequired(false);
+    }
+    return;
+  }
+  if (!storedRefresh || storedRefresh === presentedRefreshToken) {
+    useAuthStore.getState().setFirebaseToken(null);
+    useAuthStore.getState().setRefreshToken(null);
+  }
+  useAuthStore.getState().setReauthRequired(true);
+  throw new SessionReauthRequiredError();
+}
+
+async function refreshAccessToken(options: RefreshOptions): Promise<void> {
+  const rejectedAccessToken = options.rejectedAccessToken ?? null;
+  const current = latestAccessToken();
+  if (isAccessTokenUsable(current) && current !== rejectedAccessToken) {
+    if (useAuthStore.getState().reauthRequired) {
+      useAuthStore.getState().setReauthRequired(false);
+    }
+    return;
+  }
+  if (!options.force && isAccessTokenUsable(current)) return;
+
+  const refreshToken = latestRefreshToken();
+  if (!refreshToken) {
+    if (options.force) {
+      if (!isAccessTokenUsable(useAuthStore.getState().firebaseToken)) {
+        useAuthStore.getState().setFirebaseToken(null);
+      }
+      useAuthStore.getState().setReauthRequired(true);
+      throw new SessionReauthRequiredError();
+    }
+    return;
+  }
+
+  const lockOwner = createClientUuid();
+  if (!acquireRefreshLock(lockOwner)) {
+    if (await waitForPeerRefresh(rejectedAccessToken)) return;
+    if (!acquireRefreshLock(lockOwner)) {
+      throw new Error('Token refresh is already running in another tab');
+    }
+  }
+
+  let presentedRefreshToken = refreshToken;
+  try {
+    presentedRefreshToken = latestRefreshToken() ?? refreshToken;
+    const adopted = latestAccessToken();
+    if (isAccessTokenUsable(adopted) && adopted !== rejectedAccessToken) return;
+
+    const refreshResponse = await axios.post<{
+      token: string;
+      refreshToken?: string;
+    }>('/api/auth/refresh', { refreshToken: presentedRefreshToken }, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 15000
+    });
+
+    const newToken = refreshResponse.data.token;
+    const newRefreshToken = refreshResponse.data.refreshToken ?? presentedRefreshToken;
+    if (!newToken) {
+      markRefreshInvalid(presentedRefreshToken);
+      return;
+    }
+    useAuthStore.getState().setFirebaseToken(newToken);
+    if (newRefreshToken) {
+      useAuthStore.getState().setRefreshToken(newRefreshToken);
+    }
+    useAuthStore.getState().setReauthRequired(false);
+  } catch (refreshErr) {
+    if (refreshErr instanceof SessionReauthRequiredError) throw refreshErr;
+    const refreshStatus = getErrorStatus(refreshErr);
+    if (refreshStatus === 401 || refreshStatus === 403) {
+      markRefreshInvalid(presentedRefreshToken);
+      return;
+    }
+    throw refreshErr;
+  } finally {
+    releaseRefreshLock(lockOwner);
+  }
+}
+
+function getAuthenticatedUserId(token: string): string | null {
+  const payloadSegment = token.split('.')[1];
+  if (!payloadSegment) return null;
+  const payload = decodeJwtPayload(payloadSegment);
+  return typeof payload?.sub === 'string' && GUID_PATTERN.test(payload.sub) ? payload.sub : null;
+}
+
 export async function ensureTenantProvisioned(): Promise<void> {
+  const initialAuth = useAuthStore.getState();
+  if (!initialAuth.isOnboardingStatusReady || !initialAuth.isOnboarded || !initialAuth.tenantId) return;
+
+  const refreshing = ensureAccessTokenFresh();
+  if (refreshing) await refreshing;
+
   const auth = useAuthStore.getState();
   const {
     tenantId,
@@ -59,13 +329,11 @@ export async function ensureTenantProvisioned(): Promise<void> {
     businessName,
     userPhone,
     userEmail,
-    isOnboarded,
-    isOnboardingStatusReady,
     locallyCreatedTenantId,
     serverConfirmedTenantId,
     serverConfirmedUserId
   } = auth;
-  if (!isOnboardingStatusReady || !isOnboarded || !tenantId) return;
+  if (!tenantId) return;
 
   const authenticatedUserId = firebaseToken ? getAuthenticatedUserId(firebaseToken) : null;
   if (firebaseToken && !authenticatedUserId) {
@@ -154,7 +422,12 @@ async function provisionTenantSession({
       email: userEmail || undefined
     });
   } catch (err) {
-    const status = (err as { response?: { status?: unknown } })?.response?.status;
+    if (err instanceof SessionReauthRequiredError) throw err;
+    const status = getErrorStatus(err);
+    if (status === 401) {
+      useAuthStore.getState().setReauthRequired(true);
+      throw new SessionReauthRequiredError();
+    }
     if (typeof status === 'number' && status >= 400 && status < 500) {
       throw new TenantProvisioningError(status);
     }
@@ -243,101 +516,59 @@ async function provisionTenantSession({
   }
 
   useAuthStore.getState().confirmServerIdentity(canonicalTenantId, canonicalUserId);
-  provisionedSessions.add(`${canonicalTenantId}:${canonicalUserId}:${firebaseToken ?? ''}`);
+  const activeToken = useAuthStore.getState().firebaseToken ?? firebaseToken;
+  provisionedSessions.add(`${canonicalTenantId}:${canonicalUserId}:${activeToken ?? ''}`);
 }
 
-apiClient.interceptors.request.use((config) => {
+apiClient.interceptors.request.use(async (config) => {
+  if (!isPublicAuthRequest(config.url)) {
+    await ensureAccessTokenFresh();
+  }
+
   const { tenantId, firebaseToken } = useAuthStore.getState();
 
   if (tenantId) {
     config.headers['X-Tenant-Id'] = tenantId;
   }
 
-  if (firebaseToken) {
+  if (firebaseToken && isAccessTokenUsable(firebaseToken)) {
     config.headers['Authorization'] = `Bearer ${firebaseToken}`;
   }
 
   return config;
 });
 
-let isRefreshing = false;
-let failedQueue: Array<{
-  resolve: (value: unknown) => void;
-  reject: (reason?: unknown) => void;
-}> = [];
-
-const processQueue = (error: unknown, token: string | null = null) => {
-  failedQueue.forEach((prom) => {
-    if (error) {
-      prom.reject(error);
-    } else {
-      prom.resolve(token);
-    }
-  });
-  failedQueue = [];
-};
-
 apiClient.interceptors.response.use(
   (response) => response,
-  async (error) => {
-    const originalRequest = error?.config;
+  async (error: AxiosError) => {
+    const originalRequest = error?.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined;
     if (
       error?.response?.status === 401 &&
       originalRequest &&
       !originalRequest._retry &&
-      !originalRequest.url?.includes('/auth/refresh')
+      !isPublicAuthRequest(originalRequest.url)
     ) {
-      const { refreshToken, setFirebaseToken, setRefreshToken } = useAuthStore.getState();
-      if (!refreshToken) {
-        return Promise.reject(error);
-      }
-
-      if (isRefreshing) {
-        return new Promise((resolve, reject) => {
-          failedQueue.push({ resolve, reject });
-        })
-          .then((newToken) => {
-            originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
-            return apiClient.request(originalRequest);
-          })
-          .catch((err) => Promise.reject(err));
-      }
-
       originalRequest._retry = true;
-      isRefreshing = true;
-
       try {
-        const refreshResponse = await axios.post<{
-          token: string;
-          refreshToken?: string;
-        }>('/api/auth/refresh', { refreshToken }, {
-          headers: { 'Content-Type': 'application/json' },
-          timeout: 15000
+        await startRefresh({
+          force: true,
+          rejectedAccessToken: authorizationToken(originalRequest.headers)
         });
-
-        const newToken = refreshResponse.data.token;
-        const newRefreshToken = refreshResponse.data.refreshToken ?? refreshToken;
-
-        setFirebaseToken(newToken);
-        if (newRefreshToken) {
-          setRefreshToken(newRefreshToken);
+        const newToken = useAuthStore.getState().firebaseToken;
+        if (!newToken) {
+          useAuthStore.getState().setReauthRequired(true);
+          throw new SessionReauthRequiredError();
         }
-
-        processQueue(null, newToken);
         originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
         return apiClient.request(originalRequest);
-      } catch (refreshErr: any) {
-        processQueue(refreshErr, null);
-        const refreshStatus = refreshErr?.response?.status;
-        if (refreshStatus === 401 || refreshStatus === 403) {
-          setFirebaseToken(null);
-          setRefreshToken(null);
-        } else {
-          delete originalRequest._retry;
+      } catch (refreshErr) {
+        if (!(refreshErr instanceof SessionReauthRequiredError)) {
+          const refreshStatus = getErrorStatus(refreshErr);
+          if (refreshStatus !== 401 && refreshStatus !== 403) {
+            delete originalRequest._retry;
+          }
         }
         return Promise.reject(refreshErr);
-      } finally {
-        isRefreshing = false;
       }
     }
 

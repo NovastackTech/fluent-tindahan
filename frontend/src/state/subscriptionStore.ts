@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import {
   apiClient,
   ensureTenantProvisioned,
+  SessionReauthRequiredError,
   TenantAccountMismatchError,
   TenantProvisioningError
 } from '../services/apiClient';
@@ -181,7 +182,11 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
         const response = await apiClient.get('/billing/subscription');
         await persistAndApplySubscriptionState(response.data, set);
       } catch (err) {
-        if (err instanceof TenantAccountMismatchError || err instanceof TenantProvisioningError) {
+        if (
+          err instanceof TenantAccountMismatchError
+          || err instanceof TenantProvisioningError
+          || err instanceof SessionReauthRequiredError
+        ) {
           set({
             isLoading: false,
             error: err.message

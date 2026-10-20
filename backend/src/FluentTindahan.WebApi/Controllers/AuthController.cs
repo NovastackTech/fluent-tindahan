@@ -1,9 +1,4 @@
 using System.ComponentModel.DataAnnotations;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.RateLimiting;
-using Microsoft.EntityFrameworkCore;
 using FluentTindahan.Application.Common.Interfaces;
 using FluentTindahan.Domain.Entities;
 using FluentTindahan.Domain.Enums;
@@ -11,6 +6,11 @@ using FluentTindahan.Domain.Interfaces;
 using FluentTindahan.Infrastructure.Services;
 using FluentTindahan.WebApi.Authorization;
 using FluentTindahan.WebApi.Controllers.Helpers;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.EntityFrameworkCore;
 
 namespace FluentTindahan.WebApi.Controllers;
 
@@ -27,6 +27,7 @@ public class AuthController : ControllerBase
     private readonly IEmailOtpSender? _emailOtpSender;
     private readonly IConfiguration? _configuration;
     private readonly IWebHostEnvironment? _hostEnvironment;
+    private readonly ILogger<AuthController>? _logger;
 
     public const int DefaultGraceWindowSeconds = AuthRefreshTokenHelper.DefaultGraceWindowSeconds;
 
@@ -38,7 +39,8 @@ public class AuthController : ControllerBase
         IGoogleAuthService? googleAuthService = null,
         IEmailOtpSender? emailOtpSender = null,
         IConfiguration? configuration = null,
-        IWebHostEnvironment? hostEnvironment = null)
+        IWebHostEnvironment? hostEnvironment = null,
+        ILogger<AuthController>? logger = null)
     {
         _context = context;
         _jwtTokenService = jwtTokenService;
@@ -49,6 +51,7 @@ public class AuthController : ControllerBase
         _emailOtpSender = emailOtpSender;
         _configuration = configuration;
         _hostEnvironment = hostEnvironment;
+        _logger = logger;
     }
 
     private bool IsDevOrDemoMode()
@@ -472,7 +475,14 @@ public class AuthController : ControllerBase
 
         if (!string.IsNullOrEmpty(pendingOtpCode) && _emailOtpSender != null)
         {
-            await _emailOtpSender.SendOtpAsync(user.Email, pendingOtpCode, user.OwnerName, cancellationToken);
+            try
+            {
+                await _emailOtpSender.SendOtpAsync(user.Email, pendingOtpCode, user.OwnerName, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Failed to send registration OTP email to {Email}. User can request resend.", user.Email);
+            }
         }
 
         AuthLockoutHelper.ResetIpPinThrottle(AuthClaimsHelper.GetClientIpAddress(HttpContext));
@@ -866,7 +876,14 @@ public class AuthController : ControllerBase
         await _context.SaveChangesAsync(cancellationToken);
         if (!string.IsNullOrEmpty(pendingOtpCode) && _emailOtpSender != null)
         {
-            await _emailOtpSender.SendOtpAsync(user.Email, pendingOtpCode, user.OwnerName, cancellationToken);
+            try
+            {
+                await _emailOtpSender.SendOtpAsync(user.Email, pendingOtpCode, user.OwnerName, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Failed to send login OTP email to {Email}. User can request resend.", user.Email);
+            }
         }
 
         AuthLockoutHelper.ResetIpPinThrottle(AuthClaimsHelper.GetClientIpAddress(HttpContext));
@@ -999,7 +1016,14 @@ public class AuthController : ControllerBase
             await _context.SaveChangesAsync(cancellationToken);
             if (!string.IsNullOrEmpty(pendingOtpCode) && _emailOtpSender != null)
             {
-                await _emailOtpSender.SendOtpAsync(freshUser.Email, pendingOtpCode, freshUser.OwnerName, cancellationToken);
+                try
+                {
+                    await _emailOtpSender.SendOtpAsync(freshUser.Email, pendingOtpCode, freshUser.OwnerName, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogError(ex, "Failed to send PIN login OTP email to {Email}. User can request resend.", freshUser.Email);
+                }
             }
 
             return Ok(AuthResponseBuilder.Build(freshUser, freshUser.Tenant, access, refreshToken));
@@ -1344,13 +1368,9 @@ public class AuthController : ControllerBase
             return Ok(new { message = "Kung may account para sa email na ito, nagpadala kami ng 6-digit verification code. / If an account exists for this email, we sent a 6-digit verification code." });
         }
 
-        if (!AuthOtpHelper.CanResendOtp(user, _timeProvider, out var retryAfterSeconds))
+        if (!AuthOtpHelper.CanResendOtp(user, _timeProvider, out _))
         {
-            return StatusCode(StatusCodes.Status429TooManyRequests, new
-            {
-                message = $"Maghintay ng {retryAfterSeconds} segundo bago humiling muli ng code. / Please wait {retryAfterSeconds} seconds before requesting a new code.",
-                retryAfterSeconds
-            });
+            return Ok(new { message = "Kung may account para sa email na ito, nagpadala kami ng 6-digit verification code. / If an account exists for this email, we sent a 6-digit verification code." });
         }
 
         var otpCode = AuthOtpHelper.IssueOtp(user, _timeProvider);
@@ -1358,7 +1378,14 @@ public class AuthController : ControllerBase
 
         if (_emailOtpSender != null)
         {
-            await _emailOtpSender.SendOtpAsync(user.Email, otpCode, user.OwnerName, cancellationToken);
+            try
+            {
+                await _emailOtpSender.SendOtpAsync(user.Email, otpCode, user.OwnerName, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Failed to send forgot-password OTP email to {Email}", user.Email);
+            }
         }
 
         return Ok(new
@@ -1399,7 +1426,6 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = "Hindi natagpuan ang account o hindi wasto ang verification code. / Account not found or invalid verification code." });
         }
 
-        var wasVerified = user.EmailVerified;
         var otpStatus = AuthOtpHelper.VerifyOtp(user, request.Otp, _timeProvider);
         if (otpStatus != OtpVerificationStatus.Success)
         {
@@ -1414,9 +1440,7 @@ public class AuthController : ControllerBase
         }
 
         user.PasswordHash = _passwordHasher.HashPassword(user, request.NewPassword);
-        if (!wasVerified) user.PinHash = null;
         AuthLockoutHelper.ResetPasswordLockout(user);
-        AuthLockoutHelper.ResetPinLockout(user);
         user.SessionsInvalidatedAt = _timeProvider.GetUtcNow();
 
         await AuthRefreshTokenHelper.RevokeAllForUserAsync(_context, user, user.Id, _timeProvider, cancellationToken);
@@ -1678,7 +1702,14 @@ public class AuthController : ControllerBase
 
         if (!string.IsNullOrEmpty(pendingOtpCode) && _emailOtpSender != null)
         {
-            await _emailOtpSender.SendOtpAsync(user.Email, pendingOtpCode, user.OwnerName, cancellationToken);
+            try
+            {
+                await _emailOtpSender.SendOtpAsync(user.Email, pendingOtpCode, user.OwnerName, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Failed to send profile update OTP email to {Email}. User can request resend.", user.Email);
+            }
         }
 
         var access = _jwtTokenService.GenerateAccessToken(user.Id, tenant.Id, email: user.Email, role: user.Role);
@@ -1712,10 +1743,7 @@ public class AuthController : ControllerBase
 
         if (user.EmailVerified)
         {
-            var existingAccess = _jwtTokenService.GenerateAccessToken(user.Id, user.TenantId, email: user.Email, role: user.Role);
-            var (existingRefresh, _, _, _) = AuthRefreshTokenHelper.IssueRefreshToken(_context, _jwtTokenService, user, user.TenantId, _timeProvider);
-            await _context.SaveChangesAsync(cancellationToken);
-            return Ok(AuthResponseBuilder.Build(user, user.Tenant, existingAccess, existingRefresh, user.OwnerName));
+            return BadRequest(new { message = "Beripikado na ang email address na ito. / This email address is already verified." });
         }
 
         var status = AuthOtpHelper.VerifyOtp(user, request.Otp, _timeProvider);

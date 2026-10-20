@@ -58,7 +58,7 @@ export const ChangePasswordDialog: React.FC<ChangePasswordDialogProps> = ({
 
   const handleSavePassword = async () => {
     if (!newPassword || newPassword.length < 6) {
-      setErrorMsg(t.settings.newPasswordMinLength);
+      setErrorMsg(t.onboarding.passwordMinLength || 'Password must be at least 6 characters.');
       return;
     }
 

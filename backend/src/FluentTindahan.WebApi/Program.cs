@@ -72,6 +72,16 @@ if (!builder.Environment.IsDevelopment() &&
     throw new InvalidOperationException("The committed JWT secret key has been burned and cannot be used in production. A new unique JWT_SECRET_KEY must be generated and configured per real deployment.");
 }
 
+if (!builder.Environment.IsDevelopment())
+{
+    var smtpHost = builder.Configuration["Smtp:Host"] ?? builder.Configuration["SMTP_HOST"];
+    var isDemo = string.Equals(builder.Configuration["DemoMode"], "true", StringComparison.OrdinalIgnoreCase);
+    if (string.IsNullOrWhiteSpace(smtpHost) && !isDemo)
+    {
+        throw new InvalidOperationException("Smtp:Host or SMTP_HOST must be configured in production.");
+    }
+}
+
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? JwtTokenService.DefaultIssuer;
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? JwtTokenService.DefaultAudience;
 var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret));
