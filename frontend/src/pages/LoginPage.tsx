@@ -388,8 +388,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
       return;
     }
 
-    if (forgotNewPassword.length < 6) {
-      setAuthErrors([t.settings.newPasswordMinLength]);
+    if (forgotNewPassword.length < 8) {
+      setAuthErrors([t.onboarding.passwordMinLength]);
       return;
     }
 
@@ -736,11 +736,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
               <Field
                 label={t.settings.newPasswordLabel}
                 required
-                hint={t.settings.newPasswordPlaceholder}
-                validationState={forgotNewPassword && forgotNewPassword.length < 6 ? 'error' : undefined}
+                hint={t.onboarding.passwordPlaceholder}
+                validationState={forgotNewPassword && forgotNewPassword.length < 8 ? 'error' : undefined}
                 validationMessage={
-                  forgotNewPassword && forgotNewPassword.length < 6
-                    ? t.settings.newPasswordMinLength
+                  forgotNewPassword && forgotNewPassword.length < 8
+                    ? t.onboarding.passwordMinLength
                     : undefined
                 }
                 style={{ marginBottom: tokens.spacingVerticalM }}
@@ -752,7 +752,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
                     setForgotNewPassword(d.value);
                     if (authErrors.length) setAuthErrors([]);
                   }}
-                  placeholder={t.settings.newPasswordPlaceholder}
+                  placeholder={t.onboarding.passwordPlaceholder}
                   contentBefore={<LockClosedRegular />}
                   contentAfter={
                     <Button
@@ -813,7 +813,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
                 disabled={
                   isSubmitting ||
                   forgotOtp.trim().length !== 6 ||
-                  forgotNewPassword.length < 6 ||
+                  forgotNewPassword.length < 8 ||
                   !forgotConfirmPassword ||
                   forgotConfirmPassword !== forgotNewPassword
                 }
