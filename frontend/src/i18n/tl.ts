@@ -4,7 +4,7 @@ const sharedProductFormTranslations = {
   tl: {
     productNameLabel: 'Pangalan ng Produkto:*',
     productNameRequired: 'Ilagay ang pangalan ng produkto.',
-    categoryLabel: 'Kategorya:*',
+    categoryLabel: 'Kategorya',
     costLabel: 'Puhunan (Cost Price ₱):*',
     costCannotBeNegative: 'Hindi maaaring negatibo ang puhunan.',
     costExceedsMax: 'Hindi maaaring lumampas sa ₱999,999.99 ang puhunan.',

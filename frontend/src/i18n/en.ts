@@ -4,7 +4,7 @@ const sharedProductFormTranslations = {
   en: {
     productNameLabel: 'Product Name:*',
     productNameRequired: 'Enter a product name.',
-    categoryLabel: 'Category:*',
+    categoryLabel: 'Category',
     costLabel: 'Cost Price (₱):*',
     costCannotBeNegative: 'Cost price cannot be negative.',
     costExceedsMax: 'Cost price cannot exceed ₱999,999.99.',

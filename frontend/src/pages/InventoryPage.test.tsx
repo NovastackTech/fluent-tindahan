@@ -134,7 +134,7 @@ describe('InventoryPage', () => {
   });
 
   it('shows inline validation when saving a product with a blank name', () => {
-    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => { });
     renderInventory();
     fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Produkto|Add Product/i }));
     fireEvent.click(screen.getByRole('button', { name: /I-save|Save/i }));
@@ -147,7 +147,7 @@ describe('InventoryPage', () => {
   });
 
   it('shows inline validation when retail price is not positive', async () => {
-    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => { });
     renderInventory();
     fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Produkto|Add Product/i }));
     fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }), {
@@ -177,7 +177,7 @@ describe('InventoryPage', () => {
   });
 
   it('shows inline validation when cost is negative', async () => {
-    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => { });
     renderInventory();
     fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Produkto|Add Product/i }));
     fireEvent.change(screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i }), {
