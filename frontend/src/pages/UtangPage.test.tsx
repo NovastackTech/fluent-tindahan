@@ -5,9 +5,11 @@ import { UtangPage } from './UtangPage';
 import { sariSariLightTheme } from '../theme/theme';
 import { db } from '../db/db';
 import { useAuthStore } from '../state/authStore';
+import { useLanguageStore } from '../state/languageStore';
 
 describe('UtangPage', () => {
   beforeEach(async () => {
+    useLanguageStore.setState({ language: 'tl' });
     useAuthStore.setState({ tenantId: 'tenant-1' });
     await db.customers.clear();
     await db.utangLedger.clear();

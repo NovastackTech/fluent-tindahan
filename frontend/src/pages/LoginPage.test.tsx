@@ -1043,4 +1043,77 @@ describe('LoginPage Component', () => {
       expect(banner.textContent).not.toContain('We sent');
     });
   });
+
+  it('validates short password and confirmation mismatch inline on reset password form', async () => {
+    act(() => {
+      useLanguageStore.getState().setLanguage('en');
+    });
+
+    renderLoginPage();
+
+    const forgotBtn = screen.getByTestId('login-forgot-password-btn');
+    await act(async () => {
+      fireEvent.click(forgotBtn);
+    });
+
+    const emailInput = screen.getByTestId('login-forgot-email-input');
+    const sendBtn = screen.getByTestId('login-forgot-send-btn');
+    await act(async () => {
+      fireEvent.change(emailInput, { target: { value: 'test@tindahan.ph' } });
+      fireEvent.click(sendBtn);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('login-reset-otp-input')).toBeInTheDocument();
+    });
+
+    const otpInput = screen.getByTestId('login-reset-otp-input');
+    const newPasswordInput = screen.getByTestId('login-reset-new-password-input');
+    const confirmInput = screen.getByTestId('login-reset-confirm-password-input');
+    const submitBtn = screen.getByTestId('login-reset-submit-btn');
+
+    // Fill valid OTP
+    await act(async () => {
+      fireEvent.change(otpInput, { target: { value: '123456' } });
+    });
+
+    // Enter short password (< 6 chars)
+    await act(async () => {
+      fireEvent.change(newPasswordInput, { target: { value: '123' } });
+    });
+
+    // Length error should appear inline without clicking submit
+    expect(screen.getByText(translations.en.onboarding.passwordMinLength || 'Password must be at least 8 characters.')).toBeInTheDocument();
+    expect(submitBtn).toBeDisabled();
+
+    // Type valid password length (>= 6 chars)
+    await act(async () => {
+      fireEvent.change(newPasswordInput, { target: { value: 'validpass123' } });
+    });
+
+    // Short password error disappears
+    expect(screen.queryByText(translations.en.onboarding.passwordMinLength || 'Password must be at least 8 characters.')).not.toBeInTheDocument();
+
+    // Enter mismatched confirmation
+    await act(async () => {
+      fireEvent.change(confirmInput, { target: { value: 'differentpass' } });
+    });
+
+    // Mismatch error appears inline as soon as confirmation differs
+    expect(screen.getByText(translations.en.settings.passwordMismatchError)).toBeInTheDocument();
+    expect(submitBtn).toBeDisabled();
+
+    // Fix confirmation to match
+    await act(async () => {
+      fireEvent.change(confirmInput, { target: { value: 'validpass123' } });
+    });
+
+    // Mismatch error disappears and submit button becomes enabled
+    expect(screen.queryByText(translations.en.settings.passwordMismatchError)).not.toBeInTheDocument();
+    expect(submitBtn).not.toBeDisabled();
+
+    act(() => {
+      useLanguageStore.getState().setLanguage('tl');
+    });
+  });
 });

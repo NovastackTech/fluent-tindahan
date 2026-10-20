@@ -737,6 +737,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
                 label={t.settings.newPasswordLabel}
                 required
                 hint={t.settings.newPasswordPlaceholder}
+                validationState={forgotNewPassword && forgotNewPassword.length < 6 ? 'error' : undefined}
+                validationMessage={
+                  forgotNewPassword && forgotNewPassword.length < 6
+                    ? t.onboarding.passwordMinLength || 'Password must be at least 6 characters.'
+                    : undefined
+                }
                 style={{ marginBottom: tokens.spacingVerticalM }}
               >
                 <Input
@@ -766,6 +772,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
               <Field
                 label={t.settings.confirmNewPasswordLabel}
                 required
+                validationState={
+                  forgotConfirmPassword && forgotConfirmPassword !== forgotNewPassword ? 'error' : undefined
+                }
+                validationMessage={
+                  forgotConfirmPassword && forgotConfirmPassword !== forgotNewPassword
+                    ? t.settings.passwordMismatchError || 'Passwords do not match.'
+                    : undefined
+                }
                 style={{ marginBottom: tokens.spacingVerticalM }}
               >
                 <Input
@@ -796,7 +810,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
                 appearance="primary"
                 size="large"
                 type="submit"
-                disabled={isSubmitting || forgotOtp.trim().length !== 6 || forgotNewPassword.length < 6 || !forgotConfirmPassword}
+                disabled={
+                  isSubmitting ||
+                  forgotOtp.trim().length !== 6 ||
+                  forgotNewPassword.length < 6 ||
+                  !forgotConfirmPassword ||
+                  forgotConfirmPassword !== forgotNewPassword
+                }
                 icon={isSubmitting ? <Spinner size="extra-tiny" /> : <CheckmarkCircleRegular />}
                 style={{ width: '100%', marginBottom: tokens.spacingVerticalS }}
                 data-testid="login-reset-submit-btn"
