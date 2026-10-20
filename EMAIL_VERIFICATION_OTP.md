@@ -19,3 +19,6 @@
      - Overwrites credentials on the unverified account (`PasswordHash = string.Empty`, `PinHash = null`, clears all OTP fields, resets lockouts).
      - Invalidates all prior sessions by setting `SessionsInvalidatedAt = now` (enforced in `JwtBearerEvents.OnTokenValidated` against token `iat`) and revoking all refresh tokens via `AuthRefreshTokenHelper.RevokeAllForUserAsync`.
      - Links `FirebaseUid = "google:{Subject}"` and marks `EmailVerified = true`.
+
+5. **Password Reset Confirms Email Ownership**
+   - Completing password reset (`POST /api/auth/reset-password`) validates the 6-digit OTP delivered to the registered email address. Proving control of the registered inbox marks `EmailVerified = true`, confirming the email address so previously unverified accounts do not require a redundant verification prompt upon subsequent login.
