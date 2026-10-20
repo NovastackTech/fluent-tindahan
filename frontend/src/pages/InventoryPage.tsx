@@ -609,7 +609,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
         return stock > 0 && stock <= 5;
       }
       if (stockFilter === 'out') {
-        return stock === 0;
+        return stock <= 0;
       }
       if (stockFilter === 'in') {
         return stock > 5;
@@ -622,7 +622,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
   // Quick Restock Handler (+6, +12, +24)
   const handleQuickRestock = useCallback(async (product: ProductRecord, increment: number) => {
     try {
-      const newStock = Math.max(0, (product.stockQty || 0) + increment);
+      const newStock = (product.stockQty || 0) + increment;
       const nowIso = new Date().toISOString();
       const updatedProduct: ProductRecord = {
         ...product,
@@ -1133,10 +1133,12 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                         <div className={styles.stockBadgeCell}>
                           <Badge
                             appearance="filled"
-                            color={stock === 0 ? 'danger' : stock <= 5 ? 'warning' : 'success'}
+                            color={stock <= 0 ? 'danger' : stock <= 5 ? 'warning' : 'success'}
                             size="medium"
                           >
-                            {stock === 0
+                            {stock < 0
+                              ? `${stock} - ${t.inventory.oversoldBadge}`
+                              : stock === 0
                               ? t.inventory.outOfStockBadge
                               : stock <= 5
                               ? `${stock} - ${t.inventory.lowStockBadge}`
@@ -1281,10 +1283,12 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
 
                   <Badge
                     appearance="filled"
-                    color={stock === 0 ? 'danger' : stock <= 5 ? 'warning' : 'success'}
+                    color={stock <= 0 ? 'danger' : stock <= 5 ? 'warning' : 'success'}
                     size="medium"
                   >
-                    {stock === 0
+                    {stock < 0
+                      ? `${stock} - ${t.inventory.oversoldBadge}`
+                      : stock === 0
                       ? t.inventory.outOfStockBadge
                       : stock <= 5
                       ? `${stock} - ${t.inventory.lowStockBadge}`

@@ -330,6 +330,7 @@ export const en: Translations = {
     noProductsFound: 'No products found matching the criteria.',
     lowStockBadge: 'Low Stock',
     outOfStockBadge: 'Out of Stock',
+    oversoldBadge: 'Oversold',
     inStockBadge: 'In Stock',
     customRestock: 'Add Stock'
   },

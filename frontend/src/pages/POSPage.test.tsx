@@ -984,7 +984,7 @@ describe('POSPage', () => {
       expect(sales[0].totalAmount).toBe(20);
 
       const prod = await db.products.get('qa-zero-warn');
-      expect(prod?.stockQty).toBe(0); // clamped to 0 without negative stock crash
+      expect(prod?.stockQty).toBe(-1); // accurately records oversell as negative stock (-1)
     });
   });
 
@@ -1064,7 +1064,61 @@ describe('POSPage', () => {
       expect(sales[0].totalAmount).toBe(30);
 
       const prod = await db.products.get('qa-biscuit-override');
-      expect(prod?.stockQty).toBe(0); // clamped cleanly to 0
+      expect(prod?.stockQty).toBe(-2); // accurately records oversell as negative stock (1 - 3 = -2)
+    });
+  });
+
+  it('records oversell as negative stock when selling 4 of 3 under Warn Only policy (DEV-32 #96)', async () => {
+    usePosSettingsStore.setState({ stockValidationPolicy: 'warn' });
+    await db.products.clear();
+    await db.products.add({
+      id: 'qa-oversell-product',
+      tenantId: 't-1',
+      name: 'QA Milo 3-Stock',
+      price: 15,
+      cost: 12,
+      stockQty: 3,
+      updatedAt: new Date().toISOString()
+    });
+
+    useCartStore.setState({
+      items: [
+        {
+          productId: 'qa-oversell-product',
+          name: 'QA Milo 3-Stock',
+          price: 15,
+          qty: 4,
+          subtotal: 60,
+          priceCentavos: 1500,
+          subtotalCentavos: 6000,
+          maxStock: 3
+        }
+      ]
+    });
+
+    renderPOS();
+
+    await waitFor(() => {
+      expect(screen.getByText('QA Milo 3-Stock')).toBeInTheDocument();
+    });
+
+    const payBtn = screen.getByRole('button', { name: /Bayad|Pay/i });
+    fireEvent.click(payBtn);
+
+    const cashInput = screen.getByRole('spinbutton', { name: /Tinanggap na pera|Cash received/i });
+    fireEvent.change(cashInput, { target: { value: '100' } });
+
+    const completeBtn = screen.getByRole('button', { name: /Kumpletuhin ang Benta|Complete Sale/i });
+    expect(completeBtn).not.toBeDisabled();
+    fireEvent.click(completeBtn);
+
+    await waitFor(async () => {
+      const sales = await db.sales.toArray();
+      expect(sales).toHaveLength(1);
+      expect(sales[0].totalAmount).toBe(60);
+
+      const prod = await db.products.get('qa-oversell-product');
+      expect(prod?.stockQty).toBe(-1); // 3 - 4 = -1
     });
   });
 
