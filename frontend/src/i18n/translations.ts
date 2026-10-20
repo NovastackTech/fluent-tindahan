@@ -461,6 +461,7 @@ export interface Translations {
     currentPasswordPlaceholder: string;
     newPasswordLabel: string;
     newPasswordPlaceholder: string;
+    newPasswordMinLength: string;
     confirmNewPasswordLabel: string;
     confirmNewPasswordPlaceholder: string;
     passwordMismatchError: string;

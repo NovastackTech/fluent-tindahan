@@ -473,6 +473,7 @@ export const tl: Translations = {
       currentPasswordPlaceholder: 'Ilagay ang kasalukuyang password',
       newPasswordLabel: 'Bagong Password',
       newPasswordPlaceholder: 'Hindi bababa sa 6 letra',
+      newPasswordMinLength: 'Dapat mayroong 6 o higit pang characters ang password.',
       confirmNewPasswordLabel: 'Kumpirmahin ang Bagong Password',
       confirmNewPasswordPlaceholder: 'I-type muli ang bagong password',
       passwordMismatchError: 'Hindi magkatugma ang mga bagong password.',

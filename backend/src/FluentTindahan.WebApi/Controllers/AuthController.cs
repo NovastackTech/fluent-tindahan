@@ -1399,6 +1399,7 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = "Hindi natagpuan ang account o hindi wasto ang verification code. / Account not found or invalid verification code." });
         }
 
+        var wasVerified = user.EmailVerified;
         var otpStatus = AuthOtpHelper.VerifyOtp(user, request.Otp, _timeProvider);
         if (otpStatus != OtpVerificationStatus.Success)
         {
@@ -1413,7 +1414,9 @@ public class AuthController : ControllerBase
         }
 
         user.PasswordHash = _passwordHasher.HashPassword(user, request.NewPassword);
+        if (!wasVerified) user.PinHash = null;
         AuthLockoutHelper.ResetPasswordLockout(user);
+        AuthLockoutHelper.ResetPinLockout(user);
         user.SessionsInvalidatedAt = _timeProvider.GetUtcNow();
 
         await AuthRefreshTokenHelper.RevokeAllForUserAsync(_context, user, user.Id, _timeProvider, cancellationToken);

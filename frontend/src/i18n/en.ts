@@ -473,6 +473,7 @@ export const en: Translations = {
       currentPasswordPlaceholder: 'Enter current password',
       newPasswordLabel: 'New Password',
       newPasswordPlaceholder: 'At least 6 characters',
+      newPasswordMinLength: 'Password must be at least 6 characters.',
       confirmNewPasswordLabel: 'Confirm New Password',
       confirmNewPasswordPlaceholder: 'Re-enter new password',
       passwordMismatchError: 'New passwords do not match.',

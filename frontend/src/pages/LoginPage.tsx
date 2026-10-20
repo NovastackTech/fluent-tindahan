@@ -389,7 +389,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
     }
 
     if (forgotNewPassword.length < 6) {
-      setAuthErrors([t.onboarding.passwordMinLength || 'Password must be at least 6 characters.']);
+      setAuthErrors([t.settings.newPasswordMinLength]);
       return;
     }
 
@@ -740,7 +740,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
                 validationState={forgotNewPassword && forgotNewPassword.length < 6 ? 'error' : undefined}
                 validationMessage={
                   forgotNewPassword && forgotNewPassword.length < 6
-                    ? t.onboarding.passwordMinLength || 'Password must be at least 6 characters.'
+                    ? t.settings.newPasswordMinLength
                     : undefined
                 }
                 style={{ marginBottom: tokens.spacingVerticalM }}
