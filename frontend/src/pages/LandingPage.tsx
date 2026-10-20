@@ -490,7 +490,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
   const handleExploreDemo = async () => {
     setIsSubmitting(true);
     try {
-      await useAuthStore.getState().logout(true);
+      const res = await useAuthStore.getState().logout(false);
+      if (!res.success) {
+        setAuthErrors([t.banner.offlineDesc]);
+        return;
+      }
       await seedDexieDatabaseIfNeeded(true, DEFAULT_TENANT_ID, false, "Aling Nena's Demo Tindahan");
       completeOnboarding({
         businessName: "Aling Nena's Demo Tindahan",
