@@ -265,4 +265,95 @@ describe('SessionLockModal', () => {
       expect(useAuthStore.getState().isSessionLocked).toBe(true);
     });
   });
+
+  it('displays wrong PIN error when API returns 401', async () => {
+    vi.mocked(authService.loginPin).mockRejectedValue({
+      response: {
+        status: 401,
+        data: {
+          message:
+            'Maling email o PIN code. May natitira ka pang 4 pagsubok bago mag-lockout. / Invalid email or PIN code. 4 attempts remaining.',
+          remainingAttempts: 4
+        }
+      }
+    });
+
+    renderModal();
+
+    fireEvent.click(screen.getByRole('button', { name: '1' }));
+    fireEvent.click(screen.getByRole('button', { name: '2' }));
+    fireEvent.click(screen.getByRole('button', { name: '3' }));
+    fireEvent.click(screen.getByRole('button', { name: '4' }));
+
+    const unlockBtn = screen.getByRole('button', { name: /I-unlock ang Kaha/i });
+    fireEvent.click(unlockBtn);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Maling PIN code\. May natitira ka pang 4 pagsubok/i)
+      ).toBeInTheDocument();
+      expect(useAuthStore.getState().isSessionLocked).toBe(true);
+    });
+  });
+
+  it('displays wrong PIN error in English mode when API returns 401', async () => {
+    useLanguageStore.setState({ language: 'en' });
+    vi.mocked(authService.loginPin).mockRejectedValue({
+      response: {
+        status: 401,
+        data: {
+          message:
+            'Maling email o PIN code. May natitira ka pang 4 pagsubok bago mag-lockout. / Invalid email or PIN code. 4 attempts remaining.',
+          remainingAttempts: 4
+        }
+      }
+    });
+
+    renderModal();
+
+    const input = screen.getByPlaceholderText('••••');
+    fireEvent.change(input, { target: { value: '9999' } });
+
+    const unlockBtn = screen.getByRole('button', { name: /Unlock Till/i });
+    fireEvent.click(unlockBtn);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Invalid PIN code\. 4 attempts remaining\./i)
+      ).toBeInTheDocument();
+      expect(useAuthStore.getState().isSessionLocked).toBe(true);
+    });
+  });
+
+  it('submits unlock via Enter key on the PIN input field', async () => {
+    vi.mocked(authService.loginPin).mockResolvedValue({
+      token: 'jwt-token-online',
+      tenantId: 'test-tenant-123',
+      userId: 'test-user-456',
+      email: 'owner@tindahan.ph',
+      businessName: "Aling Nena's Store",
+      ownerName: 'Nena Santos',
+      phone: '09171234567',
+      role: 'Owner',
+      tier: 'Libre',
+      planTier: 'Libre',
+      subscriptionEndDate: null,
+      hasPin: true,
+      expiresAt: '2030-01-01T00:00:00Z'
+    });
+
+    renderModal();
+
+    const input = screen.getByPlaceholderText('••••');
+    fireEvent.change(input, { target: { value: '1234' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(authService.loginPin).toHaveBeenCalledWith({
+        email: 'owner@tindahan.ph',
+        pin: '1234'
+      });
+      expect(useAuthStore.getState().isSessionLocked).toBe(false);
+    });
+  });
 });
