@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useAuthStore } from '../state/authStore';
 import { useTranslation } from '../state/languageStore';
 import { db } from '../db/db';
@@ -38,6 +38,14 @@ export interface GoogleAuthFlowParams {
 }
 
 export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   const { loginWithAuthPayload } = useAuthStore();
   const { t } = useTranslation();
 
@@ -47,6 +55,7 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
   const [isSyncingFirst, setIsSyncingFirst] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pendingOtpEmail, setPendingOtpEmail] = useState<string | null>(null);
+  const [pendingOtpLocalPin, setPendingOtpLocalPin] = useState<string | undefined>(undefined);
   const [pendingDeletionInfo, setPendingDeletionInfo] = useState<{
     scheduledAt: string | null;
     retryWithRestore: () => Promise<boolean>;
@@ -57,6 +66,7 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
   const closeUnsyncedDialog = () => {
     setIsUnsyncedDialogOpen(false);
     setPendingAuthPayload(null);
+    setPendingOtpLocalPin(undefined);
   };
 
   const handleConfirmWipeAndLogin = async () => {
@@ -75,14 +85,18 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
         offerGcash: pendingAuthPayload.newUserPreferences?.offerGcash,
         includeStarterProducts: pendingAuthPayload.newUserPreferences?.includeStarterProducts
       });
-      if (pendingAuthPayload.payload.requiresEmailVerification) {
-        setPendingOtpEmail(pendingAuthPayload.payload.email);
-      } else {
-        options?.onSuccess?.(pendingAuthPayload.payload);
+      if (isMountedRef.current && typeof window !== 'undefined') {
+        if (pendingAuthPayload.payload.requiresEmailVerification) {
+          setPendingOtpEmail(pendingAuthPayload.payload.email);
+        } else {
+          options?.onSuccess?.(pendingAuthPayload.payload);
+        }
       }
     } finally {
-      setIsSubmitting(false);
-      setPendingAuthPayload(null);
+      if (isMountedRef.current && typeof window !== 'undefined') {
+        setIsSubmitting(false);
+        setPendingAuthPayload(null);
+      }
     }
   };
 
@@ -95,9 +109,13 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
         db.deadLetterQueue.count()
       ]);
       const remaining = syncCount + dlqCount;
-      setUnsyncedLoginCount(remaining);
+      if (isMountedRef.current && typeof window !== 'undefined') {
+        setUnsyncedLoginCount(remaining);
+      }
       if (remaining === 0 && pendingAuthPayload) {
-        setIsUnsyncedDialogOpen(false);
+        if (isMountedRef.current && typeof window !== 'undefined') {
+          setIsUnsyncedDialogOpen(false);
+        }
         await loginWithAuthPayload(
           pendingAuthPayload.payload,
           pendingAuthPayload.localPin,
@@ -109,16 +127,20 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
           offerGcash: pendingAuthPayload.newUserPreferences?.offerGcash,
           includeStarterProducts: pendingAuthPayload.newUserPreferences?.includeStarterProducts
         });
-        if (pendingAuthPayload.payload.requiresEmailVerification) {
-          setPendingOtpEmail(pendingAuthPayload.payload.email);
-        } else {
-          options?.onSuccess?.(pendingAuthPayload.payload);
+        if (isMountedRef.current && typeof window !== 'undefined') {
+          if (pendingAuthPayload.payload.requiresEmailVerification) {
+            setPendingOtpEmail(pendingAuthPayload.payload.email);
+          } else {
+            options?.onSuccess?.(pendingAuthPayload.payload);
+          }
         }
       }
     } catch (e) {
       console.warn('Sync attempt failed:', e);
     } finally {
-      setIsSyncingFirst(false);
+      if (isMountedRef.current && typeof window !== 'undefined') {
+        setIsSyncingFirst(false);
+      }
     }
   };
 
@@ -128,17 +150,22 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
       const res = await executeStoreLogin(params);
       setPendingDeletionInfo(null);
       if (!res.success && res.authResult) {
-        setPendingAuthPayload({
-          payload: res.authResult,
-          localPin: res.localPin,
-          newUserPreferences: res.newUserPreferences
-        });
-        setUnsyncedLoginCount(res.unsyncedCount || 0);
-        setIsUnsyncedDialogOpen(true);
+        if (isMountedRef.current && typeof window !== 'undefined') {
+          setPendingAuthPayload({
+            payload: res.authResult,
+            localPin: res.localPin,
+            newUserPreferences: res.newUserPreferences
+          });
+          setUnsyncedLoginCount(res.unsyncedCount || 0);
+          setIsUnsyncedDialogOpen(true);
+        }
         return false;
       }
       if (res.authResult?.requiresEmailVerification) {
-        setPendingOtpEmail(res.authResult.email || params.email.trim());
+        if (isMountedRef.current && typeof window !== 'undefined') {
+          setPendingOtpEmail(res.authResult.email || params.email.trim());
+          setPendingOtpLocalPin(res.localPin);
+        }
         return true;
       }
       options?.onSuccess?.(res.authResult);
@@ -164,7 +191,9 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
       }
       return false;
     } finally {
-      setIsSubmitting(false);
+      if (isMountedRef.current && typeof window !== 'undefined') {
+        setIsSubmitting(false);
+      }
     }
   };
 
@@ -176,7 +205,10 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
       const result = await executeStoreRegistration(params);
       if (result.success) {
         if (result.requiresEmailVerification) {
-          setPendingOtpEmail(params.email.trim());
+          if (isMountedRef.current && typeof window !== 'undefined') {
+            setPendingOtpEmail(params.email.trim());
+            setPendingOtpLocalPin(params.pin);
+          }
         } else {
           options?.onSuccess?.(result.authResult);
         }
@@ -186,7 +218,9 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
       params.onError?.(err?.response?.data?.message || err?.message || t.onboarding.submitError);
       return { success: false };
     } finally {
-      setIsSubmitting(false);
+      if (isMountedRef.current && typeof window !== 'undefined') {
+        setIsSubmitting(false);
+      }
     }
   };
 
@@ -205,8 +239,25 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
         email: pendingOtpEmail || undefined,
         otp: cleanedOtp
       });
-      await loginWithAuthPayload(verifiedDto);
-      setPendingOtpEmail(null);
+      const loginRes = await loginWithAuthPayload(verifiedDto, pendingOtpLocalPin);
+      if (!loginRes.success) {
+        if (isMountedRef.current && typeof window !== 'undefined') {
+          setPendingAuthPayload({ payload: { ...verifiedDto, requiresEmailVerification: false }, localPin: pendingOtpLocalPin });
+          setUnsyncedLoginCount(loginRes.unsyncedCount || 0);
+          setIsUnsyncedDialogOpen(true);
+          setPendingOtpEmail(null);
+          setPendingOtpLocalPin(undefined);
+        }
+        return true;
+      }
+      await finalizeSuccessfulLogin(verifiedDto.tenantId, {
+        isNewUser: verifiedDto.isNewUser,
+        businessName: verifiedDto.businessName
+      });
+      if (isMountedRef.current && typeof window !== 'undefined') {
+        setPendingOtpEmail(null);
+        setPendingOtpLocalPin(undefined);
+      }
       options?.onSuccess?.(verifiedDto);
       return true;
     } catch (err: any) {
@@ -214,7 +265,9 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
       onError?.(msg);
       return false;
     } finally {
-      setIsSubmitting(false);
+      if (isMountedRef.current && typeof window !== 'undefined') {
+        setIsSubmitting(false);
+      }
     }
   };
 
@@ -234,7 +287,9 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
       onError?.(msg);
       return false;
     } finally {
-      setIsSubmitting(false);
+      if (isMountedRef.current && typeof window !== 'undefined') {
+        setIsSubmitting(false);
+      }
     }
   };
 
@@ -250,13 +305,17 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
         includeStarterProducts: params.includeStarterProducts,
         onSuccess: () => {
           success = true;
-          setPendingOtpEmail(null);
+          if (isMountedRef.current && typeof window !== 'undefined') {
+            setPendingOtpEmail(null);
+          }
           options?.onSuccess?.();
         },
         onUnsyncedDetected: (count, payload, localPin, newUserPreferences) => {
-          setPendingAuthPayload({ payload, localPin, newUserPreferences });
-          setUnsyncedLoginCount(count);
-          setIsUnsyncedDialogOpen(true);
+          if (isMountedRef.current && typeof window !== 'undefined') {
+            setPendingAuthPayload({ payload, localPin, newUserPreferences });
+            setUnsyncedLoginCount(count);
+            setIsUnsyncedDialogOpen(true);
+          }
         },
         onError: (msg) => {
           params.onError?.(msg);
@@ -265,7 +324,9 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
       });
       return success;
     } finally {
-      setIsSubmitting(false);
+      if (isMountedRef.current && typeof window !== 'undefined') {
+        setIsSubmitting(false);
+      }
     }
   };
 

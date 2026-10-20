@@ -441,7 +441,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   const handleExploreDemo = async () => {
     setIsSubmitting(true);
     try {
-      await seedDexieDatabaseIfNeeded(false, DEFAULT_TENANT_ID, false, "Aling Nena's Demo Tindahan");
+      const res = await useAuthStore.getState().logout(false);
+      if (!res.success) {
+        setAuthError(t.banner.offlineDesc);
+        return;
+      }
+      await seedDexieDatabaseIfNeeded(true, DEFAULT_TENANT_ID, false, "Aling Nena's Demo Tindahan");
       completeOnboarding({
         businessName: "Aling Nena's Demo Tindahan",
         ownerName: 'Nena Santos',

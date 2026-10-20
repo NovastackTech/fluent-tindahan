@@ -197,6 +197,58 @@ describe('LoginPage Component', () => {
     });
   });
 
+  it('does not load tenant data or onboard when login requires email verification, and preserves clean demo state on explore demo', async () => {
+    vi.mocked(authService.loginStore).mockResolvedValueOnce({
+      tenantId: 'unverified-qa-tenant',
+      userId: 'unverified-qa-user',
+      email: 'unverified-qa@tindahan.ph',
+      businessName: 'Unverified QA Tindahan',
+      ownerName: 'QA Tester',
+      phone: '09171234567',
+      role: 'Owner',
+      tier: 'Libre',
+      planTier: 'Libre',
+      subscriptionEndDate: null,
+      hasPin: false,
+      token: 'unverified-qa-token',
+      expiresAt: '2028-01-01',
+      requiresEmailVerification: true,
+      emailVerified: false
+    });
+
+    const { onNavigate } = renderLoginPage();
+
+    const emailInput = screen.getByPlaceholderText(t.landing.emailPlaceholder);
+    const passwordInput = screen.getByPlaceholderText(t.landing.passwordPlaceholder);
+    const submitBtn = screen.getByTestId('login-submit-btn');
+
+    fireEvent.change(emailInput, { target: { value: 'unverified-qa@tindahan.ph' } });
+    fireEvent.change(passwordInput, { target: { value: 'password123' } });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(t.onboarding.otpTitle)).toBeInTheDocument();
+      expect(syncEngine.restoreTenantDataFromServer).not.toHaveBeenCalled();
+      expect(useAuthStore.getState().isOnboarded).toBe(false);
+    });
+
+    // Abandon OTP and click 'Explore with Sample Demo Data'
+    const demoBtn = screen.getByTestId('login-demo-btn');
+    fireEvent.click(demoBtn);
+
+    await waitFor(() => {
+      expect(seedData.seedDexieDatabaseIfNeeded).toHaveBeenCalledWith(
+        true,
+        seedData.DEFAULT_TENANT_ID,
+        false,
+        "Aling Nena's Demo Tindahan"
+      );
+      expect(useAuthStore.getState().tenantId).toBe(seedData.DEFAULT_TENANT_ID);
+      expect(useAuthStore.getState().isOnboarded).toBe(true);
+      expect(onNavigate).toHaveBeenCalledWith('pos');
+    });
+  });
+
   it('shows error banner when credentials fail', async () => {
     vi.mocked(authService.loginStore).mockRejectedValueOnce({
       response: { data: { message: 'Maling email o password' } }
