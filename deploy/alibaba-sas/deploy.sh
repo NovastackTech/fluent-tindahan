@@ -106,6 +106,15 @@ fi
 BUILD_ARGS=(--progress=plain)
 [[ "${NO_CACHE}" == "true" ]] && BUILD_ARGS+=(--no-cache)
 
+if [[ "${PULL_IMAGES}" != "true" && ! -f "${APP_DIR}/backend/Dockerfile" ]]; then
+  if [[ -n "$(env_value API_IMAGE)" && -n "$(env_value WEB_IMAGE)" ]]; then
+    log "No backend/Dockerfile on server; defaulting to --pull-images using API_IMAGE/WEB_IMAGE from ${ENV_FILE}."
+    PULL_IMAGES=true
+  else
+    fail "Missing ${APP_DIR}/backend/Dockerfile and no API_IMAGE/WEB_IMAGE configured in ${ENV_FILE}. Upload full project source or pass --pull-images."
+  fi
+fi
+
 if [[ "${PULL_IMAGES}" == "true" ]]; then
   log "Pulling pre-built images from registry..."
   compose pull api web
