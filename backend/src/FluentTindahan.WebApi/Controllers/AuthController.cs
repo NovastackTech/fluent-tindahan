@@ -510,10 +510,11 @@ public class AuthController : ControllerBase
     /// </summary>
     [AllowAnonymous]
     [HttpPost("register")]
-    [EnableRateLimiting("AnonymousDemoProvision")]
+    [EnableRateLimiting("EmailDispatch")]
     [ProducesResponseType(typeof(AuthResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public async Task<ActionResult<AuthResponseDto>> Register(
         [FromBody] RegisterRequest request,
         CancellationToken cancellationToken)
@@ -1356,7 +1357,7 @@ public class AuthController : ControllerBase
     /// Returns 200 generic message if email is not found to prevent user enumeration.
     /// </summary>
     [AllowAnonymous]
-    [EnableRateLimiting("AuthSensitive")]
+    [EnableRateLimiting("EmailDispatch")]
     [HttpPost("forgot-password")]
     [Route("/auth/forgot-password")]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -1477,12 +1478,14 @@ public class AuthController : ControllerBase
     /// </summary>
     [Authorize(Policy = AuthorizationPolicies.TenantResolved)]
     [HttpPut("profile")]
+    [EnableRateLimiting("EmailDispatch")]
     [ProducesResponseType(typeof(AuthResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public async Task<ActionResult<AuthResponseDto>> UpdateProfile(
         [FromBody] UpdateProfileRequest request,
         CancellationToken cancellationToken)
@@ -1810,7 +1813,7 @@ public class AuthController : ControllerBase
     /// Issues and dispatches a fresh 6-digit email verification OTP with a 60-second resend cooldown.
     /// </summary>
     [HttpPost("resend-email-otp")]
-    [EnableRateLimiting("AuthSensitive")]
+    [EnableRateLimiting("EmailDispatch")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

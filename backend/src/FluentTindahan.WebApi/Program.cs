@@ -215,6 +215,18 @@ builder.Services.AddRateLimiter(options =>
             AutoReplenishment = true
         });
     });
+
+    options.AddPolicy("EmailDispatch", context =>
+    {
+        var clientIp = AuthClaimsHelper.GetClientIpAddress(context);
+        return RateLimitPartition.GetFixedWindowLimiter(clientIp, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 3,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        });
+    });
 });
 
 // Swagger / OpenAPI documentation

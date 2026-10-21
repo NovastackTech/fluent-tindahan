@@ -14,12 +14,14 @@ using FluentTindahan.WebApi.Controllers.Helpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
 using Moq;
 using Npgsql;
+using System.Reflection;
 using Xunit;
 
 namespace FluentTindahan.UnitTests;
@@ -4574,6 +4576,21 @@ public class AuthControllerTests
         }, CancellationToken.None);
 
         resetResult.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Theory]
+    [InlineData(nameof(AuthController.Register))]
+    [InlineData(nameof(AuthController.ForgotPassword))]
+    [InlineData(nameof(AuthController.ResendEmailOtp))]
+    [InlineData(nameof(AuthController.UpdateProfile))]
+    public void EmailTriggeringEndpoints_HaveEmailDispatchRateLimitingPolicy(string methodName)
+    {
+        var method = typeof(AuthController).GetMethod(methodName);
+        method.Should().NotBeNull();
+
+        var rateLimitAttribute = method!.GetCustomAttribute<EnableRateLimitingAttribute>();
+        rateLimitAttribute.Should().NotBeNull();
+        rateLimitAttribute!.PolicyName.Should().Be("EmailDispatch");
     }
 }
 
