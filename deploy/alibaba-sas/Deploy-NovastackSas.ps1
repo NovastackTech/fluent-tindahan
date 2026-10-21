@@ -28,6 +28,7 @@
 [CmdletBinding()]
 param(
     [switch]$Pull,
+    [switch]$PullImages,
     [switch]$NoProxy,
     [switch]$ModifyDockerCaddy,
     [switch]$NoBackup,
@@ -129,6 +130,7 @@ function New-ProjectArchive([string]$OutputPath) {
 function Get-InstallArgs {
     $installArgs = "--dir $InstallDir --domain $Domain --port $HttpPort --name $ProjectName"
     if ($Pull) { $installArgs += ' --skip-setup' }
+    if ($PullImages) { $installArgs += ' --pull-images' }
     if ($NoProxy) { $installArgs += ' --no-proxy' }
     if ($ModifyDockerCaddy) { $installArgs += ' --modify-docker-caddy' }
     if ($NoBackup) { $installArgs += ' --no-backup' }

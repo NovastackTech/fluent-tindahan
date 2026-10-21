@@ -6,8 +6,9 @@
 #   bash deploy/alibaba-sas/deploy.sh
 #
 # Options:
-#   --no-cache   rebuild images without cache
-#   --no-backup  skip the pre-deploy pg_dump snapshot
+#   --no-cache     rebuild images without cache
+#   --no-backup    skip the pre-deploy pg_dump snapshot
+#   --pull-images  pull pre-built API_IMAGE/WEB_IMAGE instead of building on the server
 #
 set -euo pipefail
 
@@ -19,13 +20,15 @@ SAS_COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.sas.yml"
 
 NO_CACHE=false
 BACKUP=true
+PULL_IMAGES=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --no-cache) NO_CACHE=true; shift ;;
     --no-backup) BACKUP=false; shift ;;
+    --pull-images) PULL_IMAGES=true; shift ;;
     -h|--help)
-      sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *) echo "Unknown option: $1"; exit 1 ;;
@@ -103,16 +106,26 @@ fi
 BUILD_ARGS=(--progress=plain)
 [[ "${NO_CACHE}" == "true" ]] && BUILD_ARGS+=(--no-cache)
 
-log "Building images sequentially with plain logs to avoid memory thrashing on SAS..."
-export DOCKER_BUILDKIT=1
-export COMPOSE_DOCKER_CLI_BUILD=1
-log "Building backend (api)..."
-compose build "${BUILD_ARGS[@]}" api
-log "Building frontend (web)..."
-compose build "${BUILD_ARGS[@]}" web
+if [[ "${PULL_IMAGES}" == "true" ]]; then
+  log "Pulling pre-built images from registry..."
+  compose pull api web
+  log "Starting containers (--no-build)..."
+  compose up -d --no-build --remove-orphans
+  docker image prune -f >/dev/null 2>&1 || true
+else
+  log "Building images sequentially with plain logs to avoid memory thrashing on SAS..."
+  export DOCKER_BUILDKIT=1
+  export COMPOSE_DOCKER_CLI_BUILD=1
+  log "Building backend (api)..."
+  compose build "${BUILD_ARGS[@]}" api
+  log "Building frontend (web)..."
+  compose build "${BUILD_ARGS[@]}" web
 
-log "Starting containers..."
-compose up -d --remove-orphans
+  log "Starting containers..."
+  compose up -d --remove-orphans
+  docker builder prune -f --keep-storage=2GB >/dev/null 2>&1 || true
+  docker image prune -f >/dev/null 2>&1 || true
+fi
 
 log "Waiting for http://127.0.0.1:${APP_PORT}/api/health ..."
 ready=false
