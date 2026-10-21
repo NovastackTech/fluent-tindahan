@@ -14,25 +14,25 @@ fi
 log() { printf '[sas-setup] %s\n' "$*"; }
 
 ensure_swap() {
-  local mem_mb target_swap_mb=0
+  local mem_mb current_swap_mb target_swap_mb=0
   mem_mb="$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)"
-  if [[ "${mem_mb}" -lt 2048 ]]; then
-    target_swap_mb=2048
-  elif [[ "${mem_mb}" -lt 4096 ]]; then
-    target_swap_mb=1024
+  if [[ "${mem_mb}" -lt 4096 ]]; then
+    target_swap_mb=4096
   fi
 
-  if [[ "${target_swap_mb}" -eq 0 ]] || swapon --show | grep -q .; then
+  current_swap_mb="$(awk '/SwapTotal/ {print int($2/1024)}' /proc/meminfo)"
+  if [[ "${target_swap_mb}" -eq 0 ]] || [[ "${current_swap_mb}" -ge $((target_swap_mb - 128)) ]]; then
     return
   fi
 
-  log "Low memory (${mem_mb} MiB). Creating ${target_swap_mb} MiB swap..."
+  log "Low memory (${mem_mb} MiB, current swap ${current_swap_mb} MiB). Configuring ${target_swap_mb} MiB swap..."
+  swapoff /swapfile 2>/dev/null || true
   fallocate -l "${target_swap_mb}M" /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count="${target_swap_mb}" status=progress
   chmod 600 /swapfile
   mkswap /swapfile
   swapon /swapfile
   grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
-  log "Swap enabled."
+  log "Swap enabled (${target_swap_mb} MiB)."
 }
 
 install_docker_apt() {

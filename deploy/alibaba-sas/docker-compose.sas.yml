@@ -17,11 +17,13 @@ services:
       -c work_mem=4MB
 
   api:
+    image: ${API_IMAGE:-fluent-tindahan-api:local}
     container_name: ${COMPOSE_PROJECT_NAME:-fluent-tindahan}-api
     environment:
       DOTNET_GCHeapHardLimit: "000000001E000000"
 
   web:
+    image: ${WEB_IMAGE:-fluent-tindahan-web:local}
     container_name: ${COMPOSE_PROJECT_NAME:-fluent-tindahan}-web
     networks:
       - tindahan

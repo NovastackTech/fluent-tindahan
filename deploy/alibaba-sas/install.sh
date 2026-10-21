@@ -41,6 +41,7 @@ Options:
   --no-proxy             Do not add the domain to Caddy/nginx
   --modify-docker-caddy  Allow appending to another project's Caddyfile if the shared sites dir is not mounted
   --no-backup            Skip the pre-deploy pg_dump snapshot
+  --pull-images          Pull pre-built API_IMAGE/WEB_IMAGE instead of building on the server
   --help                 Show this help
 EOF
 }
@@ -55,6 +56,7 @@ while [[ $# -gt 0 ]]; do
     --no-proxy) CONFIGURE_PROXY=false; shift ;;
     --modify-docker-caddy) MODIFY_DOCKER_CADDY=true; shift ;;
     --no-backup) DEPLOY_ARGS+=(--no-backup); shift ;;
+    --pull-images) DEPLOY_ARGS+=(--pull-images); shift ;;
     -h|--help) usage; exit 0 ;;
     *) fail "Unknown option: $1" ;;
   esac
@@ -142,7 +144,7 @@ fi
 # POSTGRES_PASSWORD is deliberately not accepted: changing it would lock the API out of the existing database.
 if [[ -f "${SECRETS_FILE}" ]]; then
   sed -i 's/\r$//' "${SECRETS_FILE}"
-  for key in JWT_SECRET_KEY PAYMONGO_SECRET_KEY PAYMONGO_WEBHOOK_SECRET PAYMONGO_FRONTEND_ORIGIN FIREBASE_PROJECT_ID ASPNETCORE_ENVIRONMENT DEMO_MODE DemoMode ALLOW_DEMO_MODE_IN_PRODUCTION AllowDemoModeInProduction GOOGLE_CLIENT_ID SMTP_HOST SMTP_PORT SMTP_USERNAME SMTP_PASSWORD SMTP_FROM_EMAIL SMTP_FROM_NAME SMTP_ENABLE_SSL; do
+  for key in API_IMAGE WEB_IMAGE JWT_SECRET_KEY PAYMONGO_SECRET_KEY PAYMONGO_WEBHOOK_SECRET PAYMONGO_FRONTEND_ORIGIN FIREBASE_PROJECT_ID ASPNETCORE_ENVIRONMENT DEMO_MODE DemoMode ALLOW_DEMO_MODE_IN_PRODUCTION AllowDemoModeInProduction GOOGLE_CLIENT_ID SMTP_HOST SMTP_PORT SMTP_USERNAME SMTP_PASSWORD SMTP_FROM_EMAIL SMTP_FROM_NAME SMTP_ENABLE_SSL; do
     value="$(env_value "${key}" "${SECRETS_FILE}")"
     if [[ -n "${value}" ]]; then
       set_env_value "${key}" "${value}"
