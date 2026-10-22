@@ -133,15 +133,16 @@ jobs:
           SAS_USER: ${{ secrets.SAS_USER || 'root' }}
           SAS_PORT: ${{ secrets.SAS_PORT || 22 }}
           SAS_SSH_KEY: ${{ secrets.SAS_SSH_KEY }}
-          SAS_APP_DIR: /opt/fluent-tindahan-prod
-          PROJECT_NAME: fluent-tindahan-prod
-          PUBLIC_HOST: tindahan.novastack-inc.online
-          PUBLIC_ORIGIN: https://tindahan.novastack-inc.online
-          HOST_HTTP_PORT: '8090'
+          SAS_APP_DIR: ${{ secrets.SAS_APP_DIR || vars.SAS_APP_DIR || '/opt/fluent-tindahan-prod' }}
+          PROJECT_NAME: ${{ secrets.PROJECT_NAME || vars.PROJECT_NAME || 'fluent-tindahan-prod' }}
+          PUBLIC_HOST: ${{ secrets.PUBLIC_HOST || vars.PUBLIC_HOST || 'tindahan.novastack-inc.online' }}
+          PUBLIC_ORIGIN: ${{ secrets.PUBLIC_ORIGIN || vars.PUBLIC_ORIGIN || 'https://tindahan.novastack-inc.online' }}
+          HOST_HTTP_PORT: ${{ secrets.HOST_HTTP_PORT || vars.HOST_HTTP_PORT || '8090' }}
           PAYMONGO_SECRET_KEY: ${{ secrets.PAYMONGO_SECRET_KEY }}
           PAYMONGO_PUBLIC_KEY: ${{ secrets.PAYMONGO_PUBLIC_KEY }}
           PAYMONGO_WEBHOOK_SECRET: ${{ secrets.PAYMONGO_WEBHOOK_SECRET }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          DEMO_MODE: ${{ secrets.DEMO_MODE || vars.DEMO_MODE || 'false' }}
           SKIP_BACKUP: ${{ inputs.skip_backup }}
           SKIP_SETUP: ${{ inputs.skip_setup }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}

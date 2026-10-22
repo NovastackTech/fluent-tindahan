@@ -67,7 +67,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:
-      name: production
+      name: development
       url: https://tindahan-dev.novastack-inc.online
     steps:
       - name: Checkout repository
@@ -135,10 +135,11 @@ jobs:
           SAS_USER: ${{ secrets.SAS_USER || 'root' }}
           SAS_PORT: ${{ secrets.SAS_PORT || 22 }}
           SAS_SSH_KEY: ${{ secrets.SAS_SSH_KEY }}
-          SAS_APP_DIR: ${{ secrets.SAS_APP_DIR || '/opt/fluent-tindahan' }}
-          PUBLIC_HOST: ${{ secrets.PUBLIC_HOST || 'tindahan-dev.novastack-inc.online' }}
-          PUBLIC_ORIGIN: ${{ secrets.PUBLIC_ORIGIN || 'https://tindahan-dev.novastack-inc.online' }}
-          HOST_HTTP_PORT: ${{ secrets.HOST_HTTP_PORT || '8089' }}
+          SAS_APP_DIR: ${{ secrets.SAS_APP_DIR || vars.SAS_APP_DIR || '/opt/fluent-tindahan' }}
+          PROJECT_NAME: ${{ secrets.PROJECT_NAME || vars.PROJECT_NAME || 'fluent-tindahan' }}
+          PUBLIC_HOST: ${{ secrets.PUBLIC_HOST || vars.PUBLIC_HOST || 'tindahan-dev.novastack-inc.online' }}
+          PUBLIC_ORIGIN: ${{ secrets.PUBLIC_ORIGIN || vars.PUBLIC_ORIGIN || 'https://tindahan-dev.novastack-inc.online' }}
+          HOST_HTTP_PORT: ${{ secrets.HOST_HTTP_PORT || vars.HOST_HTTP_PORT || '8089' }}
           PAYMONGO_SECRET_KEY: ${{ secrets.PAYMONGO_SECRET_KEY }}
           PAYMONGO_PUBLIC_KEY: ${{ secrets.PAYMONGO_PUBLIC_KEY }}
           PAYMONGO_WEBHOOK_SECRET: ${{ secrets.PAYMONGO_WEBHOOK_SECRET }}
@@ -188,7 +189,7 @@ jobs:
             | $SSH_CMD "$SAS_USER@$SAS_HOST" "umask 077; cat > '$SAS_APP_DIR/deploy/alibaba-sas/secrets.env'"
 
           # 6. Build install flags
-          INSTALL_ARGS="--dir '$SAS_APP_DIR' --domain '$PUBLIC_HOST' --port '$HOST_HTTP_PORT' --name fluent-tindahan --pull-images"
+          INSTALL_ARGS="--dir '$SAS_APP_DIR' --domain '$PUBLIC_HOST' --port '$HOST_HTTP_PORT' --name '$PROJECT_NAME' --pull-images"
           if [ "${SKIP_SETUP:-false}" = "true" ]; then
             INSTALL_ARGS="$INSTALL_ARGS --skip-setup"
           fi
