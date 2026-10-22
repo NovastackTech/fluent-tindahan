@@ -579,14 +579,17 @@ public class PayMongoSubscriptionQrPhTests
         );
 
         var created = await service.CreateQrPhPaymentIntentAsync(request);
-        var status = await service.RetrievePaymentIntentStatusAsync(created.PaymentIntentId);
+        var status1 = await service.RetrievePaymentIntentStatusAsync(created.PaymentIntentId);
+        var status2 = await service.RetrievePaymentIntentStatusAsync(created.PaymentIntentId);
 
-        status.IsPaid.Should().BeTrue();
-        status.AmountCentavos.Should().Be(12900);
-        status.Metadata.Should().NotBeNull();
-        status.Metadata!["tenant_id"].Should().Be(_testTenantId.ToString());
-        status.Metadata!["target_tier"].Should().Be("TindahanPro");
-        status.Metadata!["cycle"].Should().Be("Monthly");
+        status1.IsPaid.Should().BeTrue();
+        status1.AmountCentavos.Should().Be(12900);
+        status1.PaymentId.Should().Be($"pay_mock_{created.PaymentIntentId}");
+        status2.PaymentId.Should().Be(status1.PaymentId);
+        status1.Metadata.Should().NotBeNull();
+        status1.Metadata!["tenant_id"].Should().Be(_testTenantId.ToString());
+        status1.Metadata!["target_tier"].Should().Be("TindahanPro");
+        status1.Metadata!["cycle"].Should().Be("Monthly");
     }
 
     [Fact]

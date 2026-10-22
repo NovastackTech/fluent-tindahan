@@ -654,7 +654,7 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
                     Status: "succeeded",
                     IsPaid: true,
                     AmountCentavos: mockData.AmountCentavos,
-                    PaymentId: $"pay_mock_{Guid.NewGuid():N}",
+                    PaymentId: $"pay_mock_{paymentIntentId}",
                     Metadata: mockData.Metadata
                 );
             }
@@ -666,7 +666,7 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
                     Status: "succeeded",
                     IsPaid: true,
                     AmountCentavos: 0,
-                    PaymentId: $"pay_mock_{Guid.NewGuid():N}",
+                    PaymentId: $"pay_mock_{paymentIntentId}",
                     Metadata: null
                 );
             }
