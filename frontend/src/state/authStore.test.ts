@@ -525,6 +525,35 @@ describe('authStore', () => {
 
     await db.deadLetterQueue.clear();
   });
+
+  it('clears last remembered email and tenant sync key on account deletion logout (EV-05 / issue #146)', async () => {
+    const { db } = await import('../db/db');
+    const { STORAGE_KEY_LAST_EMAIL } = await import('./authStore');
+    const { getSyncStorageKey } = await import('../constants/sync');
+
+    useAuthStore.setState({
+      tenantId: 'deleted-tenant-id',
+      userEmail: 'user@example.com',
+      isOnboarded: true
+    });
+    localStorage.setItem(STORAGE_KEY_LAST_EMAIL, 'user@example.com');
+    localStorage.setItem(getSyncStorageKey('deleted-tenant-id'), new Date().toISOString());
+    await db.syncQueue.add({
+      id: 'pending-sale-delete-test',
+      entity: 'Sale',
+      action: 'Insert',
+      timestamp: new Date().toISOString(),
+      payload: { id: 's-del', total: 50 },
+      status: 'Pending',
+      retryCount: 0
+    });
+
+    const res = await useAuthStore.getState().logout(true, true);
+    expect(res.success).toBe(true);
+    expect(await db.syncQueue.count()).toBe(0);
+    expect(localStorage.getItem(STORAGE_KEY_LAST_EMAIL)).toBeNull();
+    expect(localStorage.getItem(getSyncStorageKey('deleted-tenant-id'))).toBeNull();
+  });
 });
 
 
