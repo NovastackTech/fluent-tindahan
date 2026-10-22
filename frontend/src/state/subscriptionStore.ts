@@ -52,6 +52,24 @@ export interface SubscriptionState {
   confirmCheckoutSession: (sessionId?: string) => Promise<boolean>;
   createCheckoutSession: (targetTier: PlanTier, cycle: BillingCycle) => Promise<string>;
   simulateMockPayment: (targetTier: PlanTier, cycle: BillingCycle) => Promise<void>;
+  generateQrPhPayment: (targetTier: PlanTier, cycle: BillingCycle) => Promise<{
+    paymentIntentId: string;
+    paymentMethodId: string;
+    clientKey: string | null;
+    status: string;
+    amountCentavos: number;
+    qrCodeUrl: string;
+    orderId: string;
+    createdAt: string;
+  }>;
+  checkQrPhStatus: (paymentIntentId: string) => Promise<{
+    paymentIntentId: string;
+    status: string;
+    isPaid: boolean;
+    amountCentavos: number;
+    paymentId?: string;
+  }>;
+  confirmQrPhPayment: (paymentIntentId: string, targetTier: PlanTier, cycle: BillingCycle) => Promise<boolean>;
 }
 
 export const getTierLimits = (tier: PlanTier): TierLimits => {
@@ -320,6 +338,73 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
           isActive: responseTier !== 'Libre',
           daysRemaining
         });
+      } catch (err: any) {
+        set({ isLoading: false, error: err?.response?.data?.message || err.message });
+        throw err;
+      }
+    },
+
+    generateQrPhPayment: async (targetTier: PlanTier, cycle: BillingCycle) => {
+      await ensureTenantProvisioned();
+      const response = await apiClient.post('/billing/qrph/generate', {
+        targetTier: targetTier === 'TindahanPro' ? 1 : 2,
+        cycle: cycle === 'Weekly' ? 0 : 1
+      });
+      return response.data;
+    },
+
+    checkQrPhStatus: async (paymentIntentId: string) => {
+      const response = await apiClient.get(`/billing/qrph/${paymentIntentId}/status`);
+      return response.data;
+    },
+
+    confirmQrPhPayment: async (paymentIntentId: string, targetTier: PlanTier, cycle: BillingCycle) => {
+      set({ isLoading: true, error: null });
+      try {
+        await ensureTenantProvisioned();
+        const response = await apiClient.post('/billing/qrph/confirm', {
+          paymentIntentId,
+          targetTier: targetTier === 'TindahanPro' ? 1 : 2,
+          cycle: cycle === 'Weekly' ? 0 : 1
+        });
+
+        const subscription = response.data;
+        const responseTier = typeof subscription?.tier === 'string'
+          ? subscription.tier as PlanTier
+          : subscription?.tier === 1
+            ? 'TindahanPro'
+            : subscription?.tier === 2
+              ? 'NegosyoPlus'
+              : targetTier;
+        const subscriptionEndDate = subscription?.subscriptionEndDate || null;
+        const auth = useAuthStore.getState();
+        auth.setSubscription(responseTier, subscriptionEndDate);
+
+        if (auth.tenantId) {
+          const existingTenant = await db.tenants.get(auth.tenantId);
+          await db.tenants.put({
+            ...existingTenant,
+            id: auth.tenantId,
+            businessName: existingTenant?.businessName || auth.businessName,
+            tier: responseTier,
+            subscriptionEndDate: subscriptionEndDate || undefined,
+            updatedAt: new Date().toISOString()
+          });
+        }
+
+        const daysRemaining = subscriptionEndDate
+          ? Math.max(0, Math.ceil((Date.parse(subscriptionEndDate) - Date.now()) / (24 * 60 * 60 * 1000)))
+          : null;
+
+        set({
+          tier: responseTier,
+          subscriptionEndDate,
+          isActive: responseTier !== 'Libre',
+          daysRemaining,
+          isLoading: false
+        });
+
+        return true;
       } catch (err: any) {
         set({ isLoading: false, error: err?.response?.data?.message || err.message });
         throw err;

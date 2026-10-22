@@ -34,6 +34,35 @@ public record CheckoutSessionDetails(
     string PaymentMethod
 );
 
+public record CustomerBillingDetails(string Name, string? Email = null, string? Phone = null);
+
+public record CreateQrPhPaymentIntentRequest(
+    long AmountCentavos,
+    string Description,
+    string OrderId,
+    CustomerBillingDetails Customer,
+    Dictionary<string, string>? Metadata = null
+);
+
+public record QrPhPaymentIntentResult(
+    string PaymentIntentId,
+    string PaymentMethodId,
+    string? ClientKey,
+    string Status,
+    long AmountCentavos,
+    string QrCodeUrl,
+    string OrderId,
+    DateTimeOffset CreatedAt
+);
+
+public record QrPhPaymentStatusResult(
+    string PaymentIntentId,
+    string Status,
+    bool IsPaid,
+    long AmountCentavos,
+    string? PaymentId = null
+);
+
 public interface IPaymentGatewayService
 {
     /// <summary>
@@ -52,6 +81,23 @@ public interface IPaymentGatewayService
     /// </summary>
     Task<CheckoutSessionDetails?> RetrieveCheckoutSessionAsync(
         string sessionId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Executes the 3-step PayMongo dynamic QR Ph payment intent sequence:
+    /// 1. Create Payment Intent (qrph method allowed)
+    /// 2. Create Payment Method (type qrph)
+    /// 3. Attach Payment Method to Intent, returning the generated QR code image URL.
+    /// </summary>
+    Task<QrPhPaymentIntentResult> CreateQrPhPaymentIntentAsync(
+        CreateQrPhPaymentIntentRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Retrieves payment intent status directly from PayMongo to confirm payment completion.
+    /// </summary>
+    Task<QrPhPaymentStatusResult> RetrievePaymentIntentStatusAsync(
+        string paymentIntentId,
         CancellationToken cancellationToken = default);
 
     bool VerifyWebhookSignature(string jsonPayload, string signatureHeader);
