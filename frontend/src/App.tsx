@@ -115,6 +115,8 @@ export const App: React.FC = () => {
       const url = new URL(window.location.href);
       if (newTab === 'login' && (url.searchParams.get('tab') === 'delete-account' || url.pathname.replace(/^\//, '').toLowerCase() === 'delete-account')) {
         url.searchParams.set('intent', 'delete-account');
+      } else if (newTab !== 'login' && newTab !== 'settings') {
+        url.searchParams.delete('intent');
       }
       const previousTab = url.searchParams.get('tab')?.toLowerCase();
       url.searchParams.set('tab', newTab);
