@@ -108,7 +108,7 @@ interface AuthState {
   completeOnboarding: (payload: OnboardingPayload) => void;
   updateStoreProfile: (payload: StoreProfilePayload) => void;
   loginWithAuthPayload: (payload: AuthResponseDto, localPin?: string, forceWipe?: boolean) => Promise<LoginResult>;
-  logout: (forceWipe?: boolean) => Promise<LogoutResult>;
+  logout: (forceWipe?: boolean, isAccountDeletion?: boolean) => Promise<LogoutResult>;
 }
 
 export const STORAGE_KEY_CONSENT = 'fluent_tindahan_consent_v1';
@@ -701,7 +701,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     return { success: true, unsyncedCount: 0 };
   },
 
-  logout: async (forceWipe = false): Promise<LogoutResult> => {
+  logout: async (forceWipe = false, isAccountDeletion = false): Promise<LogoutResult> => {
     let pendingCount = 0;
     try {
       const [syncCount, dlqCount] = await Promise.all([
@@ -731,7 +731,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       console.warn('[authStore] Failed to clear local Dexie tables on logout:', e);
     }
 
-    // Keep STORAGE_KEY_LAST_EMAIL so the login tab remembers the email address!
+    // Keep STORAGE_KEY_LAST_EMAIL on ordinary logout so login remembers the email address,
+    // but remove it when the account was deleted.
     // Keep consent & terms accepted.
     const keysToRemove = [
       STORAGE_KEY_TENANT_ID,
@@ -760,6 +761,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     ];
     for (const key of keysToRemove) {
       localStorage.removeItem(key);
+    }
+    const currentTenantId = get().tenantId;
+    if (currentTenantId) {
+      localStorage.removeItem(getSyncStorageKey(currentTenantId));
+    }
+    if (isAccountDeletion) {
+      localStorage.removeItem(STORAGE_KEY_LAST_EMAIL);
     }
     clearPendingProfileUpdate();
 

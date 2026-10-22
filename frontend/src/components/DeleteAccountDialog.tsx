@@ -26,7 +26,8 @@ import {
 import { db } from '../db/db';
 import { useAuthStore } from '../state/authStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
-import { useSyncStore, processSyncQueue } from '../sync/syncEngine';
+import { useSyncStore, processSyncQueue, resetSyncStore, updateQueueCounts } from '../sync/syncEngine';
+import { useCartStore } from '../state/cartStore';
 import { useTranslation } from '../state/languageStore';
 import { deleteAccount } from '../services/authService';
 import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
@@ -154,7 +155,10 @@ export const DeleteAccountDialog: React.FC<DeleteAccountDialogProps> = ({
       });
 
       onOpenChange(false);
-      await logout(true);
+      await logout(true, true);
+      resetSyncStore();
+      await updateQueueCounts();
+      useCartStore.getState().clearCart();
       onDeleted?.();
     } catch (err: any) {
       const rawMessage = err?.response?.data?.message || t.onboarding.loginFailed;
