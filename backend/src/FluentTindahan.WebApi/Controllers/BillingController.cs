@@ -153,12 +153,14 @@ public class BillingController : ControllerBase
     [HttpGet("qrph/{paymentIntentId}/status")]
     [ProducesResponseType(typeof(QrPhPaymentStatusResult), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status502BadGateway)]
     public async Task<ActionResult<QrPhPaymentStatusResult>> GetQrPhPaymentStatus(
         string paymentIntentId,
         CancellationToken cancellationToken)
     {
-        if (_currentUserService.TenantId == Guid.Empty)
+        var tenantId = _currentUserService.TenantId;
+        if (tenantId == Guid.Empty)
         {
             return Unauthorized(new { message = "A valid tenant is required." });
         }
@@ -166,6 +168,15 @@ public class BillingController : ControllerBase
         try
         {
             var result = await _gatewayService.RetrievePaymentIntentStatusAsync(paymentIntentId, cancellationToken);
+            if (result.Metadata == null ||
+                !result.Metadata.TryGetValue("tenant_id", out var intentTenantId) ||
+                !string.Equals(intentTenantId, tenantId.ToString(), StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("Tenant {TenantId} attempted to access QR Ph status for intent {IntentId} belonging to another tenant or with missing tenant metadata.",
+                    tenantId, paymentIntentId);
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = "Payment intent does not belong to the current store." });
+            }
+
             return Ok(result);
         }
         catch (PaymentGatewayException ex)
@@ -188,6 +199,7 @@ public class BillingController : ControllerBase
     [ProducesResponseType(typeof(TenantSubscriptionDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status502BadGateway)]
     public async Task<ActionResult<TenantSubscriptionDto>> ConfirmQrPhSubscription(
         [FromBody] ConfirmQrPhSubscriptionRequest request,
@@ -215,6 +227,27 @@ public class BillingController : ControllerBase
             if (!statusResult.IsPaid)
             {
                 return BadRequest(new { message = $"Payment is not completed. Current status: {statusResult.Status}" });
+            }
+
+            if (statusResult.Metadata == null ||
+                !statusResult.Metadata.TryGetValue("tenant_id", out var intentTenantId) ||
+                !string.Equals(intentTenantId, _currentUserService.TenantId.ToString(), StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("Payment intent {IntentId} does not belong to tenant {TenantId}.",
+                    request.PaymentIntentId, _currentUserService.TenantId);
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = "Payment intent does not belong to the current store." });
+            }
+
+            if (!statusResult.Metadata.TryGetValue("target_tier", out var intentTier) ||
+                !string.Equals(intentTier, request.TargetTier.ToString(), StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest(new { message = "Payment intent target plan does not match requested plan." });
+            }
+
+            if (!statusResult.Metadata.TryGetValue("cycle", out var intentCycle) ||
+                !string.Equals(intentCycle, request.Cycle.ToString(), StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest(new { message = "Payment intent billing cycle does not match requested cycle." });
             }
 
             if (statusResult.AmountCentavos != expectedCentavos)

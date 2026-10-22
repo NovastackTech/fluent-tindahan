@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
@@ -14,6 +15,8 @@ namespace FluentTindahan.Infrastructure.Services;
 
 public class PayMongoPaymentGatewayService : IPaymentGatewayService
 {
+    private static readonly ConcurrentDictionary<string, (long AmountCentavos, IReadOnlyDictionary<string, string>? Metadata)> _mockIntents = new();
+
     /// <summary>Maximum age (and future clock skew) accepted for a signed webhook's <c>t=</c> timestamp.</summary>
     public static readonly TimeSpan WebhookTimestampTolerance = TimeSpan.FromMinutes(5);
 
@@ -510,6 +513,8 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
             var mockMethodId = $"pm_mock_{Guid.NewGuid():N}";
             var mockSvg = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><rect width='240' height='240' fill='%23ffffff'/><text x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-family='sans-serif' font-size='16' fill='%230078d4'>QR Ph Simulation</text></svg>";
 
+            _mockIntents[mockIntentId] = (request.AmountCentavos, request.Metadata);
+
             return new QrPhPaymentIntentResult(
                 PaymentIntentId: mockIntentId,
                 PaymentMethodId: mockMethodId,
@@ -548,74 +553,86 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
             }
         };
 
-        var intentResponse = await SendPayMongoJsonAsync(HttpMethod.Post, "payment_intents", intentPayload, authHeader, cancellationToken);
-        using var intentDoc = JsonDocument.Parse(intentResponse);
-        var intentData = intentDoc.RootElement.GetProperty("data");
-        var paymentIntentId = intentData.GetProperty("id").GetString()
-            ?? throw new PaymentGatewayException("PayMongo returned empty payment intent id.");
-        var clientKey = intentData.GetProperty("attributes").TryGetProperty("client_key", out var ck) ? ck.GetString() : null;
-
-        // Step 1B: POST /payment_methods
-        var methodPayload = new
+        try
         {
-            data = new
+            var intentResponse = await SendPayMongoJsonAsync(HttpMethod.Post, "payment_intents", intentPayload, authHeader, cancellationToken);
+            using var intentDoc = JsonDocument.Parse(intentResponse);
+            var intentData = intentDoc.RootElement.GetProperty("data");
+            var paymentIntentId = intentData.GetProperty("id").GetString()
+                ?? throw new PaymentGatewayException("PayMongo returned empty payment intent id.");
+            var clientKey = intentData.GetProperty("attributes").TryGetProperty("client_key", out var ck) ? ck.GetString() : null;
+
+            // Step 1B: POST /payment_methods
+            var methodPayload = new
             {
-                attributes = new
+                data = new
                 {
-                    type = "qrph",
-                    billing = new
+                    attributes = new
                     {
-                        name = request.Customer.Name,
-                        email = request.Customer.Email ?? "suki@fluent-tindahan.ph",
-                        phone = request.Customer.Phone ?? "09000000000"
+                        type = "qrph",
+                        billing = new
+                        {
+                            name = request.Customer.Name,
+                            email = request.Customer.Email ?? "suki@fluent-tindahan.ph",
+                            phone = request.Customer.Phone ?? "09000000000"
+                        }
                     }
                 }
-            }
-        };
+            };
 
-        var methodResponse = await SendPayMongoJsonAsync(HttpMethod.Post, "payment_methods", methodPayload, authHeader, cancellationToken);
-        using var methodDoc = JsonDocument.Parse(methodResponse);
-        var paymentMethodId = methodDoc.RootElement.GetProperty("data").GetProperty("id").GetString()
-            ?? throw new PaymentGatewayException("PayMongo returned empty payment method id.");
+            var methodResponse = await SendPayMongoJsonAsync(HttpMethod.Post, "payment_methods", methodPayload, authHeader, cancellationToken);
+            using var methodDoc = JsonDocument.Parse(methodResponse);
+            var paymentMethodId = methodDoc.RootElement.GetProperty("data").GetProperty("id").GetString()
+                ?? throw new PaymentGatewayException("PayMongo returned empty payment method id.");
 
-        // Step 1C: POST /payment_intents/{intentId}/attach
-        var attachPayload = new
-        {
-            data = new
+            // Step 1C: POST /payment_intents/{intentId}/attach
+            var attachPayload = new
             {
-                attributes = new
+                data = new
                 {
-                    payment_method = paymentMethodId,
-                    client_key = clientKey
+                    attributes = new
+                    {
+                        payment_method = paymentMethodId,
+                        client_key = clientKey
+                    }
                 }
+            };
+
+            var attachResponse = await SendPayMongoJsonAsync(HttpMethod.Post, $"payment_intents/{paymentIntentId}/attach", attachPayload, authHeader, cancellationToken);
+            using var attachDoc = JsonDocument.Parse(attachResponse);
+            var attachAttr = attachDoc.RootElement.GetProperty("data").GetProperty("attributes");
+            var status = attachAttr.GetProperty("status").GetString() ?? "awaiting_next_action";
+
+            string qrCodeUrl = string.Empty;
+            if (attachAttr.TryGetProperty("next_action", out var nextAction) &&
+                nextAction.ValueKind == JsonValueKind.Object &&
+                nextAction.TryGetProperty("code", out var code) &&
+                code.ValueKind == JsonValueKind.Object &&
+                code.TryGetProperty("image_url", out var imgUrl))
+            {
+                qrCodeUrl = imgUrl.GetString() ?? string.Empty;
             }
-        };
 
-        var attachResponse = await SendPayMongoJsonAsync(HttpMethod.Post, $"payment_intents/{paymentIntentId}/attach", attachPayload, authHeader, cancellationToken);
-        using var attachDoc = JsonDocument.Parse(attachResponse);
-        var attachAttr = attachDoc.RootElement.GetProperty("data").GetProperty("attributes");
-        var status = attachAttr.GetProperty("status").GetString() ?? "awaiting_next_action";
-
-        string qrCodeUrl = string.Empty;
-        if (attachAttr.TryGetProperty("next_action", out var nextAction) &&
-            nextAction.ValueKind == JsonValueKind.Object &&
-            nextAction.TryGetProperty("code", out var code) &&
-            code.ValueKind == JsonValueKind.Object &&
-            code.TryGetProperty("image_url", out var imgUrl))
-        {
-            qrCodeUrl = imgUrl.GetString() ?? string.Empty;
+            return new QrPhPaymentIntentResult(
+                PaymentIntentId: paymentIntentId,
+                PaymentMethodId: paymentMethodId,
+                ClientKey: clientKey,
+                Status: status,
+                AmountCentavos: request.AmountCentavos,
+                QrCodeUrl: qrCodeUrl,
+                OrderId: request.OrderId,
+                CreatedAt: _timeProvider.GetUtcNow()
+            );
         }
-
-        return new QrPhPaymentIntentResult(
-            PaymentIntentId: paymentIntentId,
-            PaymentMethodId: paymentMethodId,
-            ClientKey: clientKey,
-            Status: status,
-            AmountCentavos: request.AmountCentavos,
-            QrCodeUrl: qrCodeUrl,
-            OrderId: request.OrderId,
-            CreatedAt: _timeProvider.GetUtcNow()
-        );
+        catch (PaymentGatewayException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException)
+        {
+            _logger.LogError(ex, "Failed to parse PayMongo response while creating QR Ph payment intent.");
+            throw new PaymentGatewayException("Payment gateway returned an invalid or malformed response.", ex);
+        }
     }
 
     public async Task<QrPhPaymentStatusResult> RetrievePaymentIntentStatusAsync(
@@ -630,40 +647,79 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
                 throw new PaymentGatewayException("Payment gateway is not configured.");
             }
 
-            return new QrPhPaymentStatusResult(
-                PaymentIntentId: paymentIntentId,
-                Status: "succeeded",
-                IsPaid: true,
-                AmountCentavos: 10000,
-                PaymentId: $"pay_mock_{Guid.NewGuid():N}"
-            );
+            if (_mockIntents.TryGetValue(paymentIntentId, out var mockData))
+            {
+                return new QrPhPaymentStatusResult(
+                    PaymentIntentId: paymentIntentId,
+                    Status: "succeeded",
+                    IsPaid: true,
+                    AmountCentavos: mockData.AmountCentavos,
+                    PaymentId: $"pay_mock_{Guid.NewGuid():N}",
+                    Metadata: mockData.Metadata
+                );
+            }
+
+            if (paymentIntentId.StartsWith("pi_mock_", StringComparison.OrdinalIgnoreCase))
+            {
+                return new QrPhPaymentStatusResult(
+                    PaymentIntentId: paymentIntentId,
+                    Status: "succeeded",
+                    IsPaid: true,
+                    AmountCentavos: 0,
+                    PaymentId: $"pay_mock_{Guid.NewGuid():N}",
+                    Metadata: null
+                );
+            }
+
+            throw new PaymentGatewayException($"Payment intent '{paymentIntentId}' not found.");
         }
 
         var authHeader = new AuthenticationHeaderValue("Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes($"{secretKey!.Trim()}:")));
         var responseContent = await SendPayMongoJsonAsync(HttpMethod.Get, $"payment_intents/{paymentIntentId}", null, authHeader, cancellationToken);
 
-        using var doc = JsonDocument.Parse(responseContent);
-        var dataAttr = doc.RootElement.GetProperty("data").GetProperty("attributes");
-        var status = dataAttr.GetProperty("status").GetString() ?? "unknown";
-        var amount = dataAttr.GetProperty("amount").GetInt64();
-        var isPaid = string.Equals(status, "succeeded", StringComparison.OrdinalIgnoreCase);
-
-        string? paymentId = null;
-        if (dataAttr.TryGetProperty("payments", out var payments) &&
-            payments.ValueKind == JsonValueKind.Array &&
-            payments.GetArrayLength() > 0)
+        try
         {
-            var firstPayment = payments[0];
-            paymentId = firstPayment.GetProperty("id").GetString();
-        }
+            using var doc = JsonDocument.Parse(responseContent);
+            var dataAttr = doc.RootElement.GetProperty("data").GetProperty("attributes");
+            var status = dataAttr.GetProperty("status").GetString() ?? "unknown";
+            var amount = dataAttr.GetProperty("amount").GetInt64();
+            var isPaid = string.Equals(status, "succeeded", StringComparison.OrdinalIgnoreCase);
 
-        return new QrPhPaymentStatusResult(
-            PaymentIntentId: paymentIntentId,
-            Status: status,
-            IsPaid: isPaid,
-            AmountCentavos: amount,
-            PaymentId: paymentId
-        );
+            string? paymentId = null;
+            if (dataAttr.TryGetProperty("payments", out var payments) &&
+                payments.ValueKind == JsonValueKind.Array &&
+                payments.GetArrayLength() > 0)
+            {
+                var firstPayment = payments[0];
+                paymentId = firstPayment.TryGetProperty("id", out var pid) ? pid.GetString() : null;
+            }
+
+            Dictionary<string, string>? metadata = null;
+            if (dataAttr.TryGetProperty("metadata", out var metaElem) && metaElem.ValueKind == JsonValueKind.Object)
+            {
+                metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var prop in metaElem.EnumerateObject())
+                {
+                    metadata[prop.Name] = prop.Value.ValueKind == JsonValueKind.String
+                        ? prop.Value.GetString() ?? string.Empty
+                        : prop.Value.ToString();
+                }
+            }
+
+            return new QrPhPaymentStatusResult(
+                PaymentIntentId: paymentIntentId,
+                Status: status,
+                IsPaid: isPaid,
+                AmountCentavos: amount,
+                PaymentId: paymentId,
+                Metadata: metadata
+            );
+        }
+        catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException)
+        {
+            _logger.LogError(ex, "Failed to parse PayMongo payment intent status response for {PaymentIntentId}.", paymentIntentId);
+            throw new PaymentGatewayException("Payment gateway returned an invalid or malformed response.", ex);
+        }
     }
 
     private async Task<string> SendPayMongoJsonAsync(

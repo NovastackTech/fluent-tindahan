@@ -157,6 +157,61 @@ describe('QrPhSubscriptionDialog', () => {
     }, { timeout: 2500 });
   });
 
+  it('surfaces error and provides retry when confirmQrPhPayment fails after payment is detected', async () => {
+    const mockGenerate = vi.fn().mockResolvedValue({
+      paymentIntentId: 'pi_fail_sub_01',
+      paymentMethodId: 'pm_fail_01',
+      clientKey: 'client_005',
+      status: 'awaiting_next_action',
+      amountCentavos: 12900,
+      qrCodeUrl: 'data:image/png;base64,fail_qr',
+      orderId: 'sub_fail_ref',
+      createdAt: '2026-10-22T00:00:00Z'
+    });
+
+    const mockCheck = vi.fn().mockResolvedValue({
+      paymentIntentId: 'pi_fail_sub_01',
+      status: 'succeeded',
+      isPaid: true,
+      amountCentavos: 12900,
+      paymentId: 'pay_sub_fail'
+    });
+
+    const mockConfirm = vi.fn()
+      .mockRejectedValueOnce(new Error('Gateway timeout on upgrade'))
+      .mockResolvedValueOnce(true);
+
+    const onClose = vi.fn();
+
+    useSubscriptionStore.setState({
+      generateQrPhPayment: mockGenerate,
+      checkQrPhStatus: mockCheck,
+      confirmQrPhPayment: mockConfirm
+    });
+
+    renderDialog({ onClose });
+
+    const checkBtn = await screen.findByRole('button', { name: /Check Payment Status/i });
+    fireEvent.click(checkBtn);
+
+    // Confirm threw, so dialog should NOT show upgrade success
+    expect(await screen.findByText('Gateway timeout on upgrade')).toBeInTheDocument();
+    expect(screen.queryByText(/Store subscription successfully upgraded!/i)).not.toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+
+    // Clicking Try Again should call confirm again using the same intent, without regenerating QR
+    const retryBtn = screen.getByRole('button', { name: /Try Again/i });
+    fireEvent.click(retryBtn);
+
+    expect(await screen.findByText(/Store subscription successfully upgraded!/i)).toBeInTheDocument();
+    expect(mockGenerate).toHaveBeenCalledTimes(1);
+    expect(mockConfirm).toHaveBeenCalledTimes(2);
+
+    await waitFor(() => {
+      expect(onClose).toHaveBeenCalled();
+    }, { timeout: 2500 });
+  });
+
   it('does not re-trigger generateQrPhPayment when parent re-renders with a new onClose reference', async () => {
     const mockGenerate = vi.fn().mockResolvedValue({
       paymentIntentId: 'pi_stable_01',

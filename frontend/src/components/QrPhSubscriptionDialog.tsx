@@ -183,12 +183,22 @@ export const QrPhSubscriptionDialog: React.FC<QrPhSubscriptionDialogProps> = ({
     try {
       const statusData = await checkQrPhStatus(paymentIntentId);
       if (statusData.isPaid) {
-        setIsPaid(true);
         stopPolling();
-        playScanBeep();
+        try {
+          await confirmQrPhPayment(paymentIntentId, targetTier, cycle);
+        } catch (e: any) {
+          setError(
+            e?.response?.data?.message ||
+            e?.message ||
+            (isTagalogRef.current
+              ? 'Natanggap ang bayad ngunit nabigo ang pag-upgrade. Pakisubukan muli.'
+              : 'Payment received but upgrade failed. Please retry.')
+          );
+          return;
+        }
 
-        // Confirm subscription payment and upgrade tenant
-        await confirmQrPhPayment(paymentIntentId, targetTier, cycle);
+        setIsPaid(true);
+        playScanBeep();
 
         if (successTimeoutRef.current !== null) {
           window.clearTimeout(successTimeoutRef.current);
@@ -328,8 +338,13 @@ export const QrPhSubscriptionDialog: React.FC<QrPhSubscriptionDialogProps> = ({
                   appearance="primary"
                   icon={<ArrowClockwiseRegular />}
                   onClick={() => {
+                    const intentId = qrResult?.paymentIntentId;
                     setError(null);
-                    setRetryTrigger(c => c + 1);
+                    if (intentId) {
+                      handleStatusCheck(intentId);
+                    } else {
+                      setRetryTrigger(c => c + 1);
+                    }
                   }}
                 >
                   {isTagalog ? 'Subukan Muli' : 'Try Again'}

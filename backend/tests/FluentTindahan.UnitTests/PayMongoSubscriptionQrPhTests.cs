@@ -323,7 +323,13 @@ public class PayMongoSubscriptionQrPhTests
                 "succeeded",
                 true,
                 12900,
-                "pay_rec_123"));
+                "pay_rec_123",
+                new Dictionary<string, string>
+                {
+                    { "tenant_id", _testTenantId.ToString() },
+                    { "target_tier", PlanTier.TindahanPro.ToString() },
+                    { "cycle", BillingCycle.Monthly.ToString() }
+                }));
 
         var mediatorMock = new Mock<IMediator>();
         mediatorMock.Setup(m => m.Send(It.IsAny<ApplySubscriptionPaymentCommand>(), It.IsAny<CancellationToken>()))
@@ -415,5 +421,268 @@ public class PayMongoSubscriptionQrPhTests
 
         capturedBody.Should().NotBeNull();
         capturedBody.Should().Contain("\"qrph\"");
+    }
+
+    [Fact]
+    public async Task BillingController_ConfirmQrPhSubscription_Rejects_WhenTenantMismatch()
+    {
+        var otherTenantId = Guid.NewGuid();
+        var gatewayMock = new Mock<IPaymentGatewayService>();
+        gatewayMock.Setup(g => g.RetrievePaymentIntentStatusAsync("pi_paid_other", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new QrPhPaymentStatusResult(
+                "pi_paid_other",
+                "succeeded",
+                true,
+                12900,
+                "pay_rec_other",
+                new Dictionary<string, string>
+                {
+                    { "tenant_id", otherTenantId.ToString() },
+                    { "target_tier", PlanTier.TindahanPro.ToString() },
+                    { "cycle", BillingCycle.Monthly.ToString() }
+                }));
+
+        var controller = new BillingController(
+            new Mock<IMediator>().Object,
+            _currentUserServiceMock.Object,
+            gatewayMock.Object,
+            _devEnvMock.Object,
+            NullLogger<BillingController>.Instance);
+
+        var request = new BillingController.ConfirmQrPhSubscriptionRequest("pi_paid_other", PlanTier.TindahanPro, BillingCycle.Monthly);
+        var response = await controller.ConfirmQrPhSubscription(request, CancellationToken.None);
+
+        response.Result.Should().BeOfType<ObjectResult>();
+        (response.Result as ObjectResult)!.StatusCode.Should().Be((int)HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task BillingController_ConfirmQrPhSubscription_Rejects_WhenTierMismatch()
+    {
+        var gatewayMock = new Mock<IPaymentGatewayService>();
+        gatewayMock.Setup(g => g.RetrievePaymentIntentStatusAsync("pi_paid_tier", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new QrPhPaymentStatusResult(
+                "pi_paid_tier",
+                "succeeded",
+                true,
+                34900,
+                "pay_rec_tier",
+                new Dictionary<string, string>
+                {
+                    { "tenant_id", _testTenantId.ToString() },
+                    { "target_tier", PlanTier.TindahanPro.ToString() },
+                    { "cycle", BillingCycle.Monthly.ToString() }
+                }));
+
+        var controller = new BillingController(
+            new Mock<IMediator>().Object,
+            _currentUserServiceMock.Object,
+            gatewayMock.Object,
+            _devEnvMock.Object,
+            NullLogger<BillingController>.Instance);
+
+        var request = new BillingController.ConfirmQrPhSubscriptionRequest("pi_paid_tier", PlanTier.NegosyoPlus, BillingCycle.Monthly);
+        var response = await controller.ConfirmQrPhSubscription(request, CancellationToken.None);
+
+        response.Result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
+    public async Task BillingController_ConfirmQrPhSubscription_Rejects_WhenCycleMismatch()
+    {
+        var gatewayMock = new Mock<IPaymentGatewayService>();
+        gatewayMock.Setup(g => g.RetrievePaymentIntentStatusAsync("pi_paid_cycle", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new QrPhPaymentStatusResult(
+                "pi_paid_cycle",
+                "succeeded",
+                true,
+                3500,
+                "pay_rec_cycle",
+                new Dictionary<string, string>
+                {
+                    { "tenant_id", _testTenantId.ToString() },
+                    { "target_tier", PlanTier.TindahanPro.ToString() },
+                    { "cycle", BillingCycle.Monthly.ToString() }
+                }));
+
+        var controller = new BillingController(
+            new Mock<IMediator>().Object,
+            _currentUserServiceMock.Object,
+            gatewayMock.Object,
+            _devEnvMock.Object,
+            NullLogger<BillingController>.Instance);
+
+        var request = new BillingController.ConfirmQrPhSubscriptionRequest("pi_paid_cycle", PlanTier.TindahanPro, BillingCycle.Weekly);
+        var response = await controller.ConfirmQrPhSubscription(request, CancellationToken.None);
+
+        response.Result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
+    public async Task BillingController_GetQrPhPaymentStatus_Rejects_WhenTenantMismatch()
+    {
+        var otherTenantId = Guid.NewGuid();
+        var gatewayMock = new Mock<IPaymentGatewayService>();
+        gatewayMock.Setup(g => g.RetrievePaymentIntentStatusAsync("pi_other_status", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new QrPhPaymentStatusResult(
+                "pi_other_status",
+                "succeeded",
+                true,
+                12900,
+                "pay_other",
+                new Dictionary<string, string>
+                {
+                    { "tenant_id", otherTenantId.ToString() }
+                }));
+
+        var controller = new BillingController(
+            new Mock<IMediator>().Object,
+            _currentUserServiceMock.Object,
+            gatewayMock.Object,
+            _devEnvMock.Object,
+            NullLogger<BillingController>.Instance);
+
+        var response = await controller.GetQrPhPaymentStatus("pi_other_status", CancellationToken.None);
+
+        response.Result.Should().BeOfType<ObjectResult>();
+        (response.Result as ObjectResult)!.StatusCode.Should().Be((int)HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task RetrievePaymentIntentStatusAsync_InDevelopment_ReturnsStoredMockAmountAndMetadata()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                { "PayMongo:SecretKey", "mock-secret" }
+            })
+            .Build();
+
+        var service = new PayMongoPaymentGatewayService(
+            new HttpClient(),
+            config,
+            _devEnvMock.Object,
+            TimeProvider.System,
+            NullLogger<PayMongoPaymentGatewayService>.Instance);
+
+        var request = new CreateQrPhPaymentIntentRequest(
+            AmountCentavos: 12900,
+            Description: "Fluent Tindahan - Tindahan Pro (Monthly)",
+            OrderId: "sub_mock_match_001",
+            Customer: new CustomerBillingDetails("Suki Store"),
+            Metadata: new Dictionary<string, string>
+            {
+                { "tenant_id", _testTenantId.ToString() },
+                { "target_tier", "TindahanPro" },
+                { "cycle", "Monthly" }
+            }
+        );
+
+        var created = await service.CreateQrPhPaymentIntentAsync(request);
+        var status = await service.RetrievePaymentIntentStatusAsync(created.PaymentIntentId);
+
+        status.IsPaid.Should().BeTrue();
+        status.AmountCentavos.Should().Be(12900);
+        status.Metadata.Should().NotBeNull();
+        status.Metadata!["tenant_id"].Should().Be(_testTenantId.ToString());
+        status.Metadata!["target_tier"].Should().Be("TindahanPro");
+        status.Metadata!["cycle"].Should().Be("Monthly");
+    }
+
+    [Fact]
+    public async Task RetrievePaymentIntentStatusAsync_InDevelopment_RejectsUnknownIntent()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                { "PayMongo:SecretKey", "mock-secret" }
+            })
+            .Build();
+
+        var service = new PayMongoPaymentGatewayService(
+            new HttpClient(),
+            config,
+            _devEnvMock.Object,
+            TimeProvider.System,
+            NullLogger<PayMongoPaymentGatewayService>.Instance);
+
+        var act = async () => await service.RetrievePaymentIntentStatusAsync("pi_real_external_999");
+        await act.Should().ThrowAsync<PaymentGatewayException>()
+            .WithMessage("*not found*");
+    }
+
+    [Fact]
+    public async Task CreateQrPhPaymentIntentAsync_RethrowsMalformedJson_AsPaymentGatewayException()
+    {
+        var handlerMock = new Mock<HttpMessageHandler>();
+        handlerMock.Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                // Returns unexpected JSON lacking "data"
+                Content = new StringContent("{\"status\":\"ok\"}")
+            });
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                { "PayMongo:SecretKey", "sk_test_actual_key" }
+            })
+            .Build();
+
+        var service = new PayMongoPaymentGatewayService(
+            new HttpClient(handlerMock.Object),
+            config,
+            _devEnvMock.Object,
+            TimeProvider.System,
+            NullLogger<PayMongoPaymentGatewayService>.Instance);
+
+        var request = new CreateQrPhPaymentIntentRequest(
+            AmountCentavos: 12900,
+            Description: "Fluent Tindahan",
+            OrderId: "sub_malformed_001",
+            Customer: new CustomerBillingDetails("Suki")
+        );
+
+        var act = async () => await service.CreateQrPhPaymentIntentAsync(request);
+        await act.Should().ThrowAsync<PaymentGatewayException>()
+            .WithMessage("*invalid or malformed response*");
+    }
+
+    [Fact]
+    public async Task RetrievePaymentIntentStatusAsync_RethrowsMalformedJson_AsPaymentGatewayException()
+    {
+        var handlerMock = new Mock<HttpMessageHandler>();
+        handlerMock.Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                // Returns corrupted data missing attributes
+                Content = new StringContent("{\"data\":{}}")
+            });
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                { "PayMongo:SecretKey", "sk_test_actual_key" }
+            })
+            .Build();
+
+        var service = new PayMongoPaymentGatewayService(
+            new HttpClient(handlerMock.Object),
+            config,
+            _devEnvMock.Object,
+            TimeProvider.System,
+            NullLogger<PayMongoPaymentGatewayService>.Instance);
+
+        var act = async () => await service.RetrievePaymentIntentStatusAsync("pi_test_malformed");
+        await act.Should().ThrowAsync<PaymentGatewayException>()
+            .WithMessage("*invalid or malformed response*");
     }
 }

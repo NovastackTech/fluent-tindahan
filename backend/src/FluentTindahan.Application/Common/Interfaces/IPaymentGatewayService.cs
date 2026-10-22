@@ -60,7 +60,8 @@ public record QrPhPaymentStatusResult(
     string Status,
     bool IsPaid,
     long AmountCentavos,
-    string? PaymentId = null
+    string? PaymentId = null,
+    IReadOnlyDictionary<string, string>? Metadata = null
 );
 
 public interface IPaymentGatewayService
