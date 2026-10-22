@@ -1188,6 +1188,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
                           size="small"
                           icon={<SubtractRegular />}
                           appearance="subtle"
+                          aria-label={`${t.pos.decreaseQty}: ${item.name}`}
                           onClick={() => updateQty(item.productId, item.qty - 1, allowOversell ? null : availableStock)}
                         />
                         <Text weight="bold" size={300} style={{ minWidth: '24px', textAlign: 'center', color: isExceeding ? tokens.colorPaletteRedForeground1 : undefined }}>
@@ -1198,6 +1199,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
                           icon={<AddRegular />}
                           appearance="subtle"
                           disabled={isAtLimit}
+                          aria-label={`${t.pos.increaseQty}: ${item.name}`}
                           onClick={() => {
                             if (isAtLimit) {
                               showToast(
@@ -1215,6 +1217,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
                           size="small"
                           icon={<DeleteRegular />}
                           appearance="subtle"
+                          aria-label={`${t.pos.removeItem}: ${item.name}`}
                           onClick={() => removeItem(item.productId)}
                         />
                       </div>
