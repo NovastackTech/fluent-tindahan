@@ -1,0 +1,199 @@
+name: CD Production (Alibaba Cloud SAS)
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_backup:
+        description: 'Skip database pg_dump snapshot before deploying'
+        type: boolean
+        default: false
+      skip_setup:
+        description: 'Skip Docker setup check'
+        type: boolean
+        default: true
+
+concurrency:
+  group: cd-production-live
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  validate:
+    name: Validate (Frontend & Backend)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --ignore-scripts
+
+      - name: Run frontend linter
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Run frontend unit tests
+        working-directory: frontend
+        run: npm test
+
+      - name: Build frontend production bundle
+        working-directory: frontend
+        run: npm run build
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Run backend unit tests
+        run: dotnet test backend/tests/FluentTindahan.UnitTests/FluentTindahan.UnitTests.csproj --configuration Release --verbosity normal
+
+  deploy-prod:
+    name: Deploy Production to Alibaba SAS
+    needs: [validate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: https://tindahan.novastack-inc.online
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine lowercase repository owner for GHCR
+        id: meta
+        run: |
+          OWNER_LOWER="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          echo "api_image=ghcr.io/${OWNER_LOWER}/fluent-tindahan-api:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          echo "api_prod=ghcr.io/${OWNER_LOWER}/fluent-tindahan-api:prod" >> "$GITHUB_OUTPUT"
+          echo "web_image=ghcr.io/${OWNER_LOWER}/fluent-tindahan-web:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          echo "web_prod=ghcr.io/${OWNER_LOWER}/fluent-tindahan-web:prod" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Backend (API) image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.api_image }}
+            ${{ steps.meta.outputs.api_prod }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+
+      - name: Build and push Frontend (Web) image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: frontend/Dockerfile
+          push: true
+          build-args: |
+            VITE_GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+          tags: |
+            ${{ steps.meta.outputs.web_image }}
+            ${{ steps.meta.outputs.web_prod }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+
+      - name: Package deploy archive
+        run: |
+          tar -czf /tmp/fluent-tindahan-deploy.tar.gz \
+            docker-compose.yml \
+            deploy/
+          echo "Deploy archive created: $(ls -lh /tmp/fluent-tindahan-deploy.tar.gz)"
+
+      - name: Configure SSH and Deploy Production
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          API_IMAGE: ${{ steps.meta.outputs.api_image }}
+          WEB_IMAGE: ${{ steps.meta.outputs.web_image }}
+          SAS_HOST: ${{ secrets.SAS_HOST }}
+          SAS_USER: ${{ secrets.SAS_USER || 'root' }}
+          SAS_PORT: ${{ secrets.SAS_PORT || 22 }}
+          SAS_SSH_KEY: ${{ secrets.SAS_SSH_KEY }}
+          SAS_APP_DIR: /opt/fluent-tindahan-prod
+          PROJECT_NAME: fluent-tindahan-prod
+          PUBLIC_HOST: tindahan.novastack-inc.online
+          PUBLIC_ORIGIN: https://tindahan.novastack-inc.online
+          HOST_HTTP_PORT: '8090'
+          PAYMONGO_SECRET_KEY: ${{ secrets.PAYMONGO_SECRET_KEY }}
+          PAYMONGO_PUBLIC_KEY: ${{ secrets.PAYMONGO_PUBLIC_KEY }}
+          PAYMONGO_WEBHOOK_SECRET: ${{ secrets.PAYMONGO_WEBHOOK_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          SKIP_BACKUP: ${{ inputs.skip_backup }}
+          SKIP_SETUP: ${{ inputs.skip_setup }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM_EMAIL: ${{ secrets.SMTP_FROM_EMAIL }}
+          SMTP_FROM_NAME: ${{ secrets.SMTP_FROM_NAME }}
+          SMTP_ENABLE_SSL: ${{ secrets.SMTP_ENABLE_SSL }}
+        run: |
+          set -euo pipefail
+
+          # 1. Configure SSH Authentication
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          if [ -z "${SAS_SSH_KEY:-}" ]; then
+            echo "::error::SAS_SSH_KEY secret is not configured."
+            exit 1
+          fi
+
+          printf '%s\n' "$SAS_SSH_KEY" > ~/.ssh/id_sas
+          chmod 600 ~/.ssh/id_sas
+          ssh-keyscan -p "$SAS_PORT" -H "$SAS_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          SSH_CMD="ssh -i ~/.ssh/id_sas -p $SAS_PORT -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o BatchMode=yes"
+
+          echo "Connecting to $SAS_USER@$SAS_HOST:$SAS_PORT..."
+
+          # 2. Authenticate remote Docker daemon with GHCR over stdin
+          printf '%s\n' "$GHCR_TOKEN" | $SSH_CMD "$SAS_USER@$SAS_HOST" "docker login ghcr.io -u '$GHCR_USER' --password-stdin"
+
+          # 3. Upload deploy archive to temporary staging path
+          cat /tmp/fluent-tindahan-deploy.tar.gz | $SSH_CMD "$SAS_USER@$SAS_HOST" "cat > /tmp/fluent-tindahan-prod-deploy.tar.gz"
+
+          # 4. Verify archive on server, then clean app directory (preserving .env and backups/) and unpack
+          $SSH_CMD "$SAS_USER@$SAS_HOST" "set -euo pipefail; tar -tzf /tmp/fluent-tindahan-prod-deploy.tar.gz >/dev/null; mkdir -p '$SAS_APP_DIR'; find '$SAS_APP_DIR' -mindepth 1 -maxdepth 1 ! -name .env ! -name backups -exec rm -rf {} +; tar -xzf /tmp/fluent-tindahan-prod-deploy.tar.gz -C '$SAS_APP_DIR'; rm -f /tmp/fluent-tindahan-prod-deploy.tar.gz"
+
+          # 5. Stream secrets.env over stdin (never in command string or argv)
+          printf 'API_IMAGE=%s\nWEB_IMAGE=%s\nPAYMONGO_SECRET_KEY=%s\nPAYMONGO_PUBLIC_KEY=%s\nPAYMONGO_WEBHOOK_SECRET=%s\nPAYMONGO_FRONTEND_ORIGIN=%s\nDEMO_MODE=false\nALLOW_DEMO_MODE_IN_PRODUCTION=false\nGOOGLE_CLIENT_ID=%s\nSMTP_HOST=%s\nSMTP_PORT=%s\nSMTP_USERNAME=%s\nSMTP_PASSWORD=%s\nSMTP_FROM_EMAIL=%s\nSMTP_FROM_NAME=%s\nSMTP_ENABLE_SSL=%s\n' \
+            "$API_IMAGE" "$WEB_IMAGE" "${PAYMONGO_SECRET_KEY:-}" "${PAYMONGO_PUBLIC_KEY:-}" "${PAYMONGO_WEBHOOK_SECRET:-}" "$PUBLIC_ORIGIN" "${GOOGLE_CLIENT_ID:-}" \
+            "${SMTP_HOST:-}" "${SMTP_PORT:-}" "${SMTP_USERNAME:-}" "${SMTP_PASSWORD:-}" "${SMTP_FROM_EMAIL:-}" "${SMTP_FROM_NAME:-}" "${SMTP_ENABLE_SSL:-}" \
+            | $SSH_CMD "$SAS_USER@$SAS_HOST" "umask 077; cat > '$SAS_APP_DIR/deploy/alibaba-sas/secrets.env'"
+
+          # 6. Build install flags
+          INSTALL_ARGS="--dir '$SAS_APP_DIR' --domain '$PUBLIC_HOST' --port '$HOST_HTTP_PORT' --name '$PROJECT_NAME' --pull-images"
+          if [ "${SKIP_SETUP:-false}" = "true" ]; then
+            INSTALL_ARGS="$INSTALL_ARGS --skip-setup"
+          fi
+          if [ "${SKIP_BACKUP:-false}" = "true" ]; then
+            INSTALL_ARGS="$INSTALL_ARGS --no-backup"
+          fi
+
+          # 7. Execute install.sh (which also validates http://127.0.0.1:8090/api/health on the server)
+          echo "Executing install.sh on remote server..."
+          $SSH_CMD "$SAS_USER@$SAS_HOST" "chmod +x '$SAS_APP_DIR'/deploy/alibaba-sas/*.sh && cd '$SAS_APP_DIR' && bash deploy/alibaba-sas/install.sh $INSTALL_ARGS"

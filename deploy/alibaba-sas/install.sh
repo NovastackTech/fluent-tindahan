@@ -269,8 +269,16 @@ configure_host_nginx() {
   elif grep -rqsF --exclude="*.example" "server_name ${DOMAIN}" /etc/nginx; then
     log "Another nginx config already serves ${DOMAIN}; leaving it unchanged."
   else
-    sed -e "s/tindahan-dev\.novastack-inc\.online/${DOMAIN}/g" -e "s/127\.0\.0\.1:8089/127.0.0.1:${HTTP_PORT}/" \
-      "${template}" > "${conf}"
+    if grep -rqsF --exclude="*.example" '$connection_upgrade' /etc/nginx; then
+      sed -e '/^map \$http_upgrade \$connection_upgrade {/,/^}/d' \
+          -e "s/tindahan-dev\.novastack-inc\.online/${DOMAIN}/g" \
+          -e "s/127\.0\.0\.1:8089/127.0.0.1:${HTTP_PORT}/" \
+          "${template}" > "${conf}"
+    else
+      sed -e "s/tindahan-dev\.novastack-inc\.online/${DOMAIN}/g" \
+          -e "s/127\.0\.0\.1:8089/127.0.0.1:${HTTP_PORT}/" \
+          "${template}" > "${conf}"
+    fi
     if ! nginx -t >/dev/null 2>&1 || ! systemctl reload nginx; then
       rm -f "${conf}"
       log "WARNING: nginx rejected the new site; removed ${conf}."
