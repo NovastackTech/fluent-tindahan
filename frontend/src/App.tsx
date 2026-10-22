@@ -106,20 +106,38 @@ export const App: React.FC = () => {
 
   const visibleTab: NavTab = reauthRequested ? 'login' : activeTab;
 
-  const handleTabChange = (newTab: NavTab) => {
+  const handleTabChange = (newTab: NavTab, options?: { replace?: boolean }) => {
     if (useAuthStore.getState().reauthRequested) {
       useAuthStore.getState().clearReauthRequest();
     }
     setActiveTab(newTab);
-    if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
+    if (typeof window !== 'undefined' && window.history) {
       const url = new URL(window.location.href);
       if (newTab === 'login' && (url.searchParams.get('tab') === 'delete-account' || url.pathname.replace(/^\//, '').toLowerCase() === 'delete-account')) {
         url.searchParams.set('intent', 'delete-account');
+      } else if (newTab !== 'login' && newTab !== 'settings') {
+        url.searchParams.delete('intent');
       }
+      const previousTab = url.searchParams.get('tab')?.toLowerCase();
       url.searchParams.set('tab', newTab);
-      window.history.replaceState(null, '', url.pathname + url.search);
+      const newUrl = url.pathname + url.search;
+      if (options?.replace || previousTab === newTab) {
+        window.history.replaceState?.(null, '', newUrl);
+      } else {
+        window.history.pushState?.(null, '', newUrl);
+      }
     }
   };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handlePopState = () => {
+      const nextTab = getInitialNavTab();
+      setActiveTab(nextTab);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.history?.replaceState) return;
@@ -135,7 +153,7 @@ export const App: React.FC = () => {
     if (!isOnboardingStatusReady) return;
     if (!isOnboarded && activeTab !== 'landing' && activeTab !== 'login') {
       // oxlint-disable-next-line react/set-state-in-effect - Route unauthenticated non-landing users to login when onboarding state is confirmed
-      handleTabChange('login');
+      handleTabChange('login', { replace: true });
     }
   }, [isOnboarded, isOnboardingStatusReady, activeTab]);
 
