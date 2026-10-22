@@ -319,5 +319,70 @@ describe('subscriptionStore', () => {
       expect(useSubscriptionStore.getState().isActive).toBe(true);
       dbUpdateSpy.mockRestore();
     });
+
+    it('generates QR Ph payment intent via /billing/qrph/generate', async () => {
+      const postSpy = vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
+        data: {
+          paymentIntentId: 'pi_test_sub',
+          paymentMethodId: 'pm_test_sub',
+          clientKey: 'ck_test',
+          status: 'awaiting_next_action',
+          amountCentavos: 12900,
+          qrCodeUrl: 'data:image/png;base64,mockqr',
+          orderId: 'sub_order_123',
+          createdAt: new Date().toISOString()
+        }
+      } as any);
+
+      const result = await useSubscriptionStore.getState().generateQrPhPayment('TindahanPro', 'Monthly');
+
+      expect(postSpy).toHaveBeenCalledWith('/billing/qrph/generate', {
+        targetTier: 1,
+        cycle: 1
+      });
+      expect(result.paymentIntentId).toBe('pi_test_sub');
+      expect(result.qrCodeUrl).toBe('data:image/png;base64,mockqr');
+    });
+
+    it('checks QR Ph payment status via /billing/qrph/{id}/status', async () => {
+      const getSpy = vi.spyOn(apiClient, 'get').mockResolvedValueOnce({
+        data: {
+          paymentIntentId: 'pi_test_sub',
+          status: 'succeeded',
+          isPaid: true,
+          amountCentavos: 12900,
+          paymentId: 'pay_123'
+        }
+      } as any);
+
+      const status = await useSubscriptionStore.getState().checkQrPhStatus('pi_test_sub');
+
+      expect(getSpy).toHaveBeenCalledWith('/billing/qrph/pi_test_sub/status');
+      expect(status.isPaid).toBe(true);
+      expect(status.paymentId).toBe('pay_123');
+    });
+
+    it('confirms QR Ph payment and upgrades subscription tier and end date', async () => {
+      const newEndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      const postSpy = vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
+        data: {
+          tier: 'TindahanPro',
+          subscriptionEndDate: newEndDate,
+          isActive: true
+        }
+      } as any);
+
+      const success = await useSubscriptionStore.getState().confirmQrPhPayment('pi_test_sub', 'TindahanPro', 'Monthly');
+
+      expect(postSpy).toHaveBeenCalledWith('/billing/qrph/confirm', {
+        paymentIntentId: 'pi_test_sub',
+        targetTier: 1,
+        cycle: 1
+      });
+      expect(success).toBe(true);
+      expect(useSubscriptionStore.getState().tier).toBe('TindahanPro');
+      expect(useSubscriptionStore.getState().subscriptionEndDate).toBe(newEndDate);
+      expect(useSubscriptionStore.getState().isActive).toBe(true);
+    });
   });
 });

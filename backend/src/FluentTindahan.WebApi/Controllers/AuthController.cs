@@ -1202,8 +1202,7 @@ public class AuthController : ControllerBase
     /// Accepts an authenticated session (Bearer token) or an explicit RefreshToken in the request body.
     /// </summary>
     [HttpPost("logout")]
-    [Route("/auth/logout")]
-    [Route("/api/auth/logout")]
+    [HttpPost("/auth/logout")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> Logout(
         [FromBody] LogoutRequest? request,
@@ -1254,7 +1253,7 @@ public class AuthController : ControllerBase
     [EnableRateLimiting("AuthSensitive")]
     [HttpPost("change-password")]
     [HttpPut("password")]
-    [Route("/auth/change-password")]
+    [HttpPost("/auth/change-password")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -1359,7 +1358,7 @@ public class AuthController : ControllerBase
     [AllowAnonymous]
     [EnableRateLimiting("EmailDispatch")]
     [HttpPost("forgot-password")]
-    [Route("/auth/forgot-password")]
+    [HttpPost("/auth/forgot-password")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
@@ -1416,7 +1415,7 @@ public class AuthController : ControllerBase
     [AllowAnonymous]
     [EnableRateLimiting("AuthSensitive")]
     [HttpPost("reset-password")]
-    [Route("/auth/reset-password")]
+    [HttpPost("/auth/reset-password")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
@@ -1889,7 +1888,7 @@ public class AuthController : ControllerBase
     [Authorize]
     [EnableRateLimiting("AuthSensitive")]
     [HttpPost("delete-account")]
-    [Route("/auth/delete-account")]
+    [HttpPost("/auth/delete-account")]
     [ProducesResponseType(typeof(DeleteAccountResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

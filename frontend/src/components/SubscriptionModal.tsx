@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   Dialog,
   DialogSurface,
@@ -23,7 +23,8 @@ import {
   DismissRegular,
   SparkleRegular,
   StarFilled,
-  CreditCardPersonRegular
+  CreditCardPersonRegular,
+  QrCodeRegular
 } from '@fluentui/react-icons';
 import {
   useSubscriptionStore,
@@ -34,6 +35,7 @@ import {
 import { type PlanTier } from '../db/db';
 import { useLanguageStore } from '../state/languageStore';
 import { formatPeso } from '../utils/currency';
+import { QrPhSubscriptionDialog } from './QrPhSubscriptionDialog';
 import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
 
 const useStyles = makeStyles({
@@ -165,6 +167,10 @@ export const SubscriptionModal: React.FC = () => {
 
   const [cycle, setCycle] = useState<BillingCycle>('Monthly');
   const [processingTier, setProcessingTier] = useState<PlanTier | null>(null);
+  const [qrModalTier, setQrModalTier] = useState<'TindahanPro' | 'NegosyoPlus' | null>(null);
+  const handleCloseQrModal = useCallback(() => {
+    setQrModalTier(null);
+  }, []);
   const isRefreshError = error === SUBSCRIPTION_REFRESH_ERROR;
   const displayedError = getLocalizedSyncErrorMessage(error, language) || error;
 
@@ -211,6 +217,14 @@ export const SubscriptionModal: React.FC = () => {
     <div className={styles.tierActionSection}>
       <Button
         appearance="primary"
+        icon={<QrCodeRegular />}
+        disabled={isLoading && processingTier === targetTier}
+        onClick={() => setQrModalTier(targetTier)}
+      >
+        {isTagalog ? 'Magbayad gamit ang QR Ph' : 'Pay via QR Ph'}
+      </Button>
+      <Button
+        appearance="secondary"
         icon={<CreditCardPersonRegular />}
         disabled={isLoading && processingTier === targetTier}
         onClick={() => handleCheckout(targetTier)}
@@ -239,7 +253,8 @@ export const SubscriptionModal: React.FC = () => {
   if (!isUpgradeModalOpen) return null;
 
   return (
-    <Dialog open={isUpgradeModalOpen} onOpenChange={(_, data) => !data.open && closeUpgradeModal()}>
+    <>
+      <Dialog open={isUpgradeModalOpen} onOpenChange={(_, data) => !data.open && closeUpgradeModal()}>
       <DialogSurface className={styles.surface}>
         <DialogTitle className={styles.headerContainer}>
           <div>
@@ -547,5 +562,20 @@ export const SubscriptionModal: React.FC = () => {
         </DialogBody>
       </DialogSurface>
     </Dialog>
+
+      {qrModalTier && (
+        <QrPhSubscriptionDialog
+          open={Boolean(qrModalTier)}
+          onClose={handleCloseQrModal}
+          targetTier={qrModalTier}
+          cycle={cycle}
+          amount={
+            qrModalTier === 'TindahanPro'
+              ? (cycle === 'Weekly' ? 35 : 129)
+              : (cycle === 'Weekly' ? 89 : 349)
+          }
+        />
+      )}
+    </>
   );
 };

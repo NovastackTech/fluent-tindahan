@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 using FluentTindahan.Application.Billing;
 using FluentTindahan.Application.Common.Interfaces;
 using FluentTindahan.Domain.Billing;
@@ -21,19 +22,32 @@ public class BillingController : ControllerBase
 {
     private readonly IMediator _mediator;
     private readonly ICurrentUserService _currentUserService;
+    private readonly IPaymentGatewayService _gatewayService;
     private readonly IHostEnvironment _environment;
     private readonly ILogger<BillingController> _logger;
+
+    [ActivatorUtilitiesConstructor]
+    public BillingController(
+        IMediator mediator,
+        ICurrentUserService currentUserService,
+        IPaymentGatewayService gatewayService,
+        IHostEnvironment environment,
+        ILogger<BillingController> logger)
+    {
+        _mediator = mediator;
+        _currentUserService = currentUserService;
+        _gatewayService = gatewayService;
+        _environment = environment;
+        _logger = logger;
+    }
 
     public BillingController(
         IMediator mediator,
         ICurrentUserService currentUserService,
         IHostEnvironment environment,
         ILogger<BillingController> logger)
+        : this(mediator, currentUserService, null!, environment, logger)
     {
-        _mediator = mediator;
-        _currentUserService = currentUserService;
-        _environment = environment;
-        _logger = logger;
     }
 
     /// <summary>
@@ -72,6 +86,198 @@ public class BillingController : ControllerBase
         {
             // PaymentGatewayException messages are client-safe by contract; details are logged in the gateway service.
             _logger.LogError(ex, "Failed to create checkout session.");
+            return StatusCode(StatusCodes.Status502BadGateway, new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Generates a PayMongo Dynamic QR Ph payment intent for upgrading or renewing the tenant's subscription.
+    /// </summary>
+    [HttpPost("qrph/generate")]
+    [ProducesResponseType(typeof(QrPhPaymentIntentResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    public async Task<ActionResult<QrPhPaymentIntentResult>> GenerateQrPhSubscription(
+        [FromBody] CreateCheckoutRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (_currentUserService.TenantId == Guid.Empty)
+        {
+            return Unauthorized(new { message = "A valid tenant is required." });
+        }
+
+        if (request.TargetTier == PlanTier.Libre ||
+            !TierPricing.TryGetPriceCentavos(request.TargetTier, request.Cycle, out var priceCentavos))
+        {
+            return BadRequest(new { message = "Invalid plan or billing cycle." });
+        }
+
+        var tenantId = _currentUserService.TenantId;
+        var tierDisplayName = request.TargetTier == PlanTier.TindahanPro ? "Tindahan Pro" : "Negosyo Plus";
+        var cycleDisplayName = request.Cycle == BillingCycle.Weekly ? "Weekly" : "Monthly";
+        var orderRef = $"sub_{tenantId.ToString("N")[..8]}_{request.TargetTier}_{request.Cycle}_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+
+        try
+        {
+            var result = await _gatewayService.CreateQrPhPaymentIntentAsync(new CreateQrPhPaymentIntentRequest(
+                AmountCentavos: priceCentavos,
+                Description: $"Fluent Tindahan - {tierDisplayName} ({cycleDisplayName})",
+                OrderId: orderRef,
+                Customer: new CustomerBillingDetails(
+                    Name: "Tindahan Store Owner",
+                    Email: "owner@fluent-tindahan.ph",
+                    Phone: "09000000000"
+                ),
+                Metadata: new Dictionary<string, string>
+                {
+                    { "tenant_id", tenantId.ToString() },
+                    { "target_tier", request.TargetTier.ToString() },
+                    { "cycle", request.Cycle.ToString() },
+                    { "purpose", "subscription" }
+                }
+            ), cancellationToken);
+
+            return Ok(result);
+        }
+        catch (PaymentGatewayException ex)
+        {
+            _logger.LogError(ex, "Failed to create QR Ph payment intent for subscription.");
+            return StatusCode(StatusCodes.Status502BadGateway, new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Checks status of a QR Ph payment intent.
+    /// </summary>
+    [HttpGet("qrph/{paymentIntentId}/status")]
+    [ProducesResponseType(typeof(QrPhPaymentStatusResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    public async Task<ActionResult<QrPhPaymentStatusResult>> GetQrPhPaymentStatus(
+        string paymentIntentId,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = _currentUserService.TenantId;
+        if (tenantId == Guid.Empty)
+        {
+            return Unauthorized(new { message = "A valid tenant is required." });
+        }
+
+        try
+        {
+            var result = await _gatewayService.RetrievePaymentIntentStatusAsync(paymentIntentId, cancellationToken);
+            if (result.Metadata == null ||
+                !result.Metadata.TryGetValue("tenant_id", out var intentTenantId) ||
+                !string.Equals(intentTenantId, tenantId.ToString(), StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("Tenant {TenantId} attempted to access QR Ph status for intent {IntentId} belonging to another tenant or with missing tenant metadata.",
+                    tenantId, paymentIntentId);
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = "Payment intent does not belong to the current store." });
+            }
+
+            return Ok(result);
+        }
+        catch (PaymentGatewayException ex)
+        {
+            _logger.LogError(ex, "Failed to retrieve QR Ph payment status.");
+            return StatusCode(StatusCodes.Status502BadGateway, new { message = ex.Message });
+        }
+    }
+
+    public record ConfirmQrPhSubscriptionRequest(
+        string PaymentIntentId,
+        PlanTier TargetTier,
+        BillingCycle Cycle = BillingCycle.Monthly
+    );
+
+    /// <summary>
+    /// Verifies that a QR Ph subscription payment intent was paid, and applies the subscription upgrade.
+    /// </summary>
+    [HttpPost("qrph/confirm")]
+    [ProducesResponseType(typeof(TenantSubscriptionDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    public async Task<ActionResult<TenantSubscriptionDto>> ConfirmQrPhSubscription(
+        [FromBody] ConfirmQrPhSubscriptionRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (_currentUserService.TenantId == Guid.Empty)
+        {
+            return Unauthorized(new { message = "A valid tenant is required to confirm subscription." });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.PaymentIntentId))
+        {
+            return BadRequest(new { message = "PaymentIntentId is required." });
+        }
+
+        if (request.TargetTier == PlanTier.Libre ||
+            !TierPricing.TryGetPriceCentavos(request.TargetTier, request.Cycle, out var expectedCentavos))
+        {
+            return BadRequest(new { message = "Invalid plan or billing cycle." });
+        }
+
+        try
+        {
+            var statusResult = await _gatewayService.RetrievePaymentIntentStatusAsync(request.PaymentIntentId, cancellationToken);
+            if (!statusResult.IsPaid)
+            {
+                return BadRequest(new { message = $"Payment is not completed. Current status: {statusResult.Status}" });
+            }
+
+            if (statusResult.Metadata == null ||
+                !statusResult.Metadata.TryGetValue("tenant_id", out var intentTenantId) ||
+                !string.Equals(intentTenantId, _currentUserService.TenantId.ToString(), StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("Payment intent {IntentId} does not belong to tenant {TenantId}.",
+                    request.PaymentIntentId, _currentUserService.TenantId);
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = "Payment intent does not belong to the current store." });
+            }
+
+            if (!statusResult.Metadata.TryGetValue("target_tier", out var intentTier) ||
+                !string.Equals(intentTier, request.TargetTier.ToString(), StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest(new { message = "Payment intent target plan does not match requested plan." });
+            }
+
+            if (!statusResult.Metadata.TryGetValue("cycle", out var intentCycle) ||
+                !string.Equals(intentCycle, request.Cycle.ToString(), StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest(new { message = "Payment intent billing cycle does not match requested cycle." });
+            }
+
+            if (statusResult.AmountCentavos != expectedCentavos)
+            {
+                _logger.LogError("Paid amount {Paid} does not match expected {Expected} for tier {Tier}.",
+                    statusResult.AmountCentavos, expectedCentavos, request.TargetTier);
+                return BadRequest(new { message = "Payment amount does not match plan price." });
+            }
+
+            var paymentId = statusResult.PaymentId ?? request.PaymentIntentId;
+            var outcome = await _mediator.Send(new ApplySubscriptionPaymentCommand(
+                _currentUserService.TenantId,
+                request.TargetTier,
+                request.Cycle,
+                expectedCentavos,
+                paymentId,
+                "QRPh"
+            ), cancellationToken);
+
+            if (!outcome.Success)
+            {
+                return BadRequest(new { message = outcome.Message });
+            }
+
+            var subscription = await _mediator.Send(new GetTenantSubscriptionQuery(), cancellationToken);
+            return Ok(subscription);
+        }
+        catch (PaymentGatewayException ex)
+        {
+            _logger.LogError(ex, "Failed to confirm QR Ph subscription payment.");
             return StatusCode(StatusCodes.Status502BadGateway, new { message = ex.Message });
         }
     }
