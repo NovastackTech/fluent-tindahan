@@ -123,7 +123,7 @@ const useStyles = makeStyles({
 export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   const styles = useStyles();
   const { t, language } = useTranslation();
-  const { completeOnboarding } = useAuthStore();
+  const { completeOnboarding, isOnboarded, reauthRequested } = useAuthStore();
 
   const [isDeleteIntent, setIsDeleteIntent] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -489,6 +489,16 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
     console.warn('[LoginPage] Google sign-in cancelled or failed:', err);
     setAuthErrors([t.login.googleAuthFailed]);
   };
+
+  useEffect(() => {
+    if (isOnboarded && !reauthRequested) {
+      onNavigate('dashboard');
+    }
+  }, [isOnboarded, reauthRequested, onNavigate]);
+
+  if (isOnboarded && !reauthRequested) {
+    return null;
+  }
 
   return (
     <div className={styles.pageRoot} id="login-page-root">
