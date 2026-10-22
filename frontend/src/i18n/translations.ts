@@ -66,6 +66,9 @@ export interface Translations {
     insufficientCash: string;
     itemAdded: string;
     addToCart: string;
+    decreaseQty: string;
+    increaseQty: string;
+    removeItem: string;
     receiptTitle: string;
     printReceipt: string;
     newSale: string;

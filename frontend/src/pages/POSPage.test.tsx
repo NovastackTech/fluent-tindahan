@@ -1332,6 +1332,28 @@ describe('POSPage', () => {
     expect(checkoutBtn).toBeDisabled();
     expect(clearBtn).toBeDisabled();
   });
+
+  it('exposes accessible names on cart minus, plus, and remove buttons (DEV-47 / issue #127)', async () => {
+    useLanguageStore.setState({ language: 'en' });
+    useCartStore.getState().addItem({
+      id: 'p-1',
+      name: 'Lucky Me Pancit Canton Kalamansi',
+      price: 16,
+      maxStock: 20
+    });
+
+    renderPOS();
+
+    // In mobile viewport, click the floating bar to open the cart dialog
+    const floatingBarText = await screen.findByText(/in cart/i);
+    fireEvent.click(floatingBarText);
+
+    expect(screen.getByRole('button', { name: 'Decrease quantity: Lucky Me Pancit Canton Kalamansi' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Increase quantity: Lucky Me Pancit Canton Kalamansi' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove from cart: Lucky Me Pancit Canton Kalamansi' })).toBeInTheDocument();
+
+    useCartStore.getState().clearCart();
+  });
 });
 
 
