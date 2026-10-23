@@ -213,6 +213,21 @@ describe('storeRegistration services', () => {
       const feeCalls = setFeeSpy.mock.calls;
       expect(feeCalls.every(([, , fee]) => fee === 0)).toBe(true);
     });
+
+    it('configures zero GCash fees when offersGcash is false (alias from OnboardingModal)', async () => {
+      const setFeeSpy = vi.spyOn(useGCashFeeStore.getState(), 'setFeeForTenant');
+
+      await executeStoreRegistration({
+        businessName: 'No GCash Store Alias',
+        email: 'nogcashalias@tindahan.ph',
+        password: 'password123',
+        offersGcash: false
+      });
+
+      expect(setFeeSpy).toHaveBeenCalled();
+      const feeCalls = setFeeSpy.mock.calls;
+      expect(feeCalls.every(([, , fee]) => fee === 0)).toBe(true);
+    });
   });
 
   describe('executeStoreLogin', () => {

@@ -212,11 +212,14 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
       if (result.success) {
         if (result.requiresEmailVerification) {
           if (isMountedRef.current && typeof window !== 'undefined') {
+            const isOfferingGcash = params.offersGcash !== undefined
+              ? params.offersGcash
+              : params.offerGcash !== false;
             setPendingOtpEmail(params.email.trim());
             setPendingOtpLocalPin(params.pin);
             setPendingRegistrationPreferences({
               includeStarterProducts: params.includeStarterProducts !== false,
-              offerGcash: params.offerGcash !== false,
+              offerGcash: isOfferingGcash,
               businessName: params.businessName
             });
           }
@@ -250,15 +253,26 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
         email: pendingOtpEmail || undefined,
         otp: cleanedOtp
       });
+      const isPendingRegistration = pendingRegistrationPreferences !== null;
+      const effectiveNewUser = isPendingRegistration || Boolean(verifiedDto.isNewUser);
+      const effectiveBusinessName = verifiedDto.businessName || pendingRegistrationPreferences?.businessName || '';
+      const effectiveOfferGcash = pendingRegistrationPreferences?.offerGcash !== false;
+      const effectiveIncludeStarterProducts = pendingRegistrationPreferences?.includeStarterProducts !== false;
+
       const loginRes = await loginWithAuthPayload(verifiedDto, pendingOtpLocalPin);
       if (!loginRes.success) {
         if (isMountedRef.current && typeof window !== 'undefined') {
           setPendingAuthPayload({
-            payload: { ...verifiedDto, requiresEmailVerification: false },
+            payload: {
+              ...verifiedDto,
+              requiresEmailVerification: false,
+              isNewUser: effectiveNewUser,
+              businessName: effectiveBusinessName
+            },
             localPin: pendingOtpLocalPin,
             newUserPreferences: {
-              offerGcash: pendingRegistrationPreferences?.offerGcash !== false,
-              includeStarterProducts: pendingRegistrationPreferences?.includeStarterProducts !== false
+              offerGcash: effectiveOfferGcash,
+              includeStarterProducts: effectiveIncludeStarterProducts
             }
           });
           setUnsyncedLoginCount(loginRes.unsyncedCount || 0);
@@ -270,10 +284,10 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
         return true;
       }
       await finalizeSuccessfulLogin(verifiedDto.tenantId, {
-        isNewUser: verifiedDto.isNewUser ?? true,
-        businessName: verifiedDto.businessName || pendingRegistrationPreferences?.businessName,
-        includeStarterProducts: pendingRegistrationPreferences?.includeStarterProducts !== false,
-        offerGcash: pendingRegistrationPreferences?.offerGcash !== false
+        isNewUser: effectiveNewUser,
+        businessName: effectiveBusinessName,
+        includeStarterProducts: effectiveIncludeStarterProducts,
+        offerGcash: effectiveOfferGcash
       });
       if (isMountedRef.current && typeof window !== 'undefined') {
         setPendingOtpEmail(null);
