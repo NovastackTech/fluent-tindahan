@@ -4,6 +4,7 @@ const sharedProductFormTranslations = {
   tl: {
     productNameLabel: 'Pangalan ng Produkto:*',
     productNameRequired: 'Ilagay ang pangalan ng produkto.',
+    productNameExceedsMax: 'Hindi dapat lumagpas sa 200 characters ang pangalan ng produkto.',
     categoryLabel: 'Kategorya',
     costLabel: 'Puhunan (Cost Price ₱):*',
     costCannotBeNegative: 'Hindi maaaring negatibo ang puhunan.',
@@ -51,14 +52,15 @@ export const tl: Translations = {
     themeModeLight: 'Maliwanag (Light)',
     themeModeDark: 'Madilim (Dark)',
     themeModeSystem: 'Ayon sa Sistema (System)',
-    languageToggle: 'TL/EN toggle (English)',
+    languageToggle: 'Lumipat sa English',
     save: 'I-save',
     cancel: 'Kanselahin',
     delete: 'Burahin',
     edit: 'Baguhin',
     close: 'Isara',
     confirm: 'Kumpirmahin',
-    pesos: '₱'
+    pesos: '₱',
+    loading: 'Naglo-load...'
   },
   nav: {
     dashboard: 'Dashboard',

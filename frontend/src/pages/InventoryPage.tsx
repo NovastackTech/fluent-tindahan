@@ -50,7 +50,7 @@ import {
   type CatalogItem
 } from '../db/catalog';
 import type { NavTab } from '../components/Navigation';
-import { formatPeso } from '../utils/currency';
+import { formatPeso, formatMarginPercent } from '../utils/currency';
 
 interface InventoryPageProps {
   onNavigate?: (tab: NavTab) => void;
@@ -64,7 +64,8 @@ import {
   MIN_PRODUCT_COST,
   MAX_PRODUCT_COST,
   MIN_PRODUCT_STOCK,
-  MAX_PRODUCT_STOCK
+  MAX_PRODUCT_STOCK,
+  MAX_PRODUCT_NAME_LENGTH
 } from '../constants/inventory';
 
 export {
@@ -73,7 +74,8 @@ export {
   MIN_PRODUCT_COST,
   MAX_PRODUCT_COST,
   MIN_PRODUCT_STOCK,
-  MAX_PRODUCT_STOCK
+  MAX_PRODUCT_STOCK,
+  MAX_PRODUCT_NAME_LENGTH
 };
 
 const useStyles = makeStyles({
@@ -224,6 +226,16 @@ const useStyles = makeStyles({
   td: {
     ...shorthands.padding(tokens.spacingVerticalM, tokens.spacingHorizontalM),
     verticalAlign: 'middle'
+  },
+  productNameCell: {
+    maxWidth: '240px',
+    wordBreak: 'break-word',
+    overflowWrap: 'anywhere'
+  },
+  productNameText: {
+    display: 'block',
+    wordBreak: 'break-word',
+    overflowWrap: 'anywhere'
   },
   categoryTh: {
     minWidth: '130px',
@@ -708,6 +720,9 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
     if (!formName.trim()) {
       setFormNameError(t.inventory.productNameRequired);
       hasError = true;
+    } else if (formName.trim().length > MAX_PRODUCT_NAME_LENGTH) {
+      setFormNameError(t.inventory.productNameExceedsMax);
+      hasError = true;
     }
     const costClean = typeof formCost === 'string' ? formCost.replace(/,/g, '').trim() : formCost;
     const priceClean = typeof formPrice === 'string' ? formPrice.replace(/,/g, '').trim() : formPrice;
@@ -973,7 +988,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
               {formatPeso(metrics.projectedGrossProfit)}
             </div>
             <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>
-              {t.inventory.avgMargin}: <strong>{metrics.avgMarginPercent.toFixed(1)}%</strong>
+              {t.inventory.avgMargin}: <strong>{formatMarginPercent(metrics.avgMarginPercent, metrics.totalCostValue)}</strong>
             </Text>
           </Card>
         </div>
@@ -1112,8 +1127,8 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                   return (
                     <tr key={p.id} className={styles.tr}>
                       {/* Product Name & Barcode */}
-                      <td className={styles.td}>
-                        <Text weight="semibold" size={300} style={{ display: 'block' }}>
+                      <td className={`${styles.td} ${styles.productNameCell}`}>
+                        <Text weight="semibold" size={300} className={styles.productNameText} title={p.name}>
                           {p.name}
                         </Text>
                         {p.barcode && (
@@ -1204,7 +1219,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                       <td className={styles.td}>
                         <div>
                           <span className={`${styles.marginBadge} ${marginClass}`}>
-                            {marginPct.toFixed(1)}%
+                            {formatMarginPercent(marginPct, p.cost)}
                           </span>
                           <Text
                             size={100}
@@ -1266,9 +1281,9 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
 
             return (
               <Card key={p.id} className={styles.mobileCard}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
-                    <Text weight="bold" size={400} style={{ display: 'block' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <Text weight="bold" size={400} className={styles.productNameText} title={p.name}>
                       {p.name}
                     </Text>
                     <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '4px' }}>
@@ -1326,7 +1341,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                     <Text size={100} style={{ color: tokens.colorNeutralForeground3, display: 'block' }}>
                       {t.inventory.colMargin}
                     </Text>
-                    <span className={`${styles.marginBadge} ${marginClass}`}>{marginPct.toFixed(1)}%</span>
+                    <span className={`${styles.marginBadge} ${marginClass}`}>{formatMarginPercent(marginPct, p.cost)}</span>
                   </div>
                 </div>
 
@@ -1433,6 +1448,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                     aria-label={t.inventory.productNameLabel}
                     aria-invalid={Boolean(formNameError)}
                     aria-describedby={formNameError ? 'inventory-product-name-error' : undefined}
+                    maxLength={MAX_PRODUCT_NAME_LENGTH}
                     style={{ width: '100%' }}
                     placeholder="e.g. Lucky Me Pancit Canton Kalamansi"
                     list="catalog-product-names-list"
@@ -1626,7 +1642,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                       appearance="filled"
                       color={liveMarginPct >= 20 ? 'success' : liveMarginPct >= 10 ? 'warning' : 'danger'}
                     >
-                      {liveMarginPct.toFixed(1)}%
+                      {formatMarginPercent(liveMarginPct, rawCost)}
                     </Badge>
                   ) : (
                     <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>

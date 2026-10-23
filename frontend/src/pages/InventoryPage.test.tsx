@@ -374,5 +374,34 @@ describe('InventoryPage', () => {
     expect(screen.getByText('❌ Out of Stock (0)')).toBeInTheDocument();
     expect(screen.queryByText(/Out of Stock \(0\) \(0\)/)).not.toBeInTheDocument();
   });
+
+  it('formats high margin as ~99.9% when cost is non-zero (issue #120)', async () => {
+    renderInventory();
+    fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Produkto|Add Product/i }));
+
+    const costInput = screen.getByRole('spinbutton', { name: /Puhunan|Unit Cost/i });
+    const priceInput = screen.getByRole('spinbutton', { name: /Presyo ng Tinda|Retail Price/i });
+
+    fireEvent.change(costInput, { target: { value: '5' } });
+    fireEvent.change(priceInput, { target: { value: '999999.99' } });
+
+    expect(screen.getByText('~99.9%')).toBeInTheDocument();
+    expect(screen.queryByText('100.0%')).not.toBeInTheDocument();
+  });
+
+  it('enforces 200 character max length on product name in add modal', async () => {
+    renderInventory();
+    fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Produkto|Add Product/i }));
+
+    const nameInput = screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i });
+    expect(nameInput).toHaveAttribute('maxLength', '200');
+
+    fireEvent.change(nameInput, { target: { value: 'A'.repeat(205) } });
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Presyo ng Tinda|Retail Price/i }), { target: { value: '20' } });
+    fireEvent.click(screen.getByRole('button', { name: /^I-save$|^Save$/i }));
+
+    expect(await screen.findByText(/Hindi dapat lumagpas sa 200 characters|Product name cannot exceed 200 characters/i)).toBeInTheDocument();
+  });
 });
+
 

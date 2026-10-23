@@ -114,6 +114,7 @@ export const OfflineSyncBanner: React.FC = () => {
                   icon={<ArrowSyncRegular />}
                   disabled={isSyncing && !reauthRequired}
                   onClick={handleSyncOrReauth}
+                  aria-label={reauthRequired ? t.common.signInAgain : (isSyncing ? t.common.syncing : t.common.forceSync)}
                 >
                   {reauthRequired ? t.common.signInAgain : (isSyncing ? t.common.syncing : t.common.forceSync)}
                 </Button>
@@ -137,6 +138,7 @@ export const OfflineSyncBanner: React.FC = () => {
                 icon={<ArrowSyncRegular />}
                 disabled={isSyncing && !reauthRequired}
                 onClick={handleSyncOrReauth}
+                aria-label={reauthRequired ? t.common.signInAgain : (isSyncing ? t.common.syncing : t.common.forceSync)}
               >
                 {reauthRequired ? t.common.signInAgain : (isSyncing ? t.common.syncing : t.common.forceSync)}
               </Button>
@@ -159,6 +161,7 @@ export const OfflineSyncBanner: React.FC = () => {
                 icon={<ArrowClockwiseRegular />}
                 disabled={isRetrying}
                 onClick={handleRetryAllDeadLetter}
+                aria-label={isRetrying ? (t.common.syncing || 'Sumusubok...') : (t.settings.retryBtn || 'Subukang Muli')}
               >
                 {isRetrying ? (t.common.syncing || 'Sumusubok...') : (t.settings.retryBtn || 'Subukang Muli')}
               </Button>
@@ -181,6 +184,7 @@ export const OfflineSyncBanner: React.FC = () => {
                     size="small"
                     appearance="primary"
                     onClick={() => useAuthStore.getState().requestReauth()}
+                    aria-label={t.common.signInAgain}
                   >
                     {t.common.signInAgain}
                   </Button>
