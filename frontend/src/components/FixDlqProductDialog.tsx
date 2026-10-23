@@ -139,6 +139,10 @@ export const FixDlqProductDialog: React.FC<FixDlqProductDialogProps> = ({
       setPrice(currentPrice);
       setStock(currentStock);
 
+      if (currentName.trim().length > MAX_PRODUCT_NAME_LENGTH) {
+        setNameError(t.inventory.productNameExceedsMax);
+      }
+
       const priceNum = Number(currentPrice);
       const costNum = Number(currentCost);
       const stockNum = Number(currentStock);
