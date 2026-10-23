@@ -297,6 +297,7 @@ export interface Translations {
     editModalTitle: string;
     productNameLabel: string;
     productNameRequired: string;
+    productNameExceedsMax: string;
     categoryLabel: string;
     barcodeLabel: string;
     costLabel: string;
@@ -334,6 +335,7 @@ export interface Translations {
     barcodeLabel: string;
     productNameLabel: string;
     productNameRequired: string;
+    productNameExceedsMax: string;
     categoryLabel: string;
     costLabel: string;
     costCannotBeNegative: string;

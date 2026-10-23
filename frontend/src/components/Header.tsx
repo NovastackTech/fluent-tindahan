@@ -24,7 +24,8 @@ import {
   ShoppingBagRegular,
   KeyRegular,
   ChevronDownRegular,
-  ChevronUpRegular
+  ChevronUpRegular,
+  WarningRegular
 } from '@fluentui/react-icons';
 import type { NavTab } from './Navigation';
 import { resolveHeaderLogoDestination } from './headerLogoDestination';
@@ -300,6 +301,8 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
             ? t.common.syncing
             : pendingCount > 0
             ? `${pendingCount} ${t.common.queued}`
+            : deadLetterCount > 0
+            ? `${deadLetterCount} ${t.common.dlqWarning}`
             : t.common.allSynced
         }
         relationship="label"
@@ -311,6 +314,8 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
           icon={
             isSyncing ? (
               <Spinner size="extra-tiny" />
+            ) : deadLetterCount > 0 && pendingCount === 0 ? (
+              <WarningRegular primaryFill={tokens.colorPaletteRedForeground1} />
             ) : (
               <CloudCheckmarkRegular primaryFill={tokens.colorPaletteGreenForeground1} />
             )
@@ -318,10 +323,16 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
         >
           <Badge
             appearance="filled"
-            color={pendingCount > 0 ? 'warning' : 'success'}
+            color={pendingCount > 0 ? 'warning' : deadLetterCount > 0 ? 'danger' : 'success'}
             size="small"
           >
-            {isSyncing ? t.common.syncing : pendingCount > 0 ? `${pendingCount} ${t.common.queued}` : t.common.online}
+            {isSyncing
+              ? t.common.syncing
+              : pendingCount > 0
+              ? `${pendingCount} ${t.common.queued}`
+              : deadLetterCount > 0
+              ? `DLQ: ${deadLetterCount}`
+              : t.common.online}
           </Badge>
         </Button>
       </Tooltip>
@@ -358,7 +369,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
       <>
         {renderSyncBadge()}
 
-        {deadLetterCount > 0 && (
+        {deadLetterCount > 0 && pendingCount > 0 && (
           <Tooltip content={`${deadLetterCount} ${t.common.dlqWarning}`} relationship="label">
             <Badge appearance="filled" color="danger" size="small">
               DLQ: {deadLetterCount}
