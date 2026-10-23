@@ -27,7 +27,7 @@ import { enqueueSync } from '../sync/syncEngine';
 import { useAuthStore } from '../state/authStore';
 import { useTranslation } from '../state/languageStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
-import { formatPeso } from '../utils/currency';
+import { formatPeso, formatMarginPercent } from '../utils/currency';
 import { MAX_PRODUCT_NAME_LENGTH } from '../constants/inventory';
 
 interface QuickRegisterProductDialogProps {
@@ -483,7 +483,7 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
                     appearance="filled"
                     color={marginPct >= 20 ? 'success' : marginPct >= 10 ? 'warning' : 'danger'}
                   >
-                    {marginPct.toFixed(1)}%
+                    {formatMarginPercent(marginPct, costNum)}
                   </Badge>
                 ) : (
                   <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
