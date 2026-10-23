@@ -132,4 +132,26 @@ describe('ReceiptModal', () => {
 
     expect(onClose).toHaveBeenCalled();
   });
+
+  it('renders GCash reference number and includes it in copied text', () => {
+    const gcashData: ReceiptData = {
+      ...sampleReceiptData,
+      paymentMethod: 'GCash',
+      cashReceived: undefined,
+      changeGiven: undefined,
+      gcashRef: '901238471201'
+    };
+
+    renderModal({ data: gcashData });
+
+    expect(screen.getByText('901238471201')).toBeInTheDocument();
+    expect(screen.getByText(/Ref\. No\. ng GCash:|GCash Ref:/i)).toBeInTheDocument();
+
+    const copyBtn = screen.getByRole('button', { name: /Kopyahin|Copy/i });
+    fireEvent.click(copyBtn);
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+      expect.stringContaining('901238471201')
+    );
+  });
 });

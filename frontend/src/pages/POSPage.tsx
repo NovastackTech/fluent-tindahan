@@ -323,6 +323,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
   const [newDebtorPhone, setNewDebtorPhone] = useState('');
   const [newDebtorError, setNewDebtorError] = useState<string | null>(null);
   const [newDebtorPhoneError, setNewDebtorPhoneError] = useState<string | null>(null);
+  const [gcashRef, setGcashRef] = useState('');
 
   // POS Stock Validation Policy & Override
   const { stockValidationPolicy } = usePosSettingsStore();
@@ -787,6 +788,11 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
         customers.find((c) => c.id === customerId) ||
         (customerId ? await db.customers.get(customerId) : undefined);
 
+      const trimmedGcashRef =
+        (paymentMethod === 'GCash' || (paymentMethod === 'Split' && splitGCashAmount > 0)) && gcashRef.trim()
+          ? gcashRef.trim()
+          : undefined;
+
       const saleRecord = {
         id: saleId,
         tenantId,
@@ -796,7 +802,8 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
         userId,
         customerId: customerId || undefined,
         cashReceived: paymentMethod === 'Cash' ? cashReceived : undefined,
-        changeGiven: paymentMethod === 'Cash' ? changeAmount : undefined
+        changeGiven: paymentMethod === 'Cash' ? changeAmount : undefined,
+        gcashRef: trimmedGcashRef
       };
 
       const saleItemRecords = cartItems.map((item) => ({
@@ -886,6 +893,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
           customerId: customerId || undefined,
           cashReceived: paymentMethod === 'Cash' ? cashReceived : undefined,
           changeGiven: paymentMethod === 'Cash' ? changeAmount : undefined,
+          gcashRef: trimmedGcashRef,
           items: cartItems.map((i) => ({
             id: crypto.randomUUID(),
             productId: i.productId,
@@ -915,7 +923,8 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
         cashReceived: paymentMethod === 'Cash' ? cashReceived : undefined,
         changeGiven: paymentMethod === 'Cash' ? changeAmount : undefined,
         customerName: selectedCust?.name,
-        customerUtangBalance: selectedCust ? selectedCust.totalUtangBalance + (paymentMethod === 'Utang' ? totalAmount : 0) : undefined
+        customerUtangBalance: selectedCust ? selectedCust.totalUtangBalance + (paymentMethod === 'Utang' ? totalAmount : 0) : undefined,
+        gcashRef: trimmedGcashRef
       });
 
       clearCart();
@@ -927,6 +936,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
       setNewDebtorPhone('');
       setNewDebtorError(null);
       setNewDebtorPhoneError(null);
+      setGcashRef('');
       setCheckoutError(null);
     } catch (err: any) {
       setCheckoutError(err?.message || (language === 'tl' ? 'Nagkaroon ng aberya sa pagtatala ng benta.' : 'Error completing sale.'));
@@ -1327,6 +1337,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
             setNewDebtorError(null);
             setNewDebtorPhoneError(null);
             setCheckoutError(null);
+            setGcashRef('');
             if (receiptData || pendingReceiptData) {
               setReceiptData(null);
               setPendingReceiptData(null);
@@ -1503,7 +1514,13 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
                   <Text size={300}>{t.pos.gcashInstruction}</Text>
                   <div style={{ marginTop: '12px' }}>
                     <Text size={200} weight="semibold">{t.pos.gcashRefOptional}</Text>
-                    <Input placeholder="Hal. 901238471201" style={{ width: '100%', marginTop: '4px' }} />
+                    <Input
+                      value={gcashRef}
+                      onChange={(_, data) => setGcashRef(data.value)}
+                      placeholder="Hal. 901238471201"
+                      aria-label={t.pos.gcashRefOptional}
+                      style={{ width: '100%', marginTop: '4px' }}
+                    />
                   </div>
                 </div>
               )}
@@ -1692,6 +1709,19 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
                     />
                   </div>
 
+                  {splitGCashAmount > 0 && (
+                    <div style={{ marginTop: '8px' }}>
+                      <Text size={200} weight="semibold">{t.pos.gcashRefOptional}</Text>
+                      <Input
+                        value={gcashRef}
+                        onChange={(_, data) => setGcashRef(data.value)}
+                        placeholder="Hal. 901238471201"
+                        aria-label={t.pos.gcashRefOptional}
+                        style={{ width: '100%', marginTop: '4px' }}
+                      />
+                    </div>
+                  )}
+
                   <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between' }}>
                     <Text size={200}>{t.pos.splitRemaining}</Text>
                     <Text size={200} weight="bold">
@@ -1717,6 +1747,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
                   setNewDebtorPhone('');
                   setNewDebtorError(null);
                   setNewDebtorPhoneError(null);
+                  setGcashRef('');
                 }}
               >
                 {t.common.cancel}
