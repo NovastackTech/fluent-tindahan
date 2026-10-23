@@ -1069,8 +1069,10 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
           const itemInCart = cartItems.find((i) => i.productId === p.id);
           const currentQty = itemInCart?.qty ?? 0;
           const currentStock = Number(p.stockQty) || 0;
-          const isAtMaxStock = currentStock > 0 && currentQty >= currentStock;
-          const isOutOfStock = currentStock <= 0;
+          const allowOversell = stockValidationPolicy === 'warn' || isStockOverridden;
+          const isAtMaxStock = !allowOversell && currentStock > 0 && currentQty >= currentStock;
+          const isOutOfStock = !allowOversell && currentStock <= 0;
+          const isExceedingStock = currentStock > 0 && currentQty > currentStock;
 
           return (
             <Card
@@ -1078,10 +1080,12 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
               className={styles.productCard}
               onClick={() => handleAddProductToCart(p)}
               style={
-                isOutOfStock
+                currentStock <= 0
                   ? { opacity: 0.65 }
                   : isAtMaxStock
                   ? { opacity: 0.9, border: `1px solid ${tokens.colorPaletteYellowBorder2}` }
+                  : isExceedingStock
+                  ? { border: `1px solid ${tokens.colorPaletteRedBorder2}` }
                   : undefined
               }
             >
@@ -1091,7 +1095,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
                     {p.name}
                   </Text>
                   {currentQty > 0 && (
-                    <Badge size="small" appearance="filled" color={isAtMaxStock ? 'warning' : 'brand'} aria-label={`${currentQty} in cart`}>
+                    <Badge size="small" appearance="filled" color={isExceedingStock ? 'danger' : isAtMaxStock ? 'warning' : 'brand'} aria-label={`${currentQty} in cart`}>
                       {currentQty}×
                     </Badge>
                   )}
@@ -1100,10 +1104,12 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
                   <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>
                     {t.pos.stockLabel}: {p.stockQty}
                   </Text>
-                  {isOutOfStock ? (
+                  {currentStock <= 0 ? (
                     <Badge size="small" appearance="tint" color="danger">{t.pos.outOfStock}</Badge>
                   ) : isAtMaxStock ? (
                     <Badge size="small" appearance="tint" color="warning">{language === 'tl' ? 'Nasa limit na' : 'At max stock'}</Badge>
+                  ) : isExceedingStock ? (
+                    <Badge size="small" appearance="tint" color="danger">{language === 'tl' ? 'Lampas sa stock' : 'Over stock'}</Badge>
                   ) : p.stockQty <= 5 ? (
                     <Badge size="small" appearance="tint" color="warning">{t.pos.lowStockBadge}</Badge>
                   ) : null}

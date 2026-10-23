@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import { FluentProvider } from '@fluentui/react-components';
 import { POSPage } from './POSPage';
 import { sariSariLightTheme } from '../theme/theme';
@@ -1388,6 +1388,55 @@ describe('POSPage', () => {
     expect(screen.getByRole('button', { name: 'Decrease quantity: Lucky Me Pancit Canton Kalamansi' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Increase quantity: Lucky Me Pancit Canton Kalamansi' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Remove from cart: Lucky Me Pancit Canton Kalamansi' })).toBeInTheDocument();
+
+    useCartStore.getState().clearCart();
+  });
+
+  it('does not display "At max stock" and keeps add button enabled under warn policy (issue #92)', async () => {
+    useLanguageStore.setState({ language: 'en' });
+    usePosSettingsStore.setState({ stockValidationPolicy: 'warn' });
+    await db.products.clear();
+    await db.products.add({
+      id: 'p-warn-stock',
+      tenantId: 't-1',
+      name: 'Corned Beef 150g',
+      price: 35,
+      cost: 28,
+      stockQty: 3,
+      updatedAt: new Date().toISOString()
+    });
+
+    renderPOS();
+
+    const card = await screen.findByText('Corned Beef 150g');
+    expect(card).toBeInTheDocument();
+    const addBtn = screen.getByRole('button', { name: /Add to cart: Corned Beef 150g/i });
+
+    // Add 3 times to reach stock of 3
+    fireEvent.click(addBtn);
+    fireEvent.click(addBtn);
+    fireEvent.click(addBtn);
+
+    expect(useCartStore.getState().items[0].qty).toBe(3);
+    // Should NOT show "At max stock"
+    expect(screen.queryByText('At max stock')).not.toBeInTheDocument();
+    // Add button should remain enabled under warn policy
+    expect(addBtn).not.toBeDisabled();
+
+    // Add 4th item (exceeding stock)
+    fireEvent.click(addBtn);
+    expect(useCartStore.getState().items[0].qty).toBe(4);
+    expect(screen.getByText('Over stock')).toBeInTheDocument();
+    expect(addBtn).not.toBeDisabled();
+
+    // Switch to block policy
+    act(() => {
+      usePosSettingsStore.setState({ stockValidationPolicy: 'block' });
+    });
+
+    // Under block policy, it should now show At max stock badge and disable the button
+    expect(screen.getByText('At max stock')).toBeInTheDocument();
+    expect(addBtn).toBeDisabled();
 
     useCartStore.getState().clearCart();
   });
