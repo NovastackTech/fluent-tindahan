@@ -52,7 +52,7 @@ export const en: Translations = {
     themeModeLight: 'Light Theme',
     themeModeDark: 'Dark Theme',
     themeModeSystem: 'System Default Theme',
-    languageToggle: 'TL/EN toggle (Taglish)',
+    languageToggle: 'Switch to Taglish',
     save: 'Save',
     cancel: 'Cancel',
     delete: 'Delete',
