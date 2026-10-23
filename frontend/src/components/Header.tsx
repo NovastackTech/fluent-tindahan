@@ -24,7 +24,8 @@ import {
   ShoppingBagRegular,
   KeyRegular,
   ChevronDownRegular,
-  ChevronUpRegular
+  ChevronUpRegular,
+  WarningRegular
 } from '@fluentui/react-icons';
 import type { NavTab } from './Navigation';
 import { resolveHeaderLogoDestination } from './headerLogoDestination';
@@ -300,6 +301,8 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
             ? t.common.syncing
             : pendingCount > 0
             ? `${pendingCount} ${t.common.queued}`
+            : deadLetterCount > 0
+            ? `${deadLetterCount} ${t.common.dlqWarning}`
             : t.common.allSynced
         }
         relationship="label"
@@ -312,6 +315,8 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
           icon={
             isSyncing ? (
               <Spinner size="extra-tiny" />
+            ) : deadLetterCount > 0 && pendingCount === 0 ? (
+              <WarningRegular primaryFill={tokens.colorPaletteRedForeground1} />
             ) : (
               <CloudCheckmarkRegular primaryFill={tokens.colorPaletteGreenForeground1} />
             )
@@ -319,10 +324,16 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
         >
           <Badge
             appearance="filled"
-            color={pendingCount > 0 ? 'warning' : 'success'}
+            color={pendingCount > 0 ? 'warning' : deadLetterCount > 0 ? 'danger' : 'success'}
             size="small"
           >
-            {isSyncing ? t.common.syncing : pendingCount > 0 ? `${pendingCount} ${t.common.queued}` : t.common.online}
+            {isSyncing
+              ? t.common.syncing
+              : pendingCount > 0
+              ? `${pendingCount} ${t.common.queued}`
+              : deadLetterCount > 0
+              ? `DLQ: ${deadLetterCount}`
+              : t.common.online}
           </Badge>
         </Button>
       </Tooltip>
@@ -359,7 +370,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
       <>
         {renderSyncBadge()}
 
-        {deadLetterCount > 0 && (
+        {deadLetterCount > 0 && (pendingCount > 0 || !isOnline || isSyncing) && (
           <Tooltip content={`${deadLetterCount} ${t.common.dlqWarning}`} relationship="label">
             <Badge appearance="filled" color="danger" size="small">
               DLQ: {deadLetterCount}
@@ -372,26 +383,29 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
     );
   };
 
-  const renderLanguageAction = (inTray = false) => (
-    <Tooltip content={t.common.languageToggle} relationship="label">
-      <Button
-        appearance="subtle"
-        size="small"
-        className={mergeClasses(styles.langButton, inTray && styles.trayActionBtn)}
-        icon={<GlobeRegular />}
-        onClick={toggleLanguage}
-        aria-label={t.common.languageToggle}
-        title={t.common.languageToggle}
-        data-testid="language-toggle-btn"
-        id="tl-en-toggle"
-      >
-        <span>{language === 'tl' ? '🇵🇭 TL' : '🇺🇸 EN'}</span>
-        <span style={{ position: 'absolute', width: '1px', height: '1px', padding: 0, margin: '-1px', overflow: 'hidden', clip: 'rect(0, 0, 0, 0)', whiteSpace: 'nowrap', border: 0 }}>
-          TL/EN toggle
-        </span>
-      </Button>
-    </Tooltip>
-  );
+  const renderLanguageAction = (inTray = false) => {
+    const targetLabel = language === 'tl' ? '🇺🇸 EN' : '🇵🇭 TL';
+    return (
+      <Tooltip content={t.common.languageToggle} relationship="label">
+        <Button
+          appearance="subtle"
+          size="small"
+          className={mergeClasses(styles.langButton, inTray && styles.trayActionBtn)}
+          icon={<GlobeRegular />}
+          onClick={toggleLanguage}
+          aria-label={t.common.languageToggle}
+          title={t.common.languageToggle}
+          data-testid="language-toggle-btn"
+          id="tl-en-toggle"
+        >
+          <span>{targetLabel}</span>
+          <span style={{ position: 'absolute', width: '1px', height: '1px', padding: 0, margin: '-1px', overflow: 'hidden', clip: 'rect(0, 0, 0, 0)', whiteSpace: 'nowrap', border: 0 }}>
+            {t.common.languageToggle}
+          </span>
+        </Button>
+      </Tooltip>
+    );
+  };
 
   const renderPwaInstallAction = (inTray = false) => {
     if (!isInstallable || isStandalone || isInstalled) return null;
