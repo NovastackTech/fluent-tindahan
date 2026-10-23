@@ -490,4 +490,18 @@ describe('Header', () => {
     });
     expect(onNavigate).toHaveBeenCalledWith('login');
   });
+
+  it('displays DLQ warning and not all-synced when Dead Letter Queue has failed items', async () => {
+    syncEngine.useSyncStore.setState({
+      isOnline: true,
+      isSyncing: false,
+      pendingCount: 0,
+      deadLetterCount: 1
+    });
+
+    renderHeader({ activeTab: 'inventory' });
+
+    expect(screen.getByText('DLQ: 1')).toBeInTheDocument();
+    expect(screen.queryByText(/All data synced|Naka-sync ang lahat/i)).not.toBeInTheDocument();
+  });
 });
