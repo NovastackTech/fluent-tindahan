@@ -439,13 +439,13 @@ export const Navigation: React.FC<NavigationProps> = ({ activeTab, onTabChange, 
   }> = [
     {
       id: 'dashboard',
-      label: t.nav.dashboard,
+      label: t.nav.dashboard || 'Dashboard',
       icon: <HomeRegular />,
       activeIcon: <HomeFilled />
     },
     {
       id: 'pos',
-      label: t.nav.pos,
+      label: t.nav.pos || 'Store (POS)',
       icon: <ShoppingBagRegular />,
       activeIcon: <ShoppingBagFilled />,
       badge: cartItemCount,
@@ -453,7 +453,7 @@ export const Navigation: React.FC<NavigationProps> = ({ activeTab, onTabChange, 
     },
     {
       id: 'inventory',
-      label: t.nav.inventory,
+      label: t.nav.inventory || 'Inventory',
       icon: <BoxRegular />,
       activeIcon: <BoxFilled />,
       badge: lowStockCount,
@@ -461,25 +461,25 @@ export const Navigation: React.FC<NavigationProps> = ({ activeTab, onTabChange, 
     },
     {
       id: 'utang',
-      label: t.nav.utang,
+      label: t.nav.utang || 'Credit / Ledger',
       icon: <NotebookRegular />,
       activeIcon: <NotebookFilled />
     },
     {
       id: 'gcash',
-      label: t.nav.gcash,
+      label: t.nav.gcash || 'GCash Log',
       icon: <PhoneRegular />,
       activeIcon: <PhoneFilled />
     },
     {
       id: 'import',
-      label: t.nav.import,
+      label: t.nav.import || 'Import / CSV',
       icon: <ArrowUploadRegular />,
       activeIcon: <ArrowUploadFilled />
     },
     {
       id: 'settings',
-      label: t.nav.settings,
+      label: t.nav.settings || 'Settings',
       icon: <SettingsRegular />,
       activeIcon: <SettingsFilled />
     }
@@ -518,11 +518,11 @@ export const Navigation: React.FC<NavigationProps> = ({ activeTab, onTabChange, 
                 className={styles.collapseBtn}
                 icon={<ChevronDownRegular />}
                 onClick={() => setIsExpanded(false)}
-                aria-label={t.nav.collapseMenu}
+                aria-label={t.nav.collapseMenu || 'Collapse menu'}
                 aria-expanded={true}
                 data-testid="nav-collapse-toggle"
               >
-                {t.nav.collapseMenu}
+                {t.nav.collapseMenu || 'Collapse menu'}
               </Button>
             </div>
 
@@ -583,7 +583,7 @@ export const Navigation: React.FC<NavigationProps> = ({ activeTab, onTabChange, 
               role="button"
               tabIndex={0}
               onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setIsExpanded(true)}
-              aria-label={`${activeTabItem.label} - ${t.nav.expandMenu}`}
+              aria-label={`${activeTabItem.label} - ${t.nav.expandMenu || 'Expand menu'}`}
               data-testid="nav-collapsed-bar"
             >
               <div className={styles.activeTabSummary}>

@@ -77,6 +77,11 @@ public class CreateProductCommandHandler : IRequestHandler<CreateProductCommand,
         }
 
         const decimal MaxAllowedPrice = 999_999.99m;
+        const int MaxAllowedNameLength = 200;
+        if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Trim().Length > MaxAllowedNameLength)
+        {
+            throw new ArgumentException($"Product name must be between 1 and {MaxAllowedNameLength} characters.", nameof(request.Name));
+        }
         if (request.Price <= 0 || request.Price > MaxAllowedPrice)
         {
             throw new ArgumentException($"Retail price must be between ₱0.01 and ₱{MaxAllowedPrice:N2}.", nameof(request.Price));
