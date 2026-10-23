@@ -361,5 +361,20 @@ describe('InventoryPage', () => {
     expect(screen.queryByText('150.0%')).not.toBeInTheDocument();
     expect(screen.getAllByText('—').length).toBe(2);
   });
+
+  it('formats high margin as ~99.9% when cost is non-zero (issue #120)', async () => {
+    renderInventory();
+    fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Produkto|Add Product/i }));
+
+    const costInput = screen.getByRole('spinbutton', { name: /Puhunan|Unit Cost/i });
+    const priceInput = screen.getByRole('spinbutton', { name: /Presyo ng Tinda|Retail Price/i });
+
+    fireEvent.change(costInput, { target: { value: '5' } });
+    fireEvent.change(priceInput, { target: { value: '999999.99' } });
+
+    expect(screen.getByText('~99.9%')).toBeInTheDocument();
+    expect(screen.queryByText('100.0%')).not.toBeInTheDocument();
+  });
 });
+
 

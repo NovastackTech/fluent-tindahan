@@ -50,7 +50,7 @@ import {
   type CatalogItem
 } from '../db/catalog';
 import type { NavTab } from '../components/Navigation';
-import { formatPeso } from '../utils/currency';
+import { formatPeso, formatMarginPercent } from '../utils/currency';
 
 interface InventoryPageProps {
   onNavigate?: (tab: NavTab) => void;
@@ -973,7 +973,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
               {formatPeso(metrics.projectedGrossProfit)}
             </div>
             <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>
-              {t.inventory.avgMargin}: <strong>{metrics.avgMarginPercent.toFixed(1)}%</strong>
+              {t.inventory.avgMargin}: <strong>{formatMarginPercent(metrics.avgMarginPercent, metrics.totalCostValue)}</strong>
             </Text>
           </Card>
         </div>
@@ -1204,7 +1204,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                       <td className={styles.td}>
                         <div>
                           <span className={`${styles.marginBadge} ${marginClass}`}>
-                            {marginPct.toFixed(1)}%
+                            {formatMarginPercent(marginPct, p.cost)}
                           </span>
                           <Text
                             size={100}
@@ -1326,7 +1326,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                     <Text size={100} style={{ color: tokens.colorNeutralForeground3, display: 'block' }}>
                       {t.inventory.colMargin}
                     </Text>
-                    <span className={`${styles.marginBadge} ${marginClass}`}>{marginPct.toFixed(1)}%</span>
+                    <span className={`${styles.marginBadge} ${marginClass}`}>{formatMarginPercent(marginPct, p.cost)}</span>
                   </div>
                 </div>
 
@@ -1626,7 +1626,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                       appearance="filled"
                       color={liveMarginPct >= 20 ? 'success' : liveMarginPct >= 10 ? 'warning' : 'danger'}
                     >
-                      {liveMarginPct.toFixed(1)}%
+                      {formatMarginPercent(liveMarginPct, rawCost)}
                     </Badge>
                   ) : (
                     <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
