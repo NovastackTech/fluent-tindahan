@@ -116,14 +116,18 @@ if [[ "${PULL_IMAGES}" != "true" && ! -f "${APP_DIR}/backend/Dockerfile" ]]; the
 fi
 
 if [[ "${PULL_IMAGES}" == "true" ]]; then
-  log "Pulling pre-built images from registry..."
-  if ! compose pull api web; then
-    api_img="$(env_value API_IMAGE)"
-    web_img="$(env_value WEB_IMAGE)"
-    if [[ -n "${api_img}" && -n "${web_img}" ]] && docker image inspect "${api_img}" "${web_img}" >/dev/null 2>&1; then
-      log "Registry pull failed; using locally cached images (${api_img}, ${web_img})."
-    else
-      fail "Failed to pull images and they are not cached locally."
+  api_img="$(env_value API_IMAGE)"
+  web_img="$(env_value WEB_IMAGE)"
+  if [[ -n "${api_img}" && -n "${web_img}" ]] && docker image inspect "${api_img}" "${web_img}" >/dev/null 2>&1; then
+    log "Using pre-loaded images (${api_img}, ${web_img})."
+  else
+    log "Pulling pre-built images from registry..."
+    if ! compose pull api web; then
+      if [[ -n "${api_img}" && -n "${web_img}" ]] && docker image inspect "${api_img}" "${web_img}" >/dev/null 2>&1; then
+        log "Registry pull failed; using locally cached images (${api_img}, ${web_img})."
+      else
+        fail "Failed to pull images and they are not cached locally."
+      fi
     fi
   fi
   log "Starting containers (--no-build)..."

@@ -43,14 +43,18 @@ copy deploy\alibaba-sas\secrets.env.example deploy\alibaba-sas\secrets.env
 ## 3. Deploy (Windows, from the repo root)
 
 ```powershell
+# Development (tindahan-dev.novastack-inc.online, /opt/fluent-tindahan, port 8089)
 .\deploy-alibaba-sas.cmd                      # first time on this server: add -ModifyDockerCaddy
+
+# Production (tindahan.novastack-inc.online, /opt/fluent-tindahan-prod, port 8090)
+.\deploy-alibaba-sas-prod.cmd
 ```
 
-You enter the root SSH password once. The script packages the project (no `.git`, `node_modules`, build output, local `.env` or the `tindahan/` vault), streams it into `/opt/fluent-tindahan`, and runs `install.sh`:
+Following GitHub Actions CD, the script builds Docker containers locally, streams/pushes them to the server Docker daemon, uploads the deployment archive (`docker-compose.yml` + `deploy/`), and runs `install.sh`:
 
 1. `setup-server.sh`: installs Docker only if missing.
-2. `deploy.sh`: checks secrets, takes a `pg_dump` snapshot into `backups/` if the database is running, builds and starts the stack, and waits for `http://127.0.0.1:8089/api/health`. It fails if the snapshot or the health check fails.
-3. Adds `tindahan-dev.novastack-inc.online` to the server's Caddy and checks `https://tindahan-dev.novastack-inc.online/api/health`.
+2. `deploy.sh`: checks secrets, takes a `pg_dump` snapshot into `backups/` if the database is running, starts the pre-loaded containers (`--no-build`), and waits for `http://127.0.0.1:<port>/api/health`. It fails if the snapshot or the health check fails.
+3. Adds the domain to the server's Caddy and checks `https://<domain>/api/health`.
 
 | Option | Use |
 | --- | --- |

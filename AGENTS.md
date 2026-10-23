@@ -142,10 +142,12 @@ npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
 ### Deploy (Alibaba Cloud SAS)
-Public: `https://tindahan-dev.novastack-inc.online` (server `8.220.128.80`, `/opt/fluent-tindahan`, `127.0.0.1:8089`).
+- Development: `https://tindahan-dev.novastack-inc.online` (server `8.220.128.80`, `/opt/fluent-tindahan`, `127.0.0.1:8089`).
+- Production: `https://tindahan.novastack-inc.online` (server `8.220.128.80`, `/opt/fluent-tindahan-prod`, `127.0.0.1:8090`).
 ```powershell
 # PayMongo keys for the first deploy: deploy\alibaba-sas\secrets.env (gitignored)
 .\deploy-alibaba-sas.cmd                # first time on this server: add -ModifyDockerCaddy
+.\deploy-alibaba-sas-prod.cmd           # deploy to production
 ```
 See `deploy/alibaba-sas/README.md`.
 

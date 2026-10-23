@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "project-graph": {
-      "command": "python",
-      "args": ["-m", "graphify.serve", "graphify-out/graph.json"]
+      "command": "C:\\Users\\jonat\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
+      "args": ["-m", "graphify.serve", "d:\\Projects\\fluent-tindahan\\graphify-out\\graph.json"]
     }
   }
 }
