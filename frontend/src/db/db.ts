@@ -31,6 +31,7 @@ export interface SaleRecord {
   customerId?: string;
   cashReceived?: number;
   changeGiven?: number;
+  gcashRef?: string;
 }
 
 export interface SaleItemRecord {

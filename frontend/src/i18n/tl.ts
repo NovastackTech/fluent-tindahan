@@ -491,6 +491,7 @@ export const tl: Translations = {
     txnLabel: 'Transaksyon:',
     totalLabel: 'KABUUAN (TOTAL):',
     paymentMethodLabel: 'Paraan ng Bayad:',
+    gcashRefLabel: 'Ref. No. ng GCash:',
     tenderedLabel: 'Bayad:',
     changeLabel: 'Sukli:',
     customerLabel: 'Suki / Utang:',

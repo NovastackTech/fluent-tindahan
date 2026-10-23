@@ -491,6 +491,7 @@ export const en: Translations = {
     txnLabel: 'Transaction:',
     totalLabel: 'TOTAL:',
     paymentMethodLabel: 'Payment Method:',
+    gcashRefLabel: 'GCash Ref:',
     tenderedLabel: 'Cash Tendered:',
     changeLabel: 'Change:',
     customerLabel: 'Customer / Credit:',

@@ -48,6 +48,7 @@ export interface ReceiptData {
   changeGiven?: number;
   customerName?: string;
   customerUtangBalance?: number;
+  gcashRef?: string;
 }
 
 interface ReceiptModalProps {
@@ -267,6 +268,10 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ open, onClose, data,
     text += `${t.receipt.totalLabel} ${formatPeso(data.totalAmount)}\n`;
     text += `${t.receipt.paymentMethodLabel} ${data.paymentMethod}\n`;
 
+    if (data.gcashRef) {
+      text += `${t.receipt.gcashRefLabel} ${data.gcashRef}\n`;
+    }
+
     if (data.cashReceived !== undefined && data.cashReceived > 0) {
       text += `${t.receipt.tenderedLabel} ${formatPeso(data.cashReceived)}\n`;
       text += `${t.receipt.changeLabel} ${formatPeso(data.changeGiven || 0)}\n`;
@@ -425,6 +430,13 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ open, onClose, data,
             <span>{t.receipt.paymentMethodLabel}</span>
             <Badge appearance="tint" color="brand">{data.paymentMethod}</Badge>
           </div>
+
+          {data.gcashRef && (
+            <div className={styles.itemRow}>
+              <span>{t.receipt.gcashRefLabel}</span>
+              <span className={styles.itemPrice} style={{ fontFamily: 'monospace' }}>{data.gcashRef}</span>
+            </div>
+          )}
 
           {data.cashReceived !== undefined && data.cashReceived > 0 && (
             <>

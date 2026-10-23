@@ -479,6 +479,7 @@ export interface Translations {
     txnLabel: string;
     totalLabel: string;
     paymentMethodLabel: string;
+    gcashRefLabel: string;
     tenderedLabel: string;
     changeLabel: string;
     customerLabel: string;
