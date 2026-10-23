@@ -361,5 +361,18 @@ describe('InventoryPage', () => {
     expect(screen.queryByText('150.0%')).not.toBeInTheDocument();
     expect(screen.getAllByText('—').length).toBe(2);
   });
+
+  it('displays out-of-stock filter chip count without duplicate (issue #109)', async () => {
+    renderInventory();
+    expect(screen.getByText('❌ Ubos na (0)')).toBeInTheDocument();
+    expect(screen.queryByText(/Ubos na \(0\) \(0\)/)).not.toBeInTheDocument();
+
+    act(() => {
+      useLanguageStore.getState().setLanguage('en');
+    });
+
+    expect(screen.getByText('❌ Out of Stock (0)')).toBeInTheDocument();
+    expect(screen.queryByText(/Out of Stock \(0\) \(0\)/)).not.toBeInTheDocument();
+  });
 });
 
