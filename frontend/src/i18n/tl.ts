@@ -58,7 +58,8 @@ export const tl: Translations = {
     edit: 'Baguhin',
     close: 'Isara',
     confirm: 'Kumpirmahin',
-    pesos: '₱'
+    pesos: '₱',
+    loading: 'Naglo-load...'
   },
   nav: {
     dashboard: 'Dashboard',

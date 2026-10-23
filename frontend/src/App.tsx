@@ -32,6 +32,7 @@ import { useSubscriptionStore } from './state/subscriptionStore';
 import { useAuthStore } from './state/authStore';
 import { db } from './db/db';
 import { DEFAULT_TENANT_ID } from './db/seedData';
+import { useTranslation } from './state/languageStore';
 
 const STORAGE_KEY_ONBOARDING_STARTED = 'fluent_tindahan_onboarding_started_v1';
 
@@ -95,6 +96,7 @@ const useStyles = makeStyles({
 
 export const App: React.FC = () => {
   const styles = useStyles();
+  const { t } = useTranslation();
   const isDarkMode = useThemeStore((s) => s.isDarkMode);
   const isOnboarded = useAuthStore((s) => s.isOnboarded);
   const isOnboardingStatusReady = useAuthStore((s) => s.isOnboardingStatusReady);
@@ -336,7 +338,7 @@ const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string) || 'f
         <main className={styles.content}>
           <Suspense fallback={
             <div className={styles.loadingContainer}>
-              <Spinner label="Naglo-load..." size="medium" />
+              <Spinner label={t.common.loading} size="medium" />
             </div>
           }>
             {visibleTab === 'dashboard' && <DashboardPage onNavigate={handleTabChange} />}

@@ -58,7 +58,8 @@ export const en: Translations = {
     edit: 'Edit',
     close: 'Close',
     confirm: 'Confirm',
-    pesos: '₱'
+    pesos: '₱',
+    loading: 'Loading...'
   },
   nav: {
     dashboard: 'Dashboard',
