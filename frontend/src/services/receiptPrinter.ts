@@ -137,6 +137,12 @@ export function generateThermalReceiptHtml(
       <span>Paraan ng Bayad:</span>
       <span class="bold">${data.paymentMethod}</span>
     </div>
+    ${data.gcashRef ? `
+      <div class="row">
+        <span>GCash Ref:</span>
+        <span class="bold" style="font-family: monospace;">${data.gcashRef}</span>
+      </div>
+    ` : ''}
 
     ${data.cashReceived !== undefined && data.cashReceived > 0 ? `
       <div class="row">
@@ -305,6 +311,9 @@ export function generateEscPosReceipt(
 
   // Payment details
   bytes.push(...encoder.encode(`Bayad: ${data.paymentMethod}\n`));
+  if (data.gcashRef) {
+    bytes.push(...encoder.encode(`GCash Ref: ${data.gcashRef}\n`));
+  }
 
   if (data.cashReceived !== undefined && data.cashReceived > 0) {
     bytes.push(...encoder.encode(`Inabot: P${data.cashReceived.toFixed(2)}\n`));

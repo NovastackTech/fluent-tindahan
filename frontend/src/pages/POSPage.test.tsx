@@ -526,6 +526,43 @@ describe('POSPage', () => {
     });
   });
 
+  it('completes GCash checkout with reference number and attaches it to sale and receipt', async () => {
+    renderPOS();
+
+    await waitFor(() => {
+      expect(screen.getByText('Lucky Me Pancit Canton Kalamansi')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Lucky Me Pancit Canton Kalamansi'));
+
+    const payBtn = screen.getByRole('button', { name: /Bayad|Pay/i });
+    fireEvent.click(payBtn);
+
+    // Switch payment method to GCash
+    const gcashTab = screen.getByRole('tab', { name: /GCash/i });
+    fireEvent.click(gcashTab);
+
+    // Enter GCash Reference number
+    const refInput = screen.getByPlaceholderText('Hal. 901238471201');
+    fireEvent.change(refInput, { target: { value: '901238471201' } });
+
+    // Complete sale
+    const completeBtn = screen.getByRole('button', { name: /Kumpletuhin ang Benta|Complete Sale/i });
+    fireEvent.click(completeBtn);
+
+    await waitFor(async () => {
+      const sales = await db.sales.toArray();
+      expect(sales).toHaveLength(1);
+      expect(sales[0].paymentMethod).toBe('GCash');
+      expect(sales[0].gcashRef).toBe('901238471201');
+    });
+
+    // Check receipt modal displays GCash reference number
+    await waitFor(() => {
+      expect(screen.getByText('901238471201')).toBeInTheDocument();
+    });
+  });
+
   it('completes Split payment checkout (Cash + GCash)', async () => {
     renderPOS();
 

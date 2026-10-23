@@ -53,6 +53,12 @@ function getInitialNavTab(): NavTab {
   const params = new URLSearchParams(window.location.search);
   const tabParam = params.get('tab')?.toLowerCase();
   const intentParam = params.get('intent')?.toLowerCase();
+
+  const isAuth = useAuthStore.getState().isOnboarded && !useAuthStore.getState().reauthRequested;
+  if (isAuth && (tabParam === 'signup' || tabParam === 'register' || tabParam === 'login')) {
+    return 'dashboard';
+  }
+
   if (tabParam === 'signup' || tabParam === 'register') {
     return 'login';
   }
@@ -63,6 +69,9 @@ function getInitialNavTab(): NavTab {
     return tabParam as NavTab;
   }
   const path = window.location.pathname.replace(/^\//, '').toLowerCase();
+  if (isAuth && (path === 'signup' || path === 'register' || path === 'login')) {
+    return 'dashboard';
+  }
   if (path === 'signup' || path === 'register') {
     return 'login';
   }
@@ -130,10 +139,22 @@ export const App: React.FC = () => {
   };
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
     const handlePopState = () => {
       const nextTab = getInitialNavTab();
       setActiveTab(nextTab);
+      if (typeof window !== 'undefined' && window.history?.replaceState) {
+        const isAuth = useAuthStore.getState().isOnboarded && !useAuthStore.getState().reauthRequested;
+        const url = new URL(window.location.href);
+        const rawTab = url.searchParams.get('tab')?.toLowerCase();
+        const path = url.pathname.replace(/^\//, '').toLowerCase();
+        if (isAuth && (rawTab === 'signup' || rawTab === 'register' || rawTab === 'login' || path === 'signup' || path === 'register' || path === 'login')) {
+          url.searchParams.set('tab', nextTab);
+          if (path === 'signup' || path === 'register' || path === 'login') {
+            url.pathname = '/';
+          }
+          window.history.replaceState(null, '', url.pathname + url.search);
+        }
+      }
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
@@ -141,13 +162,25 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.history?.replaceState) return;
+    const isAuth = isOnboarded && !reauthRequested;
     const url = new URL(window.location.href);
     const rawTab = url.searchParams.get('tab')?.toLowerCase();
+    const path = url.pathname.replace(/^\//, '').toLowerCase();
+
+    if (isAuth && (rawTab === 'signup' || rawTab === 'register' || rawTab === 'login' || path === 'signup' || path === 'register' || path === 'login')) {
+      url.searchParams.set('tab', activeTab === 'login' ? 'dashboard' : activeTab);
+      if (path === 'signup' || path === 'register' || path === 'login') {
+        url.pathname = '/';
+      }
+      window.history.replaceState(null, '', url.pathname + url.search);
+      return;
+    }
+
     if (rawTab && !VALID_NAV_TABS.includes(rawTab as NavTab) && rawTab !== 'signup' && rawTab !== 'register' && rawTab !== 'delete-account') {
       url.searchParams.set('tab', activeTab);
       window.history.replaceState(null, '', url.pathname + url.search);
     }
-  }, [activeTab]);
+  }, [activeTab, isOnboarded, reauthRequested]);
 
   useEffect(() => {
     if (!isOnboardingStatusReady) return;

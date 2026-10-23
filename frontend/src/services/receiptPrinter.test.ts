@@ -47,6 +47,17 @@ describe('receiptPrinter', () => {
       expect(html).toContain('80mm');
       expect(html).toContain('&#8369;39.00');
     });
+
+    it('renders GCash reference in thermal receipt HTML when present', () => {
+      const gcashData: ReceiptData = {
+        ...sampleData,
+        paymentMethod: 'GCash',
+        gcashRef: '901238471201'
+      };
+      const html = generateThermalReceiptHtml(gcashData, "Aling Nena's Tindahan", '58mm');
+      expect(html).toContain('GCash Ref:');
+      expect(html).toContain('901238471201');
+    });
   });
 
   describe('generateEscPosReceipt', () => {
@@ -77,6 +88,17 @@ describe('receiptPrinter', () => {
       };
       const bytes = generateEscPosReceipt(longItemData, "Store", '80mm');
       expect(bytes.length).toBeGreaterThan(0);
+    });
+
+    it('encodes GCash reference in ESC/POS byte sequence when present', () => {
+      const gcashData: ReceiptData = {
+        ...sampleData,
+        paymentMethod: 'GCash',
+        gcashRef: '901238471201'
+      };
+      const bytes = generateEscPosReceipt(gcashData, "Store", '58mm');
+      const text = new TextDecoder().decode(bytes);
+      expect(text).toContain('GCash Ref: 901238471201');
     });
   });
 

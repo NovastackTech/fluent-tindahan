@@ -4,6 +4,7 @@ const sharedProductFormTranslations = {
   en: {
     productNameLabel: 'Product Name:*',
     productNameRequired: 'Enter a product name.',
+    productNameExceedsMax: 'Product name cannot exceed 200 characters.',
     categoryLabel: 'Category',
     costLabel: 'Cost Price (₱):*',
     costCannotBeNegative: 'Cost price cannot be negative.',
@@ -491,6 +492,7 @@ export const en: Translations = {
     txnLabel: 'Transaction:',
     totalLabel: 'TOTAL:',
     paymentMethodLabel: 'Payment Method:',
+    gcashRefLabel: 'GCash Ref:',
     tenderedLabel: 'Cash Tendered:',
     changeLabel: 'Change:',
     customerLabel: 'Customer / Credit:',
