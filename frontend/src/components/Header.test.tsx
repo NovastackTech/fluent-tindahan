@@ -511,6 +511,17 @@ describe('Header', () => {
     expect(onNavigate).toHaveBeenCalledWith('login');
   });
 
+  it('guarantees all header buttons have non-empty accessible names immediately on render (issue #124)', () => {
+    usePwaStore.setState({ isInstallable: true });
+    renderHeader();
+
+    const buttons = screen.getAllByRole('button');
+    expect(buttons.length).toBeGreaterThan(0);
+    buttons.forEach((button) => {
+      expect(button).toHaveAccessibleName();
+    });
+  });
+
   it('displays DLQ warning and not all-synced when Dead Letter Queue has failed items', async () => {
     syncEngine.useSyncStore.setState({
       isOnline: true,
@@ -525,3 +536,4 @@ describe('Header', () => {
     expect(screen.queryByText(/All data synced|Naka-sync ang lahat/i)).not.toBeInTheDocument();
   });
 });
+

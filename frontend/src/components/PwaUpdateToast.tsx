@@ -121,6 +121,7 @@ export const PwaUpdateToast: React.FC = () => {
                 onClick={handleUpdate}
                 disabled={isBlocked}
                 title={warningMessage || undefined}
+                aria-label={t.pwa.updateBtn || 'Update App'}
               >
                 {t.pwa.updateBtn}
               </Button>
@@ -129,6 +130,7 @@ export const PwaUpdateToast: React.FC = () => {
                 appearance="subtle"
                 icon={<DismissRegular />}
                 onClick={handleDismiss}
+                aria-label={t.pwa.dismissBtn || 'Dismiss'}
               >
                 {t.pwa.dismissBtn}
               </Button>
