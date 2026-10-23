@@ -29,6 +29,7 @@ export interface Translations {
     close: string;
     confirm: string;
     pesos: string;
+    loading: string;
   };
   nav: {
     dashboard: string;
