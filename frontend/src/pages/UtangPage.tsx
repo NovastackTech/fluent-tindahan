@@ -727,6 +727,9 @@ export const UtangPage: React.FC = () => {
                       <Text size={200} weight="semibold">{t.utang.creditAmountLabel}</Text>
                       <Input
                         type="number"
+                        min={0}
+                        step="0.01"
+                        aria-label={t.utang.creditAmountLabel}
                         aria-invalid={!!creditAmountError}
                         style={{ width: '100%', marginTop: '4px' }}
                         value={creditAmount}
@@ -747,7 +750,7 @@ export const UtangPage: React.FC = () => {
                     <div style={{ margin: '12px 0' }}>
                       <Text size={200} weight="semibold">{t.utang.creditNotesLabel}</Text>
                       <Input
-                        aria-label={t.utang.customerNameLabel}
+                        aria-label={t.utang.creditNotesLabel}
                         style={{ width: '100%', marginTop: '4px' }}
                         value={creditNotes}
                         onChange={(_, data) => setCreditNotes(data.value)}

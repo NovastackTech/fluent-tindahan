@@ -588,6 +588,39 @@ describe('UtangPage', () => {
     const stored = await db.customers.get('cust-mar100');
     expect(stored?.totalUtangBalance).toBe(200);
   });
+
+  it('exposes correct accessible names for amount and notes in Add Utang dialog (issue #97)', async () => {
+    await db.customers.add({
+      id: 'cust-a11y',
+      tenantId: 'tenant-1',
+      name: 'Aling Marites',
+      phone: '09171234567',
+      totalUtangBalance: 50,
+      updatedAt: new Date().toISOString()
+    });
+
+    renderUtang();
+
+    await waitFor(() => {
+      expect(screen.getByText('Aling Marites')).toBeInTheDocument();
+    });
+
+    // Open customer modal
+    fireEvent.click(screen.getByText('Aling Marites'));
+
+    // Open Add Utang (Add Credit) dialog
+    const addUtangBtn = await screen.findByRole('button', { name: /Dagdagan ng Utang/i });
+    fireEvent.click(addUtangBtn);
+
+    // Verify amount spinbutton is named by creditAmountLabel
+    const amountInput = screen.getByRole('spinbutton', { name: /Halaga ng Utang/i });
+    expect(amountInput).toBeInTheDocument();
+
+    // Verify notes input is named by creditNotesLabel and not customerNameLabel
+    const notesInput = screen.getByRole('textbox', { name: /Tala \/ Mga Kinuha/i });
+    expect(notesInput).toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: /Pangalan ng Suki/i })).not.toBeInTheDocument();
+  });
 });
 
 
