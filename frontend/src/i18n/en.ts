@@ -4,6 +4,7 @@ const sharedProductFormTranslations = {
   en: {
     productNameLabel: 'Product Name:*',
     productNameRequired: 'Enter a product name.',
+    productNameExceedsMax: 'Product name cannot exceed 200 characters.',
     categoryLabel: 'Category',
     costLabel: 'Cost Price (₱):*',
     costCannotBeNegative: 'Cost price cannot be negative.',
@@ -51,7 +52,7 @@ export const en: Translations = {
     themeModeLight: 'Light Theme',
     themeModeDark: 'Dark Theme',
     themeModeSystem: 'System Default Theme',
-    languageToggle: 'TL/EN toggle (Taglish)',
+    languageToggle: 'Switch to Taglish',
     save: 'Save',
     cancel: 'Cancel',
     delete: 'Delete',

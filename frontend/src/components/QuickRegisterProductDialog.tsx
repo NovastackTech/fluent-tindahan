@@ -27,7 +27,8 @@ import { enqueueSync } from '../sync/syncEngine';
 import { useAuthStore } from '../state/authStore';
 import { useTranslation } from '../state/languageStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
-import { formatPeso } from '../utils/currency';
+import { formatPeso, formatMarginPercent } from '../utils/currency';
+import { MAX_PRODUCT_NAME_LENGTH } from '../constants/inventory';
 
 interface QuickRegisterProductDialogProps {
   isOpen: boolean;
@@ -161,6 +162,10 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
 
     if (!name.trim()) {
       setNameError(t.barcode.productNameRequired);
+      return;
+    }
+    if (name.trim().length > MAX_PRODUCT_NAME_LENGTH) {
+      setNameError(t.barcode.productNameExceedsMax);
       return;
     }
     if (costNum < 0) {
@@ -331,6 +336,7 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
                   aria-label={t.barcode.productNameLabel}
                   aria-invalid={Boolean(nameError)}
                   aria-describedby={nameError ? 'quick-register-product-name-error' : undefined}
+                  maxLength={MAX_PRODUCT_NAME_LENGTH}
                   style={{ width: '100%' }}
                   placeholder="e.g. San Miguel Pale Pilsen 330ml"
                   value={name}
@@ -477,7 +483,7 @@ export const QuickRegisterProductDialog: React.FC<QuickRegisterProductDialogProp
                     appearance="filled"
                     color={marginPct >= 20 ? 'success' : marginPct >= 10 ? 'warning' : 'danger'}
                   >
-                    {marginPct.toFixed(1)}%
+                    {formatMarginPercent(marginPct, costNum)}
                   </Badge>
                 ) : (
                   <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
