@@ -308,6 +308,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
           appearance="subtle"
           size="small"
           onClick={handleManualSync}
+          aria-label={isSyncing ? t.common.syncing : pendingCount > 0 ? `${pendingCount} ${t.common.queued}` : t.common.online}
           icon={
             isSyncing ? (
               <Spinner size="extra-tiny" />
@@ -402,6 +403,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
           className={inTray ? styles.trayActionBtn : undefined}
           icon={<ArrowDownloadRegular primaryFill={tokens.colorPaletteGreenForeground1} />}
           onClick={() => promptInstall()}
+          aria-label={t.pwa.installHeaderTooltip || t.pwa.installBtn || 'Install App'}
         >
           {inTray && <span>{t.pwa.installBtn}</span>}
         </Button>
@@ -517,6 +519,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
                   }}
                   style={{ padding: '0px 4px', height: '22px', minWidth: 'auto' }}
                   title="View Subscription Plans"
+                  aria-label={tier === 'NegosyoPlus' ? 'Negosyo Plus Plan' : tier === 'TindahanPro' ? 'Tindahan Pro Plan' : 'Libre Plan'}
                 >
                   <Badge
                     color={tier === 'NegosyoPlus' ? 'important' : tier === 'TindahanPro' ? 'warning' : 'informative'}

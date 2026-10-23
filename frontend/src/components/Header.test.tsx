@@ -490,4 +490,16 @@ describe('Header', () => {
     });
     expect(onNavigate).toHaveBeenCalledWith('login');
   });
+
+  it('guarantees all header buttons have non-empty accessible names immediately on render (issue #124)', () => {
+    usePwaStore.setState({ isInstallable: true });
+    renderHeader();
+
+    const buttons = screen.getAllByRole('button');
+    expect(buttons.length).toBeGreaterThan(0);
+    buttons.forEach((button) => {
+      expect(button).toHaveAccessibleName();
+    });
+  });
 });
+
