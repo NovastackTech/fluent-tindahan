@@ -57,6 +57,37 @@ describe('syncErrors utility', () => {
 
     expect(getLocalizedSyncErrorMessage(tl, 'en')).toBe(en);
     expect(getLocalizedSyncErrorMessage(en, 'tl')).toBe(tl);
+
+    const tlNested = 'Nalipat sa Dead Letter Queue ang 1 transaksyon: Failed';
+    const enNested = '1 transaction moved to Dead Letter Queue: Failed';
+    expect(getLocalizedSyncErrorMessage(tlNested, 'tl')).toBe('Nalipat sa Dead Letter Queue ang 1 transaksyon: Bumagsak');
+    expect(getLocalizedSyncErrorMessage(enNested, 'tl')).toBe('Nalipat sa Dead Letter Queue ang 1 transaksyon: Bumagsak');
+  });
+
+  it('translates Network Error and server status errors', () => {
+    expect(getLocalizedSyncErrorMessage('Network Error', 'tl')).toBe('Hindi makakonekta sa server');
+    expect(getLocalizedSyncErrorMessage('Network Error.', 'tl')).toBe('Hindi makakonekta sa server.');
+    expect(getLocalizedSyncErrorMessage('Sync server error (500)', 'tl')).toBe('Problema sa server ng sync (500)');
+    expect(getLocalizedSyncErrorMessage('Problema sa server ng sync (500)', 'en')).toBe('Sync server error (500)');
+  });
+
+  it('translates GCash duplicate references and transaction conflicts', () => {
+    expect(getLocalizedSyncErrorMessage('2 duplicate GCash references detected.', 'tl')).toBe(
+      'May 2 dobleng reference ng GCash na natukoy.'
+    );
+    expect(getLocalizedSyncErrorMessage('1 duplicate GCash reference detected.', 'tl')).toBe(
+      'May 1 dobleng reference ng GCash na natukoy.'
+    );
+    expect(getLocalizedSyncErrorMessage('May 2 dobleng reference ng GCash na natukoy.', 'en')).toBe(
+      '2 duplicate GCash references detected.'
+    );
+
+    expect(getLocalizedSyncErrorMessage('1 GCash transaction conflict detected.', 'tl')).toBe(
+      'May 1 salungatan sa transaksyon ng GCash na natukoy.'
+    );
+    expect(getLocalizedSyncErrorMessage('May 1 salungatan sa transaksyon ng GCash na natukoy.', 'en')).toBe(
+      '1 GCash transaction conflict detected.'
+    );
   });
 
   it('extracts either TL or EN from bilingual slash-separated messages', () => {

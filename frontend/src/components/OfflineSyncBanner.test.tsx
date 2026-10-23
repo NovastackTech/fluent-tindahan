@@ -108,7 +108,9 @@ describe('OfflineSyncBanner', () => {
 
     const dismissBtn = screen.getByRole('button', { name: /Isara|Close|Dismiss/i });
     expect(dismissBtn).toBeInTheDocument();
-    dismissBtn.click();
+    act(() => {
+      dismissBtn.click();
+    });
     expect(useSyncStore.getState().lastErrorMessage).toBeNull();
   });
 
@@ -151,6 +153,53 @@ describe('OfflineSyncBanner', () => {
 
     expect(screen.getByText('Sync Error')).toBeInTheDocument();
     expect(screen.getByText(translations.en.common.differentAccountSyncBlocked)).toBeInTheDocument();
+  });
+
+  it('switches tenant provisioning error text dynamically when language is toggled', () => {
+    act(() => {
+      useLanguageStore.setState({ language: 'tl' });
+      useSyncStore.setState({
+        isOnline: true,
+        pendingCount: 0,
+        deadLetterCount: 0,
+        lastErrorMessage: translations.tl.common.tenantProvisioningSyncBlocked
+      });
+    });
+
+    renderBanner();
+
+    expect(screen.getByText(translations.tl.common.tenantProvisioningSyncBlocked)).toBeInTheDocument();
+
+    act(() => {
+      useLanguageStore.getState().toggleLanguage();
+    });
+
+    expect(screen.getByText(translations.en.common.tenantProvisioningSyncBlocked)).toBeInTheDocument();
+  });
+
+  it('switches 401 sync rejection error text dynamically when language is toggled', () => {
+    const tl401 = 'Tinanggihan ang pag-sync dahil walang wastong session ng tindahan ang device na ito. Mag-sign in muli para magpatuloy. Nananatili sa device na ito ang mga nakabinbing pagbabago.';
+    const en401 = 'Sync was rejected because this device has no valid tenant session. Re-authenticate to resume syncing. Pending changes remain on this device.';
+
+    act(() => {
+      useLanguageStore.setState({ language: 'tl' });
+      useSyncStore.setState({
+        isOnline: true,
+        pendingCount: 0,
+        deadLetterCount: 0,
+        lastErrorMessage: tl401
+      });
+    });
+
+    renderBanner();
+
+    expect(screen.getByText(tl401)).toBeInTheDocument();
+
+    act(() => {
+      useLanguageStore.getState().toggleLanguage();
+    });
+
+    expect(screen.getByText(en401)).toBeInTheDocument();
   });
 
   it('switches DLQ error text dynamically when language is toggled from Tagalog to English', () => {

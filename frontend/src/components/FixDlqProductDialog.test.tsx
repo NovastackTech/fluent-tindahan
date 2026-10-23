@@ -138,7 +138,7 @@ describe('FixDlqProductDialog', () => {
     renderDialog(item);
 
     await waitFor(() => {
-      expect(screen.getByTestId('dlq-product-name-input')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('A'.repeat(205))).toBeInTheDocument();
     });
 
     const nameInput = screen.getByTestId('dlq-product-name-input');
