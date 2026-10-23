@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { App } from './App';
 import { usePwaStore } from './state/pwaStore';
 import { useCartStore } from './state/cartStore';
@@ -517,6 +517,31 @@ describe('App', () => {
     render(<App />);
 
     expect(screen.getByText('Kanselado ang pagsingil; walang siningil sa iyo.')).toBeInTheDocument();
+  });
+
+  it('re-translates billing cancelled message dynamically when language is toggled', async () => {
+    useLanguageStore.setState({ language: 'en' });
+    Object.defineProperty(window, 'location', {
+      value: {
+        ...originalLocation,
+        href: 'http://localhost:5173/?billing=cancel',
+        pathname: '/',
+        search: '?billing=cancel'
+      },
+      configurable: true,
+      writable: true
+    });
+
+    render(<App />);
+
+    expect(screen.getByText('Billing cancelled; no charge was made.')).toBeInTheDocument();
+
+    act(() => {
+      useLanguageStore.getState().setLanguage('tl');
+    });
+
+    expect(screen.getByText('Kanselado ang pagsingil; walang siningil sa iyo.')).toBeInTheDocument();
+    expect(screen.queryByText('Billing cancelled; no charge was made.')).not.toBeInTheDocument();
   });
 
   it('displays billing success message and confirms checkout session when ?billing=success is present', async () => {

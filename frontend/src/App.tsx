@@ -103,8 +103,7 @@ export const App: React.FC = () => {
   const isOnboardingOpen = useAuthStore((s) => s.isOnboardingOpen);
   const reauthRequested = useAuthStore((s) => s.reauthRequested);
   const [activeTab, setActiveTab] = useState<NavTab>(getInitialNavTab);
-  const [billingSuccessMessage, setBillingSuccessMessage] = useState<string | null>(null);
-  const [billingCancelMessage, setBillingCancelMessage] = useState<string | null>(null);
+  const [billingNotice, setBillingNotice] = useState<'success' | 'cancel' | null>(null);
   const storeServicesStarted = useRef(false);
 
   const visibleTab: NavTab = reauthRequested ? 'login' : activeTab;
@@ -163,11 +162,7 @@ export const App: React.FC = () => {
         // Ignore
       }
       // oxlint-disable-next-line react/set-state-in-effect - Initialize billing cancellation notification from URL params
-      setBillingCancelMessage(
-        language === 'tl'
-          ? 'Kanselado ang pagsingil; walang siningil sa iyo.'
-          : 'Billing cancelled; no charge was made.'
-      );
+      setBillingNotice('cancel');
       if (window.history && window.history.replaceState) {
         const url = new URL(window.location.href);
         url.searchParams.delete('billing');
@@ -177,7 +172,7 @@ export const App: React.FC = () => {
         window.history.replaceState(null, '', url.pathname + url.search);
       }
     }
-  }, [language]);
+  }, []);
 
   useEffect(() => {
     if (!isOnboardingStatusReady) return;
@@ -307,35 +302,9 @@ export const App: React.FC = () => {
 
     const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
     const isBillingSuccess = searchParams?.get('billing') === 'success';
-    const isBillingCancel = searchParams?.get('billing') === 'cancel';
 
     const handleBillingReturn = async () => {
       const hasStoredCheckoutSession = typeof window !== 'undefined' && !!localStorage.getItem('fluent_last_checkout_session_id');
-
-      if (isBillingCancel) {
-        if (typeof window !== 'undefined') {
-          try {
-            localStorage.removeItem('fluent_last_checkout_session_id');
-          } catch {
-            // Ignore
-          }
-        }
-        setBillingCancelMessage(
-          language === 'tl'
-            ? 'Kanselado ang pagsingil; walang siningil sa iyo.'
-            : 'Billing cancelled; no charge was made.'
-        );
-        if (window.history && window.history.replaceState) {
-          const url = new URL(window.location.href);
-          url.searchParams.delete('billing');
-          url.searchParams.delete('mock_paid');
-          url.searchParams.delete('ref');
-          url.searchParams.delete('tier');
-          window.history.replaceState(null, '', url.pathname + url.search);
-        }
-        await useSubscriptionStore.getState().refreshSubscription();
-        return;
-      }
 
       if (isBillingSuccess || hasStoredCheckoutSession) {
         await useSubscriptionStore.getState().confirmCheckoutSession();
@@ -344,11 +313,7 @@ export const App: React.FC = () => {
       await useSubscriptionStore.getState().refreshSubscription();
 
       if (isBillingSuccess) {
-        setBillingSuccessMessage(
-          language === 'tl'
-            ? 'Salamat sa iyong pag-upgrade! Matagumpay ang iyong subscription sa Fluent Tindahan.'
-            : 'Thank you for upgrading! Your Fluent Tindahan subscription is active.'
-        );
+        setBillingNotice('success');
         if (window.history && window.history.replaceState) {
           const url = new URL(window.location.href);
           url.searchParams.delete('billing');
@@ -361,7 +326,17 @@ export const App: React.FC = () => {
     };
 
     handleBillingReturn().catch(console.error);
-  }, [isOnboarded, isOnboardingStatusReady, language]);
+  }, [isOnboarded, isOnboardingStatusReady]);
+
+  const billingMessage = billingNotice === 'success'
+    ? (language === 'tl'
+        ? 'Salamat sa iyong pag-upgrade! Matagumpay ang iyong subscription sa Fluent Tindahan.'
+        : 'Thank you for upgrading! Your Fluent Tindahan subscription is active.')
+    : billingNotice === 'cancel'
+    ? (language === 'tl'
+        ? 'Kanselado ang pagsingil; walang siningil sa iyo.'
+        : 'Billing cancelled; no charge was made.')
+    : null;
 
 const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string) || 'fluent-tindahan-dev.apps.googleusercontent.com';
 
@@ -373,11 +348,11 @@ const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string) || 'f
         <PwaUpdateToast />
         <PwaInstallBanner />
         <OfflineSyncBanner />
-        {billingSuccessMessage && (
+        {billingNotice === 'success' && (
           <div style={{ padding: '0 16px 8px 16px', maxWidth: '1200px', margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
             <MessageBar intent="success" layout="multiline">
               <MessageBarBody>
-                <MessageBarTitle>{billingSuccessMessage}</MessageBarTitle>
+                <MessageBarTitle>{billingMessage}</MessageBarTitle>
               </MessageBarBody>
               <MessageBarActions
                 containerAction={
@@ -385,7 +360,7 @@ const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string) || 'f
                     appearance="subtle"
                     aria-label="Dismiss"
                     icon={<DismissRegular />}
-                    onClick={() => setBillingSuccessMessage(null)}
+                    onClick={() => setBillingNotice(null)}
                   />
                 }
               />
@@ -393,11 +368,11 @@ const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string) || 'f
           </div>
         )}
 
-        {billingCancelMessage && (
+        {billingNotice === 'cancel' && (
           <div style={{ padding: '0 16px 8px 16px', maxWidth: '1200px', margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
             <MessageBar intent="info" layout="multiline">
               <MessageBarBody>
-                <MessageBarTitle>{billingCancelMessage}</MessageBarTitle>
+                <MessageBarTitle>{billingMessage}</MessageBarTitle>
               </MessageBarBody>
               <MessageBarActions
                 containerAction={
@@ -405,7 +380,7 @@ const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string) || 'f
                     appearance="subtle"
                     aria-label="Dismiss"
                     icon={<DismissRegular />}
-                    onClick={() => setBillingCancelMessage(null)}
+                    onClick={() => setBillingNotice(null)}
                   />
                 }
               />
