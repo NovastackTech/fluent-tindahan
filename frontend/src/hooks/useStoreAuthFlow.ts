@@ -60,6 +60,11 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
     scheduledAt: string | null;
     retryWithRestore: () => Promise<boolean>;
   } | null>(null);
+  const [pendingRegistrationPreferences, setPendingRegistrationPreferences] = useState<{
+    includeStarterProducts?: boolean;
+    offerGcash?: boolean;
+    businessName?: string;
+  } | null>(null);
 
   const clearPendingDeletionInfo = () => setPendingDeletionInfo(null);
 
@@ -67,6 +72,7 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
     setIsUnsyncedDialogOpen(false);
     setPendingAuthPayload(null);
     setPendingOtpLocalPin(undefined);
+    setPendingRegistrationPreferences(null);
   };
 
   const handleConfirmWipeAndLogin = async () => {
@@ -208,6 +214,11 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
           if (isMountedRef.current && typeof window !== 'undefined') {
             setPendingOtpEmail(params.email.trim());
             setPendingOtpLocalPin(params.pin);
+            setPendingRegistrationPreferences({
+              includeStarterProducts: params.includeStarterProducts !== false,
+              offerGcash: params.offerGcash !== false,
+              businessName: params.businessName
+            });
           }
         } else {
           options?.onSuccess?.(result.authResult);
@@ -242,21 +253,32 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
       const loginRes = await loginWithAuthPayload(verifiedDto, pendingOtpLocalPin);
       if (!loginRes.success) {
         if (isMountedRef.current && typeof window !== 'undefined') {
-          setPendingAuthPayload({ payload: { ...verifiedDto, requiresEmailVerification: false }, localPin: pendingOtpLocalPin });
+          setPendingAuthPayload({
+            payload: { ...verifiedDto, requiresEmailVerification: false },
+            localPin: pendingOtpLocalPin,
+            newUserPreferences: {
+              offerGcash: pendingRegistrationPreferences?.offerGcash !== false,
+              includeStarterProducts: pendingRegistrationPreferences?.includeStarterProducts !== false
+            }
+          });
           setUnsyncedLoginCount(loginRes.unsyncedCount || 0);
           setIsUnsyncedDialogOpen(true);
           setPendingOtpEmail(null);
           setPendingOtpLocalPin(undefined);
+          setPendingRegistrationPreferences(null);
         }
         return true;
       }
       await finalizeSuccessfulLogin(verifiedDto.tenantId, {
-        isNewUser: verifiedDto.isNewUser,
-        businessName: verifiedDto.businessName
+        isNewUser: verifiedDto.isNewUser ?? true,
+        businessName: verifiedDto.businessName || pendingRegistrationPreferences?.businessName,
+        includeStarterProducts: pendingRegistrationPreferences?.includeStarterProducts !== false,
+        offerGcash: pendingRegistrationPreferences?.offerGcash !== false
       });
       if (isMountedRef.current && typeof window !== 'undefined') {
         setPendingOtpEmail(null);
         setPendingOtpLocalPin(undefined);
+        setPendingRegistrationPreferences(null);
       }
       options?.onSuccess?.(verifiedDto);
       return true;

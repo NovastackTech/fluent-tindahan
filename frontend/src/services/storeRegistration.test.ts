@@ -138,6 +138,39 @@ describe('storeRegistration services', () => {
       expect(syncEngine.kickSync).toHaveBeenCalled();
     });
 
+    it('defers Dexie seeding, onboarding, and sync when requiresEmailVerification is true (issue #178)', async () => {
+      vi.mocked(authService.registerStore).mockResolvedValueOnce({
+        tenantId: 'mock-unverified-tenant',
+        userId: 'mock-unverified-user',
+        email: 'unverified@tindahan.ph',
+        businessName: 'Unverified Tindahan',
+        ownerName: null,
+        phone: null,
+        role: 'Owner',
+        tier: 'Libre',
+        planTier: 'Libre',
+        subscriptionEndDate: null,
+        hasPin: false,
+        token: 'mock-unverified-token',
+        expiresAt: '2028-01-01',
+        requiresEmailVerification: true
+      });
+
+      const result = await executeStoreRegistration({
+        businessName: 'Unverified Tindahan',
+        email: 'unverified@tindahan.ph',
+        password: 'password123',
+        offerGcash: true,
+        includeStarterProducts: true
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.requiresEmailVerification).toBe(true);
+      expect(seedData.seedDexieDatabaseIfNeeded).not.toHaveBeenCalled();
+      expect(useAuthStore.getState().isOnboarded).toBe(false);
+      expect(syncEngine.kickSync).not.toHaveBeenCalled();
+    });
+
     it('returns emailAlreadyExists when server responds with 409', async () => {
       vi.mocked(authService.registerStore).mockRejectedValueOnce({
         response: { status: 409 }
