@@ -31,7 +31,8 @@ import {
   MIN_PRODUCT_COST,
   MAX_PRODUCT_COST,
   MIN_PRODUCT_STOCK,
-  MAX_PRODUCT_STOCK
+  MAX_PRODUCT_STOCK,
+  MAX_PRODUCT_NAME_LENGTH
 } from '../constants/inventory';
 import { useTranslation } from '../state/languageStore';
 import { formatPeso } from '../utils/currency';
@@ -191,6 +192,10 @@ export const FixDlqProductDialog: React.FC<FixDlqProductDialogProps> = ({
       setNameError(t.inventory.productNameRequired);
       return;
     }
+    if (name.trim().length > MAX_PRODUCT_NAME_LENGTH) {
+      setNameError(t.inventory.productNameExceedsMax);
+      return;
+    }
 
     const costClean = typeof cost === 'string' ? cost.replace(/,/g, '').trim() : cost;
     const priceClean = typeof price === 'string' ? price.replace(/,/g, '').trim() : price;
@@ -299,6 +304,7 @@ export const FixDlqProductDialog: React.FC<FixDlqProductDialogProps> = ({
               <Input
                 data-testid="dlq-product-name-input"
                 aria-label={t.inventory.productNameLabel}
+                maxLength={MAX_PRODUCT_NAME_LENGTH}
                 value={name}
                 onChange={(e, d) => {
                   const val = d.value !== undefined ? d.value : e.target.value;
