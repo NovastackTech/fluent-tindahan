@@ -60,6 +60,11 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
     scheduledAt: string | null;
     retryWithRestore: () => Promise<boolean>;
   } | null>(null);
+  const [pendingRegistrationPreferences, setPendingRegistrationPreferences] = useState<{
+    includeStarterProducts?: boolean;
+    offerGcash?: boolean;
+    businessName?: string;
+  } | null>(null);
 
   const clearPendingDeletionInfo = () => setPendingDeletionInfo(null);
 
@@ -67,6 +72,7 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
     setIsUnsyncedDialogOpen(false);
     setPendingAuthPayload(null);
     setPendingOtpLocalPin(undefined);
+    setPendingRegistrationPreferences(null);
   };
 
   const handleConfirmWipeAndLogin = async () => {
@@ -206,8 +212,16 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
       if (result.success) {
         if (result.requiresEmailVerification) {
           if (isMountedRef.current && typeof window !== 'undefined') {
+            const isOfferingGcash = params.offersGcash !== undefined
+              ? params.offersGcash
+              : params.offerGcash !== false;
             setPendingOtpEmail(params.email.trim());
             setPendingOtpLocalPin(params.pin);
+            setPendingRegistrationPreferences({
+              includeStarterProducts: params.includeStarterProducts !== false,
+              offerGcash: isOfferingGcash,
+              businessName: params.businessName
+            });
           }
         } else {
           options?.onSuccess?.(result.authResult);
@@ -239,24 +253,46 @@ export function useStoreAuthFlow(options?: UseStoreAuthFlowOptions) {
         email: pendingOtpEmail || undefined,
         otp: cleanedOtp
       });
+      const isPendingRegistration = pendingRegistrationPreferences !== null;
+      const effectiveNewUser = isPendingRegistration || Boolean(verifiedDto.isNewUser);
+      const effectiveBusinessName = verifiedDto.businessName || pendingRegistrationPreferences?.businessName || '';
+      const effectiveOfferGcash = pendingRegistrationPreferences?.offerGcash !== false;
+      const effectiveIncludeStarterProducts = pendingRegistrationPreferences?.includeStarterProducts !== false;
+
       const loginRes = await loginWithAuthPayload(verifiedDto, pendingOtpLocalPin);
       if (!loginRes.success) {
         if (isMountedRef.current && typeof window !== 'undefined') {
-          setPendingAuthPayload({ payload: { ...verifiedDto, requiresEmailVerification: false }, localPin: pendingOtpLocalPin });
+          setPendingAuthPayload({
+            payload: {
+              ...verifiedDto,
+              requiresEmailVerification: false,
+              isNewUser: effectiveNewUser,
+              businessName: effectiveBusinessName
+            },
+            localPin: pendingOtpLocalPin,
+            newUserPreferences: {
+              offerGcash: effectiveOfferGcash,
+              includeStarterProducts: effectiveIncludeStarterProducts
+            }
+          });
           setUnsyncedLoginCount(loginRes.unsyncedCount || 0);
           setIsUnsyncedDialogOpen(true);
           setPendingOtpEmail(null);
           setPendingOtpLocalPin(undefined);
+          setPendingRegistrationPreferences(null);
         }
         return true;
       }
       await finalizeSuccessfulLogin(verifiedDto.tenantId, {
-        isNewUser: verifiedDto.isNewUser,
-        businessName: verifiedDto.businessName
+        isNewUser: effectiveNewUser,
+        businessName: effectiveBusinessName,
+        includeStarterProducts: effectiveIncludeStarterProducts,
+        offerGcash: effectiveOfferGcash
       });
       if (isMountedRef.current && typeof window !== 'undefined') {
         setPendingOtpEmail(null);
         setPendingOtpLocalPin(undefined);
+        setPendingRegistrationPreferences(null);
       }
       options?.onSuccess?.(verifiedDto);
       return true;
