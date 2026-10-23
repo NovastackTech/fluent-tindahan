@@ -28,4 +28,10 @@ describe('translations', () => {
       }
     }
   });
+
+  it('provides localized loading text for both Tagalog and English (issue #110)', () => {
+    expect(translations.tl.common.loading).toBe('Naglo-load...');
+    expect(translations.en.common.loading).toBe('Loading...');
+  });
 });
+

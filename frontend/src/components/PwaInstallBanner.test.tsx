@@ -103,4 +103,17 @@ describe('PwaInstallBanner', () => {
 
     expect(screen.getByText(/Share|Add to Home Screen/i)).toBeInTheDocument();
   });
+
+  it('guarantees every button has a non-empty accessible name and aria-label immediately on render (issue #124)', () => {
+    usePwaStore.setState({ isInstallable: true });
+    renderBanner();
+
+    const buttons = screen.getAllByRole('button');
+    expect(buttons.length).toBeGreaterThan(0);
+    buttons.forEach((button) => {
+      expect(button).toHaveAccessibleName();
+      expect(button.getAttribute('aria-label')).toBeTruthy();
+    });
+  });
 });
+

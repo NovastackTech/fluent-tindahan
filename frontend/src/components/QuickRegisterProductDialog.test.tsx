@@ -199,4 +199,23 @@ describe('QuickRegisterProductDialog', () => {
       expect(product?.tenantId).toBe('quick-register-tenant');
     });
   });
+
+  it('enforces 200 character max length on product name and shows error if exceeded', async () => {
+    const { onProductRegistered } = renderDialog();
+    fireEvent.click(screen.getByRole('button', { name: /Oo, Irehistro ang Produkto|Yes, Register Product|Irehistro/i }));
+
+    const nameInput = screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i });
+    expect(nameInput).toHaveAttribute('maxLength', '200');
+
+    // Simulate entering > 200 chars
+    const longName = 'A'.repeat(205);
+    fireEvent.change(nameInput, { target: { value: longName } });
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Presyo ng Tinda|Retail Price/i }), { target: { value: '15' } });
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang Produkto|Save Product/i }));
+
+    expect(await screen.findByText(/Hindi dapat lumagpas sa 200 characters|Product name cannot exceed 200 characters/i)).toBeInTheDocument();
+    expect(onProductRegistered).not.toHaveBeenCalled();
+    const count = await db.products.count();
+    expect(count).toBe(0);
+  });
 });

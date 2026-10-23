@@ -88,6 +88,7 @@ export const PwaInstallBanner: React.FC = () => {
                   appearance="primary"
                   icon={<ArrowDownloadRegular />}
                   onClick={handleInstall}
+                  aria-label={t.pwa.installBtn || 'Install App'}
                 >
                   {t.pwa.installBtn}
                 </Button>
@@ -97,6 +98,7 @@ export const PwaInstallBanner: React.FC = () => {
                 appearance="subtle"
                 icon={<DismissRegular />}
                 onClick={dismissPrompt}
+                aria-label={t.pwa.dismissBtn || 'Dismiss'}
               >
                 {t.pwa.dismissBtn}
               </Button>
