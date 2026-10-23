@@ -353,8 +353,8 @@ describe('App', () => {
     useLanguageStore.setState({ language: 'tl' });
     render(<App />);
 
-    // Step 1: Switch the UI to English (TL/EN toggle)
-    const langBtn = screen.getByRole('button', { name: /TL\/EN/i });
+    // Step 1: Switch the UI to English (language toggle)
+    const langBtn = screen.getByTestId('language-toggle-btn');
     fireEvent.click(langBtn);
     expect(useLanguageStore.getState().language).toBe('en');
 
@@ -415,6 +415,77 @@ describe('App', () => {
 
     render(<App />);
 
+    expect(replaceStateSpy).toHaveBeenCalledWith(null, '', '/?tab=dashboard');
+    replaceStateSpy.mockRestore();
+  });
+
+  it('redirects authenticated user arriving at ?tab=signup to dashboard and replaces URL', async () => {
+    useAuthStore.setState({
+      isOnboarded: true,
+      isOnboardingStatusReady: true,
+      reauthRequested: false
+    });
+
+    const replaceStateSpy = vi.spyOn(window.history, 'replaceState');
+    Object.defineProperty(window, 'location', {
+      value: {
+        ...originalLocation,
+        href: 'http://localhost:5173/?tab=signup',
+        pathname: '/',
+        search: '?tab=signup'
+      },
+      configurable: true,
+      writable: true
+    });
+
+    render(<App />);
+
+    // Should not render LoginPage or signup form
+    expect(screen.queryByTestId('login-tab-register')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Sign Up for Your Store/i)).not.toBeInTheDocument();
+    // Replaces URL state to dashboard
+    expect(replaceStateSpy).toHaveBeenCalledWith(null, '', '/?tab=dashboard');
+    replaceStateSpy.mockRestore();
+  });
+
+  it('redirects authenticated user on popstate back to ?tab=signup back to dashboard', async () => {
+    useAuthStore.setState({
+      isOnboarded: true,
+      isOnboardingStatusReady: true,
+      reauthRequested: false
+    });
+
+    const replaceStateSpy = vi.spyOn(window.history, 'replaceState');
+    Object.defineProperty(window, 'location', {
+      value: {
+        ...originalLocation,
+        href: 'http://localhost:5173/?tab=dashboard',
+        pathname: '/',
+        search: '?tab=dashboard'
+      },
+      configurable: true,
+      writable: true
+    });
+
+    render(<App />);
+
+    // Simulate browser Back landing on ?tab=signup
+    Object.defineProperty(window, 'location', {
+      value: {
+        ...originalLocation,
+        href: 'http://localhost:5173/?tab=signup',
+        pathname: '/',
+        search: '?tab=signup'
+      },
+      configurable: true,
+      writable: true
+    });
+
+    fireEvent(window, new PopStateEvent('popstate'));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('login-tab-register')).not.toBeInTheDocument();
+    });
     expect(replaceStateSpy).toHaveBeenCalledWith(null, '', '/?tab=dashboard');
     replaceStateSpy.mockRestore();
   });
