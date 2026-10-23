@@ -360,7 +360,7 @@ export const tl: Translations = {
     addedToCart: 'Naidagdag na sa Cart!'
   },
   settings: {
-    title: 'Sync & Offline Settings',
+    title: 'Mga Setting ng Sync at Offline',
     subtitle: 'Pamahalaan ang offline synchronization, wika, lokal na database, at storage quota.',
     themeSection: 'Tema ng Interface (Theme)',
     themeDesc: 'Pumili ng hitsura ng interface: Maliwanag, Madilim, o awtomatikong sumusunod sa setting ng iyong device.',

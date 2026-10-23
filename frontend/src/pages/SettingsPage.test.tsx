@@ -104,6 +104,19 @@ describe('SettingsPage', () => {
     expect(h2Headings.length).toBeGreaterThanOrEqual(8);
   });
 
+  it('renders translated heading in Taglish and English (issue #93)', () => {
+    useLanguageStore.setState({ language: 'tl' });
+    renderSettings();
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Mga Setting ng Sync at Offline' })).toBeInTheDocument();
+
+    act(() => {
+      useLanguageStore.getState().setLanguage('en');
+    });
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Sync & Offline Settings' })).toBeInTheDocument();
+  });
+
   it('renders Store & Device Details at the bottom of the page containing the logout button', () => {
     renderSettings();
 
