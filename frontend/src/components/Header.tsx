@@ -371,26 +371,29 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
     );
   };
 
-  const renderLanguageAction = (inTray = false) => (
-    <Tooltip content={t.common.languageToggle} relationship="label">
-      <Button
-        appearance="subtle"
-        size="small"
-        className={mergeClasses(styles.langButton, inTray && styles.trayActionBtn)}
-        icon={<GlobeRegular />}
-        onClick={toggleLanguage}
-        aria-label={t.common.languageToggle}
-        title={t.common.languageToggle}
-        data-testid="language-toggle-btn"
-        id="tl-en-toggle"
-      >
-        <span>{language === 'tl' ? '🇵🇭 TL' : '🇺🇸 EN'}</span>
-        <span style={{ position: 'absolute', width: '1px', height: '1px', padding: 0, margin: '-1px', overflow: 'hidden', clip: 'rect(0, 0, 0, 0)', whiteSpace: 'nowrap', border: 0 }}>
-          TL/EN toggle
-        </span>
-      </Button>
-    </Tooltip>
-  );
+  const renderLanguageAction = (inTray = false) => {
+    const targetLabel = language === 'tl' ? '🇺🇸 EN' : '🇵🇭 TL';
+    return (
+      <Tooltip content={t.common.languageToggle} relationship="label">
+        <Button
+          appearance="subtle"
+          size="small"
+          className={mergeClasses(styles.langButton, inTray && styles.trayActionBtn)}
+          icon={<GlobeRegular />}
+          onClick={toggleLanguage}
+          aria-label={t.common.languageToggle}
+          title={t.common.languageToggle}
+          data-testid="language-toggle-btn"
+          id="tl-en-toggle"
+        >
+          <span>{targetLabel}</span>
+          <span style={{ position: 'absolute', width: '1px', height: '1px', padding: 0, margin: '-1px', overflow: 'hidden', clip: 'rect(0, 0, 0, 0)', whiteSpace: 'nowrap', border: 0 }}>
+            {t.common.languageToggle}
+          </span>
+        </Button>
+      </Tooltip>
+    );
+  };
 
   const renderPwaInstallAction = (inTray = false) => {
     if (!isInstallable || isStandalone || isInstalled) return null;

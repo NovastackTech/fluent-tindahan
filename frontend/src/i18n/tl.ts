@@ -51,7 +51,7 @@ export const tl: Translations = {
     themeModeLight: 'Maliwanag (Light)',
     themeModeDark: 'Madilim (Dark)',
     themeModeSystem: 'Ayon sa Sistema (System)',
-    languageToggle: 'TL/EN toggle (English)',
+    languageToggle: 'Lumipat sa English',
     save: 'I-save',
     cancel: 'Kanselahin',
     delete: 'Burahin',

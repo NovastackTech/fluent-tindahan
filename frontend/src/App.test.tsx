@@ -353,8 +353,8 @@ describe('App', () => {
     useLanguageStore.setState({ language: 'tl' });
     render(<App />);
 
-    // Step 1: Switch the UI to English (TL/EN toggle)
-    const langBtn = screen.getByRole('button', { name: /TL\/EN/i });
+    // Step 1: Switch the UI to English (language toggle)
+    const langBtn = screen.getByTestId('language-toggle-btn');
     fireEvent.click(langBtn);
     expect(useLanguageStore.getState().language).toBe('en');
 
