@@ -35,6 +35,9 @@ coverage/
 **/coverage/
 *.lcov
 lcov-report/
+playwright-report/
+**/playwright-report/
+blob-report/
 *.log
 
 # Test and documentation generated PDFs
