@@ -187,9 +187,9 @@ export const App: React.FC = () => {
     if (!isOnboarded && activeTab !== 'landing' && activeTab !== 'login') {
       // oxlint-disable-next-line react/set-state-in-effect - Route unauthenticated non-landing users to login when onboarding state is confirmed
       handleTabChange('login');
-    } else if (isOnboarded && !reauthRequested && (activeTab === 'login' || activeTab === 'landing')) {
-      // oxlint-disable-next-line react/set-state-in-effect - Route authenticated users away from login/landing
-      handleTabChange('dashboard');
+    } else if (isOnboarded && !reauthRequested && activeTab === 'login') {
+      // oxlint-disable-next-line react/set-state-in-effect - Route authenticated users away from login
+      handleTabChange('dashboard', { replace: true });
     }
   }, [isOnboarded, isOnboardingStatusReady, activeTab, reauthRequested]);
 
