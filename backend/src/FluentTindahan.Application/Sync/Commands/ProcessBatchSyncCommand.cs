@@ -346,6 +346,11 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
         }
 
         const decimal MaxAllowedPrice = 999_999.99m;
+        const int MaxAllowedNameLength = 200;
+        if (string.IsNullOrWhiteSpace(raw.Name) || raw.Name.Trim().Length > MaxAllowedNameLength)
+        {
+            throw new ArgumentException($"Product name must be between 1 and {MaxAllowedNameLength} characters.");
+        }
         if (raw.Price <= 0 || raw.Price > MaxAllowedPrice)
         {
             throw new ArgumentException($"Retail price must be between ₱0.01 and ₱{MaxAllowedPrice:N2}.");
@@ -421,7 +426,14 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
 
         // If existing product was previously an archived/deleted placeholder, restore it
         existing.IsDeleted = false;
-        existing.Name = raw.Name ?? existing.Name;
+        if (!string.IsNullOrWhiteSpace(raw.Name))
+        {
+            if (raw.Name.Trim().Length > MaxAllowedNameLength)
+            {
+                throw new ArgumentException($"Product name must be between 1 and {MaxAllowedNameLength} characters.");
+            }
+            existing.Name = raw.Name.Trim();
+        }
         existing.Price = raw.Price;
         existing.Cost = raw.Cost;
         existing.Barcode = raw.Barcode ?? existing.Barcode;

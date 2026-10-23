@@ -201,5 +201,15 @@ describe('Navigation', () => {
       expect(screen.getByTestId('nav-tab-pos')).toBeInTheDocument();
       expect(screen.getByTestId('nav-tab-dashboard')).toBeInTheDocument();
     });
+
+    it('guarantees all nav buttons have non-empty accessible names immediately on render (issue #124)', () => {
+      renderNav('pos');
+      const buttons = screen.getAllByRole('button');
+      expect(buttons.length).toBeGreaterThan(0);
+      buttons.forEach((button) => {
+        expect(button).toHaveAccessibleName();
+      });
+    });
   });
 });
+
