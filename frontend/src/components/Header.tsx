@@ -369,7 +369,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
       <>
         {renderSyncBadge()}
 
-        {deadLetterCount > 0 && pendingCount > 0 && (
+        {deadLetterCount > 0 && (pendingCount > 0 || !isOnline || isSyncing) && (
           <Tooltip content={`${deadLetterCount} ${t.common.dlqWarning}`} relationship="label">
             <Badge appearance="filled" color="danger" size="small">
               DLQ: {deadLetterCount}
