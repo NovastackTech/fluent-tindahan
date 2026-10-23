@@ -154,5 +154,45 @@ describe('SubscriptionModal', () => {
     expect(screen.getByText('Tindahan Subscription Plans')).toBeInTheDocument();
     expect(screen.getByText(translations.en.common.differentAccountSyncBlocked)).toBeInTheDocument();
   });
+
+  it('switches embedded tenant provisioning error text dynamically when language is toggled', () => {
+    act(() => {
+      useLanguageStore.setState({ language: 'tl' });
+      useSubscriptionStore.setState({
+        isUpgradeModalOpen: true,
+        error: translations.tl.common.tenantProvisioningSyncBlocked
+      });
+    });
+
+    renderModal();
+
+    expect(screen.getByText(translations.tl.common.tenantProvisioningSyncBlocked)).toBeInTheDocument();
+
+    act(() => {
+      useLanguageStore.getState().toggleLanguage();
+    });
+
+    expect(screen.getByText(translations.en.common.tenantProvisioningSyncBlocked)).toBeInTheDocument();
+  });
+
+  it('switches subscription refresh error warning text dynamically when language is toggled', () => {
+    act(() => {
+      useLanguageStore.setState({ language: 'tl' });
+      useSubscriptionStore.setState({
+        isUpgradeModalOpen: true,
+        error: SUBSCRIPTION_REFRESH_ERROR
+      });
+    });
+
+    renderModal();
+
+    expect(screen.getByText(/Hindi ma-refresh ang detalye ng subscription/i)).toBeInTheDocument();
+
+    act(() => {
+      useLanguageStore.getState().toggleLanguage();
+    });
+
+    expect(screen.getByText(/Subscription details could not be refreshed/i)).toBeInTheDocument();
+  });
 });
 
