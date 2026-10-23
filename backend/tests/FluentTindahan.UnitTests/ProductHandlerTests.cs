@@ -155,4 +155,43 @@ public class ProductHandlerTests
         await act.Should().ThrowAsync<ArgumentException>()
             .WithMessage("*Cost price must be between ₱0.00 and ₱999,999.99*");
     }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task CreateProduct_EmptyOrWhitespaceName_ThrowsArgumentException(string invalidName)
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var handler = new CreateProductCommandHandler(context, userMock.Object);
+
+        var command = new CreateProductCommand(
+            Name: invalidName,
+            Price: 10.00m,
+            Cost: 5.00m,
+            StockQty: 10
+        );
+
+        var act = () => handler.Handle(command, CancellationToken.None);
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*Product name must be between 1 and 200 characters*");
+    }
+
+    [Fact]
+    public async Task CreateProduct_NameExceeds200Characters_ThrowsArgumentException()
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var handler = new CreateProductCommandHandler(context, userMock.Object);
+
+        var longName = new string('A', 201);
+        var command = new CreateProductCommand(
+            Name: longName,
+            Price: 10.00m,
+            Cost: 5.00m,
+            StockQty: 10
+        );
+
+        var act = () => handler.Handle(command, CancellationToken.None);
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*Product name must be between 1 and 200 characters*");
+    }
 }

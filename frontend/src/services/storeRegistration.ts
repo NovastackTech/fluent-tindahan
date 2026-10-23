@@ -34,27 +34,6 @@ export async function executeStoreRegistration(
   const newTenantId = params.tenantId || createClientUuid();
   const newUserId = params.userId || createClientUuid();
 
-  // 1. Seed Dexie first (Zero Network Block Guarantee)
-  await seedDexieDatabaseIfNeeded(
-    false,
-    newTenantId,
-    params.includeStarterProducts === false,
-    params.businessName
-  );
-
-  // 2. Save initial GCash fees
-  try {
-    const isOfferingGcash = params.offersGcash !== undefined
-      ? params.offersGcash
-      : params.offerGcash !== false;
-    const fees = isOfferingGcash ? DEFAULT_GCASH_FEE_TIERS : DEFAULT_GCASH_FEE_TIERS.map(() => 0);
-    fees.forEach((fee, idx) => {
-      useGCashFeeStore.getState().setFeeForTenant(newTenantId, idx, fee);
-    });
-  } catch (fErr) {
-    console.warn('Could not set GCash fees:', fErr);
-  }
-
   let serverToken: string | undefined;
   let registeredHasPin = Boolean(params.pin?.trim());
   let authResult: AuthResponseDto | undefined;
@@ -85,6 +64,36 @@ export async function executeStoreRegistration(
     params.onOfflineNotice?.();
   }
 
+  // Defer seeding starter products, onboarding, and sync if the account requires email verification
+  if (authResult?.requiresEmailVerification) {
+    return {
+      success: true,
+      requiresEmailVerification: true,
+      authResult
+    };
+  }
+
+  // 1. Seed Dexie first (Zero Network Block Guarantee for immediate/offline registration)
+  await seedDexieDatabaseIfNeeded(
+    false,
+    newTenantId,
+    params.includeStarterProducts === false,
+    params.businessName
+  );
+
+  // 2. Save initial GCash fees
+  try {
+    const isOfferingGcash = params.offersGcash !== undefined
+      ? params.offersGcash
+      : params.offerGcash !== false;
+    const fees = isOfferingGcash ? DEFAULT_GCASH_FEE_TIERS : DEFAULT_GCASH_FEE_TIERS.map(() => 0);
+    fees.forEach((fee, idx) => {
+      useGCashFeeStore.getState().setFeeForTenant(newTenantId, idx, fee);
+    });
+  } catch (fErr) {
+    console.warn('Could not set GCash fees:', fErr);
+  }
+
   useAuthStore.getState().completeOnboarding({
     businessName: params.businessName,
     ownerName: params.ownerName?.trim() || undefined,
@@ -110,7 +119,7 @@ export async function executeStoreRegistration(
 
   return {
     success: true,
-    requiresEmailVerification: Boolean(authResult?.requiresEmailVerification),
+    requiresEmailVerification: false,
     authResult
   };
 }

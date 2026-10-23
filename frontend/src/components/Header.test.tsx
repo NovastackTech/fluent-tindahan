@@ -55,6 +55,26 @@ describe('Header', () => {
       expect(useLanguageStore.getState().language).toBe('en');
     });
 
+    it('harmonizes icon, tooltip, and aria-label to name target language action (issue #177)', () => {
+      useLanguageStore.setState({ language: 'tl' });
+      renderHeader();
+
+      const langBtn = screen.getByTestId('language-toggle-btn');
+      // When in Tagalog mode: button displays target language EN, aria-label and title name target action
+      expect(langBtn).toHaveTextContent('🇺🇸 EN');
+      expect(langBtn).toHaveAttribute('aria-label', 'Lumipat sa English');
+      expect(langBtn).toHaveAttribute('title', 'Lumipat sa English');
+
+      // Click to toggle to English
+      fireEvent.click(langBtn);
+      expect(useLanguageStore.getState().language).toBe('en');
+
+      // When in English mode: button displays target language TL, aria-label and title name target action
+      expect(langBtn).toHaveTextContent('🇵🇭 TL');
+      expect(langBtn).toHaveAttribute('aria-label', 'Switch to Taglish');
+      expect(langBtn).toHaveAttribute('title', 'Switch to Taglish');
+    });
+
     it('cycles theme mode between light, dark, and system when theme button is clicked', () => {
       renderHeader();
 
@@ -489,5 +509,19 @@ describe('Header', () => {
       expect(useAuthStore.getState().userEmail).toBe('');
     });
     expect(onNavigate).toHaveBeenCalledWith('login');
+  });
+
+  it('displays DLQ warning and not all-synced when Dead Letter Queue has failed items', async () => {
+    syncEngine.useSyncStore.setState({
+      isOnline: true,
+      isSyncing: false,
+      pendingCount: 0,
+      deadLetterCount: 1
+    });
+
+    renderHeader({ activeTab: 'inventory' });
+
+    expect(screen.getByText('DLQ: 1')).toBeInTheDocument();
+    expect(screen.queryByText(/All data synced|Naka-sync ang lahat/i)).not.toBeInTheDocument();
   });
 });

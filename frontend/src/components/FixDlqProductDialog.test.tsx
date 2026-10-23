@@ -115,4 +115,38 @@ describe('FixDlqProductDialog', () => {
     expect(queued).toHaveLength(1);
     expect(queued[0].payload.price).toBe(25.50);
   });
+
+  it('enforces 200 character max length on product name in DLQ editor', async () => {
+    const item: DeadLetterRecord = {
+      id: 'dlq-test-3',
+      entity: 'Product',
+      action: 'Insert',
+      timestamp: new Date().toISOString(),
+      payload: {
+        id: 'prod-test-3',
+        name: 'A'.repeat(205),
+        price: 25,
+        cost: 15,
+        stockQty: 10
+      },
+      retryCount: 3,
+      errorMessage: 'value too long for type character varying(200)',
+      failedAt: new Date().toISOString()
+    };
+    await db.deadLetterQueue.put(item);
+
+    renderDialog(item);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('dlq-product-name-input')).toBeInTheDocument();
+    });
+
+    const nameInput = screen.getByTestId('dlq-product-name-input');
+    expect(nameInput).toHaveAttribute('maxLength', '200');
+
+    const saveBtn = screen.getByRole('button', { name: /Save & Retry/i });
+    fireEvent.click(saveBtn);
+
+    expect(await screen.findByText(/Product name cannot exceed 200 characters/i)).toBeInTheDocument();
+  });
 });
