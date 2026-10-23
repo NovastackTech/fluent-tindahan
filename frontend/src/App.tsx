@@ -187,11 +187,8 @@ export const App: React.FC = () => {
     if (!isOnboarded && activeTab !== 'landing' && activeTab !== 'login') {
       // oxlint-disable-next-line react/set-state-in-effect - Route unauthenticated non-landing users to login when onboarding state is confirmed
       handleTabChange('login', { replace: true });
-    } else if (isOnboarded && !reauthRequested && activeTab === 'login') {
-      // oxlint-disable-next-line react/set-state-in-effect - Route authenticated users away from login
-      handleTabChange('dashboard', { replace: true });
     }
-  }, [isOnboarded, isOnboardingStatusReady, activeTab, reauthRequested]);
+  }, [isOnboarded, isOnboardingStatusReady, activeTab]);
 
   useEffect(() => {
     // Graceful recovery if Vite dynamic import chunk fails due to cache update

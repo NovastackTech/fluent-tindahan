@@ -489,4 +489,56 @@ describe('App', () => {
     expect(replaceStateSpy).toHaveBeenCalledWith(null, '', '/?tab=dashboard');
     replaceStateSpy.mockRestore();
   });
+
+  it('pushes history entries on user tab change and restores tab on popstate (DEV-48 / issue #128)', async () => {
+    useAuthStore.setState({
+      isOnboarded: true,
+      isOnboardingStatusReady: true
+    });
+
+    const pushStateSpy = vi.spyOn(window.history, 'pushState');
+    Object.defineProperty(window, 'location', {
+      value: {
+        ...originalLocation,
+        href: 'http://localhost:5173/?tab=pos',
+        pathname: '/',
+        search: '?tab=pos'
+      },
+      configurable: true,
+      writable: true
+    });
+
+    render(<App />);
+
+    // Click on Utang tab (expanding navigation if in mobile collapsed mode)
+    const collapsedBar = screen.queryByTestId('nav-collapsed-bar');
+    if (collapsedBar) {
+      fireEvent.click(collapsedBar);
+    }
+    const utangTab = screen.getByTestId('nav-tab-utang');
+    expect(utangTab).toBeInTheDocument();
+    fireEvent.click(utangTab);
+
+    expect(pushStateSpy).toHaveBeenCalledWith(null, '', '/?tab=utang');
+
+    // Simulate browser Back button: URL returns to ?tab=dashboard and popstate fires
+    Object.defineProperty(window, 'location', {
+      value: {
+        ...originalLocation,
+        href: 'http://localhost:5173/?tab=dashboard',
+        pathname: '/',
+        search: '?tab=dashboard'
+      },
+      configurable: true,
+      writable: true
+    });
+    fireEvent(window, new PopStateEvent('popstate'));
+
+    // Dashboard should now be active
+    await waitFor(() => {
+      expect(screen.getByText(/Benta Ngayong Araw|Today's Sales/i)).toBeInTheDocument();
+    });
+
+    pushStateSpy.mockRestore();
+  });
 });
