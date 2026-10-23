@@ -362,6 +362,19 @@ describe('InventoryPage', () => {
     expect(screen.getAllByText('—').length).toBe(2);
   });
 
+  it('displays out-of-stock filter chip count without duplicate (issue #109)', async () => {
+    renderInventory();
+    expect(screen.getByText('❌ Ubos na (0)')).toBeInTheDocument();
+    expect(screen.queryByText(/Ubos na \(0\) \(0\)/)).not.toBeInTheDocument();
+
+    act(() => {
+      useLanguageStore.getState().setLanguage('en');
+    });
+
+    expect(screen.getByText('❌ Out of Stock (0)')).toBeInTheDocument();
+    expect(screen.queryByText(/Out of Stock \(0\) \(0\)/)).not.toBeInTheDocument();
+  });
+
   it('formats high margin as ~99.9% when cost is non-zero (issue #120)', async () => {
     renderInventory();
     fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Produkto|Add Product/i }));

@@ -305,7 +305,7 @@ export const tl: Translations = {
     allCategories: 'Lahat ng Kategorya',
     filterAll: 'Lahat ng Stock',
     filterLowStock: '⚠️ Paubos na (≤ 5)',
-    filterOutOfStock: '❌ Ubos na (0)',
+    filterOutOfStock: '❌ Ubos na',
     filterInStock: '✅ May Stock (> 5)',
     addProductBtn: 'Magdagdag ng Produkto',
     importCsvBtn: 'Mag-import ng CSV',

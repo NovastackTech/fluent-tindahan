@@ -305,7 +305,7 @@ export const en: Translations = {
     allCategories: 'All Categories',
     filterAll: 'All Stock',
     filterLowStock: '⚠️ Low Stock (≤ 5)',
-    filterOutOfStock: '❌ Out of Stock (0)',
+    filterOutOfStock: '❌ Out of Stock',
     filterInStock: '✅ In Stock (> 5)',
     addProductBtn: 'Add Product',
     importCsvBtn: 'Import CSV',
