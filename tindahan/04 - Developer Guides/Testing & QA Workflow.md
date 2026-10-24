@@ -66,8 +66,8 @@ To manually test multi-tab update protection:
 
 ## 4. Test Plan Documentation
 
-For manual QA and release verification, refer to the formal test plan in the repository root:
-- `Fluent_Tindahan_Functional_Test_Plan.pdf` (Covers test matrices for POS, Barcodes, Inventory, Utang, GCash, Sync, and Thermal Printing).
+For manual QA, release verification, and regression matrices, refer to the formal test plan:
+- [`docs/Functional_Testing_Plan.md`](../../docs/Functional_Testing_Plan.md) (Full Markdown specification with comprehensive matrices and chaos scenarios)
 
 ---
 
