@@ -342,7 +342,7 @@ const useStyles = makeStyles({
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
   const styles = useStyles();
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const {
     isOnboarded,
     businessName,
