@@ -68,7 +68,7 @@ Following GitHub Actions CD, the script builds Docker containers locally, stream
 ### Continuous Deployment (GitHub Actions)
 
 A GitHub Actions CD workflow is configured at [`.github/workflows/cd.yml`](../../.github/workflows/cd.yml).
-- **Trigger**: Automatically runs on `push` to `main`, or on-demand via **Actions > CD (Alibaba Cloud SAS) > Run workflow**.
+- **Trigger**: Automatically runs on `push` to `develop`, or on-demand via **Actions > CD Development (Alibaba Cloud SAS) > Run workflow**.
 - **Pipeline**: Builds and pushes Docker images to GHCR, streams deployment archive and secrets to `/opt/fluent-tindahan` over SSH, runs `install.sh`, and validates `https://tindahan-dev.novastack-inc.online/api/health`.
 - **Credentials**: Configured in GitHub Repository Secrets (`SAS_HOST`, `SAS_USER`, `SAS_PORT`, `SAS_SSH_KEY`, `PAYMONGO_*`, `GOOGLE_CLIENT_ID`, `SMTP_*` [`SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME`, `SMTP_ENABLE_SSL`]).
 

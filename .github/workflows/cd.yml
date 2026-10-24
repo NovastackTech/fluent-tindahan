@@ -1,8 +1,8 @@
-name: CD (Alibaba Cloud SAS)
+name: CD Development (Alibaba Cloud SAS)
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "develop" ]
   workflow_dispatch:
     inputs:
       skip_backup:
@@ -15,7 +15,7 @@ on:
         default: true
 
 concurrency:
-  group: cd-production
+  group: cd-development
   cancel-in-progress: false
 
 permissions:
