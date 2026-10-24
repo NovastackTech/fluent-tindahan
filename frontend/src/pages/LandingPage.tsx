@@ -297,6 +297,12 @@ const useStyles = makeStyles({
     boxShadow: tokens.shadow4,
     fontWeight: 700
   },
+  cycleToggle: {
+    display: 'flex',
+    justifyContent: 'center',
+    gap: tokens.spacingHorizontalS,
+    marginBottom: tokens.spacingVerticalL
+  },
   testimonialsGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
@@ -391,6 +397,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [regPin, setRegPin] = useState('');
   const [regOfferGcash, setRegOfferGcash] = useState(true);
+
+  // Pricing State
+  const [billingCycle, setBillingCycle] = useState<'Monthly' | 'Weekly'>('Monthly');
 
   // Profit Calculator State
   const [calcDailySales, setCalcDailySales] = useState<number>(8000);
@@ -611,41 +620,52 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
     {
       title: t.landing.planFreeTitle,
       price: t.landing.planFreePrice,
+      subPrice: t.landing.freeSubPrice,
       desc: t.landing.planFreeDesc,
       features: [
-        '✓ Hanggang 30 Produkto',
-        '✓ Hanggang 30 Utang Debtors',
-        '✓ 30 GCash Txns bawat buwan',
-        '✓ 100% Offline POS & Kaha'
+        t.landing.planFreeFeature1,
+        t.landing.planFreeFeature2,
+        t.landing.planFreeFeature3,
+        t.landing.planFreeFeature4
       ],
       highlighted: false,
       btnAppearance: 'secondary' as const
     },
     {
       title: t.landing.planProTitle,
-      price: t.landing.planProPrice,
+      price: billingCycle === 'Weekly'
+        ? `${t.common.pesos}35 / ${t.landing.perWeek}`
+        : `${t.common.pesos}129 / ${t.landing.perMonth}`,
+      subPrice: billingCycle === 'Weekly'
+        ? t.landing.monthlyPassAlternative.replace('{price}', `${t.common.pesos}129 / ${t.landing.perMonth}`)
+        : t.landing.weeklyPassAlternative.replace('{price}', `${t.common.pesos}35 / ${t.landing.perWeek}`),
       desc: t.landing.planProDesc,
       features: [
-        '✓ Walang Limitasyong Produkto',
-        '✓ Walang Limitasyong Utang Debtors',
-        '✓ Walang Limitasyong GCash Txns',
-        '✓ Detalyadong Profit & Margin Analytics',
-        '✓ Resibong walang watermark',
-        '✓ CSV Bulk Catalog Import'
+        t.landing.planProFeature1,
+        t.landing.planProFeature2,
+        t.landing.planProFeature3,
+        t.landing.planProFeature4,
+        t.landing.planProFeature5,
+        t.landing.planProFeature6
       ],
       highlighted: true,
       btnAppearance: 'primary' as const
     },
     {
       title: t.landing.planPlusTitle,
-      price: t.landing.planPlusPrice,
+      price: billingCycle === 'Weekly'
+        ? `${t.common.pesos}89 / ${t.landing.perWeek}`
+        : `${t.common.pesos}349 / ${t.landing.perMonth}`,
+      subPrice: billingCycle === 'Weekly'
+        ? t.landing.monthlyPassAlternative.replace('{price}', `${t.common.pesos}349 / ${t.landing.perMonth}`)
+        : t.landing.weeklyPassAlternative.replace('{price}', `${t.common.pesos}89 / ${t.landing.perWeek}`),
       desc: t.landing.planPlusDesc,
       features: [
-        '✓ Lahat ng nasa Tindahan Pro',
-        '✓ Hanggang 5 Staff Cashiers na may PIN',
-        '✓ Sabay-sabay na 4 Devices',
-        '✓ Buong Staff Audit Trail Logs',
-        '✓ Priority Cloud Database Backup'
+        t.landing.planPlusFeature1,
+        t.landing.planPlusFeature2,
+        t.landing.planPlusFeature3,
+        t.landing.planPlusFeature4,
+        t.landing.planPlusFeature5
       ],
       highlighted: false,
       btnAppearance: 'secondary' as const
@@ -1142,6 +1162,24 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
           <Text className={styles.sectionSubtitle}>{t.landing.pricingSubtitle}</Text>
         </div>
 
+        {/* Cycle Toggle */}
+        <div className={styles.cycleToggle}>
+          <Button
+            appearance={billingCycle === 'Weekly' ? 'primary' : 'secondary'}
+            onClick={() => setBillingCycle('Weekly')}
+            size="medium"
+          >
+            {t.landing.pricingToggleWeekly}
+          </Button>
+          <Button
+            appearance={billingCycle === 'Monthly' ? 'primary' : 'secondary'}
+            onClick={() => setBillingCycle('Monthly')}
+            size="medium"
+          >
+            {t.landing.pricingToggleMonthly}
+          </Button>
+        </div>
+
         <div className={styles.pricingGrid}>
           {pricingPlans.map((plan, idx) => (
             <Card
@@ -1166,9 +1204,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                 <Text size={500} weight="bold" style={{ display: 'block', marginBottom: '4px' }}>
                   {plan.title}
                 </Text>
-                <Text size={600} weight="bold" style={{ color: tokens.colorBrandForeground1, display: 'block', marginBottom: '8px' }}>
+                <Text size={600} weight="bold" style={{ color: tokens.colorBrandForeground1, display: 'block', marginBottom: '2px' }}>
                   {plan.price}
                 </Text>
+                {plan.subPrice && (
+                  <Text size={200} style={{ color: tokens.colorNeutralForeground3, display: 'block', marginBottom: '8px' }}>
+                    {plan.subPrice}
+                  </Text>
+                )}
                 <Text size={200} style={{ color: tokens.colorNeutralForeground3, display: 'block', marginBottom: '16px' }}>
                   {plan.desc}
                 </Text>
