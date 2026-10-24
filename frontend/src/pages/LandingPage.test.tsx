@@ -319,27 +319,13 @@ describe('LandingPage Component', () => {
     renderLandingPage();
 
     // Default Monthly pricing: ₱129 for Pro, ₱349 for Plus
-<<<<<<< HEAD
-    expect(screen.getByText(`₱129 / ${t.perMonth}`)).toBeInTheDocument();
-    expect(screen.getByText(`₱349 / ${t.perMonth}`)).toBeInTheDocument();
-=======
     const pesoSymbol = translations.tl.common.pesos;
     expect(screen.getByText(`${pesoSymbol}129 / ${t.perMonth}`)).toBeInTheDocument();
     expect(screen.getByText(`${pesoSymbol}349 / ${t.perMonth}`)).toBeInTheDocument();
->>>>>>> 69c5b6f5e3b666e6814b485853002590ead7bf5a
     expect(screen.getByRole('button', { name: t.pricingToggleWeekly })).toBeInTheDocument();
 
     // Toggle to Weekly
     fireEvent.click(screen.getByRole('button', { name: t.pricingToggleWeekly }));
-<<<<<<< HEAD
-    expect(screen.getByText(`₱35 / ${t.perWeek}`)).toBeInTheDocument();
-    expect(screen.getByText(`₱89 / ${t.perWeek}`)).toBeInTheDocument();
-
-    // Toggle back to Monthly
-    fireEvent.click(screen.getByRole('button', { name: t.pricingToggleMonthly }));
-    expect(screen.getByText(`₱129 / ${t.perMonth}`)).toBeInTheDocument();
-    expect(screen.getByText(`₱349 / ${t.perMonth}`)).toBeInTheDocument();
-=======
     expect(screen.getByText(`${pesoSymbol}35 / ${t.perWeek}`)).toBeInTheDocument();
     expect(screen.getByText(`${pesoSymbol}89 / ${t.perWeek}`)).toBeInTheDocument();
 
@@ -347,7 +333,6 @@ describe('LandingPage Component', () => {
     fireEvent.click(screen.getByRole('button', { name: t.pricingToggleMonthly }));
     expect(screen.getByText(`${pesoSymbol}129 / ${t.perMonth}`)).toBeInTheDocument();
     expect(screen.getByText(`${pesoSymbol}349 / ${t.perMonth}`)).toBeInTheDocument();
->>>>>>> 69c5b6f5e3b666e6814b485853002590ead7bf5a
   });
 
   it('uses English translations for pricing labels and features', () => {
@@ -355,11 +340,7 @@ describe('LandingPage Component', () => {
     renderLandingPage();
 
     const englishLanding = translations.en.landing;
-<<<<<<< HEAD
-    expect(screen.getByText(`₱129 / ${englishLanding.perMonth}`)).toBeInTheDocument();
-=======
     expect(screen.getByText(`${translations.en.common.pesos}129 / ${englishLanding.perMonth}`)).toBeInTheDocument();
->>>>>>> 69c5b6f5e3b666e6814b485853002590ead7bf5a
     expect(screen.getByText(englishLanding.planFreeFeature1)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: englishLanding.pricingToggleWeekly })).toBeInTheDocument();
   });
