@@ -314,4 +314,22 @@ describe('LandingPage Component', () => {
 
     expect(screen.getByText(translations.tl.subscription.popularBadge)).toBeInTheDocument();
   });
+
+  it('renders accurate plan prices and toggles between Monthly and Weekly', () => {
+    renderLandingPage();
+
+    // Default Monthly pricing: ₱129 for Pro, ₱349 for Plus
+    expect(screen.getByText('₱129 / buwan')).toBeInTheDocument();
+    expect(screen.getByText('₱349 / buwan')).toBeInTheDocument();
+
+    // Toggle to Weekly
+    fireEvent.click(screen.getByRole('button', { name: /Lingguhan/i }));
+    expect(screen.getByText('₱35 / linggo')).toBeInTheDocument();
+    expect(screen.getByText('₱89 / linggo')).toBeInTheDocument();
+
+    // Toggle back to Monthly
+    fireEvent.click(screen.getByRole('button', { name: /Buwanan/i }));
+    expect(screen.getByText('₱129 / buwan')).toBeInTheDocument();
+    expect(screen.getByText('₱349 / buwan')).toBeInTheDocument();
+  });
 });

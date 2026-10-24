@@ -297,6 +297,12 @@ const useStyles = makeStyles({
     boxShadow: tokens.shadow4,
     fontWeight: 700
   },
+  cycleToggle: {
+    display: 'flex',
+    justifyContent: 'center',
+    gap: tokens.spacingHorizontalS,
+    marginBottom: tokens.spacingVerticalL
+  },
   testimonialsGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
@@ -391,6 +397,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [regPin, setRegPin] = useState('');
   const [regOfferGcash, setRegOfferGcash] = useState(true);
+
+  // Pricing State
+  const [billingCycle, setBillingCycle] = useState<'Monthly' | 'Weekly'>('Monthly');
 
   // Profit Calculator State
   const [calcDailySales, setCalcDailySales] = useState<number>(8000);
@@ -607,45 +616,57 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
     }
   ];
 
+  const isTagalog = language === 'tl';
   const pricingPlans = [
     {
       title: t.landing.planFreeTitle,
       price: t.landing.planFreePrice,
+      subPrice: isTagalog ? 'Walang bayad habangbuhay' : 'Free forever, no credit card',
       desc: t.landing.planFreeDesc,
       features: [
-        '✓ Hanggang 30 Produkto',
-        '✓ Hanggang 30 Utang Debtors',
-        '✓ 30 GCash Txns bawat buwan',
-        '✓ 100% Offline POS & Kaha'
+        isTagalog ? '✓ Hanggang 30 Produkto' : '✓ Up to 30 Product Items',
+        isTagalog ? '✓ Hanggang 30 Utang Debtors' : '✓ Up to 30 Debtor Profiles',
+        isTagalog ? '✓ 30 GCash Txns bawat buwan' : '✓ 30 GCash Txns per month',
+        isTagalog ? '✓ 100% Offline POS & Kaha' : '✓ 100% Offline POS & Cash Register'
       ],
       highlighted: false,
       btnAppearance: 'secondary' as const
     },
     {
       title: t.landing.planProTitle,
-      price: t.landing.planProPrice,
+      price: billingCycle === 'Weekly'
+        ? (isTagalog ? '₱35 / linggo' : '₱35 / week')
+        : (isTagalog ? '₱129 / buwan' : '₱129 / month'),
+      subPrice: billingCycle === 'Weekly'
+        ? (isTagalog ? 'o ₱129 / buwan sa Buwanan Pass' : 'or ₱129 / month on Monthly Pass')
+        : (isTagalog ? 'o ₱35 / linggo sa Sachet Pass' : 'or ₱35 / week on Sachet Pass'),
       desc: t.landing.planProDesc,
       features: [
-        '✓ Walang Limitasyong Produkto',
-        '✓ Walang Limitasyong Utang Debtors',
-        '✓ Walang Limitasyong GCash Txns',
-        '✓ Detalyadong Profit & Margin Analytics',
-        '✓ Resibong walang watermark',
-        '✓ CSV Bulk Catalog Import'
+        isTagalog ? '✓ Walang Limitasyong Produkto' : '✓ Unlimited Products',
+        isTagalog ? '✓ Walang Limitasyong Utang Debtors' : '✓ Unlimited Debtor Profiles',
+        isTagalog ? '✓ Walang Limitasyong GCash Txns' : '✓ Unlimited GCash Logs',
+        isTagalog ? '✓ Detalyadong Profit & Margin Analytics' : '✓ Detailed Profit & Margin Analytics',
+        isTagalog ? '✓ Resibong walang watermark' : '✓ Custom Store Receipts (No Watermark)',
+        isTagalog ? '✓ CSV Bulk Catalog Import' : '✓ Fast CSV Catalog Bulk Import'
       ],
       highlighted: true,
       btnAppearance: 'primary' as const
     },
     {
       title: t.landing.planPlusTitle,
-      price: t.landing.planPlusPrice,
+      price: billingCycle === 'Weekly'
+        ? (isTagalog ? '₱89 / linggo' : '₱89 / week')
+        : (isTagalog ? '₱349 / buwan' : '₱349 / month'),
+      subPrice: billingCycle === 'Weekly'
+        ? (isTagalog ? 'o ₱349 / buwan sa Buwanan Pass' : 'or ₱349 / month on Monthly Pass')
+        : (isTagalog ? 'o ₱89 / linggo sa Sachet Pass' : 'or ₱89 / week on Sachet Pass'),
       desc: t.landing.planPlusDesc,
       features: [
-        '✓ Lahat ng nasa Tindahan Pro',
-        '✓ Hanggang 5 Staff Cashiers na may PIN',
-        '✓ Sabay-sabay na 4 Devices',
-        '✓ Buong Staff Audit Trail Logs',
-        '✓ Priority Cloud Database Backup'
+        isTagalog ? '✓ Lahat ng nasa Tindahan Pro' : '✓ All Tindahan Pro Features Included',
+        isTagalog ? '✓ Hanggang 5 Staff Cashiers na may PIN' : '✓ Up to 5 Staff Cashiers with PINs',
+        isTagalog ? '✓ Sabay-sabay na 4 Devices' : '✓ Up to 4 Synced Devices',
+        isTagalog ? '✓ Buong Staff Audit Trail Logs' : '✓ Full Staff Audit Trail Logs',
+        isTagalog ? '✓ Priority Cloud Database Backup' : '✓ Priority Cloud Database Backup'
       ],
       highlighted: false,
       btnAppearance: 'secondary' as const
@@ -1142,6 +1163,24 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
           <Text className={styles.sectionSubtitle}>{t.landing.pricingSubtitle}</Text>
         </div>
 
+        {/* Cycle Toggle */}
+        <div className={styles.cycleToggle}>
+          <Button
+            appearance={billingCycle === 'Weekly' ? 'primary' : 'secondary'}
+            onClick={() => setBillingCycle('Weekly')}
+            size="medium"
+          >
+            {isTagalog ? 'Lingguhan (Sachet Pass)' : 'Weekly Pass (Sachet)'}
+          </Button>
+          <Button
+            appearance={billingCycle === 'Monthly' ? 'primary' : 'secondary'}
+            onClick={() => setBillingCycle('Monthly')}
+            size="medium"
+          >
+            {isTagalog ? 'Buwanan (Mas Matipid ⭐)' : 'Monthly (Best Value ⭐)'}
+          </Button>
+        </div>
+
         <div className={styles.pricingGrid}>
           {pricingPlans.map((plan, idx) => (
             <Card
@@ -1166,9 +1205,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                 <Text size={500} weight="bold" style={{ display: 'block', marginBottom: '4px' }}>
                   {plan.title}
                 </Text>
-                <Text size={600} weight="bold" style={{ color: tokens.colorBrandForeground1, display: 'block', marginBottom: '8px' }}>
+                <Text size={600} weight="bold" style={{ color: tokens.colorBrandForeground1, display: 'block', marginBottom: '2px' }}>
                   {plan.price}
                 </Text>
+                {plan.subPrice && (
+                  <Text size={200} style={{ color: tokens.colorNeutralForeground3, display: 'block', marginBottom: '8px' }}>
+                    {plan.subPrice}
+                  </Text>
+                )}
                 <Text size={200} style={{ color: tokens.colorNeutralForeground3, display: 'block', marginBottom: '16px' }}>
                   {plan.desc}
                 </Text>
