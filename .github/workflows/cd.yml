@@ -105,6 +105,7 @@ jobs:
           PAYMONGO_PUBLIC_KEY: ${{ secrets.PAYMONGO_PUBLIC_KEY }}
           PAYMONGO_WEBHOOK_SECRET: ${{ secrets.PAYMONGO_WEBHOOK_SECRET }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           DEMO_MODE: ${{ secrets.DEMO_MODE || 'false' }}
           SKIP_BACKUP: ${{ inputs.skip_backup }}
           SKIP_SETUP: ${{ inputs.skip_setup }}
@@ -134,8 +135,11 @@ jobs:
 
           echo "Connecting to $SAS_USER@$SAS_HOST:$SAS_PORT..."
 
-          # 2. Authenticate remote Docker daemon with GHCR over stdin
-          printf '%s\n' "$GHCR_TOKEN" | $SSH_CMD "$SAS_USER@$SAS_HOST" "docker login ghcr.io -u '$GHCR_USER' --password-stdin"
+          # 2. Pull images on runner and stream directly to remote Docker daemon via SSH
+          echo "Pulling images locally on runner and streaming to remote Docker daemon via SSH (docker load)..."
+          docker pull "$API_IMAGE"
+          docker pull "$WEB_IMAGE"
+          docker save "$API_IMAGE" "$WEB_IMAGE" | gzip -1 | $SSH_CMD "$SAS_USER@$SAS_HOST" "docker load"
 
           # 3. Upload deploy archive to temporary staging path
           cat /tmp/fluent-tindahan-deploy.tar.gz | $SSH_CMD "$SAS_USER@$SAS_HOST" "cat > /tmp/fluent-tindahan-deploy.tar.gz"
@@ -144,8 +148,8 @@ jobs:
           $SSH_CMD "$SAS_USER@$SAS_HOST" "set -euo pipefail; tar -tzf /tmp/fluent-tindahan-deploy.tar.gz >/dev/null; mkdir -p '$SAS_APP_DIR'; find '$SAS_APP_DIR' -mindepth 1 -maxdepth 1 ! -name .env ! -name backups -exec rm -rf {} +; tar -xzf /tmp/fluent-tindahan-deploy.tar.gz -C '$SAS_APP_DIR'; rm -f /tmp/fluent-tindahan-deploy.tar.gz"
 
           # 5. Stream secrets.env over stdin (never in command string or argv)
-          printf 'API_IMAGE=%s\nWEB_IMAGE=%s\nPAYMONGO_SECRET_KEY=%s\nPAYMONGO_PUBLIC_KEY=%s\nPAYMONGO_WEBHOOK_SECRET=%s\nPAYMONGO_FRONTEND_ORIGIN=%s\nDEMO_MODE=%s\nGOOGLE_CLIENT_ID=%s\nSMTP_HOST=%s\nSMTP_PORT=%s\nSMTP_USERNAME=%s\nSMTP_PASSWORD=%s\nSMTP_FROM_EMAIL=%s\nSMTP_FROM_NAME=%s\nSMTP_ENABLE_SSL=%s\n' \
-            "$API_IMAGE" "$WEB_IMAGE" "${PAYMONGO_SECRET_KEY:-}" "${PAYMONGO_PUBLIC_KEY:-}" "${PAYMONGO_WEBHOOK_SECRET:-}" "$PUBLIC_ORIGIN" "$DEMO_MODE" "${GOOGLE_CLIENT_ID:-}" \
+          printf 'API_IMAGE=%s\nWEB_IMAGE=%s\nPAYMONGO_SECRET_KEY=%s\nPAYMONGO_PUBLIC_KEY=%s\nPAYMONGO_WEBHOOK_SECRET=%s\nPAYMONGO_FRONTEND_ORIGIN=%s\nDEMO_MODE=%s\nGOOGLE_CLIENT_ID=%s\nGOOGLE_CLIENT_SECRET=%s\nSMTP_HOST=%s\nSMTP_PORT=%s\nSMTP_USERNAME=%s\nSMTP_PASSWORD=%s\nSMTP_FROM_EMAIL=%s\nSMTP_FROM_NAME=%s\nSMTP_ENABLE_SSL=%s\n' \
+            "$API_IMAGE" "$WEB_IMAGE" "${PAYMONGO_SECRET_KEY:-}" "${PAYMONGO_PUBLIC_KEY:-}" "${PAYMONGO_WEBHOOK_SECRET:-}" "$PUBLIC_ORIGIN" "$DEMO_MODE" "${GOOGLE_CLIENT_ID:-}" "${GOOGLE_CLIENT_SECRET:-}" \
             "${SMTP_HOST:-}" "${SMTP_PORT:-}" "${SMTP_USERNAME:-}" "${SMTP_PASSWORD:-}" "${SMTP_FROM_EMAIL:-}" "${SMTP_FROM_NAME:-}" "${SMTP_ENABLE_SSL:-}" \
             | $SSH_CMD "$SAS_USER@$SAS_HOST" "umask 077; cat > '$SAS_APP_DIR/deploy/alibaba-sas/secrets.env'"
 
