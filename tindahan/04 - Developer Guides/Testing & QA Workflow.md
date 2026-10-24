@@ -66,9 +66,8 @@ To manually test multi-tab update protection:
 
 ## 4. Test Plan Documentation
 
-For manual QA, release verification, and regression matrices, refer to the formal test plans:
-- [`docs/Functional_Testing_Plan.md`](file:///d:/Projects/fluent-tindahan/docs/Functional_Testing_Plan.md) (Full Markdown specification with comprehensive matrices and chaos scenarios)
-- [`docs/Fluent_Tindahan_Functional_Test_Plan.pdf`](file:///d:/Projects/fluent-tindahan/docs/Fluent_Tindahan_Functional_Test_Plan.pdf) (High-fidelity printable QA sign-off document)
+For manual QA, release verification, and regression matrices, refer to the formal test plan:
+- [`docs/Functional_Testing_Plan.md`](../../docs/Functional_Testing_Plan.md) (Full Markdown specification with comprehensive matrices and chaos scenarios)
 
 ---
 
