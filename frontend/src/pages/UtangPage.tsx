@@ -156,17 +156,21 @@ export const UtangPage: React.FC = () => {
   const customers = customerResults || EMPTY_CUSTOMERS;
   const selectedCustomerId = selectedCustomer?.id;
 
-  const allUtangEntries = useLiveQuery(
-    () => db.utangLedger.where('tenantId').equals(tenantId).toArray(),
-    [tenantId]
+  const rawLedgerEntries = useLiveQuery(
+    () => {
+      if (!tenantId || !selectedCustomerId) return [];
+      return db.utangLedger
+        .where('[tenantId+customerId]')
+        .equals([tenantId, selectedCustomerId])
+        .toArray();
+    },
+    [tenantId, selectedCustomerId]
   );
 
   const ledgerEntries = useMemo(() => {
-    if (!selectedCustomerId || !allUtangEntries) return [];
-    return allUtangEntries
-      .filter((entry) => entry.customerId === selectedCustomerId)
-      .sort((a, b) => b.date.localeCompare(a.date));
-  }, [allUtangEntries, selectedCustomerId]);
+    if (!rawLedgerEntries) return [];
+    return [...rawLedgerEntries].sort((a, b) => b.date.localeCompare(a.date));
+  }, [rawLedgerEntries]);
 
   // Flag mismatch between stored balance and local ledger entries without overwriting stored balance
   useEffect(() => {

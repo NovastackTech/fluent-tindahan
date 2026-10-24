@@ -21,6 +21,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Configure Forwarded Headers for reverse proxies (edge nginx + compose web nginx)
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
+    options.ForwardLimit = 2;
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
     options.KnownNetworks.Clear();
     options.KnownProxies.Clear();

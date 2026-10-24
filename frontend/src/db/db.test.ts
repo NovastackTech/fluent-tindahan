@@ -165,4 +165,34 @@ describe('FluentTindahanDatabase', () => {
     expect(gcash?.amount).toBe(500);
     expect(gcash?.fee).toBe(10);
   });
+
+  it('supports compound index queries on sales [tenantId+date] and utangLedger [tenantId+customerId]', async () => {
+    await db.sales.bulkAdd([
+      { id: 's-1', tenantId: 'tenant-a', totalAmount: 10, paymentMethod: 'Cash', date: '2026-10-23T10:00:00Z', userId: 'u-1' },
+      { id: 's-2', tenantId: 'tenant-a', totalAmount: 20, paymentMethod: 'Cash', date: '2026-10-23T12:00:00Z', userId: 'u-1' },
+      { id: 's-3', tenantId: 'tenant-b', totalAmount: 30, paymentMethod: 'Cash', date: '2026-10-23T11:00:00Z', userId: 'u-1' }
+    ]);
+
+    await db.utangLedger.bulkAdd([
+      { id: 'u-1', tenantId: 'tenant-a', customerId: 'cust-1', amount: 50, type: 'Credit', date: '2026-10-23T10:00:00Z' },
+      { id: 'u-2', tenantId: 'tenant-a', customerId: 'cust-2', amount: 75, type: 'Credit', date: '2026-10-23T10:30:00Z' },
+      { id: 'u-3', tenantId: 'tenant-b', customerId: 'cust-1', amount: 100, type: 'Credit', date: '2026-10-23T11:00:00Z' }
+    ]);
+
+    const tenantASales = await db.sales
+      .where('[tenantId+date]')
+      .between(['tenant-a', '2026-10-23T00:00:00Z'], ['tenant-a', '2026-10-23T23:59:59Z'], true, true)
+      .reverse()
+      .toArray();
+    expect(tenantASales).toHaveLength(2);
+    expect(tenantASales[0].id).toBe('s-2');
+    expect(tenantASales[1].id).toBe('s-1');
+
+    const customer1Utang = await db.utangLedger
+      .where('[tenantId+customerId]')
+      .equals(['tenant-a', 'cust-1'])
+      .toArray();
+    expect(customer1Utang).toHaveLength(1);
+    expect(customer1Utang[0].id).toBe('u-1');
+  });
 });

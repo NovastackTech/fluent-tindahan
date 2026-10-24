@@ -15,4 +15,11 @@ public static class ManilaTime
         var manilaNow = (nowOverride ?? DateTimeOffset.UtcNow).ToOffset(Offset);
         return new DateTimeOffset(manilaNow.Year, manilaNow.Month, 1, 0, 0, 0, Offset).ToUniversalTime();
     }
+
+    /// <summary>Returns the instant at which the current Manila calendar day began (00:00 PHT today).</summary>
+    public static DateTimeOffset StartOfCurrentDayUtc(DateTimeOffset? nowOverride = null)
+    {
+        var manilaNow = (nowOverride ?? DateTimeOffset.UtcNow).ToOffset(Offset);
+        return new DateTimeOffset(manilaNow.Year, manilaNow.Month, manilaNow.Day, 0, 0, 0, Offset).ToUniversalTime();
+    }
 }

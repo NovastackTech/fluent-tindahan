@@ -18,6 +18,10 @@ public static class AuthResponseBuilder
     {
         var resolvedTenant = tenant ?? user.Tenant;
         var tier = resolvedTenant?.Tier ?? PlanTier.Libre;
+        if (tier != PlanTier.Libre && resolvedTenant?.SubscriptionEndDate.HasValue == true && resolvedTenant.SubscriptionEndDate.Value < DateTimeOffset.UtcNow)
+        {
+            tier = PlanTier.Libre;
+        }
 
         return new AuthController.AuthResponseDto(
             resolvedTenant?.Id ?? user.TenantId,

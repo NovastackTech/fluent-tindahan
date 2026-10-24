@@ -177,4 +177,43 @@ public class CustomerHandlerTests
         result.Should().ContainSingle(c => c.Id == customerId);
         result.Single(c => c.Id == customerId).TotalUtangBalance.Should().Be(90m);
     }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(null)]
+    public async Task CreateCustomer_EmptyName_ThrowsArgumentException(string? name)
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var handler = new CreateCustomerCommandHandler(context, userMock.Object);
+
+        var act = () => handler.Handle(new CreateCustomerCommand(name!, "09171234567"), CancellationToken.None);
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*Customer name must be between 1 and 100 characters*");
+    }
+
+    [Fact]
+    public async Task CreateCustomer_WhenLibreLimitExceeded_ThrowsInvalidOperationException()
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        for (int i = 0; i < 30; i++)
+        {
+            context.Customers.Add(new Customer
+            {
+                Id = Guid.NewGuid(),
+                TenantId = _testTenantId,
+                Name = $"Customer {i}",
+                Phone = $"0917123{i:D4}",
+                UpdatedAt = DateTimeOffset.UtcNow
+            });
+        }
+        await context.SaveChangesAsync();
+
+        var handler = new CreateCustomerCommandHandler(context, userMock.Object);
+        var command = new CreateCustomerCommand("Extra Customer", "09181234567");
+
+        var act = () => handler.Handle(command, CancellationToken.None);
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*Libre plan limit exceeded*");
+    }
 }

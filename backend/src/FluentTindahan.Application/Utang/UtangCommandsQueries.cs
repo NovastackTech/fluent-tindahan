@@ -18,7 +18,7 @@ public record UtangLedgerDto(
     string? Notes
 );
 
-public record GetUtangLedgerQuery(Guid? CustomerId = null) : IRequest<List<UtangLedgerDto>>;
+public record GetUtangLedgerQuery(Guid? CustomerId = null, int? Limit = 500, DateTimeOffset? Before = null, Guid? BeforeId = null) : IRequest<List<UtangLedgerDto>>;
 
 public class GetUtangLedgerQueryHandler : IRequestHandler<GetUtangLedgerQuery, List<UtangLedgerDto>>
 {
@@ -31,6 +31,7 @@ public class GetUtangLedgerQueryHandler : IRequestHandler<GetUtangLedgerQuery, L
 
     public async Task<List<UtangLedgerDto>> Handle(GetUtangLedgerQuery request, CancellationToken cancellationToken)
     {
+        var limit = Math.Clamp(request.Limit ?? 500, 1, 1000);
         var query = _context.UtangLedgers.AsNoTracking().AsQueryable();
 
         if (request.CustomerId.HasValue)
@@ -38,8 +39,19 @@ public class GetUtangLedgerQueryHandler : IRequestHandler<GetUtangLedgerQuery, L
             query = query.Where(u => u.CustomerId == request.CustomerId.Value);
         }
 
+        if (request.Before.HasValue)
+        {
+            var b = request.Before.Value;
+            var bid = request.BeforeId ?? Guid.Empty;
+            query = request.BeforeId.HasValue
+                ? query.Where(u => u.Date < b || (u.Date == b && u.Id.CompareTo(bid) < 0))
+                : query.Where(u => u.Date < b);
+        }
+
         return await query
             .OrderByDescending(u => u.Date)
+            .ThenByDescending(u => u.Id)
+            .Take(limit)
             .Select(u => new UtangLedgerDto(
                 u.Id,
                 u.TenantId,

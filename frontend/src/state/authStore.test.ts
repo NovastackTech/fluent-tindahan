@@ -554,6 +554,60 @@ describe('authStore', () => {
     expect(localStorage.getItem(STORAGE_KEY_LAST_EMAIL)).toBeNull();
     expect(localStorage.getItem(getSyncStorageKey('deleted-tenant-id'))).toBeNull();
   });
+
+  it('clears useCartStore and removes tindahan_dlq_archive on logout and on tenant switch', async () => {
+    const { useAuthStore: currentAuthStore, STORAGE_KEY_DLQ_ARCHIVE } = await import('./authStore');
+    const { useCartStore } = await import('./cartStore');
+
+    useCartStore.getState().addItem({
+      id: 'prod-cart-1',
+      name: 'Cart Item',
+      price: 20
+    });
+    useCartStore.getState().setCustomer('cust-1', 'Suki Customer');
+    localStorage.setItem(STORAGE_KEY_DLQ_ARCHIVE, JSON.stringify([{ id: 'dlq-archived-1' }]));
+
+    expect(useCartStore.getState().items.length).toBe(1);
+    expect(useCartStore.getState().customerId).toBe('cust-1');
+    expect(localStorage.getItem(STORAGE_KEY_DLQ_ARCHIVE)).not.toBeNull();
+
+    await currentAuthStore.getState().logout(true);
+
+    expect(useCartStore.getState().items.length).toBe(0);
+    expect(useCartStore.getState().customerId).toBeNull();
+    expect(localStorage.getItem(STORAGE_KEY_DLQ_ARCHIVE)).toBeNull();
+
+    useCartStore.getState().addItem({
+      id: 'prod-cart-2',
+      name: 'Cart Item 2',
+      price: 30
+    });
+    useCartStore.getState().setCustomer('cust-2', 'Suki Customer 2');
+    localStorage.setItem(STORAGE_KEY_DLQ_ARCHIVE, JSON.stringify([{ id: 'dlq-archived-2' }]));
+
+    const payload: AuthResponseDto = {
+      tenantId: 'different-tenant-uuid',
+      userId: 'different-user-uuid',
+      email: 'diff@example.com',
+      businessName: 'Diff Tindahan',
+      ownerName: 'Diff Owner',
+      phone: '09171234567',
+      role: 'Owner',
+      tier: 'Libre',
+      planTier: 'Libre',
+      subscriptionEndDate: null,
+      hasPin: false,
+      token: 'jwt-token-diff',
+      expiresAt: new Date(Date.now() + 3600000).toISOString(),
+      refreshToken: 'refresh-diff'
+    };
+
+    const loginRes = await currentAuthStore.getState().loginWithAuthPayload(payload, undefined, true);
+    expect(loginRes.success).toBe(true);
+    expect(useCartStore.getState().items.length).toBe(0);
+    expect(useCartStore.getState().customerId).toBeNull();
+    expect(localStorage.getItem(STORAGE_KEY_DLQ_ARCHIVE)).toBeNull();
+  });
 });
 
 

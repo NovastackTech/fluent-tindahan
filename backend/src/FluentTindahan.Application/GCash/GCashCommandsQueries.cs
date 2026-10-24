@@ -1,8 +1,11 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using FluentTindahan.Application.Common;
 using FluentTindahan.Application.Common.Interfaces;
+using FluentTindahan.Domain.Billing;
 using FluentTindahan.Domain.Common;
 using FluentTindahan.Domain.Entities;
+using FluentTindahan.Domain.Enums;
 using FluentTindahan.Domain.Interfaces;
 
 namespace FluentTindahan.Application.GCash;
@@ -19,7 +22,7 @@ public record GCashTxnDto(
     string? Notes
 );
 
-public record GetGCashTransactionsQuery : IRequest<List<GCashTxnDto>>;
+public record GetGCashTransactionsQuery(int? Limit = 500, DateTimeOffset? Before = null, Guid? BeforeId = null) : IRequest<List<GCashTxnDto>>;
 
 public class GetGCashTransactionsQueryHandler : IRequestHandler<GetGCashTransactionsQuery, List<GCashTxnDto>>
 {
@@ -32,9 +35,22 @@ public class GetGCashTransactionsQueryHandler : IRequestHandler<GetGCashTransact
 
     public async Task<List<GCashTxnDto>> Handle(GetGCashTransactionsQuery request, CancellationToken cancellationToken)
     {
-        return await _context.GCashTransactions
-            .AsNoTracking()
+        var limit = Math.Clamp(request.Limit ?? 500, 1, 1000);
+        var query = _context.GCashTransactions.AsNoTracking().AsQueryable();
+
+        if (request.Before.HasValue)
+        {
+            var b = request.Before.Value;
+            var bid = request.BeforeId ?? Guid.Empty;
+            query = request.BeforeId.HasValue
+                ? query.Where(g => g.Date < b || (g.Date == b && g.Id.CompareTo(bid) < 0))
+                : query.Where(g => g.Date < b);
+        }
+
+        return await query
             .OrderByDescending(g => g.Date)
+            .ThenByDescending(g => g.Id)
+            .Take(limit)
             .Select(g => new GCashTxnDto(
                 g.Id,
                 g.TenantId,
@@ -96,6 +112,23 @@ public class RecordGCashTxnCommandHandler : IRequestHandler<RecordGCashTxnComman
         if (request.Fee < 0 || request.Fee > MaxAllowedGCashAmount)
         {
             throw new ArgumentException($"Service fee must be between ₱0.00 and ₱{MaxAllowedGCashAmount:N2}.", nameof(request.Fee));
+        }
+
+        var tenant = await _context.Tenants.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
+        var now = DateTimeOffset.UtcNow;
+        var isExpired = tenant != null && tenant.Tier != PlanTier.Libre && tenant.SubscriptionEndDate.HasValue && tenant.SubscriptionEndDate.Value < now;
+        var effectiveTier = isExpired ? PlanTier.Libre : (tenant?.Tier ?? PlanTier.Libre);
+
+        var startOfMonth = ManilaTime.StartOfCurrentMonthUtc();
+        if (effectiveTier == PlanTier.Libre)
+        {
+            var monthlyCount = await _context.GCashTransactions.IgnoreQueryFilters()
+                .CountAsync(g => g.TenantId == tenantId && g.Date >= startOfMonth, cancellationToken);
+            if (monthlyCount >= TierLimits.LibreMaxGCashTransactionsPerMonth)
+            {
+                throw new InvalidOperationException($"Libre plan limit exceeded: Maximum {TierLimits.LibreMaxGCashTransactionsPerMonth} GCash transactions per month allowed. Upgrade to Tindahan Pro for unlimited logs.");
+            }
         }
 
         string? customerPhone = null;

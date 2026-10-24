@@ -17,7 +17,10 @@ describe('registerServiceWorker', () => {
     _resetUpdateSWFunctionForTest();
     usePwaStore.setState({
       needRefresh: false,
-      offlineReady: false
+      offlineReady: false,
+      isSaleInProgress: false,
+      hasActiveReceipt: false,
+      otherTabsHaveCart: false
     });
     vi.clearAllMocks();
   });
@@ -241,6 +244,50 @@ describe('registerServiceWorker', () => {
     expect(reloadMock).not.toHaveBeenCalled();
 
     // Debounce timer completes
+    vi.advanceTimersByTime(500);
+
+    expect(reloadMock).toHaveBeenCalledTimes(1);
+
+    Object.defineProperty(window, 'location', {
+      value: originalLocation,
+      configurable: true,
+      writable: true
+    });
+    vi.useRealTimers();
+  });
+
+  it('does not reload page via onNeedReload when other tabs have cart, but reloads once other tabs clear', async () => {
+    vi.useFakeTimers();
+    const originalLocation = window.location;
+    const reloadMock = vi.fn();
+    Object.defineProperty(window, 'location', {
+      value: { ...originalLocation, reload: reloadMock },
+      configurable: true,
+      writable: true
+    });
+
+    useCartStore.getState().clearCart();
+    usePwaStore.getState().setOtherTabsHaveCart(true);
+
+    Object.defineProperty(navigator, 'serviceWorker', {
+      value: { register: vi.fn() },
+      configurable: true,
+      writable: true
+    });
+
+    await initServiceWorker();
+
+    const options = (registerSW as any).mock.calls[0][0];
+    options.onNeedReload();
+
+    expect(reloadMock).not.toHaveBeenCalled();
+    expect(_isReloadDeferredForTest()).toBe(true);
+
+    // Other tab clears cart
+    usePwaStore.getState().setOtherTabsHaveCart(false);
+    expect(reloadMock).not.toHaveBeenCalled();
+
+    // Advance debounce timer (500ms)
     vi.advanceTimersByTime(500);
 
     expect(reloadMock).toHaveBeenCalledTimes(1);

@@ -165,7 +165,6 @@ public static class AuthLockoutHelper
         if (_ipPinThrottles.Count > MaxTrackedIps)
         {
             var overflow = _ipPinThrottles
-                .Where(kv => !kv.Value.LockoutEnd.HasValue)
                 .OrderBy(kv => kv.Value.LastAttemptAt)
                 .Take(_ipPinThrottles.Count - MaxTrackedIps);
 

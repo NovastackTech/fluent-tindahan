@@ -806,9 +806,11 @@ export async function pullCatalogFromServer(): Promise<number> {
       }));
       const pendingIds = await getPendingEntityIds('Product');
       const safe: ProductRecord[] = [];
-      for (const r of formattedProducts) {
+      const existingLocals = await db.products.bulkGet(formattedProducts.map((r) => r.id));
+      for (let i = 0; i < formattedProducts.length; i++) {
+        const r = formattedProducts[i];
         if (pendingIds.has(r.id)) continue;
-        const local = await db.products.get(r.id);
+        const local = existingLocals[i];
         if (local?.updatedAt && r.updatedAt && new Date(local.updatedAt) > new Date(r.updatedAt)) {
           continue;
         }
@@ -854,9 +856,11 @@ export async function pullCustomersFromServer(): Promise<number> {
         if (q.payload?.customerId) pendingCustIds.add(q.payload.customerId);
       }
       const safe: CustomerRecord[] = [];
-      for (const r of records) {
+      const existingLocals = await db.customers.bulkGet(records.map((r) => r.id));
+      for (let i = 0; i < records.length; i++) {
+        const r = records[i];
         if (pendingCustIds.has(r.id)) continue;
-        const local = await db.customers.get(r.id);
+        const local = existingLocals[i];
         if (local?.updatedAt && r.updatedAt && new Date(local.updatedAt) > new Date(r.updatedAt)) {
           continue;
         }
@@ -877,10 +881,24 @@ export async function pullCustomersFromServer(): Promise<number> {
 export async function pullUtangFromServer(): Promise<number> {
   try {
     await ensureTenantProvisioned();
-    const response = await apiClient.get('/utang');
-    const entries = response.data;
-    if (Array.isArray(entries) && entries.length > 0) {
-      const records: UtangLedgerRecord[] = entries.map((u: any) => ({
+    let allEntries: any[] = [];
+    let before: string | undefined;
+    let beforeId: string | undefined;
+    for (;;) {
+      const response = await apiClient.get('/utang', { params: { limit: 1000, before, beforeId } });
+      const entries = response.data;
+      if (!Array.isArray(entries) || entries.length === 0) break;
+      allEntries = allEntries.concat(entries);
+      if (entries.length < 1000) break;
+      const lastEntry = entries[entries.length - 1];
+      const nextBefore = lastEntry.date;
+      const nextBeforeId = lastEntry.id;
+      if (!nextBefore || (nextBefore === before && nextBeforeId === beforeId)) break;
+      before = nextBefore;
+      beforeId = nextBeforeId;
+    }
+    if (allEntries.length > 0) {
+      const records: UtangLedgerRecord[] = allEntries.map((u: any) => ({
         id: u.id,
         tenantId: u.tenantId,
         customerId: u.customerId,
@@ -907,10 +925,24 @@ export async function pullUtangFromServer(): Promise<number> {
 export async function pullGCashFromServer(): Promise<number> {
   try {
     await ensureTenantProvisioned();
-    const response = await apiClient.get('/gcash');
-    const txns = response.data;
-    if (Array.isArray(txns) && txns.length > 0) {
-      const records: GCashTxnRecord[] = txns.map((g: any) => ({
+    let allTxns: any[] = [];
+    let before: string | undefined;
+    let beforeId: string | undefined;
+    for (;;) {
+      const response = await apiClient.get('/gcash', { params: { limit: 1000, before, beforeId } });
+      const txns = response.data;
+      if (!Array.isArray(txns) || txns.length === 0) break;
+      allTxns = allTxns.concat(txns);
+      if (txns.length < 1000) break;
+      const lastTxn = txns[txns.length - 1];
+      const nextBefore = lastTxn.date;
+      const nextBeforeId = lastTxn.id;
+      if (!nextBefore || (nextBefore === before && nextBeforeId === beforeId)) break;
+      before = nextBefore;
+      beforeId = nextBeforeId;
+    }
+    if (allTxns.length > 0) {
+      const records: GCashTxnRecord[] = allTxns.map((g: any) => ({
         id: g.id,
         tenantId: g.tenantId,
         type: g.type,
@@ -939,12 +971,26 @@ export async function pullGCashFromServer(): Promise<number> {
 export async function pullSalesFromServer(): Promise<number> {
   try {
     await ensureTenantProvisioned();
-    const response = await apiClient.get('/sales');
-    const sales = response.data;
-    if (Array.isArray(sales) && sales.length > 0) {
+    let allSales: any[] = [];
+    let before: string | undefined;
+    let beforeId: string | undefined;
+    for (;;) {
+      const response = await apiClient.get('/sales', { params: { limit: 1000, before, beforeId } });
+      const sales = response.data;
+      if (!Array.isArray(sales) || sales.length === 0) break;
+      allSales = allSales.concat(sales);
+      if (sales.length < 1000) break;
+      const lastSale = sales[sales.length - 1];
+      const nextBefore = lastSale.date;
+      const nextBeforeId = lastSale.id;
+      if (!nextBefore || (nextBefore === before && nextBeforeId === beforeId)) break;
+      before = nextBefore;
+      beforeId = nextBeforeId;
+    }
+    if (allSales.length > 0) {
       const saleRecords: SaleRecord[] = [];
       const saleItemRecords: SaleItemRecord[] = [];
-      for (const s of sales) {
+      for (const s of allSales) {
         saleRecords.push({
           id: s.id,
           tenantId: s.tenantId,
