@@ -634,11 +634,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
     {
       title: t.landing.planProTitle,
       price: billingCycle === 'Weekly'
-        ? `${formatPeso(35)} / ${t.landing.perWeek}`
-        : `${formatPeso(129)} / ${t.landing.perMonth}`,
+        ? `${t.common.pesos}35 / ${t.landing.perWeek}`
+        : `${t.common.pesos}129 / ${t.landing.perMonth}`,
       subPrice: billingCycle === 'Weekly'
-        ? t.landing.monthlyPassAlternative.replace('{price}', `${formatPeso(129)} / ${t.landing.perMonth}`)
-        : t.landing.weeklyPassAlternative.replace('{price}', `${formatPeso(35)} / ${t.landing.perWeek}`),
+        ? t.landing.monthlyPassAlternative.replace('{price}', `${t.common.pesos}129 / ${t.landing.perMonth}`)
+        : t.landing.weeklyPassAlternative.replace('{price}', `${t.common.pesos}35 / ${t.landing.perWeek}`),
       desc: t.landing.planProDesc,
       features: [
         t.landing.planProFeature1,
@@ -654,11 +654,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
     {
       title: t.landing.planPlusTitle,
       price: billingCycle === 'Weekly'
-        ? `${formatPeso(89)} / ${t.landing.perWeek}`
-        : `${formatPeso(349)} / ${t.landing.perMonth}`,
+        ? `${t.common.pesos}89 / ${t.landing.perWeek}`
+        : `${t.common.pesos}349 / ${t.landing.perMonth}`,
       subPrice: billingCycle === 'Weekly'
-        ? t.landing.monthlyPassAlternative.replace('{price}', `${formatPeso(349)} / ${t.landing.perMonth}`)
-        : t.landing.weeklyPassAlternative.replace('{price}', `${formatPeso(89)} / ${t.landing.perWeek}`),
+        ? t.landing.monthlyPassAlternative.replace('{price}', `${t.common.pesos}349 / ${t.landing.perMonth}`)
+        : t.landing.weeklyPassAlternative.replace('{price}', `${t.common.pesos}89 / ${t.landing.perWeek}`),
       desc: t.landing.planPlusDesc,
       features: [
         t.landing.planPlusFeature1,
