@@ -274,6 +274,30 @@ public class GCashHandlerTests
     }
 
     [Fact]
+    public async Task GetGCashTransactions_RespectsCompoundBeforeAndBeforeIdQuery()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var now = DateTimeOffset.UtcNow;
+        var id1 = Guid.Parse("00000000-0000-0000-0000-000000000001");
+        var id2 = Guid.Parse("00000000-0000-0000-0000-000000000002");
+        var id3 = Guid.Parse("00000000-0000-0000-0000-000000000003");
+
+        context.GCashTransactions.AddRange(
+            new GCashTxn { Id = id1, TenantId = _testTenantId, Type = "CashIn", Amount = 100m, Fee = 10m, RefNo = "REF-1", Date = now },
+            new GCashTxn { Id = id2, TenantId = _testTenantId, Type = "CashIn", Amount = 200m, Fee = 10m, RefNo = "REF-2", Date = now },
+            new GCashTxn { Id = id3, TenantId = _testTenantId, Type = "CashIn", Amount = 300m, Fee = 10m, RefNo = "REF-3", Date = now }
+        );
+        await context.SaveChangesAsync();
+
+        var handler = new GetGCashTransactionsQueryHandler(context);
+        var result = await handler.Handle(new GetGCashTransactionsQuery(10, now, id3), CancellationToken.None);
+
+        result.Should().HaveCount(2);
+        result[0].Id.Should().Be(id2);
+        result[1].Id.Should().Be(id1);
+    }
+
+    [Fact]
     public async Task RecordGCashTxn_WhenLibreLimitExceeded_ThrowsInvalidOperationException()
     {
         var (context, userMock) = CreateInMemoryContext();

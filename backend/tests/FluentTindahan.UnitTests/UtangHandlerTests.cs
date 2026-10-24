@@ -209,4 +209,29 @@ public class UtangHandlerTests
         result[1].Amount.Should().Be(20m);
         result[2].Amount.Should().Be(10m);
     }
+
+    [Fact]
+    public async Task GetUtangLedger_RespectsCompoundBeforeAndBeforeIdQuery()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var now = DateTimeOffset.UtcNow;
+        var id1 = Guid.Parse("00000000-0000-0000-0000-000000000001");
+        var id2 = Guid.Parse("00000000-0000-0000-0000-000000000002");
+        var id3 = Guid.Parse("00000000-0000-0000-0000-000000000003");
+
+        context.UtangLedgers.AddRange(
+            new UtangLedger { Id = id1, TenantId = _testTenantId, CustomerId = Guid.NewGuid(), Amount = 10m, Type = "Credit", Date = now },
+            new UtangLedger { Id = id2, TenantId = _testTenantId, CustomerId = Guid.NewGuid(), Amount = 20m, Type = "Credit", Date = now },
+            new UtangLedger { Id = id3, TenantId = _testTenantId, CustomerId = Guid.NewGuid(), Amount = 30m, Type = "Credit", Date = now }
+        );
+        await context.SaveChangesAsync();
+
+        var handler = new GetUtangLedgerQueryHandler(context);
+        // Page starting before (now, id3) returns id2 then id1 in descending order
+        var result = await handler.Handle(new GetUtangLedgerQuery(null, 10, now, id3), CancellationToken.None);
+
+        result.Should().HaveCount(2);
+        result[0].Id.Should().Be(id2);
+        result[1].Id.Should().Be(id1);
+    }
 }

@@ -883,15 +883,19 @@ export async function pullUtangFromServer(): Promise<number> {
     await ensureTenantProvisioned();
     let allEntries: any[] = [];
     let before: string | undefined;
+    let beforeId: string | undefined;
     for (;;) {
-      const response = await apiClient.get('/utang', { params: { limit: 1000, before } });
+      const response = await apiClient.get('/utang', { params: { limit: 1000, before, beforeId } });
       const entries = response.data;
       if (!Array.isArray(entries) || entries.length === 0) break;
       allEntries = allEntries.concat(entries);
       if (entries.length < 1000) break;
-      const nextBefore = entries[entries.length - 1].date;
-      if (!nextBefore || nextBefore === before) break;
+      const lastEntry = entries[entries.length - 1];
+      const nextBefore = lastEntry.date;
+      const nextBeforeId = lastEntry.id;
+      if (!nextBefore || (nextBefore === before && nextBeforeId === beforeId)) break;
       before = nextBefore;
+      beforeId = nextBeforeId;
     }
     if (allEntries.length > 0) {
       const records: UtangLedgerRecord[] = allEntries.map((u: any) => ({
@@ -923,15 +927,19 @@ export async function pullGCashFromServer(): Promise<number> {
     await ensureTenantProvisioned();
     let allTxns: any[] = [];
     let before: string | undefined;
+    let beforeId: string | undefined;
     for (;;) {
-      const response = await apiClient.get('/gcash', { params: { limit: 1000, before } });
+      const response = await apiClient.get('/gcash', { params: { limit: 1000, before, beforeId } });
       const txns = response.data;
       if (!Array.isArray(txns) || txns.length === 0) break;
       allTxns = allTxns.concat(txns);
       if (txns.length < 1000) break;
-      const nextBefore = txns[txns.length - 1].date;
-      if (!nextBefore || nextBefore === before) break;
+      const lastTxn = txns[txns.length - 1];
+      const nextBefore = lastTxn.date;
+      const nextBeforeId = lastTxn.id;
+      if (!nextBefore || (nextBefore === before && nextBeforeId === beforeId)) break;
       before = nextBefore;
+      beforeId = nextBeforeId;
     }
     if (allTxns.length > 0) {
       const records: GCashTxnRecord[] = allTxns.map((g: any) => ({
@@ -965,15 +973,19 @@ export async function pullSalesFromServer(): Promise<number> {
     await ensureTenantProvisioned();
     let allSales: any[] = [];
     let before: string | undefined;
+    let beforeId: string | undefined;
     for (;;) {
-      const response = await apiClient.get('/sales', { params: { limit: 1000, before } });
+      const response = await apiClient.get('/sales', { params: { limit: 1000, before, beforeId } });
       const sales = response.data;
       if (!Array.isArray(sales) || sales.length === 0) break;
       allSales = allSales.concat(sales);
       if (sales.length < 1000) break;
-      const nextBefore = sales[sales.length - 1].date;
-      if (!nextBefore || nextBefore === before) break;
+      const lastSale = sales[sales.length - 1];
+      const nextBefore = lastSale.date;
+      const nextBeforeId = lastSale.id;
+      if (!nextBefore || (nextBefore === before && nextBeforeId === beforeId)) break;
       before = nextBefore;
+      beforeId = nextBeforeId;
     }
     if (allSales.length > 0) {
       const saleRecords: SaleRecord[] = [];

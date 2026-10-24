@@ -23,9 +23,10 @@ public class UtangController : ControllerBase
         [FromQuery] Guid? customerId,
         [FromQuery] int? limit,
         [FromQuery] DateTimeOffset? before,
+        [FromQuery] Guid? beforeId,
         CancellationToken cancellationToken)
     {
-        var result = await _mediator.Send(new GetUtangLedgerQuery(customerId, limit, before), cancellationToken);
+        var result = await _mediator.Send(new GetUtangLedgerQuery(customerId, limit, before, beforeId), cancellationToken);
         return Ok(result);
     }
 

@@ -29,7 +29,7 @@ public record SaleDto(
     List<SaleItemDto> Items
 );
 
-public record GetSalesQuery(int? Limit = 500, DateTimeOffset? Before = null) : IRequest<List<SaleDto>>;
+public record GetSalesQuery(int? Limit = 500, DateTimeOffset? Before = null, Guid? BeforeId = null) : IRequest<List<SaleDto>>;
 
 public class GetSalesQueryHandler : IRequestHandler<GetSalesQuery, List<SaleDto>>
 {
@@ -47,7 +47,11 @@ public class GetSalesQueryHandler : IRequestHandler<GetSalesQuery, List<SaleDto>
 
         if (request.Before.HasValue)
         {
-            query = query.Where(s => s.Date < request.Before.Value);
+            var b = request.Before.Value;
+            var bid = request.BeforeId ?? Guid.Empty;
+            query = request.BeforeId.HasValue
+                ? query.Where(s => s.Date < b || (s.Date == b && s.Id.CompareTo(bid) < 0))
+                : query.Where(s => s.Date < b);
         }
 
         return await query
@@ -55,6 +59,7 @@ public class GetSalesQueryHandler : IRequestHandler<GetSalesQuery, List<SaleDto>
                 .ThenInclude(i => i.Product)
             .Include(s => s.Customer)
             .OrderByDescending(s => s.Date)
+            .ThenByDescending(s => s.Id)
             .Take(limit)
             .Select(s => new SaleDto(
                 s.Id,

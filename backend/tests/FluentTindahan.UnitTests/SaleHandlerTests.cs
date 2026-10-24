@@ -210,6 +210,30 @@ public class SaleHandlerTests
     }
 
     [Fact]
+    public async Task GetSales_RespectsCompoundBeforeAndBeforeIdQuery()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var now = DateTimeOffset.UtcNow;
+        var id1 = Guid.Parse("00000000-0000-0000-0000-000000000001");
+        var id2 = Guid.Parse("00000000-0000-0000-0000-000000000002");
+        var id3 = Guid.Parse("00000000-0000-0000-0000-000000000003");
+
+        context.Sales.AddRange(
+            new Sale { Id = id1, TenantId = _testTenantId, TotalAmount = 10m, PaymentMethod = "Cash", Date = now, UserId = _testUserId },
+            new Sale { Id = id2, TenantId = _testTenantId, TotalAmount = 20m, PaymentMethod = "Cash", Date = now, UserId = _testUserId },
+            new Sale { Id = id3, TenantId = _testTenantId, TotalAmount = 30m, PaymentMethod = "Cash", Date = now, UserId = _testUserId }
+        );
+        await context.SaveChangesAsync();
+
+        var handler = new GetSalesQueryHandler(context);
+        var result = await handler.Handle(new GetSalesQuery(10, now, id3), CancellationToken.None);
+
+        result.Should().HaveCount(2);
+        result[0].Id.Should().Be(id2);
+        result[1].Id.Should().Be(id1);
+    }
+
+    [Fact]
     public async Task CreateSale_NegativeTotalAmountOrInvalidItems_ThrowsArgumentException()
     {
         var (context, userMock) = CreateInMemoryContext();

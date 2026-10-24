@@ -1052,9 +1052,9 @@ describe('syncEngine', () => {
     await restoreTenantDataFromServer();
     expect(apiClient.get).toHaveBeenCalledWith('/products');
     expect(apiClient.get).toHaveBeenCalledWith('/customers');
-    expect(apiClient.get).toHaveBeenCalledWith('/utang', { params: { limit: 1000, before: undefined } });
-    expect(apiClient.get).toHaveBeenCalledWith('/gcash', { params: { limit: 1000, before: undefined } });
-    expect(apiClient.get).toHaveBeenCalledWith('/sales', { params: { limit: 1000, before: undefined } });
+    expect(apiClient.get).toHaveBeenCalledWith('/utang', { params: { limit: 1000, before: undefined, beforeId: undefined } });
+    expect(apiClient.get).toHaveBeenCalledWith('/gcash', { params: { limit: 1000, before: undefined, beforeId: undefined } });
+    expect(apiClient.get).toHaveBeenCalledWith('/sales', { params: { limit: 1000, before: undefined, beforeId: undefined } });
   });
 
   it('pullCatalogFromServer preserves local product edits that have pending syncQueue updates', async () => {
@@ -1313,16 +1313,58 @@ describe('syncEngine', () => {
       expect(count).toBe(1001);
 
       expect(apiClient.get).toHaveBeenCalledWith('/utang', {
-        params: { limit: 1000, before: undefined }
+        params: { limit: 1000, before: undefined, beforeId: undefined }
       });
       expect(apiClient.get).toHaveBeenCalledWith('/utang', {
-        params: { limit: 1000, before: page1[999].date }
+        params: { limit: 1000, before: page1[999].date, beforeId: page1[999].id }
       });
 
       const firstItem = await db.utangLedger.get('utang-page1-0');
       const lastItem = await db.utangLedger.get('utang-page2-0');
       expect(firstItem).toBeDefined();
       expect(lastItem).toBeDefined();
+    });
+
+    it('pullUtangFromServer pages correctly when multiple rows share the same timestamp at page edge', async () => {
+      useAuthStore.setState({ tenantId: DEFAULT_TENANT_ID });
+
+      const sharedIso = '2026-10-24T00:00:00.000Z';
+      const page1 = Array.from({ length: 1000 }, (_, i) => ({
+        id: `utang-shared-p1-${i}`,
+        tenantId: DEFAULT_TENANT_ID,
+        customerId: 'cust-1',
+        amount: 10,
+        type: 'Credit',
+        date: sharedIso
+      }));
+
+      const page2 = [
+        {
+          id: 'utang-shared-p2-0',
+          tenantId: DEFAULT_TENANT_ID,
+          customerId: 'cust-1',
+          amount: 20,
+          type: 'Credit',
+          date: sharedIso
+        }
+      ];
+
+      vi.mocked(apiClient.get)
+        .mockResolvedValueOnce({ data: page1 })
+        .mockResolvedValueOnce({ data: page2 });
+
+      const count = await pullUtangFromServer();
+      expect(count).toBe(1001);
+
+      expect(apiClient.get).toHaveBeenCalledWith('/utang', {
+        params: { limit: 1000, before: undefined, beforeId: undefined }
+      });
+      expect(apiClient.get).toHaveBeenCalledWith('/utang', {
+        params: { limit: 1000, before: sharedIso, beforeId: 'utang-shared-p1-999' }
+      });
+
+      const boundaryItem = await db.utangLedger.get('utang-shared-p2-0');
+      expect(boundaryItem).toBeDefined();
     });
   });
 });
