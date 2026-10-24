@@ -47,7 +47,7 @@ function executeReload(): void {
 function canSafelyReload(): boolean {
   const hasLocalCart = useCartStore.getState().items.length > 0;
   const pwaState = usePwaStore.getState();
-  return !hasLocalCart && !pwaState.isSaleInProgress && !pwaState.hasActiveReceipt;
+  return !hasLocalCart && !pwaState.isSaleInProgress && !pwaState.hasActiveReceipt && !pwaState.otherTabsHaveCart;
 }
 
 function triggerDeferredReloadSubscription(): void {
@@ -171,7 +171,7 @@ export async function reloadAppForUpdate(): Promise<void> {
     try {
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         controllerChangeFired = true;
-        executeReload();
+        handleControllingReload();
       }, { once: true });
     } catch {
       // ignore
@@ -222,11 +222,11 @@ export async function reloadAppForUpdate(): Promise<void> {
   // 4. If controllerchange already fired or serviceWorker event listeners are unavailable, reload directly.
   // Otherwise, allow a window (1000ms) for controllerchange to trigger executeReload before fallback.
   if (controllerChangeFired || !('serviceWorker' in navigator) || typeof navigator.serviceWorker.addEventListener !== 'function') {
-    executeReload();
+    handleControllingReload();
   } else {
     fallbackReloadTimer = setTimeout(() => {
       fallbackReloadTimer = null;
-      executeReload();
+      handleControllingReload();
     }, 1000);
   }
 
@@ -234,7 +234,7 @@ export async function reloadAppForUpdate(): Promise<void> {
   fallbackHardNavTimer = setTimeout(() => {
     fallbackHardNavTimer = null;
     try {
-      if (typeof window !== 'undefined' && typeof window.location?.assign === 'function') {
+      if (canSafelyReload() && typeof window !== 'undefined' && typeof window.location?.assign === 'function') {
         window.location.assign(window.location.href);
       }
     } catch {

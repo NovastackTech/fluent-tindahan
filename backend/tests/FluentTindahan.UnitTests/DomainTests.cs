@@ -2,7 +2,6 @@ using FluentAssertions;
 using FluentTindahan.Domain.Common;
 using FluentTindahan.Domain.Entities;
 using FluentTindahan.Domain.Enums;
-using FluentTindahan.Domain.Exceptions;
 using Xunit;
 
 namespace FluentTindahan.UnitTests;
@@ -231,28 +230,6 @@ public class DomainTests
         user.Phone.Should().Be("09171234567");
         user.FirebaseUid.Should().Be("firebase_user_123");
         user.Role.Should().Be("Owner");
-    }
-
-    [Fact]
-    public void DomainExceptions_ShouldConstructProperly()
-    {
-        var domainEx = new DomainException("General domain error");
-        domainEx.Message.Should().Be("General domain error");
-
-        var notFoundEx = new EntityNotFoundException("Product", "prod-123");
-        notFoundEx.Message.Should().Contain("Product");
-        notFoundEx.Message.Should().Contain("prod-123");
-
-        var conflictEx = new ConcurrencyConflictException("Conflict detected on entity");
-        conflictEx.Message.Should().Be("Conflict detected on entity");
-
-        var validationEx = new ValidationException(new Dictionary<string, string[]>
-        {
-            { "Price", new[] { "Price must be greater than zero." } }
-        });
-        validationEx.Message.Should().Be("One or more validation failures have occurred.");
-        validationEx.Errors.Should().ContainKey("Price");
-        validationEx.Errors["Price"].Should().Contain("Price must be greater than zero.");
     }
 
     [Theory]

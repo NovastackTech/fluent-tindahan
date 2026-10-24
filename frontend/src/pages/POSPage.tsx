@@ -762,23 +762,6 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
       return;
     }
 
-    // Direct pre-flight check against IndexedDB if stock validation is blocking and not overridden
-    if (!isStockAllowed) {
-      for (const item of cartItems) {
-        const prod = await db.products.get(item.productId);
-        const available = Number(prod?.stockQty) || 0;
-        if (!prod || prod.stockQty === undefined || item.qty > available) {
-          showToast(
-            language === 'tl'
-              ? `Kulang ang stock para sa "${item.name}". Available: ${available}, nasa cart: ${item.qty}.`
-              : `Insufficient stock for "${item.name}". Available: ${available}, in cart: ${item.qty}.`,
-            'warning'
-          );
-          return;
-        }
-      }
-    }
-
     usePwaStore.getState().setIsSaleInProgress(true);
     try {
       const saleId = crypto.randomUUID();

@@ -214,4 +214,60 @@ public class GCashHandlerTests
         await act.Should().ThrowAsync<ArgumentException>()
             .WithMessage("*Service fee must be between ₱0.00 and ₱100,000.00.*");
     }
+
+    [Fact]
+    public async Task GetGCashTransactions_RespectsLimitAndOrdersDescending()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var now = DateTimeOffset.UtcNow;
+        for (int i = 0; i < 5; i++)
+        {
+            context.GCashTransactions.Add(new GCashTxn
+            {
+                Id = Guid.NewGuid(),
+                TenantId = _testTenantId,
+                Type = "CashIn",
+                Amount = 100m * (i + 1),
+                Fee = 10m,
+                RefNo = $"REF-LIMIT-{i}",
+                Date = now.AddMinutes(i)
+            });
+        }
+        await context.SaveChangesAsync();
+
+        var handler = new GetGCashTransactionsQueryHandler(context);
+        var result = await handler.Handle(new GetGCashTransactionsQuery(2), CancellationToken.None);
+
+        result.Should().HaveCount(2);
+        result[0].RefNo.Should().Be("REF-LIMIT-4");
+        result[1].RefNo.Should().Be("REF-LIMIT-3");
+    }
+
+    [Fact]
+    public async Task RecordGCashTxn_WhenLibreLimitExceeded_ThrowsInvalidOperationException()
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var startOfMonth = FluentTindahan.Application.Common.ManilaTime.StartOfCurrentMonthUtc();
+        for (int i = 0; i < 30; i++)
+        {
+            context.GCashTransactions.Add(new GCashTxn
+            {
+                Id = Guid.NewGuid(),
+                TenantId = _testTenantId,
+                Type = "CashIn",
+                Amount = 100m,
+                Fee = 10m,
+                RefNo = $"REF-MONTH-{i}",
+                Date = startOfMonth.AddHours(i + 1)
+            });
+        }
+        await context.SaveChangesAsync();
+
+        var handler = new RecordGCashTxnCommandHandler(context, userMock.Object);
+        var command = new RecordGCashTxnCommand("CashIn", 200m, 10m, "REF-OVER-LIMIT");
+
+        var act = () => handler.Handle(command, CancellationToken.None);
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*Libre plan limit exceeded*");
+    }
 }

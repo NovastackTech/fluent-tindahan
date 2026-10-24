@@ -153,4 +153,31 @@ public class UtangHandlerTests
         resultCust1[0].CustomerId.Should().Be(custId1);
         resultAll.Should().HaveCount(2);
     }
+
+    [Fact]
+    public async Task GetUtangLedger_RespectsLimitQuery()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var now = DateTimeOffset.UtcNow;
+        for (int i = 0; i < 5; i++)
+        {
+            context.UtangLedgers.Add(new UtangLedger
+            {
+                Id = Guid.NewGuid(),
+                TenantId = _testTenantId,
+                CustomerId = Guid.NewGuid(),
+                Amount = 10m * (i + 1),
+                Type = "Credit",
+                Date = now.AddMinutes(i)
+            });
+        }
+        await context.SaveChangesAsync();
+
+        var handler = new GetUtangLedgerQueryHandler(context);
+        var result = await handler.Handle(new GetUtangLedgerQuery(null, 2), CancellationToken.None);
+
+        result.Should().HaveCount(2);
+        result[0].Amount.Should().Be(50m);
+        result[1].Amount.Should().Be(40m);
+    }
 }

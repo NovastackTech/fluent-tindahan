@@ -1,8 +1,10 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using FluentTindahan.Application.Common.Interfaces;
+using FluentTindahan.Domain.Billing;
 using FluentTindahan.Domain.Common;
 using FluentTindahan.Domain.Entities;
+using FluentTindahan.Domain.Enums;
 using FluentTindahan.Domain.Interfaces;
 
 namespace FluentTindahan.Application.Customers;
@@ -67,9 +69,31 @@ public class CreateCustomerCommandHandler : IRequestHandler<CreateCustomerComman
             throw new UnauthorizedAccessException("Tenant is not authenticated or resolved.");
         }
 
+        const int MaxAllowedNameLength = 100;
+        if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Trim().Length > MaxAllowedNameLength)
+        {
+            throw new ArgumentException($"Customer name must be between 1 and {MaxAllowedNameLength} characters.", nameof(request.Name));
+        }
+
         if (!PhilippineMobileNumber.TryNormalize(request.Phone, out var phone))
         {
             throw new ArgumentException("Enter a valid Philippine mobile number.", nameof(request.Phone));
+        }
+
+        var tenant = await _context.Tenants.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
+        var now = DateTimeOffset.UtcNow;
+        var isExpired = tenant != null && tenant.Tier != PlanTier.Libre && tenant.SubscriptionEndDate.HasValue && tenant.SubscriptionEndDate.Value < now;
+        var effectiveTier = isExpired ? PlanTier.Libre : (tenant?.Tier ?? PlanTier.Libre);
+
+        if (effectiveTier == PlanTier.Libre)
+        {
+            var customerCount = await _context.Customers.IgnoreQueryFilters()
+                .CountAsync(c => c.TenantId == tenantId && !c.IsDeleted, cancellationToken);
+            if (customerCount >= TierLimits.LibreMaxCustomers)
+            {
+                throw new InvalidOperationException($"Libre plan limit exceeded: Maximum {TierLimits.LibreMaxCustomers} debtors allowed. Upgrade to Tindahan Pro for unlimited customer accounts.");
+            }
         }
 
         var customer = new Customer

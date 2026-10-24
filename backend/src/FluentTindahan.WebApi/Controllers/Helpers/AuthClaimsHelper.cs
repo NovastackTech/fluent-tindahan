@@ -104,6 +104,6 @@ public static class AuthClaimsHelper
                 Encoding.UTF8.GetBytes(incomingTokenIdHash));
         }
 
-        return true;
+        return false;
     }
 }

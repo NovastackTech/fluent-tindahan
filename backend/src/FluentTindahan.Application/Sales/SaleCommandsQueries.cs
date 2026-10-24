@@ -29,7 +29,7 @@ public record SaleDto(
     List<SaleItemDto> Items
 );
 
-public record GetSalesQuery : IRequest<List<SaleDto>>;
+public record GetSalesQuery(int? Limit = 500) : IRequest<List<SaleDto>>;
 
 public class GetSalesQueryHandler : IRequestHandler<GetSalesQuery, List<SaleDto>>
 {
@@ -42,12 +42,14 @@ public class GetSalesQueryHandler : IRequestHandler<GetSalesQuery, List<SaleDto>
 
     public async Task<List<SaleDto>> Handle(GetSalesQuery request, CancellationToken cancellationToken)
     {
+        var limit = Math.Clamp(request.Limit ?? 500, 1, 1000);
         return await _context.Sales
             .AsNoTracking()
             .Include(s => s.Items)
                 .ThenInclude(i => i.Product)
             .Include(s => s.Customer)
             .OrderByDescending(s => s.Date)
+            .Take(limit)
             .Select(s => new SaleDto(
                 s.Id,
                 s.TenantId,
@@ -102,6 +104,41 @@ public class CreateSaleCommandHandler : IRequestHandler<CreateSaleCommand, SaleD
             throw new UnauthorizedAccessException("Tenant is not authenticated or resolved.");
         }
 
+        if (request.TotalAmount < 0)
+        {
+            throw new ArgumentException("Total amount cannot be negative.", nameof(request.TotalAmount));
+        }
+
+        if (string.IsNullOrWhiteSpace(request.PaymentMethod))
+        {
+            throw new ArgumentException("Payment method is required.", nameof(request.PaymentMethod));
+        }
+
+        if (request.Items == null)
+        {
+            throw new ArgumentException("Items list cannot be null.", nameof(request.Items));
+        }
+
+        foreach (var item in request.Items)
+        {
+            if (item == null)
+            {
+                throw new ArgumentException("Sale item cannot be null.", nameof(request.Items));
+            }
+            if (item.Qty <= 0)
+            {
+                throw new ArgumentException("Item quantity must be greater than zero.", nameof(request.Items));
+            }
+            if (item.UnitPrice < 0)
+            {
+                throw new ArgumentException("Item unit price cannot be negative.", nameof(request.Items));
+            }
+            if (item.Subtotal.HasValue && item.Subtotal.Value < 0)
+            {
+                throw new ArgumentException("Item subtotal cannot be negative.", nameof(request.Items));
+            }
+        }
+
         var saleId = Guid.NewGuid();
 
         var sale = new Sale
@@ -109,7 +146,7 @@ public class CreateSaleCommandHandler : IRequestHandler<CreateSaleCommand, SaleD
             Id = saleId,
             TenantId = tenantId,
             TotalAmount = request.TotalAmount,
-            PaymentMethod = request.PaymentMethod,
+            PaymentMethod = request.PaymentMethod.Trim(),
             Date = DateTimeOffset.UtcNow,
             UserId = _currentUserService.UserId ?? Guid.NewGuid(),
             CashReceived = request.CashReceived,
@@ -135,7 +172,7 @@ public class CreateSaleCommandHandler : IRequestHandler<CreateSaleCommand, SaleD
         _context.Sales.Add(sale);
 
         // If PaymentMethod is Utang and customer specified, create UtangLedger entry
-        if (request.PaymentMethod.Equals("Utang", StringComparison.OrdinalIgnoreCase) && request.CustomerId.HasValue)
+        if (string.Equals(request.PaymentMethod, "Utang", StringComparison.OrdinalIgnoreCase) && request.CustomerId.HasValue)
         {
             var utang = new UtangLedger
             {

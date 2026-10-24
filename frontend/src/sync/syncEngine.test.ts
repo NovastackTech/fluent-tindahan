@@ -1210,4 +1210,75 @@ describe('syncEngine', () => {
       expect(useSyncStore.getState().deadLetterCount).toBe(0);
     });
   });
+
+  describe('pullCatalogFromServer and pullCustomersFromServer with bulkGet', () => {
+    it('pullCatalogFromServer merges server products using bulkGet', async () => {
+      useAuthStore.setState({
+        tenantId: 'test-tenant'
+      });
+
+      const bulkGetSpy = vi.spyOn(db.products, 'bulkGet');
+
+      vi.mocked(apiClient.get).mockResolvedValueOnce({
+        data: [
+          {
+            id: 'p-1',
+            tenantId: 'test-tenant',
+            name: 'Product 1',
+            price: 10,
+            cost: 5,
+            stockQty: 20,
+            updatedAt: '2026-10-23T10:00:00Z'
+          },
+          {
+            id: 'p-2',
+            tenantId: 'test-tenant',
+            name: 'Product 2',
+            price: 25,
+            cost: 15,
+            stockQty: 50,
+            updatedAt: '2026-10-23T10:00:00Z'
+          }
+        ]
+      });
+
+      const count = await pullCatalogFromServer();
+      expect(count).toBe(2);
+      expect(bulkGetSpy).toHaveBeenCalledWith(['p-1', 'p-2']);
+
+      const p1 = await db.products.get('p-1');
+      expect(p1?.name).toBe('Product 1');
+      bulkGetSpy.mockRestore();
+    });
+
+    it('pullCustomersFromServer merges server customers using bulkGet', async () => {
+      useAuthStore.setState({
+        tenantId: 'test-tenant'
+      });
+
+      const bulkGetSpy = vi.spyOn(db.customers, 'bulkGet');
+
+      vi.mocked(apiClient.get).mockResolvedValueOnce({
+        data: [
+          {
+            id: 'c-1',
+            tenantId: 'test-tenant',
+            name: 'Customer 1',
+            phone: '09123456789',
+            totalUtangBalance: 100,
+            updatedAt: '2026-10-23T10:00:00Z'
+          }
+        ]
+      });
+
+      const count = await pullCustomersFromServer();
+      expect(count).toBe(1);
+      expect(bulkGetSpy).toHaveBeenCalledWith(['c-1']);
+
+      const c1 = await db.customers.get('c-1');
+      expect(c1?.name).toBe('Customer 1');
+      bulkGetSpy.mockRestore();
+    });
+  });
 });
+

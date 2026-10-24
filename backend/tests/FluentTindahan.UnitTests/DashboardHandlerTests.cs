@@ -114,4 +114,31 @@ public class DashboardHandlerTests
         summary.TotalUtangOutstanding.Should().Be(350m);
         summary.DebtorsCount.Should().Be(2);
     }
+
+    [Fact]
+    public async Task GetDashboardSummary_SaleAtEarlyMorningManilaTime_CountedInTodaySummary()
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var manilaTodayMidnightUtc = FluentTindahan.Application.Common.ManilaTime.StartOfCurrentDayUtc();
+
+        // 01:00 AM Manila time is 1 hour after Manila midnight
+        var oneAmManila = manilaTodayMidnightUtc.AddHours(1);
+
+        context.Sales.Add(new Sale
+        {
+            Id = Guid.NewGuid(),
+            TenantId = _testTenantId,
+            TotalAmount = 250m,
+            PaymentMethod = "Cash",
+            Date = oneAmManila
+        });
+
+        await context.SaveChangesAsync();
+
+        var handler = new GetDashboardSummaryQueryHandler(context, userMock.Object);
+        var summary = await handler.Handle(new GetDashboardSummaryQuery(), CancellationToken.None);
+
+        summary.TodaySales.Should().Be(250m);
+        summary.TodaySalesCount.Should().Be(1);
+    }
 }

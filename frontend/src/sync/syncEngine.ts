@@ -806,9 +806,11 @@ export async function pullCatalogFromServer(): Promise<number> {
       }));
       const pendingIds = await getPendingEntityIds('Product');
       const safe: ProductRecord[] = [];
-      for (const r of formattedProducts) {
+      const existingLocals = await db.products.bulkGet(formattedProducts.map((r) => r.id));
+      for (let i = 0; i < formattedProducts.length; i++) {
+        const r = formattedProducts[i];
         if (pendingIds.has(r.id)) continue;
-        const local = await db.products.get(r.id);
+        const local = existingLocals[i];
         if (local?.updatedAt && r.updatedAt && new Date(local.updatedAt) > new Date(r.updatedAt)) {
           continue;
         }
@@ -854,9 +856,11 @@ export async function pullCustomersFromServer(): Promise<number> {
         if (q.payload?.customerId) pendingCustIds.add(q.payload.customerId);
       }
       const safe: CustomerRecord[] = [];
-      for (const r of records) {
+      const existingLocals = await db.customers.bulkGet(records.map((r) => r.id));
+      for (let i = 0; i < records.length; i++) {
+        const r = records[i];
         if (pendingCustIds.has(r.id)) continue;
-        const local = await db.customers.get(r.id);
+        const local = existingLocals[i];
         if (local?.updatedAt && r.updatedAt && new Date(local.updatedAt) > new Date(r.updatedAt)) {
           continue;
         }

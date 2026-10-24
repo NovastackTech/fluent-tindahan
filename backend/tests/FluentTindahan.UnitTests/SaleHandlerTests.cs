@@ -152,4 +152,95 @@ public class SaleHandlerTests
         result[0].TotalAmount.Should().Be(80m); // Most recent first
         result[1].TotalAmount.Should().Be(30m);
     }
+
+    [Fact]
+    public async Task GetSales_RespectsLimitQuery()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var now = DateTimeOffset.UtcNow;
+        for (int i = 0; i < 5; i++)
+        {
+            context.Sales.Add(new Sale
+            {
+                Id = Guid.NewGuid(),
+                TenantId = _testTenantId,
+                TotalAmount = 10m * (i + 1),
+                PaymentMethod = "Cash",
+                Date = now.AddMinutes(i),
+                UserId = _testUserId
+            });
+        }
+        await context.SaveChangesAsync();
+
+        var handler = new GetSalesQueryHandler(context);
+        var result = await handler.Handle(new GetSalesQuery(2), CancellationToken.None);
+
+        result.Should().HaveCount(2);
+        result[0].TotalAmount.Should().Be(50m);
+        result[1].TotalAmount.Should().Be(40m);
+    }
+
+    [Fact]
+    public async Task CreateSale_NegativeTotalAmountOrInvalidItems_ThrowsArgumentException()
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var handler = new CreateSaleCommandHandler(context, userMock.Object);
+
+        // Negative total
+        var negTotalCommand = new CreateSaleCommand(-10m, "Cash", new List<CreateSaleItemInput>
+        {
+            new CreateSaleItemInput(Guid.NewGuid(), 1, 10m)
+        });
+        var act1 = () => handler.Handle(negTotalCommand, CancellationToken.None);
+        await act1.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*Total amount cannot be negative*");
+
+        // Negative or zero quantity
+        var zeroQtyCommand = new CreateSaleCommand(10m, "Cash", new List<CreateSaleItemInput>
+        {
+            new CreateSaleItemInput(Guid.NewGuid(), 0, 10m)
+        });
+        var act2 = () => handler.Handle(zeroQtyCommand, CancellationToken.None);
+        await act2.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*Item quantity must be greater than zero*");
+
+        // Negative unit price
+        var negPriceCommand = new CreateSaleCommand(10m, "Cash", new List<CreateSaleItemInput>
+        {
+            new CreateSaleItemInput(Guid.NewGuid(), 1, -5m)
+        });
+        var act3 = () => handler.Handle(negPriceCommand, CancellationToken.None);
+        await act3.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*Item unit price cannot be negative*");
+
+        // Null items list
+        var nullItemsCommand = new CreateSaleCommand(10m, "Cash", null!);
+        var act4 = () => handler.Handle(nullItemsCommand, CancellationToken.None);
+        await act4.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*Items list cannot be null*");
+
+        // Null sale item in list
+        var nullItemInListCommand = new CreateSaleCommand(10m, "Cash", new List<CreateSaleItemInput> { null! });
+        var act5 = () => handler.Handle(nullItemInListCommand, CancellationToken.None);
+        await act5.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*Sale item cannot be null*");
+
+        // Null or whitespace payment method
+        var emptyPaymentMethodCommand = new CreateSaleCommand(10m, "   ", new List<CreateSaleItemInput>
+        {
+            new CreateSaleItemInput(Guid.NewGuid(), 1, 10m)
+        });
+        var act6 = () => handler.Handle(emptyPaymentMethodCommand, CancellationToken.None);
+        await act6.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*Payment method is required*");
+
+        // Negative explicit item subtotal
+        var negSubtotalCommand = new CreateSaleCommand(10m, "Cash", new List<CreateSaleItemInput>
+        {
+            new CreateSaleItemInput(Guid.NewGuid(), 1, 10m, -50m)
+        });
+        var act7 = () => handler.Handle(negSubtotalCommand, CancellationToken.None);
+        await act7.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*Item subtotal cannot be negative*");
+    }
 }

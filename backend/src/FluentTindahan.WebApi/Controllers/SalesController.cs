@@ -19,9 +19,9 @@ public class SalesController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<List<SaleDto>>> GetAll(CancellationToken cancellationToken)
+    public async Task<ActionResult<List<SaleDto>>> GetAll([FromQuery] int? limit, CancellationToken cancellationToken)
     {
-        var result = await _mediator.Send(new GetSalesQuery(), cancellationToken);
+        var result = await _mediator.Send(new GetSalesQuery(limit), cancellationToken);
         return Ok(result);
     }
 

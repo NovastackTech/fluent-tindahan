@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using FluentTindahan.Application.Common;
 using FluentTindahan.Application.Common.Interfaces;
 using FluentTindahan.Domain.Entities;
 using FluentTindahan.Domain.Interfaces;
@@ -32,15 +33,14 @@ public class GetDashboardSummaryQueryHandler : IRequestHandler<GetDashboardSumma
 
     public async Task<DashboardSummaryDto> Handle(GetDashboardSummaryQuery request, CancellationToken cancellationToken)
     {
-        var todayUtc = new DateTimeOffset(DateTime.UtcNow.Date, TimeSpan.Zero);
+        var todayUtc = ManilaTime.StartOfCurrentDayUtc();
 
-        var todaySalesList = await _context.Sales
+        var todaySalesQuery = _context.Sales
             .AsNoTracking()
-            .Where(s => s.Date >= todayUtc)
-            .ToListAsync(cancellationToken);
+            .Where(s => s.Date >= todayUtc);
 
-        var todaySalesTotal = todaySalesList.Sum(s => s.TotalAmount);
-        var todaySalesCount = todaySalesList.Count;
+        var todaySalesTotal = await todaySalesQuery.SumAsync(s => (decimal?)s.TotalAmount, cancellationToken) ?? 0m;
+        var todaySalesCount = await todaySalesQuery.CountAsync(cancellationToken);
 
         var tenantId = _currentUserService?.TenantId;
         IQueryable<Customer> debtorsQuery = _context.Customers.AsNoTracking();
@@ -69,13 +69,12 @@ public class GetDashboardSummaryQueryHandler : IRequestHandler<GetDashboardSumma
         var totalUtang = debtors.Sum(c => c.Balance);
         var debtorsCount = debtors.Count;
 
-        var todayGCash = await _context.GCashTransactions
+        var todayGCashQuery = _context.GCashTransactions
             .AsNoTracking()
-            .Where(g => g.Date >= todayUtc)
-            .ToListAsync(cancellationToken);
+            .Where(g => g.Date >= todayUtc);
 
-        var todayGCashVolume = todayGCash.Sum(g => g.Amount);
-        var todayGCashFees = todayGCash.Sum(g => g.Fee);
+        var todayGCashVolume = await todayGCashQuery.SumAsync(g => (decimal?)g.Amount, cancellationToken) ?? 0m;
+        var todayGCashFees = await todayGCashQuery.SumAsync(g => (decimal?)g.Fee, cancellationToken) ?? 0m;
 
         var totalProducts = await _context.Products.AsNoTracking().CountAsync(cancellationToken);
         var lowStock = await _context.Products.AsNoTracking().CountAsync(p => p.StockQty <= 5, cancellationToken);

@@ -113,8 +113,48 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   const { isOnline, pendingCount } = useSyncStore();
   const tenantId = useAuthStore((state) => state.tenantId);
 
+  // Today's boundaries
+  const todayStr = useTodayKey();
+
+  const { startBoundIso, endBoundIso } = React.useMemo(() => {
+    if (!todayStr) {
+      return { startBoundIso: '', endBoundIso: '' };
+    }
+    const [year, month, day] = todayStr.split('-').map(Number);
+    const start = new Date(year, (month || 1) - 1, day || 1, 0, 0, 0, 0);
+    const end = new Date(year, (month || 1) - 1, day || 1, 23, 59, 59, 999);
+    return {
+      startBoundIso: new Date(start.getTime() - 24 * 60 * 60 * 1000).toISOString(),
+      endBoundIso: new Date(end.getTime() + 24 * 60 * 60 * 1000).toISOString()
+    };
+  }, [todayStr]);
+
   // Live queries straight from local Dexie database for instant offline UI
-  const sales = useLiveQuery(() => db.sales.where('tenantId').equals(tenantId).toArray(), [tenantId]);
+  const todaySales = useLiveQuery(
+    async () => {
+      if (!tenantId || !startBoundIso || !endBoundIso) return [];
+      const records = await db.sales
+        .where('[tenantId+date]')
+        .between([tenantId, startBoundIso], [tenantId, endBoundIso], true, true)
+        .toArray();
+      return records.filter((s) => toLocalDateKey(s.date) === todayStr);
+    },
+    [tenantId, todayStr, startBoundIso, endBoundIso]
+  ) || [];
+
+  const recentSales = useLiveQuery(
+    async () => {
+      if (!tenantId) return [];
+      return db.sales
+        .where('[tenantId+date]')
+        .between([tenantId, ''], [tenantId, '\uffff'], true, true)
+        .reverse()
+        .limit(5)
+        .toArray();
+    },
+    [tenantId]
+  ) || [];
+
   const customers = useLiveQuery(() => db.customers.where('tenantId').equals(tenantId).toArray(), [tenantId]);
   const gcashTxns = useLiveQuery(() => db.gcashTxns.where('tenantId').equals(tenantId).toArray(), [tenantId]);
   const gcashResolutions = useLiveQuery(() => db.gcashTxnResolutions.where('tenantId').equals(tenantId).toArray(), [tenantId]);
@@ -122,10 +162,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
 
   const lowStockProducts = products.filter((p) => (p.stockQty ?? 0) <= 5);
 
-  // Today's boundaries
-  const todayStr = useTodayKey();
-
-  const todaySales = (sales || []).filter((s) => toLocalDateKey(s.date) === todayStr);
   const totalSalesAmount = todaySales.reduce((sum, s) => sum + s.totalAmount, 0);
 
   const debtors = (customers || []).filter((c) => c.totalUtangBalance > 0);
@@ -137,10 +173,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   );
   const totalGCashVolume = todayGCash.reduce((sum, g) => sum + g.amount, 0);
   const totalGCashFees = todayGCash.reduce((sum, g) => sum + g.fee, 0);
-
-  const recentSales = [...(sales || [])]
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    .slice(0, 5);
 
   return (
     <div className={styles.container}>

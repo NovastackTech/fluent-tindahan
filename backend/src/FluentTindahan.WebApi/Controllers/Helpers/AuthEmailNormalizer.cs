@@ -59,7 +59,7 @@ public static class AuthEmailNormalizer
     {
         "10minutemail.com", "10minutemail.net", "10minutemail.org", "20minutemail.com",
         "33mail.com", "anonaddy.com", "anonaddy.me", "bccto.me", "binkmail.com",
-        "bobmail.info", "burnermail.io", "chacuo.net", "chammy.info", " cock.li",
+        "bobmail.info", "burnermail.io", "chacuo.net", "chammy.info", "cock.li",
         "crazymailing.com", "deadaddress.com", "despam.it", "devnullmail.com",
         "discard.email", "discardmail.com", "discardmail.de", "dispostable.com",
         "dodgeit.com", "dodgit.com", "drdrb.net", "dropmail.me", "duck.com",
@@ -67,7 +67,7 @@ public static class AuthEmailNormalizer
         "emailtemporanea.net", "emailtemporario.com.br", "ephemail.net",
         "explodemail.com", "fakeinbox.com", "fakemail.fr", "fakemailgenerator.com",
         "fastacura.com", "filzmail.com", "fizmail.com", "fleckens.hu", "frapmail.com",
-        "garliclife.com", "Generator.email", "generator.email", "getairmail.com",
+        "garliclife.com", "generator.email", "getairmail.com",
         "getnada.com", "getonemail.com", "getonemail.net", "gishpuppy.com",
         "Grandmamail.com", "grr.la", "guerrillamail.biz", "guerrillamail.com",
         "guerrillamail.de", "guerrillamail.info", "guerrillamail.net", "guerrillamail.org",

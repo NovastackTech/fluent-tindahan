@@ -195,6 +195,10 @@ export class FluentTindahanDatabase extends Dexie {
             row.refNoNorm = normalizeRef(row.refNo);
           })
       );
+    this.version(6).stores({
+      sales: 'id, tenantId, date, paymentMethod, customerId, [tenantId+date]',
+      utangLedger: 'id, tenantId, customerId, type, date, refSaleId, [tenantId+customerId]'
+    });
   }
 }
 

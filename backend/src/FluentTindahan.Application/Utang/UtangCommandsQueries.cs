@@ -18,7 +18,7 @@ public record UtangLedgerDto(
     string? Notes
 );
 
-public record GetUtangLedgerQuery(Guid? CustomerId = null) : IRequest<List<UtangLedgerDto>>;
+public record GetUtangLedgerQuery(Guid? CustomerId = null, int? Limit = 500) : IRequest<List<UtangLedgerDto>>;
 
 public class GetUtangLedgerQueryHandler : IRequestHandler<GetUtangLedgerQuery, List<UtangLedgerDto>>
 {
@@ -31,6 +31,7 @@ public class GetUtangLedgerQueryHandler : IRequestHandler<GetUtangLedgerQuery, L
 
     public async Task<List<UtangLedgerDto>> Handle(GetUtangLedgerQuery request, CancellationToken cancellationToken)
     {
+        var limit = Math.Clamp(request.Limit ?? 500, 1, 1000);
         var query = _context.UtangLedgers.AsNoTracking().AsQueryable();
 
         if (request.CustomerId.HasValue)
@@ -40,6 +41,7 @@ public class GetUtangLedgerQueryHandler : IRequestHandler<GetUtangLedgerQuery, L
 
         return await query
             .OrderByDescending(u => u.Date)
+            .Take(limit)
             .Select(u => new UtangLedgerDto(
                 u.Id,
                 u.TenantId,

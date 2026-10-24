@@ -207,6 +207,22 @@ public class AuthHelperTests
     }
 
     [Fact]
+    public void IpPinThrottle_SweepExpiredThrottles_PrunesOverflowBeyondMaxTracked()
+    {
+        AuthLockoutHelper.ResetAllIpPinThrottles();
+        var timeProvider = new MutableTimeProvider(DateTimeOffset.UtcNow);
+
+        for (int i = 0; i < AuthLockoutHelper.MaxTrackedIps + 5; i++)
+        {
+            var ip = $"198.51.{(i / 256) % 256}.{i % 256}";
+            AuthLockoutHelper.RecordIpPinFailure(ip, timeProvider, out _, out _);
+        }
+
+        AuthLockoutHelper.SweepExpiredThrottles(timeProvider);
+        AuthLockoutHelper.GetIpThrottleCount().Should().BeLessThanOrEqualTo(AuthLockoutHelper.MaxTrackedIps);
+    }
+
+    [Fact]
     public async Task IpPinThrottle_ResetAllIpPinThrottles_ConcurrentAccess_IsRaceFree()
     {
         AuthLockoutHelper.ResetAllIpPinThrottles();
@@ -456,6 +472,9 @@ public class AuthHelperTests
         var input = "  \u00A0User.\u200BName\uFEFF@Domain.PH\u3000  ";
         AuthEmailNormalizer.CleanDisplayEmail(input).Should().Be("User.Name@Domain.PH");
         AuthEmailNormalizer.NormalizeEmail(input).Should().Be("user.name@domain.ph");
+        AuthEmailNormalizer.IsDisposableEmail("test@cock.li").Should().BeTrue();
+        AuthEmailNormalizer.IsDisposableEmail("user@Generator.email").Should().BeTrue();
+        AuthEmailNormalizer.IsDisposableEmail("legit@gmail.com").Should().BeFalse();
     }
 
     #endregion
@@ -502,9 +521,74 @@ public class AuthHelperTests
         dto.RefreshToken.Should().Be("refreshToken456");
     }
 
+    [Fact]
+    public void AuthResponseBuilder_WhenSubscriptionExpired_DowngradesToLibre()
+    {
+        var tenant = new Tenant
+        {
+            Id = Guid.NewGuid(),
+            BusinessName = "Expired Store",
+            Tier = PlanTier.TindahanPro,
+            SubscriptionEndDate = DateTimeOffset.UtcNow.AddMinutes(-5)
+        };
+        var user = new User { Id = Guid.NewGuid(), TenantId = tenant.Id, Role = "Owner" };
+
+        var dto = AuthResponseBuilder.Build(user, tenant, ("token123", DateTimeOffset.UtcNow.AddHours(1)));
+
+        dto.Tier.Should().Be(PlanTier.Libre);
+        dto.PlanTier.Should().Be("Libre");
+        dto.SubscriptionEndDate.Should().Be(tenant.SubscriptionEndDate);
+    }
+
     #endregion
 
     #region AuthClaimsHelper Tests
+
+    [Fact]
+    public async Task ValidatePlaceholderSessionAsync_WhenTokenRevokedAndHashNull_ReturnsFalse()
+    {
+        await using var context = CreateInMemoryContext();
+        var tenantId = Guid.NewGuid();
+        var placeholderUser = new User
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            Role = "Owner",
+            RefreshTokenIdHash = null
+        };
+        context.Users.Add(placeholderUser);
+
+        var tokenId = Guid.NewGuid().ToString("N");
+        var tokenHash = "hashed-token-id";
+        context.UserRefreshTokens.Add(new UserRefreshToken
+        {
+            Id = Guid.NewGuid(),
+            UserId = placeholderUser.Id,
+            TokenHash = tokenHash,
+            IsRevoked = true,
+            ExpiresAt = DateTimeOffset.UtcNow.AddDays(7),
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+        await context.SaveChangesAsync();
+
+        var jwtMock = new Mock<IJwtTokenService>();
+        Guid outUserId = placeholderUser.Id;
+        Guid outTenantId = tenantId;
+        string outTokenId = tokenId;
+        jwtMock.Setup(j => j.ValidateRefreshToken("candidate-token", out outUserId, out outTenantId, out outTokenId))
+            .Returns(true);
+        jwtMock.Setup(j => j.HashTokenId(tokenId)).Returns(tokenHash);
+
+        var isValid = await AuthClaimsHelper.ValidatePlaceholderSessionAsync(
+            jwtMock.Object,
+            context,
+            placeholderUser,
+            tenantId,
+            "candidate-token",
+            CancellationToken.None);
+
+        isValid.Should().BeFalse();
+    }
 
     [Fact]
     public void GetClientIpAddress_IgnoresSpoofedXForwardedForAndReturnsValidatedRemoteIp()

@@ -1,7 +1,10 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using FluentTindahan.Application.Common.Interfaces;
+using FluentTindahan.Domain.Billing;
+using FluentTindahan.Domain.Common;
 using FluentTindahan.Domain.Entities;
+using FluentTindahan.Domain.Enums;
 using FluentTindahan.Domain.Interfaces;
 
 namespace FluentTindahan.Application.Products;
@@ -94,6 +97,22 @@ public class CreateProductCommandHandler : IRequestHandler<CreateProductCommand,
         if (request.StockQty < -MaxAllowedStock || request.StockQty > MaxAllowedStock)
         {
             throw new ArgumentException($"Stock quantity must be between -{MaxAllowedStock:N0} and {MaxAllowedStock:N0}.", nameof(request.StockQty));
+        }
+
+        var tenant = await _context.Tenants.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
+        var now = DateTimeOffset.UtcNow;
+        var isExpired = tenant != null && tenant.Tier != PlanTier.Libre && tenant.SubscriptionEndDate.HasValue && tenant.SubscriptionEndDate.Value < now;
+        var effectiveTier = isExpired ? PlanTier.Libre : (tenant?.Tier ?? PlanTier.Libre);
+
+        if (effectiveTier == PlanTier.Libre)
+        {
+            var productCount = await _context.Products.IgnoreQueryFilters()
+                .CountAsync(p => p.TenantId == tenantId && !p.IsDeleted, cancellationToken);
+            if (productCount >= TierLimits.LibreMaxProducts)
+            {
+                throw new InvalidOperationException($"Libre plan limit exceeded: Maximum {TierLimits.LibreMaxProducts} products allowed. Upgrade to Tindahan Pro for unlimited catalog capacity.");
+            }
         }
 
         var product = new Product

@@ -194,4 +194,31 @@ public class ProductHandlerTests
         await act.Should().ThrowAsync<ArgumentException>()
             .WithMessage("*Product name must be between 1 and 200 characters*");
     }
+
+    [Fact]
+    public async Task CreateProduct_WhenLibreLimitExceeded_ThrowsInvalidOperationException()
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        for (int i = 0; i < 30; i++)
+        {
+            context.Products.Add(new Product
+            {
+                Id = Guid.NewGuid(),
+                TenantId = _testTenantId,
+                Name = $"Product {i}",
+                Price = 10m,
+                Cost = 5m,
+                StockQty = 10,
+                UpdatedAt = DateTimeOffset.UtcNow
+            });
+        }
+        await context.SaveChangesAsync();
+
+        var handler = new CreateProductCommandHandler(context, userMock.Object);
+        var command = new CreateProductCommand("Extra Product", 15m, 10m, null, null, 5);
+
+        var act = () => handler.Handle(command, CancellationToken.None);
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*Libre plan limit exceeded*");
+    }
 }

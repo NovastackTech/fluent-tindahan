@@ -6,6 +6,7 @@ import { getSyncStorageKey } from '../constants/sync';
 import { CURRENT_TERMS_VERSION } from '../legal/termsData';
 import { generateLocalPinVerifier, logoutStore, type AuthResponseDto } from '../services/authService';
 import { useGCashFeeStore } from './gcashFeeStore';
+import { useCartStore } from './cartStore';
 import {
   hasPendingProfileUpdate,
   clearPendingProfileUpdate,
@@ -142,6 +143,7 @@ export const LEGACY_STORAGE_KEY_FIREBASE_TOKEN = 'fluent_tindahan_firebase_token
 export const STORAGE_KEY_REFRESH_TOKEN = 'fluent_tindahan_refresh_token_v1';
 export const STORAGE_KEY_REAUTH_REQUIRED = 'fluent_tindahan_reauth_required_v1';
 export const STORAGE_KEY_IS_DEMO = 'fluent_tindahan_is_demo_v1';
+export const STORAGE_KEY_DLQ_ARCHIVE = 'tindahan_dlq_archive';
 
 const initialConsent = localStorage.getItem(STORAGE_KEY_CONSENT) === 'true';
 const initialTermsVersion = localStorage.getItem(STORAGE_KEY_TERMS_VERSION);
@@ -627,8 +629,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return { success: false, unsyncedCount: pendingCount };
       }
 
-      await clearAllLocalDexieTables();
-      useGCashFeeStore.getState().resetFeeStore();
+      try {
+        await clearAllLocalDexieTables();
+      } catch (e) {
+        console.warn('[authStore] Failed to clear local Dexie tables on tenant switch:', e);
+      } finally {
+        useGCashFeeStore.getState().resetFeeStore();
+        useCartStore.getState().clearCart();
+        localStorage.removeItem(STORAGE_KEY_DLQ_ARCHIVE);
+      }
     }
 
     let localVerifier: string | null = null;
@@ -729,6 +738,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       await clearAllLocalDexieTables();
     } catch (e) {
       console.warn('[authStore] Failed to clear local Dexie tables on logout:', e);
+    } finally {
+      useGCashFeeStore.getState().resetFeeStore();
+      useCartStore.getState().clearCart();
     }
 
     // Keep STORAGE_KEY_LAST_EMAIL on ordinary logout so login remembers the email address,
@@ -757,7 +769,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       STORAGE_KEY_OFFLINE_PIN_FAILURES,
       STORAGE_KEY_OFFLINE_PIN_LOCKOUT_END,
       STORAGE_KEY_PENDING_PROFILE_UPDATE,
-      STORAGE_KEY_IS_DEMO
+      STORAGE_KEY_IS_DEMO,
+      STORAGE_KEY_DLQ_ARCHIVE
     ];
     for (const key of keysToRemove) {
       localStorage.removeItem(key);
