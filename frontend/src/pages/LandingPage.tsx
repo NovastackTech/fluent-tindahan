@@ -342,7 +342,7 @@ const useStyles = makeStyles({
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
   const styles = useStyles();
-  const { t, language } = useTranslation();
+  const { t } = useTranslation();
   const {
     isOnboarded,
     businessName,
@@ -616,18 +616,17 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
     }
   ];
 
-  const isTagalog = language === 'tl';
   const pricingPlans = [
     {
       title: t.landing.planFreeTitle,
       price: t.landing.planFreePrice,
-      subPrice: isTagalog ? 'Walang bayad habangbuhay' : 'Free forever, no credit card',
+      subPrice: t.landing.freeSubPrice,
       desc: t.landing.planFreeDesc,
       features: [
-        isTagalog ? '✓ Hanggang 30 Produkto' : '✓ Up to 30 Product Items',
-        isTagalog ? '✓ Hanggang 30 Utang Debtors' : '✓ Up to 30 Debtor Profiles',
-        isTagalog ? '✓ 30 GCash Txns bawat buwan' : '✓ 30 GCash Txns per month',
-        isTagalog ? '✓ 100% Offline POS & Kaha' : '✓ 100% Offline POS & Cash Register'
+        t.landing.planFreeFeature1,
+        t.landing.planFreeFeature2,
+        t.landing.planFreeFeature3,
+        t.landing.planFreeFeature4
       ],
       highlighted: false,
       btnAppearance: 'secondary' as const
@@ -635,19 +634,19 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
     {
       title: t.landing.planProTitle,
       price: billingCycle === 'Weekly'
-        ? (isTagalog ? '₱35 / linggo' : '₱35 / week')
-        : (isTagalog ? '₱129 / buwan' : '₱129 / month'),
+        ? `${formatPeso(35)} / ${t.landing.perWeek}`
+        : `${formatPeso(129)} / ${t.landing.perMonth}`,
       subPrice: billingCycle === 'Weekly'
-        ? (isTagalog ? 'o ₱129 / buwan sa Buwanan Pass' : 'or ₱129 / month on Monthly Pass')
-        : (isTagalog ? 'o ₱35 / linggo sa Sachet Pass' : 'or ₱35 / week on Sachet Pass'),
+        ? t.landing.monthlyPassAlternative.replace('{price}', `${formatPeso(129)} / ${t.landing.perMonth}`)
+        : t.landing.weeklyPassAlternative.replace('{price}', `${formatPeso(35)} / ${t.landing.perWeek}`),
       desc: t.landing.planProDesc,
       features: [
-        isTagalog ? '✓ Walang Limitasyong Produkto' : '✓ Unlimited Products',
-        isTagalog ? '✓ Walang Limitasyong Utang Debtors' : '✓ Unlimited Debtor Profiles',
-        isTagalog ? '✓ Walang Limitasyong GCash Txns' : '✓ Unlimited GCash Logs',
-        isTagalog ? '✓ Detalyadong Profit & Margin Analytics' : '✓ Detailed Profit & Margin Analytics',
-        isTagalog ? '✓ Resibong walang watermark' : '✓ Custom Store Receipts (No Watermark)',
-        isTagalog ? '✓ CSV Bulk Catalog Import' : '✓ Fast CSV Catalog Bulk Import'
+        t.landing.planProFeature1,
+        t.landing.planProFeature2,
+        t.landing.planProFeature3,
+        t.landing.planProFeature4,
+        t.landing.planProFeature5,
+        t.landing.planProFeature6
       ],
       highlighted: true,
       btnAppearance: 'primary' as const
@@ -655,18 +654,18 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
     {
       title: t.landing.planPlusTitle,
       price: billingCycle === 'Weekly'
-        ? (isTagalog ? '₱89 / linggo' : '₱89 / week')
-        : (isTagalog ? '₱349 / buwan' : '₱349 / month'),
+        ? `${formatPeso(89)} / ${t.landing.perWeek}`
+        : `${formatPeso(349)} / ${t.landing.perMonth}`,
       subPrice: billingCycle === 'Weekly'
-        ? (isTagalog ? 'o ₱349 / buwan sa Buwanan Pass' : 'or ₱349 / month on Monthly Pass')
-        : (isTagalog ? 'o ₱89 / linggo sa Sachet Pass' : 'or ₱89 / week on Sachet Pass'),
+        ? t.landing.monthlyPassAlternative.replace('{price}', `${formatPeso(349)} / ${t.landing.perMonth}`)
+        : t.landing.weeklyPassAlternative.replace('{price}', `${formatPeso(89)} / ${t.landing.perWeek}`),
       desc: t.landing.planPlusDesc,
       features: [
-        isTagalog ? '✓ Lahat ng nasa Tindahan Pro' : '✓ All Tindahan Pro Features Included',
-        isTagalog ? '✓ Hanggang 5 Staff Cashiers na may PIN' : '✓ Up to 5 Staff Cashiers with PINs',
-        isTagalog ? '✓ Sabay-sabay na 4 Devices' : '✓ Up to 4 Synced Devices',
-        isTagalog ? '✓ Buong Staff Audit Trail Logs' : '✓ Full Staff Audit Trail Logs',
-        isTagalog ? '✓ Priority Cloud Database Backup' : '✓ Priority Cloud Database Backup'
+        t.landing.planPlusFeature1,
+        t.landing.planPlusFeature2,
+        t.landing.planPlusFeature3,
+        t.landing.planPlusFeature4,
+        t.landing.planPlusFeature5
       ],
       highlighted: false,
       btnAppearance: 'secondary' as const
@@ -1170,14 +1169,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
             onClick={() => setBillingCycle('Weekly')}
             size="medium"
           >
-            {isTagalog ? 'Lingguhan (Sachet Pass)' : 'Weekly Pass (Sachet)'}
+            {t.landing.pricingToggleWeekly}
           </Button>
           <Button
             appearance={billingCycle === 'Monthly' ? 'primary' : 'secondary'}
             onClick={() => setBillingCycle('Monthly')}
             size="medium"
           >
-            {isTagalog ? 'Buwanan (Mas Matipid ⭐)' : 'Monthly (Best Value ⭐)'}
+            {t.landing.pricingToggleMonthly}
           </Button>
         </div>
 
