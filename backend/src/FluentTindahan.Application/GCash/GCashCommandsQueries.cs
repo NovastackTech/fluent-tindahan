@@ -22,7 +22,7 @@ public record GCashTxnDto(
     string? Notes
 );
 
-public record GetGCashTransactionsQuery(int? Limit = 500) : IRequest<List<GCashTxnDto>>;
+public record GetGCashTransactionsQuery(int? Limit = 500, DateTimeOffset? Before = null) : IRequest<List<GCashTxnDto>>;
 
 public class GetGCashTransactionsQueryHandler : IRequestHandler<GetGCashTransactionsQuery, List<GCashTxnDto>>
 {
@@ -36,8 +36,14 @@ public class GetGCashTransactionsQueryHandler : IRequestHandler<GetGCashTransact
     public async Task<List<GCashTxnDto>> Handle(GetGCashTransactionsQuery request, CancellationToken cancellationToken)
     {
         var limit = Math.Clamp(request.Limit ?? 500, 1, 1000);
-        return await _context.GCashTransactions
-            .AsNoTracking()
+        var query = _context.GCashTransactions.AsNoTracking().AsQueryable();
+
+        if (request.Before.HasValue)
+        {
+            query = query.Where(g => g.Date < request.Before.Value);
+        }
+
+        return await query
             .OrderByDescending(g => g.Date)
             .Take(limit)
             .Select(g => new GCashTxnDto(

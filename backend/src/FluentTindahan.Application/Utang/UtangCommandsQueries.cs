@@ -18,7 +18,7 @@ public record UtangLedgerDto(
     string? Notes
 );
 
-public record GetUtangLedgerQuery(Guid? CustomerId = null, int? Limit = 500) : IRequest<List<UtangLedgerDto>>;
+public record GetUtangLedgerQuery(Guid? CustomerId = null, int? Limit = 500, DateTimeOffset? Before = null) : IRequest<List<UtangLedgerDto>>;
 
 public class GetUtangLedgerQueryHandler : IRequestHandler<GetUtangLedgerQuery, List<UtangLedgerDto>>
 {
@@ -37,6 +37,11 @@ public class GetUtangLedgerQueryHandler : IRequestHandler<GetUtangLedgerQuery, L
         if (request.CustomerId.HasValue)
         {
             query = query.Where(u => u.CustomerId == request.CustomerId.Value);
+        }
+
+        if (request.Before.HasValue)
+        {
+            query = query.Where(u => u.Date < request.Before.Value);
         }
 
         return await query

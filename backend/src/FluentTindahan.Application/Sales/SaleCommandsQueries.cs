@@ -29,7 +29,7 @@ public record SaleDto(
     List<SaleItemDto> Items
 );
 
-public record GetSalesQuery(int? Limit = 500) : IRequest<List<SaleDto>>;
+public record GetSalesQuery(int? Limit = 500, DateTimeOffset? Before = null) : IRequest<List<SaleDto>>;
 
 public class GetSalesQueryHandler : IRequestHandler<GetSalesQuery, List<SaleDto>>
 {
@@ -43,8 +43,14 @@ public class GetSalesQueryHandler : IRequestHandler<GetSalesQuery, List<SaleDto>
     public async Task<List<SaleDto>> Handle(GetSalesQuery request, CancellationToken cancellationToken)
     {
         var limit = Math.Clamp(request.Limit ?? 500, 1, 1000);
-        return await _context.Sales
-            .AsNoTracking()
+        var query = _context.Sales.AsNoTracking().AsQueryable();
+
+        if (request.Before.HasValue)
+        {
+            query = query.Where(s => s.Date < request.Before.Value);
+        }
+
+        return await query
             .Include(s => s.Items)
                 .ThenInclude(i => i.Product)
             .Include(s => s.Customer)

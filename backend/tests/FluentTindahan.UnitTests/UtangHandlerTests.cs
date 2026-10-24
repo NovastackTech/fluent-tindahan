@@ -180,4 +180,33 @@ public class UtangHandlerTests
         result[0].Amount.Should().Be(50m);
         result[1].Amount.Should().Be(40m);
     }
+
+    [Fact]
+    public async Task GetUtangLedger_RespectsBeforeQuery()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var now = DateTimeOffset.UtcNow;
+        for (int i = 0; i < 5; i++)
+        {
+            context.UtangLedgers.Add(new UtangLedger
+            {
+                Id = Guid.NewGuid(),
+                TenantId = _testTenantId,
+                CustomerId = Guid.NewGuid(),
+                Amount = 10m * (i + 1),
+                Type = "Credit",
+                Date = now.AddMinutes(i)
+            });
+        }
+        await context.SaveChangesAsync();
+
+        var handler = new GetUtangLedgerQueryHandler(context);
+        // Before 3 minutes after now => selects minutes 2, 1, 0 (descending)
+        var result = await handler.Handle(new GetUtangLedgerQuery(null, 10, now.AddMinutes(3)), CancellationToken.None);
+
+        result.Should().HaveCount(3);
+        result[0].Amount.Should().Be(30m);
+        result[1].Amount.Should().Be(20m);
+        result[2].Amount.Should().Be(10m);
+    }
 }

@@ -244,6 +244,36 @@ public class GCashHandlerTests
     }
 
     [Fact]
+    public async Task GetGCashTransactions_RespectsBeforeQuery()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var now = DateTimeOffset.UtcNow;
+        for (int i = 0; i < 5; i++)
+        {
+            context.GCashTransactions.Add(new GCashTxn
+            {
+                Id = Guid.NewGuid(),
+                TenantId = _testTenantId,
+                Type = "CashIn",
+                Amount = 100m * (i + 1),
+                Fee = 10m,
+                RefNo = $"REF-BEFORE-{i}",
+                Date = now.AddMinutes(i)
+            });
+        }
+        await context.SaveChangesAsync();
+
+        var handler = new GetGCashTransactionsQueryHandler(context);
+        // Before 3 minutes after now => selects minutes 2, 1, 0 (descending)
+        var result = await handler.Handle(new GetGCashTransactionsQuery(10, now.AddMinutes(3)), CancellationToken.None);
+
+        result.Should().HaveCount(3);
+        result[0].RefNo.Should().Be("REF-BEFORE-2");
+        result[1].RefNo.Should().Be("REF-BEFORE-1");
+        result[2].RefNo.Should().Be("REF-BEFORE-0");
+    }
+
+    [Fact]
     public async Task RecordGCashTxn_WhenLibreLimitExceeded_ThrowsInvalidOperationException()
     {
         var (context, userMock) = CreateInMemoryContext();

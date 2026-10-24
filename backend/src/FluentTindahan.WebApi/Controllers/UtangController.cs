@@ -19,9 +19,13 @@ public class UtangController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<List<UtangLedgerDto>>> GetAll([FromQuery] Guid? customerId, [FromQuery] int? limit, CancellationToken cancellationToken)
+    public async Task<ActionResult<List<UtangLedgerDto>>> GetAll(
+        [FromQuery] Guid? customerId,
+        [FromQuery] int? limit,
+        [FromQuery] DateTimeOffset? before,
+        CancellationToken cancellationToken)
     {
-        var result = await _mediator.Send(new GetUtangLedgerQuery(customerId, limit), cancellationToken);
+        var result = await _mediator.Send(new GetUtangLedgerQuery(customerId, limit, before), cancellationToken);
         return Ok(result);
     }
 

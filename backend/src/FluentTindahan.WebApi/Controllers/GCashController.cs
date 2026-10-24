@@ -19,9 +19,12 @@ public class GCashController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<List<GCashTxnDto>>> GetAll([FromQuery] int? limit, CancellationToken cancellationToken)
+    public async Task<ActionResult<List<GCashTxnDto>>> GetAll(
+        [FromQuery] int? limit,
+        [FromQuery] DateTimeOffset? before,
+        CancellationToken cancellationToken)
     {
-        var result = await _mediator.Send(new GetGCashTransactionsQuery(limit), cancellationToken);
+        var result = await _mediator.Send(new GetGCashTransactionsQuery(limit, before), cancellationToken);
         return Ok(result);
     }
 

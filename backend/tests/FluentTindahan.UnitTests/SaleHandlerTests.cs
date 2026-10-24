@@ -181,6 +181,35 @@ public class SaleHandlerTests
     }
 
     [Fact]
+    public async Task GetSales_RespectsBeforeQuery()
+    {
+        var (context, _) = CreateInMemoryContext();
+        var now = DateTimeOffset.UtcNow;
+        for (int i = 0; i < 5; i++)
+        {
+            context.Sales.Add(new Sale
+            {
+                Id = Guid.NewGuid(),
+                TenantId = _testTenantId,
+                TotalAmount = 10m * (i + 1),
+                PaymentMethod = "Cash",
+                Date = now.AddMinutes(i),
+                UserId = _testUserId
+            });
+        }
+        await context.SaveChangesAsync();
+
+        var handler = new GetSalesQueryHandler(context);
+        // Before 3 minutes after now => selects minutes 2, 1, 0 (descending)
+        var result = await handler.Handle(new GetSalesQuery(10, now.AddMinutes(3)), CancellationToken.None);
+
+        result.Should().HaveCount(3);
+        result[0].TotalAmount.Should().Be(30m);
+        result[1].TotalAmount.Should().Be(20m);
+        result[2].TotalAmount.Should().Be(10m);
+    }
+
+    [Fact]
     public async Task CreateSale_NegativeTotalAmountOrInvalidItems_ThrowsArgumentException()
     {
         var (context, userMock) = CreateInMemoryContext();
