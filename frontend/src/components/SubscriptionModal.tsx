@@ -37,6 +37,7 @@ import { useLanguageStore } from '../state/languageStore';
 import { formatPeso } from '../utils/currency';
 import { QrPhSubscriptionDialog } from './QrPhSubscriptionDialog';
 import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
+import { useAuthStore } from '../state/authStore';
 
 const useStyles = makeStyles({
   surface: {
@@ -149,6 +150,7 @@ const useStyles = makeStyles({
 export const SubscriptionModal: React.FC = () => {
   const styles = useStyles();
   const language = useLanguageStore((s) => s.language);
+  const isDemo = useAuthStore((s) => s.isDemo);
   const isTagalog = language === 'tl';
 
   const {
@@ -278,7 +280,7 @@ export const SubscriptionModal: React.FC = () => {
 
         <DialogBody>
           <DialogContent>
-            {error && (
+            {error && !isDemo && (
               <MessageBar intent={isRefreshError ? 'warning' : 'error'} style={{ marginBottom: tokens.spacingVerticalM }}>
                 <MessageBarBody>
                   {isRefreshError
