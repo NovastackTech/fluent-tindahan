@@ -223,7 +223,7 @@ This document establishes the comprehensive functional test strategy and test ca
 # Navigate to frontend
 cd frontend
 
-# Execute full unit & integration test suite (748 tests / 66 suites)
+# Execute full unit & integration test suite
 npm test -- --run
 
 # Run code coverage report
@@ -241,7 +241,7 @@ npm run build
 # Navigate to backend
 cd backend
 
-# Execute all unit and domain rule tests (404 tests)
+# Execute all unit and domain rule tests
 dotnet test --no-restore
 ```
 
@@ -257,14 +257,14 @@ dotnet test --no-restore
 
 ## 7. QA Sign-Off & Release Gate Criteria
 
-A build is certified for staging or production deployment only when:
-- [x] **Zero Critical or High severity defects open**.
-- [x] **100% pass rate across all 404 backend xUnit tests**.
-- [x] **100% pass rate across all 748 frontend Vitest test specifications**.
-- [x] **Clean compilation (`tsc -b`) and zero linter warnings/errors (`oxlint`)**.
-- [x] **Offline checkout and background batch sync verified on real Android Chromium mobile browser**.
-- [x] **Compound `(Date, Id)` keyset pagination verified with $\ge 1,000$ transactions**.
-- [x] **Service Worker update protection verified across concurrent browser tabs**.
+A build candidate is certified for staging or production deployment only when:
+- **Zero Critical or High severity defects open**.
+- **100% pass rate across all backend xUnit test suites**.
+- **100% pass rate across all frontend Vitest test specifications**.
+- **Clean compilation (`tsc -b`) and zero linter warnings/errors (`oxlint`)**.
+- **Offline checkout and background batch sync verified on real Android Chromium mobile browser**.
+- **Compound `(Date, Id)` keyset pagination verified with $\ge 1,000$ transactions**.
+- **Service Worker update protection verified across concurrent browser tabs**.
 
 ---
 *Fluent Tindahan QA Team — Quality Assurance & Reliability Engineering*
