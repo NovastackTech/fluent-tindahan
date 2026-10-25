@@ -64,6 +64,25 @@ PWA_DEV=true npm run dev
 
 ---
 
+## 🧪 Automated Tests
+
+The repository contains **1,154 automated tests** (750 frontend tests + 404 backend tests) runnable directly from the repository root:
+
+```bash
+# Run all tests (Backend xUnit + Frontend Vitest)
+npm run test:all
+# or via Makefile
+make test
+
+# Frontend Unit Tests (750 tests via Vitest)
+npm test
+
+# Backend Unit Tests (404 tests via .NET xUnit)
+dotnet test
+```
+
+---
+
 ## 📦 Features & Data
 
 - **Offline-First POS**: Fast barcode search, categories, cart management, change calculator, thermal receipt generation.
