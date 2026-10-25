@@ -1,5 +1,7 @@
 import subprocess
 import os
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 html_content = """<!DOCTYPE html>
 <html lang="en">
@@ -242,7 +244,7 @@ This test plan provides comprehensive verification criteria for <strong>Fluent T
       <td><code>TC-AUTH-04</code></td>
       <td>PIN Brute-Force Lockout</td>
       <td>Submit 5 consecutive incorrect PIN attempts.</td>
-      <td>60-second lockout engaged; UI displays countdown timer and blocks input until expiry.</td>
+      <td>15-minute lockout engaged; UI displays remaining time and blocks PIN input until expiry.</td>
       <td><span class="badge badge-high">High</span></td>
     </tr>
     <tr>
@@ -728,8 +730,9 @@ dotnet test --no-restore</code></pre>
 </html>
 """
 
-temp_html_path = os.path.abspath("temp_test_plan.html")
-output_pdf_path = os.path.abspath("docs/Fluent_Tindahan_Functional_Test_Plan.pdf")
+repo_root = Path(__file__).resolve().parent.parent
+temp_html_path = str(repo_root / "temp_test_plan.html")
+output_pdf_path = str(repo_root / "docs" / "Fluent_Tindahan_Functional_Test_Plan.pdf")
 
 with open(temp_html_path, "w", encoding="utf-8") as f:
     f.write(html_content)
@@ -741,11 +744,17 @@ cmd = [
     "--disable-gpu",
     "--run-all-compositor-stages-before-draw",
     f"--print-to-pdf={output_pdf_path}",
-    temp_html_path
+    Path(temp_html_path).as_uri()
 ]
 
 print("Rendering PDF with Microsoft Edge...")
-result = subprocess.run(cmd, capture_output=True, text=True)
+Path(output_pdf_path).unlink(missing_ok=True)
+with TemporaryDirectory(prefix="fluent-tindahan-pdf-") as edge_profile:
+    result = subprocess.run([cmd[0], f"--user-data-dir={edge_profile}", *cmd[1:]], capture_output=True, text=True)
+if not Path(output_pdf_path).exists():
+    print("Edge did not produce a PDF; retrying with Google Chrome...")
+    with TemporaryDirectory(prefix="fluent-tindahan-pdf-") as chrome_profile:
+        result = subprocess.run([r"C:\Program Files\Google\Chrome\Application\chrome.exe", f"--user-data-dir={chrome_profile}", *cmd[1:]], capture_output=True, text=True)
 print("Return code:", result.returncode)
 if os.path.exists(output_pdf_path):
     print("PDF generated successfully! Size:", os.path.getsize(output_pdf_path), "bytes")
