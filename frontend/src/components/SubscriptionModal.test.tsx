@@ -21,7 +21,8 @@ describe('SubscriptionModal', () => {
     useAuthStore.setState({
       tenantId: DEFAULT_TENANT_ID,
       tier: 'Libre',
-      subscriptionEndDate: null
+      subscriptionEndDate: null,
+      isDemo: false
     });
     vi.spyOn(apiClient, 'put').mockResolvedValue({
       data: { tenantId: DEFAULT_TENANT_ID }
@@ -102,6 +103,19 @@ describe('SubscriptionModal', () => {
     expect(screen.getByRole('button', { name: /Subukan muli|Retry/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Mag-upgrade sa Pro|Upgrade to Pro/i })).toBeEnabled();
     expect(screen.queryByText(/Request failed with status code 500/i)).not.toBeInTheDocument();
+  });
+
+  it('hides subscription errors in demo mode', () => {
+    useLanguageStore.setState({ language: 'en' });
+    useAuthStore.setState({ isDemo: true });
+    useSubscriptionStore.setState({
+      isUpgradeModalOpen: true,
+      error: translations.en.common.sessionReauthRequired
+    });
+    renderModal();
+
+    expect(screen.getByText('Libre')).toBeInTheDocument();
+    expect(screen.queryByText(translations.en.common.sessionReauthRequired)).not.toBeInTheDocument();
   });
 
   it('closes modal when close button is clicked', () => {
