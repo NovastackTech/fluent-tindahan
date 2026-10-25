@@ -43,6 +43,7 @@ import { GoogleAuthButton } from '../components/GoogleAuthButton';
 import { forgotPassword, resetPassword } from '../services/authService';
 import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
 import { evaluatePasswordStrength } from '../utils/passwordStrength';
+import { useSubscriptionStore } from '../state/subscriptionStore';
 
 export interface LoginPageProps {
   onNavigate: (tab: NavTab) => void;
@@ -460,6 +461,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
         userId: '22222222-2222-2222-2222-222222222222',
         hasPin: false,
         isDemo: true
+      });
+      useSubscriptionStore.setState({
+        tier: 'NegosyoPlus',
+        subscriptionEndDate: null,
+        isActive: true
       });
       resetSyncStore();
       await updateQueueCounts();

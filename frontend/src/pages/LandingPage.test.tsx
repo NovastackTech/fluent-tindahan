@@ -8,6 +8,7 @@ import { useLanguageStore } from '../state/languageStore';
 import { translations } from '../i18n/translations';
 import * as authService from '../services/authService';
 import * as seedData from '../db/seedData';
+import { useSubscriptionStore } from '../state/subscriptionStore';
 
 vi.mock('../services/authService', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/authService')>();
@@ -97,6 +98,7 @@ describe('LandingPage Component', () => {
       userId: 'default-user',
       hasPin: false
     });
+    useSubscriptionStore.setState({ tier: 'Libre', isActive: false });
   });
 
   it('renders hero title, badges, and primary sections', () => {
@@ -152,6 +154,8 @@ describe('LandingPage Component', () => {
     await waitFor(() => {
       expect(seedData.seedDexieDatabaseIfNeeded).toHaveBeenCalled();
       expect(useAuthStore.getState().isOnboarded).toBe(true);
+      expect(useAuthStore.getState().tier).toBe('NegosyoPlus');
+      expect(useSubscriptionStore.getState().tier).toBe('NegosyoPlus');
       expect(onNavigate).toHaveBeenCalledWith('pos');
     });
   });

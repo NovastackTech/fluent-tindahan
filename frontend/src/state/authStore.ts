@@ -147,7 +147,6 @@ export const STORAGE_KEY_DLQ_ARCHIVE = 'tindahan_dlq_archive';
 
 const initialConsent = localStorage.getItem(STORAGE_KEY_CONSENT) === 'true';
 const initialTermsVersion = localStorage.getItem(STORAGE_KEY_TERMS_VERSION);
-const initialTier = (localStorage.getItem(STORAGE_KEY_TIER) as PlanTier) || 'Libre';
 const initialSubsEnd = localStorage.getItem(STORAGE_KEY_SUBS_END);
 const initialTenantId = localStorage.getItem(STORAGE_KEY_TENANT_ID) || DEFAULT_TENANT_ID;
 const initialUserId = localStorage.getItem(STORAGE_KEY_USER_ID) || DEFAULT_USER_ID;
@@ -168,6 +167,9 @@ const initialRefreshToken = localStorage.getItem(STORAGE_KEY_REFRESH_TOKEN);
 const initialReauthRequired = localStorage.getItem(STORAGE_KEY_REAUTH_REQUIRED) === 'true';
 const initialIsDemo = localStorage.getItem(STORAGE_KEY_IS_DEMO) === 'true'
   || initialUserEmail === 'demo@fluent-tindahan.ph';
+const initialTier = initialIsDemo
+  ? 'NegosyoPlus'
+  : (localStorage.getItem(STORAGE_KEY_TIER) as PlanTier) || 'Libre';
 const hasSavedStoreProfile = Boolean(
   localStorage.getItem(STORAGE_KEY_STORE_NAME)
   || localStorage.getItem(STORAGE_KEY_OWNER_NAME)
@@ -506,6 +508,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const userPhone = (payload.userPhone || '').trim();
     const userEmail = (payload.userEmail || '').trim();
     const hasPin = Boolean(payload.hasPin);
+    const isDemo = Boolean(payload.isDemo || userEmail === 'demo@fluent-tindahan.ph');
 
     localStorage.setItem(STORAGE_KEY_TENANT_ID, tenantId);
     localStorage.setItem(STORAGE_KEY_USER_ID, userId);
@@ -527,12 +530,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       localStorage.setItem(STORAGE_KEY_LOCAL_TENANT_ID, tenantId);
       localStorage.removeItem(STORAGE_KEY_CONFIRMED_TENANT_ID);
       localStorage.removeItem(STORAGE_KEY_CONFIRMED_USER_ID);
-      localStorage.setItem(STORAGE_KEY_TIER, 'Libre');
+      localStorage.setItem(STORAGE_KEY_TIER, isDemo ? 'NegosyoPlus' : 'Libre');
       localStorage.removeItem(STORAGE_KEY_SUBS_END);
       localStorage.removeItem(getSyncStorageKey(tenantId));
+    } else if (isDemo) {
+      localStorage.setItem(STORAGE_KEY_TIER, 'NegosyoPlus');
+      localStorage.removeItem(STORAGE_KEY_SUBS_END);
     }
 
-    const isDemo = Boolean(payload.isDemo || userEmail === 'demo@fluent-tindahan.ph');
     if (isDemo) {
       localStorage.setItem(STORAGE_KEY_IS_DEMO, 'true');
     } else {
@@ -554,7 +559,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       ownerName,
       userPhone,
       firebaseToken: payload.token || get().firebaseToken,
-      ...(startsNewTenant ? { tier: 'Libre', subscriptionEndDate: null } : {}),
+      ...(isDemo
+        ? { tier: 'NegosyoPlus', subscriptionEndDate: null }
+        : startsNewTenant ? { tier: 'Libre', subscriptionEndDate: null } : {}),
       isOnboarded: true,
       isOnboardingStatusReady: true,
       isOnboardingOpen: false

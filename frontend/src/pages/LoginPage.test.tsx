@@ -134,6 +134,7 @@ describe('LoginPage Component', () => {
       userId: 'default-user',
       hasPin: false
     });
+    useSubscriptionStore.setState({ tier: 'Libre', isActive: false });
   });
 
   it('renders minimal login header, badge, and tabs', () => {
@@ -405,6 +406,8 @@ describe('LoginPage Component', () => {
     await waitFor(() => {
       expect(seedData.seedDexieDatabaseIfNeeded).toHaveBeenCalled();
       expect(useAuthStore.getState().isOnboarded).toBe(true);
+      expect(useAuthStore.getState().tier).toBe('NegosyoPlus');
+      expect(useSubscriptionStore.getState().tier).toBe('NegosyoPlus');
       expect(onNavigate).toHaveBeenCalledWith('pos');
     });
   });

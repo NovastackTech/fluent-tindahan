@@ -515,9 +515,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
         isDemo: true
       });
       useSubscriptionStore.setState({
-        tier: 'Libre',
+        tier: 'NegosyoPlus',
         subscriptionEndDate: null,
-        isActive: false
+        isActive: true
       });
       resetSyncStore();
       await updateQueueCounts();

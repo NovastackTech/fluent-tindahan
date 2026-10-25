@@ -173,6 +173,17 @@ describe('authStore', () => {
     expect(localStorage.getItem('fluent_tindahan_subs_end_v1')).toBeNull();
   });
 
+  it('persists Negosyo Plus for demo onboarding', () => {
+    useAuthStore.getState().completeOnboarding({
+      businessName: "Aling Nena's Demo Tindahan",
+      userEmail: 'demo@fluent-tindahan.ph',
+      isDemo: true
+    });
+
+    expect(useAuthStore.getState().tier).toBe('NegosyoPlus');
+    expect(localStorage.getItem('fluent_tindahan_tier_v1')).toBe('NegosyoPlus');
+  });
+
   it('mints and persists a real owner ID when onboarding creates a tenant from the default identity', () => {
     useAuthStore.setState({ userId: DEFAULT_USER_ID });
 
