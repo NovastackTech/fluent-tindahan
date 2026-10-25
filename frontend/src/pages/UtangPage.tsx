@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   makeStyles,
   tokens,
@@ -171,23 +171,6 @@ export const UtangPage: React.FC = () => {
     if (!rawLedgerEntries) return [];
     return [...rawLedgerEntries].sort((a, b) => b.date.localeCompare(a.date));
   }, [rawLedgerEntries]);
-
-  // Flag mismatch between stored balance and local ledger entries without overwriting stored balance
-  useEffect(() => {
-    if (!selectedCustomer || ledgerEntries.length === 0) return;
-    const ledgerCentavos = ledgerEntries.reduce(
-      (sum, e) => sum + (e.type === 'Credit' ? 1 : -1) * Math.round(e.amount * 100),
-      0
-    );
-    const ledgerBal = Math.max(0, ledgerCentavos) / 100;
-    if (Math.abs((selectedCustomer.totalUtangBalance ?? 0) - ledgerBal) > 0.01) {
-      console.warn(
-        `[UtangPage] Mismatch detected for customer ${selectedCustomer.name} (${selectedCustomer.id}): ` +
-        `stored balance is ₱${selectedCustomer.totalUtangBalance}, but local ledger calculates ₱${ledgerBal}. ` +
-        `Not overwriting stored balance because local ledger may be partial or pending sync.`
-      );
-    }
-  }, [selectedCustomer, ledgerEntries]);
 
   const selectedCustomerBalance = selectedCustomer?.totalUtangBalance ?? 0;
 

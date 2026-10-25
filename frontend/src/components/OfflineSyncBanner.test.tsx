@@ -17,7 +17,7 @@ describe('OfflineSyncBanner', () => {
       deadLetterCount: 0,
       lastErrorMessage: null
     });
-    useAuthStore.setState({ reauthRequired: false, reauthRequested: false, isOnboarded: true });
+    useAuthStore.setState({ reauthRequired: false, reauthRequested: false, isOnboarded: true, isDemo: false });
   });
 
   const renderBanner = () => {
@@ -32,6 +32,14 @@ describe('OfflineSyncBanner', () => {
     useAuthStore.setState({ isOnboarded: false });
     useSyncStore.setState({ isOnline: true, deadLetterCount: 6, lastErrorMessage: 'Poison pill' });
     const { container } = renderBanner();
+    expect(container.firstChild).toBeEmptyDOMElement();
+  });
+
+  it('renders nothing in demo mode even when reauthentication is required', () => {
+    useAuthStore.setState({ isDemo: true, reauthRequired: true });
+    useSyncStore.setState({ lastErrorMessage: translations.en.common.sessionReauthRequired });
+    const { container } = renderBanner();
+
     expect(container.firstChild).toBeEmptyDOMElement();
   });
 
