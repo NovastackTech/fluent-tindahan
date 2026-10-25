@@ -1,5 +1,7 @@
 import subprocess
 import os
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 html_content = """<!DOCTYPE html>
 <html lang="en">
@@ -182,8 +184,8 @@ html_content = """<!DOCTYPE html>
     Philippine Sari-Sari Stores & GCash
   </div>
   <div class="meta-item">
-    <strong>QA Sign-Off Status</strong>
-    Verified & Approved
+    <strong>Document Status</strong>
+    Release Gate Specification
   </div>
 </div>
 
@@ -242,7 +244,7 @@ This test plan provides comprehensive verification criteria for <strong>Fluent T
       <td><code>TC-AUTH-04</code></td>
       <td>PIN Brute-Force Lockout</td>
       <td>Submit 5 consecutive incorrect PIN attempts.</td>
-      <td>60-second lockout engaged; UI displays countdown timer and blocks input until expiry.</td>
+      <td>15-minute lockout engaged; UI displays remaining time and blocks PIN input until expiry.</td>
       <td><span class="badge badge-high">High</span></td>
     </tr>
     <tr>
@@ -657,7 +659,7 @@ This test plan provides comprehensive verification criteria for <strong>Fluent T
 
 <h2>3. Test Automation & Execution Playbook</h2>
 
-<h3>Frontend Automated Suites (748 Tests across 66 Suites)</h3>
+<h3>Frontend Automated Suites (Vitest)</h3>
 <pre><code>cd frontend
 # Run complete Vitest suite
 npm test -- --run
@@ -669,66 +671,68 @@ npm test -- --coverage
 npm run lint
 npm run build</code></pre>
 
-<h3>Backend Automated Suites (404 Tests)</h3>
+<h3>Backend Automated Suites (xUnit)</h3>
 <pre><code>cd backend
 # Execute all xUnit tests
 dotnet test --no-restore</code></pre>
 
 <h2>4. QA Sign-Off & Release Gate Criteria</h2>
+<p>Production release readiness requires satisfying all mandatory quality gates prior to deployment:</p>
 <table>
   <thead>
     <tr>
-      <th style="width:35%">Verification Criterion</th>
-      <th style="width:35%">Measured Result</th>
-      <th style="width:30%">Sign-Off Status</th>
+      <th style="width:35%">Release Gate Criterion</th>
+      <th style="width:35%">Required Acceptance Threshold</th>
+      <th style="width:30%">Gate Level</th>
     </tr>
   </thead>
   <tbody>
     <tr>
       <td>Backend xUnit Unit & Domain Suites</td>
-      <td>404 Passed / 0 Failed</td>
-      <td><span class="badge badge-pass">PASSED (100%)</span></td>
+      <td>100% Pass Rate (0 failures / 0 regressions)</td>
+      <td><span class="badge badge-pass">Mandatory Gate</span></td>
     </tr>
     <tr>
       <td>Frontend Vitest Suites & State Stores</td>
-      <td>748 Passed / 0 Failed (66 Suites)</td>
-      <td><span class="badge badge-pass">PASSED (100%)</span></td>
+      <td>100% Pass Rate across all component & store specs</td>
+      <td><span class="badge badge-pass">Mandatory Gate</span></td>
     </tr>
     <tr>
       <td>TypeScript Compilation & Linter</td>
-      <td>0 Errors (tsc -b & oxlint)</td>
-      <td><span class="badge badge-pass">PASSED (100%)</span></td>
+      <td>0 Errors (<code>tsc -b</code> & <code>oxlint</code>)</td>
+      <td><span class="badge badge-pass">Mandatory Gate</span></td>
     </tr>
     <tr>
       <td>Production Vite Bundle Build</td>
-      <td>Built in 510ms with PWA precache</td>
-      <td><span class="badge badge-pass">PASSED (100%)</span></td>
+      <td>Clean asset build with complete PWA precache manifest</td>
+      <td><span class="badge badge-pass">Mandatory Gate</span></td>
     </tr>
     <tr>
-      <td>Compound Keyset Keyset Restore</td>
-      <td>Zero rows dropped at 1,000-page boundaries</td>
-      <td><span class="badge badge-pass">PASSED (100%)</span></td>
+      <td>Compound Keyset Restore</td>
+      <td>Zero dropped transactions across pagination boundaries</td>
+      <td><span class="badge badge-pass">Mandatory Gate</span></td>
     </tr>
     <tr>
       <td>Multi-Tab Service Worker Protection</td>
-      <td>Reload deferred while cart active</td>
-      <td><span class="badge badge-pass">PASSED (100%)</span></td>
+      <td>Active cart or in-progress sale blocks SW reload</td>
+      <td><span class="badge badge-pass">Mandatory Gate</span></td>
     </tr>
   </tbody>
 </table>
 
 <div style="margin-top: 20px; border-top: 1px solid #ccc; padding-top: 10px; display: flex; justify-content: space-between; font-size: 10px; color: #555;">
-  <div><strong>QA Test Lead:</strong> Antigravity Agentic QA Suite</div>
-  <div><strong>Verdict:</strong> <span style="color: #166534; font-weight: bold;">APPROVED FOR PRODUCTION</span></div>
-  <div><strong>Release Checksum:</strong> FT-POS-E2E-PASS-20261024</div>
+  <div><strong>Specification Scope:</strong> Functional QA & Reliability Engineering</div>
+  <div><strong>Gate Policy:</strong> 100% pass rate required for production release</div>
+  <div><strong>Document Version:</strong> 2.1.0</div>
 </div>
 
 </body>
 </html>
 """
 
-temp_html_path = os.path.abspath("temp_test_plan.html")
-output_pdf_path = os.path.abspath("docs/Fluent_Tindahan_Functional_Test_Plan.pdf")
+repo_root = Path(__file__).resolve().parent.parent
+temp_html_path = str(repo_root / "temp_test_plan.html")
+output_pdf_path = str(repo_root / "docs" / "Fluent_Tindahan_Functional_Test_Plan.pdf")
 
 with open(temp_html_path, "w", encoding="utf-8") as f:
     f.write(html_content)
@@ -740,11 +744,17 @@ cmd = [
     "--disable-gpu",
     "--run-all-compositor-stages-before-draw",
     f"--print-to-pdf={output_pdf_path}",
-    temp_html_path
+    Path(temp_html_path).as_uri()
 ]
 
 print("Rendering PDF with Microsoft Edge...")
-result = subprocess.run(cmd, capture_output=True, text=True)
+Path(output_pdf_path).unlink(missing_ok=True)
+with TemporaryDirectory(prefix="fluent-tindahan-pdf-") as edge_profile:
+    result = subprocess.run([cmd[0], f"--user-data-dir={edge_profile}", *cmd[1:]], capture_output=True, text=True)
+if not Path(output_pdf_path).exists():
+    print("Edge did not produce a PDF; retrying with Google Chrome...")
+    with TemporaryDirectory(prefix="fluent-tindahan-pdf-") as chrome_profile:
+        result = subprocess.run([r"C:\Program Files\Google\Chrome\Application\chrome.exe", f"--user-data-dir={chrome_profile}", *cmd[1:]], capture_output=True, text=True)
 print("Return code:", result.returncode)
 if os.path.exists(output_pdf_path):
     print("PDF generated successfully! Size:", os.path.getsize(output_pdf_path), "bytes")

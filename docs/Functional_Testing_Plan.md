@@ -74,7 +74,7 @@ This document establishes the comprehensive functional test strategy and test ca
 | **TC-AUTH-01** | First-time store owner registration | Clean browser profile, backend online | 1. Open app.<br>2. Fill store name, owner name, PH mobile number (`09XXXXXXXXX`), email, password.<br>3. Submit. | Account created, initial tenant provisioned with 30-day trial or Libre tier, JWT token + refresh token stored in `localStorage`, redirected to POS/Dashboard. | Critical |
 | **TC-AUTH-02** | Philippine mobile number normalization | Registration form open | 1. Enter `+63 917 123 4567`, `0917-123-4567`, and `9171234567`.<br>2. Submit. | All formats normalized to standard E.164 (`+639171234567`) or local `09171234567` representation without validation error. | High |
 | **TC-AUTH-03** | 4-Digit Quick PIN setup and lock screen | Logged in user | 1. Go to Settings > Security.<br>2. Set 4-digit PIN.<br>3. Lock till or idle.<br>4. Enter PIN. | Till unlocks instantly offline using PBKDF2/argon local hash verifier without remote roundtrip. | High |
-| **TC-AUTH-04** | PIN brute-force lockout protection | Store locked with PIN | 1. Enter invalid PIN 5 consecutive times. | System engages 60-second lockout timer with countdown message; further attempts blocked until timer expires. | High |
+| **TC-AUTH-04** | PIN brute-force lockout protection | Store locked with PIN | 1. Enter invalid PIN 5 consecutive times. | System engages 15-minute lockout with countdown message; further PIN attempts blocked until expiry (password login still available). | High |
 | **TC-AUTH-05** | RA 10173 Data Privacy consent modal | First app launch | 1. Load app.<br>2. Verify modal content.<br>3. Click "Agree". | Modal displays statutory notice under PH RA 10173; dismissing sets consent flag; dialog never reappears on subsequent launches. | Medium |
 | **TC-AUTH-06** | Tenant data isolation on logout / switch | Tenant A has local sales & utang | 1. Logout Tenant A.<br>2. Login as Tenant B. | Local Dexie tables for products, sales, customers, and utang are cleanly purged; Tenant A data never leaks into Tenant B session. | Critical |
 | **TC-AUTH-07** | Demo mode switch and sandbox isolation | Logged out or Settings | 1. Click "Explore Demo Store". | Demo dataset seeds into IndexedDB (`isDemo=true`); sync engine network pushes are suppressed; demo banner displayed. | Medium |
@@ -223,7 +223,7 @@ This document establishes the comprehensive functional test strategy and test ca
 # Navigate to frontend
 cd frontend
 
-# Execute full unit & integration test suite (748 tests / 66 suites)
+# Execute full unit & integration test suite
 npm test -- --run
 
 # Run code coverage report
@@ -241,7 +241,7 @@ npm run build
 # Navigate to backend
 cd backend
 
-# Execute all unit and domain rule tests (404 tests)
+# Execute all unit and domain rule tests
 dotnet test --no-restore
 ```
 
@@ -257,14 +257,14 @@ dotnet test --no-restore
 
 ## 7. QA Sign-Off & Release Gate Criteria
 
-A build is certified for staging or production deployment only when:
-- [x] **Zero Critical or High severity defects open**.
-- [x] **100% pass rate across all 404 backend xUnit tests**.
-- [x] **100% pass rate across all 748 frontend Vitest test specifications**.
-- [x] **Clean compilation (`tsc -b`) and zero linter warnings/errors (`oxlint`)**.
-- [x] **Offline checkout and background batch sync verified on real Android Chromium mobile browser**.
-- [x] **Compound `(Date, Id)` keyset pagination verified with $\ge 1,000$ transactions**.
-- [x] **Service Worker update protection verified across concurrent browser tabs**.
+A build candidate is certified for staging or production deployment only when:
+- **Zero Critical or High severity defects open**.
+- **100% pass rate across all backend xUnit test suites**.
+- **100% pass rate across all frontend Vitest test specifications**.
+- **Clean compilation (`tsc -b`) and zero linter warnings/errors (`oxlint`)**.
+- **Offline checkout and background batch sync verified on real Android Chromium mobile browser**.
+- **Compound `(Date, Id)` keyset pagination verified with $\ge 1,000$ transactions**.
+- **Service Worker update protection verified across concurrent browser tabs**.
 
 ---
 *Fluent Tindahan QA Team — Quality Assurance & Reliability Engineering*

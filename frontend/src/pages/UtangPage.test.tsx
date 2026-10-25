@@ -547,6 +547,7 @@ describe('UtangPage', () => {
   });
 
   it('preserves stored customer debt balance and does not overwrite it with incomplete local UtangLedger', async () => {
+    const warnMock = vi.spyOn(console, 'warn').mockImplementation(() => {});
     // Simulate customer having an opening/restored totalUtangBalance in db.customers (e.g. 200)
     // while UtangLedger currently only has a partial row of 100 (e.g. pending full sync or legacy opening debt).
     await db.customers.add({
@@ -587,6 +588,8 @@ describe('UtangPage', () => {
     // Verify Dexie db.customers was NOT overwritten to 100
     const stored = await db.customers.get('cust-mar100');
     expect(stored?.totalUtangBalance).toBe(200);
+    expect(warnMock).not.toHaveBeenCalled();
+    warnMock.mockRestore();
   });
 
   it('exposes correct accessible names for amount and notes in Add Utang dialog (issue #97)', async () => {
