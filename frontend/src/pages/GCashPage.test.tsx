@@ -599,8 +599,10 @@ describe('GCashPage', () => {
 
     const submitBtn = await screen.findByRole('button', { name: /I-save ang Transaksyon \(Cash-In\)|Save Transaction \(Cash-In\)/i });
     expect(submitBtn).toBeEnabled();
-    expect(screen.getByTestId('monthly-gcash-count')).toHaveTextContent('1/30');
-    expect(screen.getByTestId('today-cash-in-total')).toHaveTextContent('₱2,000.00');
+    await waitFor(() => {
+      expect(screen.getByTestId('monthly-gcash-count')).toHaveTextContent('1/30');
+      expect(screen.getByTestId('today-cash-in-total')).toHaveTextContent('₱2,000.00');
+    });
 
     fireEvent.click(submitBtn);
     expect(await screen.findByTestId('gcash-amount-error')).toHaveTextContent(/mas mataas sa ₱0|greater than ₱0/i);
@@ -634,11 +636,11 @@ describe('GCashPage', () => {
       expect(saved).toHaveLength(1);
       expect(saved[0]).toMatchObject({ type: 'CashIn', amount: 1500, fee: 30, customerPhone: '09170001111', notes: 'Padala ni Tatay' });
       expect(await db.syncQueue.count()).toBe(1);
+      expect(screen.getByText(/REF-LOCAL-IN/)).toBeInTheDocument();
+      expect(screen.getByText('Padala ni Tatay')).toBeInTheDocument();
+      expect(screen.getByTestId('today-cash-in-total')).toHaveTextContent('₱1,500.00');
+      expect(screen.getByTestId('today-gcash-fees-total')).toHaveTextContent('₱30.00');
     });
-    expect(screen.getByText(/REF-LOCAL-IN/)).toBeInTheDocument();
-    expect(screen.getByText('Padala ni Tatay')).toBeInTheDocument();
-    expect(screen.getByTestId('today-cash-in-total')).toHaveTextContent('₱1,500.00');
-    expect(screen.getByTestId('today-gcash-fees-total')).toHaveTextContent('₱30.00');
     expect(kickSync).toHaveBeenCalled();
 
     fireEvent.change(screen.getByRole('spinbutton', { name: /Halaga.*Amount|Amount/i }), { target: { value: '200' } });
@@ -646,8 +648,8 @@ describe('GCashPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /I-save ang Transaksyon \(Cash-In\)|Save Transaction \(Cash-In\)/i }));
     await waitFor(async () => {
       expect(await db.gcashTxns.where('refNo').equals('REF-LOCAL-IN-2').count()).toBe(1);
+      expect(screen.getByTestId('today-cash-in-total')).toHaveTextContent('₱1,700.00');
     });
-    expect(screen.getByTestId('today-cash-in-total')).toHaveTextContent('₱1,700.00');
   });
 
   it('records cash-out locally and clears the form while background sync never resolves', async () => {
@@ -674,10 +676,10 @@ describe('GCashPage', () => {
       const saved = await db.gcashTxns.where('type').equals('CashOut').toArray();
       expect(saved).toHaveLength(1);
       expect(saved[0]).toMatchObject({ amount: 800, fee: 20, refNo: 'REF-LOCAL-OUT', notes: 'Padala ni Nanay' });
+      expect(screen.getByText('Padala ni Nanay')).toBeInTheDocument();
+      expect(screen.getByTestId('today-cash-out-total')).toHaveTextContent('₱800.00');
+      expect(screen.getByTestId('today-gcash-fees-total')).toHaveTextContent('₱20.00');
     });
-    expect(screen.getByText('Padala ni Nanay')).toBeInTheDocument();
-    expect(screen.getByTestId('today-cash-out-total')).toHaveTextContent('₱800.00');
-    expect(screen.getByTestId('today-gcash-fees-total')).toHaveTextContent('₱20.00');
     expect(kickSync).toHaveBeenCalled();
   });
 
