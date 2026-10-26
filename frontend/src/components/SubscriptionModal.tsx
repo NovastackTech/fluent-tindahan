@@ -498,7 +498,7 @@ export const SubscriptionModal: React.FC = () => {
                     {renderActiveBadge('NegosyoPlus')}
                   </div>
                   <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-                    {isTagalog ? 'Para sa minimart o tindahan na may tauhan / tindera' : 'For minimarts & stores with staff helpers'}
+                    {isTagalog ? 'Para sa minimart o lumalaking tindahan' : 'For minimarts & high-volume stores'}
                   </Text>
 
                   <div className={styles.priceSection}>
@@ -517,19 +517,7 @@ export const SubscriptionModal: React.FC = () => {
                     </li>
                     <li className={styles.featureItem}>
                       <CheckmarkRegular className={styles.checkIcon} />
-                      <Text weight="semibold">{isTagalog ? 'Hanggang 5 Staff / Tindera accounts' : 'Up to 5 Staff accounts'}</Text>
-                    </li>
-                    <li className={styles.featureItem}>
-                      <CheckmarkRegular className={styles.checkIcon} />
-                      <span>{isTagalog ? 'Staff Role Permissions (Tago ang tubo)' : 'Staff RBAC (Hides profit metrics)'}</span>
-                    </li>
-                    <li className={styles.featureItem}>
-                      <CheckmarkRegular className={styles.checkIcon} />
-                      <span>{isTagalog ? 'Hanggang 4 sabay na devices' : 'Up to 4 synced devices'}</span>
-                    </li>
-                    <li className={styles.featureItem}>
-                      <CheckmarkRegular className={styles.checkIcon} />
-                      <span>{isTagalog ? 'Audit Trail (Sino ang nag-benta)' : 'Audit trail & shift activity logs'}</span>
+                      <Text weight="semibold">{isTagalog ? 'Hanggang 4 sabay na devices' : 'Up to 4 synced devices'}</Text>
                     </li>
                     <li className={styles.featureItem}>
                       <CheckmarkRegular className={styles.checkIcon} />
