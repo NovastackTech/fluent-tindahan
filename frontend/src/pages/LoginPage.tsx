@@ -413,6 +413,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
       useAuthStore.getState().setReauthRequired(false);
       setLoginEmailVal(forgotEmail.trim());
       setLoginPasswordVal('');
+      setOtpInfoMsg('');
       setForgotSuccessBanner(t.login.resetPasswordSuccessBanner);
       setIsForgotPassword(false);
       setForgotStep('email');
