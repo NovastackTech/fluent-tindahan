@@ -3027,6 +3027,115 @@ public class BillingTests
     }
 
     [Fact]
+    public async Task ApplySubscriptionPaymentCommandHandler_WithNullPurpose_UpgradesTenant()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new ApplySubscriptionPaymentCommandHandler(
+            context,
+            NullLogger<ApplySubscriptionPaymentCommandHandler>.Instance);
+
+        var result = await handler.Handle(new ApplySubscriptionPaymentCommand(
+            _testTenantId, PlanTier.TindahanPro, BillingCycle.Monthly, 12900L, "pay_legacy_no_purpose_001", "QRPh",
+            "PHP", DateTimeOffset.UtcNow, null), CancellationToken.None);
+
+        result.Outcome.Should().Be(PaymentWebhookOutcome.Processed);
+        var tenant = await context.Tenants.IgnoreQueryFilters().FirstAsync(t => t.Id == _testTenantId);
+        tenant.Tier.Should().Be(PlanTier.TindahanPro);
+    }
+
+    [Fact]
+    public async Task ApplySubscriptionPaymentCommandHandler_WithNonSubscriptionPurpose_Rejects()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new ApplySubscriptionPaymentCommandHandler(
+            context,
+            NullLogger<ApplySubscriptionPaymentCommandHandler>.Instance);
+
+        var result = await handler.Handle(new ApplySubscriptionPaymentCommand(
+            _testTenantId, PlanTier.TindahanPro, BillingCycle.Monthly, 12900L, "pay_order_purpose_001", "QRPh",
+            "PHP", DateTimeOffset.UtcNow, "order"), CancellationToken.None);
+
+        result.Outcome.Should().Be(PaymentWebhookOutcome.Rejected);
+        result.Message.Should().Contain("not for a subscription");
+    }
+
+    [Fact]
+    public void TryParsePaidCheckoutEvent_WithoutPurposeMetadata_AcceptsAsSubscription()
+    {
+        var tenantId = Guid.NewGuid();
+        var json = $$"""
+        {
+            "data": {
+                "attributes": {
+                    "type": "payment.paid",
+                    "data": {
+                        "id": "pay_qrph_no_purpose",
+                        "attributes": {
+                            "status": "paid",
+                            "amount": 12900,
+                            "currency": "PHP",
+                            "paid_at": 1761523200,
+                            "source": { "type": "qrph" },
+                            "metadata": {
+                                "tenant_id": "{{tenantId}}",
+                                "target_tier": "TindahanPro",
+                                "cycle": "Monthly"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        """;
+
+        var parsed = ProcessPaymentWebhookCommandHandler.TryParsePaidCheckoutEvent(
+            json, out var eventType, out var payment, out var error);
+
+        parsed.Should().BeTrue(error);
+        eventType.Should().Be("payment.paid");
+        payment.Should().NotBeNull();
+        payment!.PaymentId.Should().Be("pay_qrph_no_purpose");
+        payment.Purpose.Should().Be("subscription");
+    }
+
+    [Fact]
+    public void TryParsePaidCheckoutEvent_WithExplicitNonSubscriptionPurpose_Rejects()
+    {
+        var tenantId = Guid.NewGuid();
+        var json = $$"""
+        {
+            "data": {
+                "attributes": {
+                    "type": "payment.paid",
+                    "data": {
+                        "id": "pay_qrph_wrong_purpose",
+                        "attributes": {
+                            "status": "paid",
+                            "amount": 12900,
+                            "currency": "PHP",
+                            "paid_at": 1761523200,
+                            "source": { "type": "qrph" },
+                            "metadata": {
+                                "tenant_id": "{{tenantId}}",
+                                "target_tier": "TindahanPro",
+                                "cycle": "Monthly",
+                                "purpose": "pos_order"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        """;
+
+        var parsed = ProcessPaymentWebhookCommandHandler.TryParsePaidCheckoutEvent(
+            json, out _, out _, out var error);
+
+        parsed.Should().BeFalse();
+        error.Should().Be("Payment is not for a subscription.");
+    }
+
+    [Fact]
     public void BillingController_AuthenticationAttributes_AreConfigured()
     {
         var controllerType = typeof(BillingController);

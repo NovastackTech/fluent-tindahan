@@ -27,6 +27,7 @@ public class BillingController : ControllerBase
     private readonly IHostEnvironment _environment;
     private readonly ILogger<BillingController> _logger;
     private readonly IApplicationDbContext? _dbContext;
+    private readonly IConfiguration? _configuration;
 
     [ActivatorUtilitiesConstructor]
     public BillingController(
@@ -35,7 +36,8 @@ public class BillingController : ControllerBase
         IPaymentGatewayService gatewayService,
         IHostEnvironment environment,
         ILogger<BillingController> logger,
-        IApplicationDbContext? dbContext = null)
+        IApplicationDbContext? dbContext = null,
+        IConfiguration? configuration = null)
     {
         _mediator = mediator;
         _currentUserService = currentUserService;
@@ -43,6 +45,7 @@ public class BillingController : ControllerBase
         _environment = environment;
         _logger = logger;
         _dbContext = dbContext;
+        _configuration = configuration;
     }
 
     public BillingController(
@@ -50,8 +53,15 @@ public class BillingController : ControllerBase
         ICurrentUserService currentUserService,
         IHostEnvironment environment,
         ILogger<BillingController> logger)
-        : this(mediator, currentUserService, null!, environment, logger, null)
+        : this(mediator, currentUserService, null!, environment, logger, null, null)
     {
+    }
+
+    private bool IsLibreUpgradeAllowed()
+    {
+        var config = _configuration ?? HttpContext?.RequestServices.GetService<IConfiguration>();
+        if (config == null) return false;
+        return string.Equals(config["Billing:AllowLibreUpgrade"], "true", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -200,8 +210,9 @@ public class BillingController : ControllerBase
                 Enum.TryParse<BillingCycle>(rawCycle, ignoreCase: true, out var parsedCycle) &&
                 TierPricing.TryGetPriceCentavos(parsedTier, parsedCycle, out var expectedPriceCentavos) &&
                 result.AmountCentavos == expectedPriceCentavos &&
-                result.Metadata.TryGetValue("purpose", out var purpose) &&
-                string.Equals(purpose, "subscription", StringComparison.OrdinalIgnoreCase) &&
+                (!result.Metadata.TryGetValue("purpose", out var purpose) ||
+                 string.IsNullOrWhiteSpace(purpose) ||
+                 string.Equals(purpose, "subscription", StringComparison.OrdinalIgnoreCase)) &&
                 string.Equals(result.Currency, "PHP", StringComparison.OrdinalIgnoreCase) &&
                 !string.IsNullOrWhiteSpace(result.PaymentId) &&
                 result.PaidAt.HasValue)
@@ -215,7 +226,7 @@ public class BillingController : ControllerBase
                     "QRPh",
                     result.Currency!,
                     result.PaidAt,
-                    purpose
+                    purpose ?? "subscription"
                 ), cancellationToken);
             }
 
@@ -292,7 +303,9 @@ public class BillingController : ControllerBase
                 return BadRequest(new { message = "Payment intent billing cycle does not match requested cycle." });
             }
 
-            if (!statusResult.Metadata.TryGetValue("purpose", out var purpose) ||
+            string? purpose = null;
+            if (statusResult.Metadata.TryGetValue("purpose", out purpose) &&
+                !string.IsNullOrWhiteSpace(purpose) &&
                 !string.Equals(purpose, "subscription", StringComparison.OrdinalIgnoreCase))
             {
                 return BadRequest(new { message = "Payment intent is not for a subscription." });
@@ -324,7 +337,7 @@ public class BillingController : ControllerBase
                 "QRPh",
                 statusResult.Currency!,
                 statusResult.PaidAt,
-                purpose
+                purpose ?? "subscription"
             ), cancellationToken);
 
             if (!outcome.Success)

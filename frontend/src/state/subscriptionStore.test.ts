@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   getPendingBillingReference,
   setPendingBillingReference,
+  clearPendingBillingReference,
+  LEGACY_STORAGE_KEY_CHECKOUT_SESSION,
   scheduleExpiry,
   useSubscriptionStore,
   getTierLimits,
@@ -483,6 +485,25 @@ describe('subscriptionStore', () => {
 
       const confirmedAfterExpired = await useSubscriptionStore.getState().confirmCheckoutSession();
       expect(confirmedAfterExpired).toBe(false);
+      expect(getPendingBillingReference()).toBeNull();
+    });
+
+    it('migrates legacy checkout session storage key to tenant-scoped reference', () => {
+      localStorage.setItem(LEGACY_STORAGE_KEY_CHECKOUT_SESSION, 'cs_legacy_checkout_123');
+
+      const migrated = getPendingBillingReference();
+      expect(migrated).toBe('cs_legacy_checkout_123');
+      expect(localStorage.getItem(LEGACY_STORAGE_KEY_CHECKOUT_SESSION)).toBeNull();
+
+      // Subsequent access reads from the new tenant-scoped structure
+      expect(getPendingBillingReference()).toBe('cs_legacy_checkout_123');
+    });
+
+    it('clears legacy checkout session key when clearPendingBillingReference is called', () => {
+      localStorage.setItem(LEGACY_STORAGE_KEY_CHECKOUT_SESSION, 'cs_legacy_to_clear');
+      clearPendingBillingReference('cs_legacy_to_clear');
+
+      expect(localStorage.getItem(LEGACY_STORAGE_KEY_CHECKOUT_SESSION)).toBeNull();
       expect(getPendingBillingReference()).toBeNull();
     });
   });

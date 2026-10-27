@@ -13,6 +13,7 @@ import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
 
 export type BillingCycle = 'Monthly';
 export const SUBSCRIPTION_REFRESH_ERROR = 'SUBSCRIPTION_REFRESH_ERROR';
+export const LEGACY_STORAGE_KEY_CHECKOUT_SESSION = 'fluent_last_checkout_session_id';
 const PENDING_BILLING_REFERENCE_KEY = 'fluent_pending_billing_reference';
 
 interface PendingBillingReference {
@@ -32,9 +33,20 @@ export const getPendingBillingReference = (): string | null => {
   if (typeof window === 'undefined') return null;
   try {
     const raw = localStorage.getItem(PENDING_BILLING_REFERENCE_KEY);
-    if (!raw) return null;
-    const pending = JSON.parse(raw) as PendingBillingReference;
-    return pending.tenantId === useAuthStore.getState().tenantId ? pending.id : null;
+    const tenantId = useAuthStore.getState().tenantId;
+    if (raw) {
+      const pending = JSON.parse(raw) as PendingBillingReference;
+      if (pending.tenantId === tenantId) {
+        return pending.id;
+      }
+    }
+    const legacySessionId = localStorage.getItem(LEGACY_STORAGE_KEY_CHECKOUT_SESSION);
+    if (legacySessionId && tenantId) {
+      setPendingBillingReference(legacySessionId);
+      localStorage.removeItem(LEGACY_STORAGE_KEY_CHECKOUT_SESSION);
+      return legacySessionId;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -64,6 +76,7 @@ export const clearPendingBillingReference = (expectedId?: string): void => {
   if (typeof window === 'undefined') return;
   if (!expectedId || getPendingBillingReference() === expectedId) {
     localStorage.removeItem(PENDING_BILLING_REFERENCE_KEY);
+    localStorage.removeItem(LEGACY_STORAGE_KEY_CHECKOUT_SESSION);
   }
 };
 

@@ -198,7 +198,8 @@ public class ApplySubscriptionPaymentCommandHandler : IRequestHandler<ApplySubsc
             return Rejected("Unsupported payment currency.", request.TenantId);
         }
 
-        if (!string.Equals(request.Purpose, "subscription", StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrWhiteSpace(request.Purpose) &&
+            !string.Equals(request.Purpose, "subscription", StringComparison.OrdinalIgnoreCase))
         {
             return Rejected("Payment is not for a subscription.", request.TenantId);
         }
@@ -499,7 +500,7 @@ public class ConfirmCheckoutSessionCommandHandler : IRequestHandler<ConfirmCheck
                 var purpose = intentStatus.Metadata.TryGetValue("purpose", out var p) ? p : null;
                 if (!TierPricing.TryGetPriceCentavos(intentTier, intentCycle, out var expectedQrCentavos) ||
                     intentStatus.AmountCentavos != expectedQrCentavos ||
-                    !string.Equals(purpose, "subscription", StringComparison.OrdinalIgnoreCase) ||
+                    (!string.IsNullOrWhiteSpace(purpose) && !string.Equals(purpose, "subscription", StringComparison.OrdinalIgnoreCase)) ||
                     !string.Equals(intentStatus.Currency, "PHP", StringComparison.OrdinalIgnoreCase) ||
                     string.IsNullOrWhiteSpace(intentStatus.PaymentId) ||
                     !intentStatus.PaidAt.HasValue)
@@ -521,7 +522,7 @@ public class ConfirmCheckoutSessionCommandHandler : IRequestHandler<ConfirmCheck
                     "QRPh",
                     intentStatus.Currency!,
                     intentStatus.PaidAt,
-                    purpose!
+                    purpose ?? "subscription"
                 ), cancellationToken);
                 _logger.LogInformation("ConfirmCheckoutSession: QR Ph payment applied with outcome {Outcome} for tenant {TenantId}.", qrOutcome.Outcome, request.TenantId);
                 var qrSubscription = await _sender.Send(new GetTenantSubscriptionQuery(), cancellationToken);
@@ -561,7 +562,7 @@ public class ConfirmCheckoutSessionCommandHandler : IRequestHandler<ConfirmCheck
             if (!TierPricing.TryGetPriceCentavos(sessionDetails.Tier, sessionDetails.Cycle, out var expectedCentavos) ||
                 sessionDetails.AmountCentavos != expectedCentavos ||
                 !string.Equals(sessionDetails.Currency, "PHP", StringComparison.OrdinalIgnoreCase) ||
-                !string.Equals(sessionDetails.Purpose, "subscription", StringComparison.OrdinalIgnoreCase) ||
+                (!string.IsNullOrWhiteSpace(sessionDetails.Purpose) && !string.Equals(sessionDetails.Purpose, "subscription", StringComparison.OrdinalIgnoreCase)) ||
                 string.IsNullOrWhiteSpace(sessionDetails.PaymentId) ||
                 !sessionDetails.PaidAt.HasValue)
             {
@@ -584,7 +585,7 @@ public class ConfirmCheckoutSessionCommandHandler : IRequestHandler<ConfirmCheck
                 sessionDetails.PaymentMethod,
                 sessionDetails.Currency!,
                 sessionDetails.PaidAt,
-                sessionDetails.Purpose!
+                sessionDetails.Purpose ?? "subscription"
             );
 
             var result = await _sender.Send(applyCommand, cancellationToken);
@@ -650,8 +651,9 @@ public class ProcessPaymentWebhookCommandHandler : IRequestHandler<ProcessPaymen
                                 metadata.TryGetValue("tenant_id", out var rawTenantId) &&
                                 Guid.TryParse(rawTenantId, out tenantId) &&
                                 tenantId != Guid.Empty;
-                var hasPurpose = metadata != null &&
-                                 metadata.TryGetValue("purpose", out purpose) &&
+                var hasPurpose = metadata == null ||
+                                 !metadata.TryGetValue("purpose", out purpose) ||
+                                 string.IsNullOrWhiteSpace(purpose) ||
                                  string.Equals(purpose, "subscription", StringComparison.OrdinalIgnoreCase);
                 var hasPlan = metadata != null &&
                               (metadata.TryGetValue("target_tier", out var rawTier) || metadata.TryGetValue("tier", out rawTier)) &&
@@ -671,7 +673,7 @@ public class ProcessPaymentWebhookCommandHandler : IRequestHandler<ProcessPaymen
                 {
                     payment = new ApplySubscriptionPaymentCommand(
                         tenantId, PlanTier.TindahanPro, BillingCycle.Monthly, resolvedAmount,
-                        resolvedPaymentId!, resolvedMethod!, resolvedCurrency!, resolvedPaidAt, purpose!);
+                        resolvedPaymentId!, resolvedMethod!, resolvedCurrency!, resolvedPaidAt, purpose ?? "subscription");
                     return await _sender.Send(payment, cancellationToken);
                 }
             }
@@ -682,7 +684,7 @@ public class ProcessPaymentWebhookCommandHandler : IRequestHandler<ProcessPaymen
                     sessionDetails.TenantId != Guid.Empty &&
                     sessionDetails.Tier == PlanTier.TindahanPro &&
                     sessionDetails.Cycle == BillingCycle.Monthly &&
-                    string.Equals(sessionDetails.Purpose, "subscription", StringComparison.OrdinalIgnoreCase) &&
+                    (string.IsNullOrWhiteSpace(sessionDetails.Purpose) || string.Equals(sessionDetails.Purpose, "subscription", StringComparison.OrdinalIgnoreCase)) &&
                     sessionDetails.AmountCentavos == TierPricing.GetPriceCentavos(PlanTier.TindahanPro, BillingCycle.Monthly) &&
                     string.Equals(sessionDetails.Currency, "PHP", StringComparison.OrdinalIgnoreCase) &&
                     !string.IsNullOrWhiteSpace(sessionDetails.PaymentId) &&
@@ -697,7 +699,7 @@ public class ProcessPaymentWebhookCommandHandler : IRequestHandler<ProcessPaymen
                         sessionDetails.PaymentMethod,
                         sessionDetails.Currency!,
                         sessionDetails.PaidAt,
-                        sessionDetails.Purpose!), cancellationToken);
+                        sessionDetails.Purpose ?? "subscription"), cancellationToken);
                 }
             }
 
@@ -860,9 +862,9 @@ public class ProcessPaymentWebhookCommandHandler : IRequestHandler<ProcessPaymen
             }
 
             var purpose = TryGetString(metadata, "purpose");
-            if (!string.Equals(purpose, "subscription", StringComparison.OrdinalIgnoreCase))
+            if (!string.IsNullOrWhiteSpace(purpose) && !string.Equals(purpose, "subscription", StringComparison.OrdinalIgnoreCase))
             {
-                error = "Missing or invalid payment purpose.";
+                error = "Payment is not for a subscription.";
                 return false;
             }
 
@@ -906,7 +908,7 @@ public class ProcessPaymentWebhookCommandHandler : IRequestHandler<ProcessPaymen
 
                 payment = new ApplySubscriptionPaymentCommand(
                     tenantId, tier, cycle, directAmountCentavos, directPaymentId, directMethod,
-                    directCurrency!, directPaidAt, purpose!);
+                    directCurrency!, directPaidAt, purpose ?? "subscription");
                 error = string.Empty;
                 return true;
             }
@@ -975,7 +977,7 @@ public class ProcessPaymentWebhookCommandHandler : IRequestHandler<ProcessPaymen
 
             payment = new ApplySubscriptionPaymentCommand(
                 tenantId, tier, cycle, amountCentavos, paidPaymentId, method,
-                currency!, paidAt, purpose!);
+                currency!, paidAt, purpose ?? "subscription");
             error = string.Empty;
             return true;
         }
