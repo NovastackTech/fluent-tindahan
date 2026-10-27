@@ -147,7 +147,9 @@ export const STORAGE_KEY_DLQ_ARCHIVE = 'tindahan_dlq_archive';
 
 const initialConsent = localStorage.getItem(STORAGE_KEY_CONSENT) === 'true';
 const initialTermsVersion = localStorage.getItem(STORAGE_KEY_TERMS_VERSION);
-const initialTier = (localStorage.getItem(STORAGE_KEY_TIER) as PlanTier) || 'Libre';
+const getEffectiveStoredTier = (tier: PlanTier, endDate?: string | null): PlanTier =>
+  tier !== 'Libre' && endDate && Date.parse(endDate) <= Date.now() ? 'Libre' : tier;
+const initialTier = getEffectiveStoredTier((localStorage.getItem(STORAGE_KEY_TIER) as PlanTier) || 'Libre', localStorage.getItem(STORAGE_KEY_SUBS_END));
 const initialSubsEnd = localStorage.getItem(STORAGE_KEY_SUBS_END);
 const initialTenantId = localStorage.getItem(STORAGE_KEY_TENANT_ID) || DEFAULT_TENANT_ID;
 const initialUserId = localStorage.getItem(STORAGE_KEY_USER_ID) || DEFAULT_USER_ID;
@@ -404,6 +406,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   setRole: (role: 'Owner' | 'Staff') => set({ role }),
 
   setSubscription: (tier: PlanTier, subscriptionEndDate?: string | null) => {
+    tier = getEffectiveStoredTier(tier, subscriptionEndDate);
     localStorage.setItem(STORAGE_KEY_TIER, tier);
     if (subscriptionEndDate) {
       localStorage.setItem(STORAGE_KEY_SUBS_END, subscriptionEndDate);
@@ -669,7 +672,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       localStorage.setItem(STORAGE_KEY_REFRESH_TOKEN, payload.refreshToken);
     }
     localStorage.removeItem(STORAGE_KEY_REAUTH_REQUIRED);
-    localStorage.setItem(STORAGE_KEY_TIER, payload.tier);
+    const effectiveLoginTier = getEffectiveStoredTier(payload.tier, payload.subscriptionEndDate);
+    localStorage.setItem(STORAGE_KEY_TIER, effectiveLoginTier);
     if (payload.subscriptionEndDate) {
       localStorage.setItem(STORAGE_KEY_SUBS_END, payload.subscriptionEndDate);
     } else {
@@ -696,7 +700,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       ownerName: payload.ownerName || '',
       userPhone: payload.phone || '',
       role: payload.role,
-      tier: payload.tier,
+      tier: effectiveLoginTier,
       subscriptionEndDate: payload.subscriptionEndDate,
       firebaseToken: payload.token,
       refreshToken: payload.refreshToken ?? get().refreshToken,

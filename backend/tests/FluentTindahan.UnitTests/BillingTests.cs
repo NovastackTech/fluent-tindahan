@@ -60,10 +60,7 @@ public class BillingTests
     }
 
     [Theory]
-    [InlineData(PlanTier.TindahanPro, BillingCycle.Weekly, 35.00)]
     [InlineData(PlanTier.TindahanPro, BillingCycle.Monthly, 129.00)]
-    [InlineData(PlanTier.NegosyoPlus, BillingCycle.Weekly, 89.00)]
-    [InlineData(PlanTier.NegosyoPlus, BillingCycle.Monthly, 349.00)]
     public void PayMongoPaymentGatewayService_GetTierPrice_ShouldReturnAccuratePrice(PlanTier tier, BillingCycle cycle, decimal expectedPrice)
     {
         var price = PayMongoPaymentGatewayService.GetTierPrice(tier, cycle);
@@ -135,7 +132,8 @@ public class BillingTests
             Cycle: BillingCycle.Monthly,
             AmountCentavos: 12900L,
             PaymentId: "pay_test_001",
-            PaymentMethod: "gcash");
+            PaymentMethod: "gcash",
+            PaidAt: DateTimeOffset.UtcNow);
 
         var result = await handler.Handle(command, CancellationToken.None);
 
@@ -152,6 +150,30 @@ public class BillingTests
         payments[0].AmountCentavos.Should().Be(12900L);
         payments[0].TierPurchased.Should().Be(PlanTier.TindahanPro);
         payments[0].GatewayReferenceId.Should().Be("pay_test_001");
+    }
+
+    [Fact]
+    public async Task ApplySubscriptionPaymentCommandHandler_UnknownTenant_ShouldRejectBeforeRecordingPayment()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new ApplySubscriptionPaymentCommandHandler(
+            context,
+            NullLogger<ApplySubscriptionPaymentCommandHandler>.Instance);
+
+        var result = await handler.Handle(new ApplySubscriptionPaymentCommand(
+            Guid.NewGuid(),
+            PlanTier.TindahanPro,
+            BillingCycle.Monthly,
+            12900L,
+            "pay_unknown_tenant",
+            "qrph",
+            PaidAt: DateTimeOffset.UtcNow), CancellationToken.None);
+
+        result.Outcome.Should().Be(PaymentWebhookOutcome.Rejected);
+        result.Message.Should().Be("Unknown tenant.");
+        var paymentRecorded = await context.PaymentHistories.IgnoreQueryFilters()
+            .AnyAsync(p => p.GatewayReferenceId == "pay_unknown_tenant");
+        paymentRecorded.Should().BeFalse();
     }
 
     [Fact]
@@ -176,7 +198,8 @@ public class BillingTests
             NullLogger<ApplySubscriptionPaymentCommandHandler>.Instance);
 
         var act = () => handler.Handle(new ApplySubscriptionPaymentCommand(
-            _testTenantId, PlanTier.TindahanPro, BillingCycle.Monthly, 12900L, "pay_pending_001", "gcash"), CancellationToken.None);
+            _testTenantId, PlanTier.TindahanPro, BillingCycle.Monthly, 12900L, "pay_pending_001", "gcash",
+            PaidAt: DateTimeOffset.UtcNow), CancellationToken.None);
 
         await act.Should().ThrowAsync<DbUpdateException>();
 
@@ -187,7 +210,7 @@ public class BillingTests
     }
 
     [Fact]
-    public async Task ApplySubscriptionPaymentCommandHandler_ActiveSubscription_ShouldExtendExistingEndDate()
+    public async Task ApplySubscriptionPaymentCommandHandler_WeeklyPayment_ShouldReject()
     {
         using var context = CreateInMemoryDbContext();
         var tenant = await context.Tenants.IgnoreQueryFilters().FirstAsync(t => t.Id == _testTenantId);
@@ -206,12 +229,12 @@ public class BillingTests
             Cycle: BillingCycle.Weekly,
             AmountCentavos: 3500L,
             PaymentId: "pay_test_weekly",
-            PaymentMethod: "gcash");
+            PaymentMethod: "gcash",
+            PaidAt: DateTimeOffset.UtcNow);
 
         var result = await handler.Handle(command, CancellationToken.None);
 
-        result.Outcome.Should().Be(PaymentWebhookOutcome.Processed);
-        result.NewEndDate.Should().BeCloseTo(existingEnd.AddDays(7), precision: TimeSpan.FromSeconds(5));
+        result.Outcome.Should().Be(PaymentWebhookOutcome.Rejected);
     }
 
     private sealed class FailingSaveChangesDbContext(
@@ -247,7 +270,8 @@ public class BillingTests
             Cycle: BillingCycle.Monthly,
             AmountCentavos: 12900L,
             PaymentId: "pay_duplicate_001",
-            PaymentMethod: "gcash");
+            PaymentMethod: "gcash",
+            PaidAt: DateTimeOffset.UtcNow);
 
         // First application
         var firstResult = await handler.Handle(command, CancellationToken.None);
@@ -275,7 +299,8 @@ public class BillingTests
             Cycle: BillingCycle.Monthly,
             AmountCentavos: 10000L, // Mismatch: 100 pesos instead of 129
             PaymentId: "pay_bad_amount",
-            PaymentMethod: "gcash");
+            PaymentMethod: "gcash",
+            PaidAt: DateTimeOffset.UtcNow);
 
         var result = await handler.Handle(command, CancellationToken.None);
         result.Outcome.Should().Be(PaymentWebhookOutcome.Rejected);
@@ -356,7 +381,8 @@ public class BillingTests
                             "metadata": {
                                 "tenant_id": "{{_testTenantId}}",
                                 "tier": "TindahanPro",
-                                "cycle": "Monthly"
+                                "cycle": "Monthly",
+                                "purpose": "subscription"
                             },
                             "payments": [
                                 {
@@ -364,6 +390,8 @@ public class BillingTests
                                     "attributes": {
                                         "amount": 12900,
                                         "status": "paid",
+                                        "currency": "PHP",
+                                        "paid_at": 1761523200,
                                         "source": { "type": "gcash" }
                                     }
                                 }
@@ -731,11 +759,17 @@ public class BillingTests
         var envMock = new Mock<IHostEnvironment>();
         envMock.Setup(e => e.EnvironmentName).Returns("Development");
 
+        var configMock = new Mock<IConfiguration>();
+        configMock.Setup(c => c["Billing:AllowLibreUpgrade"]).Returns("true");
+
         var controller = new BillingController(
             mediatorMock.Object,
             _currentUserServiceMock.Object,
+            null!,
             envMock.Object,
-            NullLogger<BillingController>.Instance);
+            NullLogger<BillingController>.Instance,
+            null,
+            configMock.Object);
 
         var response = await controller.MockPay(
             new BillingController.MockPayRequest(PlanTier.TindahanPro, BillingCycle.Monthly),
@@ -2079,8 +2113,8 @@ public class BillingTests
         p2.Should().Be(0);
 
         var proWeekly = TierPricing.TryGetPriceCentavos(PlanTier.TindahanPro, BillingCycle.Weekly, out var p3);
-        proWeekly.Should().BeTrue();
-        p3.Should().Be(3_500);
+        proWeekly.Should().BeFalse();
+        p3.Should().Be(0);
     }
 
     [Fact]
@@ -2153,7 +2187,7 @@ public class BillingTests
     }
 
     [Fact]
-    public async Task ApplySubscriptionPaymentCommandHandler_MidTermTierChange_StartsFromNow()
+    public async Task ApplySubscriptionPaymentCommandHandler_RemovedTier_IsRejected()
     {
         using var context = CreateInMemoryDbContext();
         var handler = new ApplySubscriptionPaymentCommandHandler(context, NullLogger<ApplySubscriptionPaymentCommandHandler>.Instance);
@@ -2173,19 +2207,10 @@ public class BillingTests
             BillingCycle.Monthly,
             34_900,
             "pay_upgrade_midterm",
-            "gcash"), CancellationToken.None);
+            "gcash",
+            PaidAt: now), CancellationToken.None);
 
-        result.Success.Should().BeTrue();
-
-        var updatedTenant = await context.Tenants.FirstAsync(t => t.Id == _testTenantId);
-        updatedTenant.Tier.Should().Be(PlanTier.NegosyoPlus);
-
-        // Mid-term upgrade should NOT stack onto existingEnd (+15 days + 30 days = +45 days).
-        // It must start from now (+30 days).
-        var duration = TierPricing.GetDuration(BillingCycle.Monthly);
-        var expectedEnd = now.Add(duration);
-        updatedTenant.SubscriptionEndDate.Should().NotBeNull();
-        updatedTenant.SubscriptionEndDate!.Value.Should().BeCloseTo(expectedEnd, TimeSpan.FromSeconds(5));
+        result.Outcome.Should().Be(PaymentWebhookOutcome.Rejected);
     }
 
     [Fact]
@@ -2208,7 +2233,8 @@ public class BillingTests
             BillingCycle.Monthly,
             12_900,
             "pay_same_tier_renewal",
-            "gcash"), CancellationToken.None);
+            "gcash",
+            PaidAt: now), CancellationToken.None);
 
         result.Success.Should().BeTrue();
 
@@ -2220,6 +2246,46 @@ public class BillingTests
         var expectedEnd = existingEnd.Add(duration);
         updatedTenant.SubscriptionEndDate.Should().NotBeNull();
         updatedTenant.SubscriptionEndDate!.Value.Should().BeCloseTo(expectedEnd, TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task ApplySubscriptionPaymentCommandHandler_DelayedWebhook_StartsAtVerifiedPaidAt()
+    {
+        using var context = CreateInMemoryDbContext();
+        var paidAt = DateTimeOffset.UtcNow.AddDays(-5);
+        var handler = new ApplySubscriptionPaymentCommandHandler(
+            context, NullLogger<ApplySubscriptionPaymentCommandHandler>.Instance);
+
+        var result = await handler.Handle(new ApplySubscriptionPaymentCommand(
+            _testTenantId,
+            PlanTier.TindahanPro,
+            BillingCycle.Monthly,
+            12_900,
+            "pay_delayed_webhook",
+            "qrph",
+            PaidAt: paidAt), CancellationToken.None);
+
+        result.Outcome.Should().Be(PaymentWebhookOutcome.Processed);
+        result.NewEndDate.Should().Be(paidAt.AddDays(30));
+    }
+
+    [Fact]
+    public async Task ApplySubscriptionPaymentCommandHandler_MissingPaidAt_DoesNotActivate()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new ApplySubscriptionPaymentCommandHandler(
+            context, NullLogger<ApplySubscriptionPaymentCommandHandler>.Instance);
+
+        var result = await handler.Handle(new ApplySubscriptionPaymentCommand(
+            _testTenantId,
+            PlanTier.TindahanPro,
+            BillingCycle.Monthly,
+            12_900,
+            "pay_incomplete",
+            "qrph"), CancellationToken.None);
+
+        result.Outcome.Should().Be(PaymentWebhookOutcome.Rejected);
+        (await context.Tenants.FirstAsync(t => t.Id == _testTenantId)).Tier.Should().Be(PlanTier.Libre);
     }
 
     [Fact]
@@ -2313,7 +2379,8 @@ public class BillingTests
                             "metadata": {
                                 "tenant_id": "{{tenantId}}",
                                 "tier": "TindahanPro",
-                                "cycle": "Monthly"
+                                "cycle": "Monthly",
+                                "purpose": "subscription"
                             },
                             "payments": [
                                 {
@@ -2330,6 +2397,7 @@ public class BillingTests
                                         "status": "paid",
                                         "amount": 12900,
                                         "currency": "PHP",
+                                        "paid_at": 1761523200,
                                         "source": { "type": "gcash" }
                                     }
                                 }
@@ -2373,7 +2441,10 @@ public class BillingTests
                 Cycle: BillingCycle.Monthly,
                 AmountCentavos: 12900L,
                 PaymentId: "pay_confirmed_001",
-                PaymentMethod: "gcash"
+                PaymentMethod: "gcash",
+                Currency: "PHP",
+                PaidAt: DateTimeOffset.UtcNow,
+                Purpose: "subscription"
             ));
 
         var senderMock = new Mock<ISender>();
@@ -2424,7 +2495,10 @@ public class BillingTests
                 Cycle: BillingCycle.Monthly,
                 AmountCentavos: 12900L,
                 PaymentId: "pay_saved_001",
-                PaymentMethod: "gcash"
+                PaymentMethod: "gcash",
+                Currency: "PHP",
+                PaidAt: DateTimeOffset.UtcNow,
+                Purpose: "subscription"
             ));
 
         var senderMock = new Mock<ISender>();
@@ -2659,6 +2733,7 @@ public class BillingTests
                             "status": "paid",
                             "amount": 12900,
                             "currency": "PHP",
+                            "paid_at": 1761523200,
                             "source": { "type": "qrph" },
                             "metadata": {
                                 "tenant_id": "{{tenantId}}",
@@ -2707,8 +2782,11 @@ public class BillingTests
                 {
                     { "tenant_id", _testTenantId.ToString() },
                     { "target_tier", "TindahanPro" },
-                    { "cycle", "Monthly" }
-                }
+                    { "cycle", "Monthly" },
+                    { "purpose", "subscription" }
+                },
+                Currency: "PHP",
+                PaidAt: DateTimeOffset.UtcNow
             ));
 
         var senderMock = new Mock<ISender>();
@@ -2733,6 +2811,522 @@ public class BillingTests
         result.IsActive.Should().BeTrue();
         var updatedTenant = await context.Tenants.FirstAsync(t => t.Id == _testTenantId);
         updatedTenant.Tier.Should().Be(PlanTier.TindahanPro);
+    }
+
+    [Fact]
+    public async Task ApplySubscriptionPaymentCommandHandler_ExpiredRenewal_ExtendsFromVerifiedPaidAtBy30Days()
+    {
+        using var context = CreateInMemoryDbContext();
+        var paidAt = new DateTimeOffset(2026, 10, 27, 12, 0, 0, TimeSpan.Zero);
+        var tenant = await context.Tenants.IgnoreQueryFilters().FirstAsync(t => t.Id == _testTenantId);
+        tenant.Tier = PlanTier.TindahanPro;
+        tenant.SubscriptionEndDate = paidAt.AddDays(-5);
+        await context.SaveChangesAsync();
+
+        var handler = new ApplySubscriptionPaymentCommandHandler(
+            context,
+            NullLogger<ApplySubscriptionPaymentCommandHandler>.Instance);
+
+        var result = await handler.Handle(new ApplySubscriptionPaymentCommand(
+            _testTenantId, PlanTier.TindahanPro, BillingCycle.Monthly, 12900L, "pay_expired_renew_001", "QRPh",
+            "PHP", paidAt, "subscription"), CancellationToken.None);
+
+        result.Outcome.Should().Be(PaymentWebhookOutcome.Processed);
+        result.NewEndDate.Should().Be(paidAt.AddDays(30));
+    }
+
+    [Fact]
+    public async Task ApplySubscriptionPaymentCommandHandler_TwoDistinctPayments_ExtendsBy60DaysTotal()
+    {
+        using var context = CreateInMemoryDbContext();
+        var paidAt1 = new DateTimeOffset(2026, 10, 1, 8, 0, 0, TimeSpan.Zero);
+        var paidAt2 = new DateTimeOffset(2026, 10, 15, 8, 0, 0, TimeSpan.Zero);
+        var handler = new ApplySubscriptionPaymentCommandHandler(
+            context,
+            NullLogger<ApplySubscriptionPaymentCommandHandler>.Instance);
+
+        var first = await handler.Handle(new ApplySubscriptionPaymentCommand(
+            _testTenantId, PlanTier.TindahanPro, BillingCycle.Monthly, 12900L, "pay_distinct_001", "QRPh",
+            "PHP", paidAt1, "subscription"), CancellationToken.None);
+        var second = await handler.Handle(new ApplySubscriptionPaymentCommand(
+            _testTenantId, PlanTier.TindahanPro, BillingCycle.Monthly, 12900L, "pay_distinct_002", "QRPh",
+            "PHP", paidAt2, "subscription"), CancellationToken.None);
+
+        first.Outcome.Should().Be(PaymentWebhookOutcome.Processed);
+        second.Outcome.Should().Be(PaymentWebhookOutcome.Processed);
+        second.NewEndDate.Should().Be(paidAt1.AddDays(60));
+        var payments = await context.PaymentHistories.IgnoreQueryFilters()
+            .Where(p => p.TenantId == _testTenantId && p.Status == "Paid")
+            .ToListAsync();
+        payments.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task ProcessBatchSync_AfterProExpiresWithOver30Products_AllowsSellingAndEditing_BlocksNewAndRestored_UntilRenewed()
+    {
+        using var context = CreateInMemoryDbContext();
+        var tenant = await context.Tenants.IgnoreQueryFilters().FirstAsync(t => t.Id == _testTenantId);
+        tenant.Tier = PlanTier.TindahanPro;
+        tenant.SubscriptionEndDate = DateTimeOffset.UtcNow.AddMinutes(-10);
+
+        var existingProducts = Enumerable.Range(1, 35).Select(i => new Product
+        {
+            Id = Guid.NewGuid(),
+            TenantId = _testTenantId,
+            Name = $"Existing Product {i}",
+            Price = 15m,
+            Cost = 10m,
+            StockQty = 20,
+            Category = "Pantry",
+            IsDeleted = false,
+            UpdatedAt = DateTimeOffset.UtcNow.AddDays(-2)
+        }).ToList();
+
+        var deletedProduct = new Product
+        {
+            Id = Guid.NewGuid(),
+            TenantId = _testTenantId,
+            Name = "Archived Product",
+            Price = 20m,
+            Cost = 12m,
+            StockQty = 5,
+            Category = "Pantry",
+            IsDeleted = true,
+            UpdatedAt = DateTimeOffset.UtcNow.AddDays(-2)
+        };
+
+        context.Products.AddRange(existingProducts);
+        context.Products.Add(deletedProduct);
+        await context.SaveChangesAsync();
+
+        var syncHandler = new ProcessBatchSyncCommandHandler(
+            context,
+            _currentUserServiceMock.Object,
+            NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+
+        var targetProduct = existingProducts[0];
+        var saleId = Guid.NewGuid();
+        var newProductId = Guid.NewGuid();
+
+        var syncResponse = await syncHandler.Handle(new ProcessBatchSyncCommand(new BatchSyncRequestDto
+        {
+            DeviceId = Guid.NewGuid(),
+            Operations = new List<SyncOperationDto>
+            {
+                new()
+                {
+                    SyncId = "op_edit_existing",
+                    Entity = "Product",
+                    Action = "Update",
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Payload = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        id = targetProduct.Id,
+                        name = "Edited Existing Product 1",
+                        price = 18m,
+                        cost = 11m,
+                        stock = 19,
+                        category = "Pantry",
+                        isDeleted = false
+                    })).RootElement
+                },
+                new()
+                {
+                    SyncId = "op_sale_existing",
+                    Entity = "Sale",
+                    Action = "Insert",
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Payload = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        id = saleId,
+                        totalAmount = 18m,
+                        paymentMethod = "Cash",
+                        items = new[]
+                        {
+                            new
+                            {
+                                id = Guid.NewGuid(),
+                                productId = targetProduct.Id,
+                                productName = "Edited Existing Product 1",
+                                qty = 1,
+                                unitPrice = 18m,
+                                subtotal = 18m
+                            }
+                        }
+                    })).RootElement
+                },
+                new()
+                {
+                    SyncId = "op_add_new_36",
+                    Entity = "Product",
+                    Action = "Insert",
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Payload = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        id = newProductId,
+                        name = "Blocked 36th Product",
+                        price = 25m,
+                        cost = 15m,
+                        stock = 10,
+                        category = "Pantry",
+                        isDeleted = false
+                    })).RootElement
+                },
+                new()
+                {
+                    SyncId = "op_restore_deleted",
+                    Entity = "Product",
+                    Action = "Update",
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Payload = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        id = deletedProduct.Id,
+                        name = "Archived Product",
+                        price = 20m,
+                        cost = 12m,
+                        stock = 5,
+                        category = "Pantry",
+                        isDeleted = false
+                    })).RootElement
+                }
+            }
+        }), CancellationToken.None);
+
+        syncResponse.Results.Single(r => r.SyncId == "op_edit_existing").Status.Should().Be("Success");
+        syncResponse.Results.Single(r => r.SyncId == "op_sale_existing").Status.Should().Be("Success");
+        syncResponse.Results.Single(r => r.SyncId == "op_add_new_36").Status.Should().Be("Failed");
+        syncResponse.Results.Single(r => r.SyncId == "op_restore_deleted").Status.Should().Be("Failed");
+
+        var applyHandler = new ApplySubscriptionPaymentCommandHandler(
+            context,
+            NullLogger<ApplySubscriptionPaymentCommandHandler>.Instance);
+        await applyHandler.Handle(new ApplySubscriptionPaymentCommand(
+            _testTenantId, PlanTier.TindahanPro, BillingCycle.Monthly, 12900L, "pay_renew_after_exp", "QRPh",
+            "PHP", DateTimeOffset.UtcNow, "subscription"), CancellationToken.None);
+
+        var postRenewSync = await syncHandler.Handle(new ProcessBatchSyncCommand(new BatchSyncRequestDto
+        {
+            DeviceId = Guid.NewGuid(),
+            Operations = new List<SyncOperationDto>
+            {
+                new()
+                {
+                    SyncId = "op_add_after_renew",
+                    Entity = "Product",
+                    Action = "Insert",
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Payload = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        id = newProductId,
+                        name = "Allowed 36th Product After Renewal",
+                        price = 25m,
+                        cost = 15m,
+                        stock = 10,
+                        category = "Pantry",
+                        isDeleted = false
+                    })).RootElement
+                }
+            }
+        }), CancellationToken.None);
+
+        postRenewSync.Results.Single(r => r.SyncId == "op_add_after_renew").Status.Should().Be("Success");
+    }
+
+    [Fact]
+    public async Task ApplySubscriptionPaymentCommandHandler_WithNullPurpose_UpgradesTenant()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new ApplySubscriptionPaymentCommandHandler(
+            context,
+            NullLogger<ApplySubscriptionPaymentCommandHandler>.Instance);
+
+        var result = await handler.Handle(new ApplySubscriptionPaymentCommand(
+            _testTenantId, PlanTier.TindahanPro, BillingCycle.Monthly, 12900L, "pay_legacy_no_purpose_001", "QRPh",
+            "PHP", DateTimeOffset.UtcNow, null), CancellationToken.None);
+
+        result.Outcome.Should().Be(PaymentWebhookOutcome.Processed);
+        var tenant = await context.Tenants.IgnoreQueryFilters().FirstAsync(t => t.Id == _testTenantId);
+        tenant.Tier.Should().Be(PlanTier.TindahanPro);
+    }
+
+    [Fact]
+    public async Task ApplySubscriptionPaymentCommandHandler_WithNonSubscriptionPurpose_Rejects()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new ApplySubscriptionPaymentCommandHandler(
+            context,
+            NullLogger<ApplySubscriptionPaymentCommandHandler>.Instance);
+
+        var result = await handler.Handle(new ApplySubscriptionPaymentCommand(
+            _testTenantId, PlanTier.TindahanPro, BillingCycle.Monthly, 12900L, "pay_order_purpose_001", "QRPh",
+            "PHP", DateTimeOffset.UtcNow, "order"), CancellationToken.None);
+
+        result.Outcome.Should().Be(PaymentWebhookOutcome.Rejected);
+        result.Message.Should().Contain("not for a subscription");
+    }
+
+    [Fact]
+    public void TryParsePaidCheckoutEvent_WithoutPurposeMetadata_AcceptsAsSubscription()
+    {
+        var tenantId = Guid.NewGuid();
+        var json = $$"""
+        {
+            "data": {
+                "attributes": {
+                    "type": "payment.paid",
+                    "data": {
+                        "id": "pay_qrph_no_purpose",
+                        "attributes": {
+                            "status": "paid",
+                            "amount": 12900,
+                            "currency": "PHP",
+                            "paid_at": 1761523200,
+                            "source": { "type": "qrph" },
+                            "metadata": {
+                                "tenant_id": "{{tenantId}}",
+                                "target_tier": "TindahanPro",
+                                "cycle": "Monthly"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        """;
+
+        var parsed = ProcessPaymentWebhookCommandHandler.TryParsePaidCheckoutEvent(
+            json, out var eventType, out var payment, out var error);
+
+        parsed.Should().BeTrue(error);
+        eventType.Should().Be("payment.paid");
+        payment.Should().NotBeNull();
+        payment!.PaymentId.Should().Be("pay_qrph_no_purpose");
+        payment.Purpose.Should().Be("subscription");
+    }
+
+    [Fact]
+    public void TryParsePaidCheckoutEvent_WithExplicitNonSubscriptionPurpose_Rejects()
+    {
+        var tenantId = Guid.NewGuid();
+        var json = $$"""
+        {
+            "data": {
+                "attributes": {
+                    "type": "payment.paid",
+                    "data": {
+                        "id": "pay_qrph_wrong_purpose",
+                        "attributes": {
+                            "status": "paid",
+                            "amount": 12900,
+                            "currency": "PHP",
+                            "paid_at": 1761523200,
+                            "source": { "type": "qrph" },
+                            "metadata": {
+                                "tenant_id": "{{tenantId}}",
+                                "target_tier": "TindahanPro",
+                                "cycle": "Monthly",
+                                "purpose": "pos_order"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        """;
+
+        var parsed = ProcessPaymentWebhookCommandHandler.TryParsePaidCheckoutEvent(
+            json, out _, out _, out var error);
+
+        parsed.Should().BeFalse();
+        error.Should().Be("Payment is not for a subscription.");
+    }
+
+    [Fact]
+    public async Task MockPay_InDevelopment_WhenLibreUpgradePaused_ReturnsBadRequest()
+    {
+        using var context = CreateInMemoryDbContext();
+        var mediatorMock = new Mock<IMediator>();
+        var envMock = new Mock<IHostEnvironment>();
+        envMock.Setup(e => e.EnvironmentName).Returns("Development");
+
+        var controller = new BillingController(
+            mediatorMock.Object,
+            _currentUserServiceMock.Object,
+            null!,
+            envMock.Object,
+            NullLogger<BillingController>.Instance,
+            context);
+
+        var response = await controller.MockPay(
+            new BillingController.MockPayRequest(PlanTier.TindahanPro, BillingCycle.Monthly),
+            CancellationToken.None);
+
+        response.Result.Should().BeOfType<BadRequestObjectResult>()
+            .Which.Value.Should().BeEquivalentTo(new { message = "Upgrading from Libre to Tindahan Pro is temporarily paused." });
+    }
+
+    [Fact]
+    public async Task GenerateQrPhSubscription_WhenTenantIsLibreAndUpgradesPaused_ReturnsBadRequest()
+    {
+        using var context = CreateInMemoryDbContext();
+        var gatewayMock = new Mock<IPaymentGatewayService>();
+        var mediatorMock = new Mock<IMediator>();
+        var envMock = new Mock<IHostEnvironment>();
+
+        var controller = new BillingController(
+            mediatorMock.Object,
+            _currentUserServiceMock.Object,
+            gatewayMock.Object,
+            envMock.Object,
+            NullLogger<BillingController>.Instance,
+            context);
+
+        var response = await controller.GenerateQrPhSubscription(
+            new BillingController.CreateCheckoutRequest(PlanTier.TindahanPro, BillingCycle.Monthly),
+            CancellationToken.None);
+
+        response.Result.Should().BeOfType<BadRequestObjectResult>()
+            .Which.Value.Should().BeEquivalentTo(new { message = "Upgrading from Libre to Tindahan Pro is temporarily paused." });
+    }
+
+    [Fact]
+    public async Task GenerateQrPhSubscription_WhenTenantIsActiveTindahanPro_AllowsRenewal()
+    {
+        using var context = CreateInMemoryDbContext();
+        var tenant = await context.Tenants.FirstAsync(t => t.Id == _testTenantId);
+        tenant.Tier = PlanTier.TindahanPro;
+        tenant.SubscriptionEndDate = DateTimeOffset.UtcNow.AddDays(10);
+        await context.SaveChangesAsync();
+
+        var gatewayMock = new Mock<IPaymentGatewayService>();
+        gatewayMock.Setup(g => g.CreateQrPhPaymentIntentAsync(It.IsAny<CreateQrPhPaymentIntentRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new QrPhPaymentIntentResult(
+                PaymentIntentId: "pi_renew_123",
+                PaymentMethodId: "pm_renew_123",
+                ClientKey: "client_key",
+                Status: "awaiting_next_action",
+                AmountCentavos: 12900L,
+                QrCodeUrl: "data:image/png;base64,mockqr",
+                OrderId: "order_renew_123",
+                CreatedAt: DateTimeOffset.UtcNow
+            ));
+
+        var mediatorMock = new Mock<IMediator>();
+        var envMock = new Mock<IHostEnvironment>();
+
+        var controller = new BillingController(
+            mediatorMock.Object,
+            _currentUserServiceMock.Object,
+            gatewayMock.Object,
+            envMock.Object,
+            NullLogger<BillingController>.Instance,
+            context);
+
+        var response = await controller.GenerateQrPhSubscription(
+            new BillingController.CreateCheckoutRequest(PlanTier.TindahanPro, BillingCycle.Monthly),
+            CancellationToken.None);
+
+        response.Result.Should().BeOfType<OkObjectResult>();
+    }
+
+    [Fact]
+    public async Task GenerateQrPhSubscription_WhenTenantIsLapsedPro_AllowsRenewal()
+    {
+        using var context = CreateInMemoryDbContext();
+        var tenant = await context.Tenants.FirstAsync(t => t.Id == _testTenantId);
+        tenant.Tier = PlanTier.Libre;
+        tenant.SubscriptionEndDate = DateTimeOffset.UtcNow.AddDays(-5);
+        await context.SaveChangesAsync();
+
+        var gatewayMock = new Mock<IPaymentGatewayService>();
+        gatewayMock.Setup(g => g.CreateQrPhPaymentIntentAsync(It.IsAny<CreateQrPhPaymentIntentRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new QrPhPaymentIntentResult(
+                PaymentIntentId: "pi_renew_123",
+                PaymentMethodId: "pm_renew_123",
+                ClientKey: "client_key",
+                Status: "awaiting_next_action",
+                AmountCentavos: 12900L,
+                QrCodeUrl: "data:image/png;base64,mockqr",
+                OrderId: "order_renew_123",
+                CreatedAt: DateTimeOffset.UtcNow
+            ));
+
+        var mediatorMock = new Mock<IMediator>();
+        var envMock = new Mock<IHostEnvironment>();
+
+        var controller = new BillingController(
+            mediatorMock.Object,
+            _currentUserServiceMock.Object,
+            gatewayMock.Object,
+            envMock.Object,
+            NullLogger<BillingController>.Instance,
+            context);
+
+        var response = await controller.GenerateQrPhSubscription(
+            new BillingController.CreateCheckoutRequest(PlanTier.TindahanPro, BillingCycle.Monthly),
+            CancellationToken.None);
+
+        response.Result.Should().BeOfType<OkObjectResult>();
+    }
+
+    [Fact]
+    public async Task CreateCheckout_WhenTenantIsLapsedPro_AllowsRenewal()
+    {
+        using var context = CreateInMemoryDbContext();
+        var tenant = await context.Tenants.FirstAsync(t => t.Id == _testTenantId);
+        tenant.Tier = PlanTier.Libre;
+        tenant.SubscriptionEndDate = DateTimeOffset.UtcNow.AddDays(-2);
+        await context.SaveChangesAsync();
+
+        var mediatorMock = new Mock<IMediator>();
+        mediatorMock.Setup(m => m.Send(It.IsAny<CreateCheckoutSessionCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CheckoutSessionResponseDto(
+                CheckoutUrl: "https://checkout.paymongo.com/cs_renew123",
+                SessionId: "cs_renew123",
+                ReferenceNumber: "ref_renew123",
+                Amount: 129m,
+                Currency: "PHP",
+                Tier: PlanTier.TindahanPro,
+                Cycle: BillingCycle.Monthly));
+
+        var envMock = new Mock<IHostEnvironment>();
+
+        var controller = new BillingController(
+            mediatorMock.Object,
+            _currentUserServiceMock.Object,
+            null!,
+            envMock.Object,
+            NullLogger<BillingController>.Instance,
+            context);
+
+        var response = await controller.CreateCheckout(
+            new BillingController.CreateCheckoutRequest(PlanTier.TindahanPro, BillingCycle.Monthly),
+            CancellationToken.None);
+
+        response.Result.Should().BeOfType<OkObjectResult>();
+    }
+
+    [Fact]
+    public async Task CreateCheckout_WhenTenantIsLibreAndUpgradesPaused_ReturnsBadRequest()
+    {
+        using var context = CreateInMemoryDbContext();
+        var mediatorMock = new Mock<IMediator>();
+        var envMock = new Mock<IHostEnvironment>();
+
+        var controller = new BillingController(
+            mediatorMock.Object,
+            _currentUserServiceMock.Object,
+            null!,
+            envMock.Object,
+            NullLogger<BillingController>.Instance,
+            context);
+
+        var response = await controller.CreateCheckout(
+            new BillingController.CreateCheckoutRequest(PlanTier.TindahanPro, BillingCycle.Monthly),
+            CancellationToken.None);
+
+        response.Result.Should().BeOfType<BadRequestObjectResult>()
+            .Which.Value.Should().BeEquivalentTo(new { message = "Upgrading from Libre to Tindahan Pro is temporarily paused." });
     }
 
     [Fact]

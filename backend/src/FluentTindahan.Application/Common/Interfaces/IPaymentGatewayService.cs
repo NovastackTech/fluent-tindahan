@@ -31,7 +31,10 @@ public record CheckoutSessionDetails(
     BillingCycle Cycle,
     long AmountCentavos,
     string PaymentId,
-    string PaymentMethod
+    string PaymentMethod,
+    string? Currency = null,
+    DateTimeOffset? PaidAt = null,
+    string? Purpose = null
 );
 
 public record CustomerBillingDetails(string Name, string? Email = null, string? Phone = null);
@@ -61,7 +64,9 @@ public record QrPhPaymentStatusResult(
     bool IsPaid,
     long AmountCentavos,
     string? PaymentId = null,
-    IReadOnlyDictionary<string, string>? Metadata = null
+    IReadOnlyDictionary<string, string>? Metadata = null,
+    string? Currency = null,
+    DateTimeOffset? PaidAt = null
 );
 
 public interface IPaymentGatewayService

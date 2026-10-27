@@ -102,7 +102,7 @@ public class CreateProductCommandHandler : IRequestHandler<CreateProductCommand,
         var tenant = await _context.Tenants.IgnoreQueryFilters()
             .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
         var now = DateTimeOffset.UtcNow;
-        var isExpired = tenant != null && tenant.Tier != PlanTier.Libre && tenant.SubscriptionEndDate.HasValue && tenant.SubscriptionEndDate.Value < now;
+        var isExpired = tenant != null && tenant.Tier != PlanTier.Libre && tenant.SubscriptionEndDate.HasValue && tenant.SubscriptionEndDate.Value <= now;
         var effectiveTier = isExpired ? PlanTier.Libre : (tenant?.Tier ?? PlanTier.Libre);
 
         if (effectiveTier == PlanTier.Libre)

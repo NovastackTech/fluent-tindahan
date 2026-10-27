@@ -4,7 +4,7 @@ import { App } from './App';
 import { usePwaStore } from './state/pwaStore';
 import { useCartStore } from './state/cartStore';
 import { useAuthStore } from './state/authStore';
-import { useSubscriptionStore } from './state/subscriptionStore';
+import { getPendingBillingReference, setPendingBillingReference, useSubscriptionStore } from './state/subscriptionStore';
 import { DEFAULT_TENANT_ID } from './db/seedData';
 import { db } from './db/db';
 import { useLanguageStore } from './state/languageStore';
@@ -544,7 +544,7 @@ describe('App', () => {
 
   it('displays billing cancelled message and clears session when ?billing=cancel is present (issue #179)', async () => {
     useLanguageStore.setState({ language: 'en' });
-    localStorage.setItem('fluent_last_checkout_session_id', 'cs_test_to_cancel');
+    setPendingBillingReference('cs_test_to_cancel');
     const replaceStateSpy = vi.spyOn(window.history, 'replaceState');
 
     Object.defineProperty(window, 'location', {
@@ -561,7 +561,7 @@ describe('App', () => {
     render(<App />);
 
     expect(screen.getByText('Billing cancelled; no charge was made.')).toBeInTheDocument();
-    expect(localStorage.getItem('fluent_last_checkout_session_id')).toBeNull();
+    expect(getPendingBillingReference()).toBeNull();
     expect(replaceStateSpy).toHaveBeenCalledWith(null, '', '/');
 
     // Dismiss message

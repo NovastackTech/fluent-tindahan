@@ -206,8 +206,8 @@ public class PayMongoSubscriptionQrPhTests
             NullLogger<PayMongoPaymentGatewayService>.Instance);
 
         var request = new CreateQrPhPaymentIntentRequest(
-            AmountCentavos: 4900,
-            Description: "Fluent Tindahan - Tindahan Pro (Weekly)",
+            AmountCentavos: 12900,
+            Description: "Fluent Tindahan - Tindahan Pro (Monthly)",
             OrderId: "sub_mock_001",
             Customer: new CustomerBillingDetails("Suki Store")
         );
@@ -217,7 +217,7 @@ public class PayMongoSubscriptionQrPhTests
         result.PaymentIntentId.Should().StartWith("pi_mock_");
         result.PaymentMethodId.Should().StartWith("pm_mock_");
         result.QrCodeUrl.Should().Contain("data:image/svg+xml");
-        result.AmountCentavos.Should().Be(4900);
+        result.AmountCentavos.Should().Be(12900);
     }
 
     [Fact]
@@ -287,13 +287,17 @@ public class PayMongoSubscriptionQrPhTests
                 DateTimeOffset.UtcNow));
 
         var mediatorMock = new Mock<IMediator>();
+        var configMock = new Mock<IConfiguration>();
+        configMock.Setup(c => c["Billing:AllowLibreUpgrade"]).Returns("true");
 
         var controller = new BillingController(
             mediatorMock.Object,
             _currentUserServiceMock.Object,
             gatewayMock.Object,
             _devEnvMock.Object,
-            NullLogger<BillingController>.Instance);
+            NullLogger<BillingController>.Instance,
+            null,
+            configMock.Object);
 
         // Act 1: Reject Libre plan
         var badResult = await controller.GenerateQrPhSubscription(
@@ -328,8 +332,11 @@ public class PayMongoSubscriptionQrPhTests
                 {
                     { "tenant_id", _testTenantId.ToString() },
                     { "target_tier", PlanTier.TindahanPro.ToString() },
-                    { "cycle", BillingCycle.Monthly.ToString() }
-                }));
+                    { "cycle", BillingCycle.Monthly.ToString() },
+                    { "purpose", "subscription" }
+                },
+                Currency: "PHP",
+                PaidAt: DateTimeOffset.UtcNow));
 
         var mediatorMock = new Mock<IMediator>();
         mediatorMock.Setup(m => m.Send(It.IsAny<ApplySubscriptionPaymentCommand>(), It.IsAny<CancellationToken>()))

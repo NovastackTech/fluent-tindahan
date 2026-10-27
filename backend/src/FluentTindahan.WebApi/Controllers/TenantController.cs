@@ -87,10 +87,10 @@ public class TenantController : ControllerBase
         var now = DateTimeOffset.UtcNow;
         var isExpired = tenant.Tier != PlanTier.Libre &&
                         tenant.SubscriptionEndDate.HasValue &&
-                        tenant.SubscriptionEndDate.Value < now;
+                        tenant.SubscriptionEndDate.Value <= now;
 
         var effectiveTier = isExpired ? PlanTier.Libre : tenant.Tier;
-        var isActive = effectiveTier != PlanTier.Libre && (!tenant.SubscriptionEndDate.HasValue || tenant.SubscriptionEndDate.Value >= now);
+        var isActive = effectiveTier != PlanTier.Libre && (!tenant.SubscriptionEndDate.HasValue || tenant.SubscriptionEndDate.Value > now);
 
         return Ok(new TenantProfileDto(
             tenant.Id,

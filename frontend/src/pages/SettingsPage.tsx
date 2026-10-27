@@ -366,10 +366,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
           </div>
           <Badge
             appearance="filled"
-            color={tier === 'NegosyoPlus' ? 'important' : tier === 'TindahanPro' ? 'warning' : 'informative'}
+            color={tier !== 'Libre' ? 'warning' : 'informative'}
             style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
           >
-            {tier === 'NegosyoPlus' ? 'NEGOSYO+' : tier === 'TindahanPro' ? 'PRO' : 'LIBRE'}
+            {tier !== 'Libre' ? 'PRO' : 'LIBRE'}
           </Badge>
         </div>
 
@@ -380,19 +380,19 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
         <div className={styles.infoRow}>
           <Text size={200}>{t.subscription.currentPlan}</Text>
           <Text size={200} weight="bold">
-            {tier === 'NegosyoPlus' ? t.subscription.plusTier : tier === 'TindahanPro' ? t.subscription.proTier : t.subscription.libreTier}
+            {tier !== 'Libre' ? t.subscription.proTier : t.subscription.libreTier}
           </Text>
         </div>
 
-        {tier !== 'Libre' && subscriptionEndDate && (
+        {subscriptionEndDate && (
           <>
             <div className={styles.infoRow}>
-              <Text size={200}>{t.subscription.expiresOn}</Text>
+              <Text size={200}>{tier !== 'Libre' ? t.subscription.expiresOn : `${t.subscription.statusExpired}:`}</Text>
               <Text size={200} style={{ fontFamily: 'monospace' }}>
                 {new Date(subscriptionEndDate).toLocaleDateString()}
               </Text>
             </div>
-            {daysRemaining !== null && (
+            {tier !== 'Libre' && daysRemaining !== null && (
               <div className={styles.infoRow}>
                 <Text size={200}>{t.subscription.daysRemaining}</Text>
                 <Badge appearance="tint" color={daysRemaining <= 3 ? 'danger' : 'success'} style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
@@ -443,7 +443,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
             icon={<SparkleRegular />}
             onClick={() => openUpgradeModal()}
           >
-            {tier === 'Libre' ? t.subscription.upgradeBtn : t.subscription.managePlanBtn}
+            {tier === 'Libre' && !subscriptionEndDate ? t.subscription.upgradeBtn : (language === 'tl' ? 'I-renew ang Pro (Buwanan)' : 'Renew Pro (Monthly)')}
           </Button>
         </div>
       </Card>
