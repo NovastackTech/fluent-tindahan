@@ -174,7 +174,6 @@ export const SubscriptionModal: React.FC = () => {
   const handleSimulatePayment = async (targetTier: 'TindahanPro') => {
     await runTierAction(targetTier, () => simulateMockPayment(targetTier, 'Monthly'));
   };
-
   const cycleUnitText = isTagalog ? '/ buwan' : '/ month';
 
   const renderActiveBadge = (targetTier: PlanTier) =>

@@ -566,7 +566,6 @@ useAuthStore.subscribe((authState, prevAuthState) => {
 });
 
 scheduleExpiry(useAuthStore.getState().subscriptionEndDate);
-
 useLanguageStore.subscribe((langState, prevLangState) => {
   if (langState.language !== prevLangState?.language) {
     const currentError = useSubscriptionStore.getState().error;

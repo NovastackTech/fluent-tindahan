@@ -445,7 +445,6 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
                     if (!string.IsNullOrWhiteSpace(fetched.Value.PaymentMethod)) paymentMethod = fetched.Value.PaymentMethod!;
                 }
             }
-
             return new CheckoutSessionDetails(
                 SessionId: sessionId,
                 Status: status,

@@ -230,7 +230,6 @@ public class ApplySubscriptionPaymentCommandHandler : IRequestHandler<ApplySubsc
             _logger.LogWarning("Payment {PaymentId} received for unknown tenant {TenantId}", request.PaymentId, request.TenantId);
             return Rejected("Unknown tenant.", request.TenantId);
         }
-
         // A payment record is persisted before the subscription update so a later failure can be recovered.
         var paymentHistory = await _context.PaymentHistories
             .IgnoreQueryFilters()
@@ -702,7 +701,6 @@ public class ProcessPaymentWebhookCommandHandler : IRequestHandler<ProcessPaymen
                         sessionDetails.Purpose ?? "subscription"), cancellationToken);
                 }
             }
-
             if (eventType != null && (eventType != PaidEventType && eventType != PaymentPaidEventType || error == "Event type ignored."))
             {
                 _logger.LogInformation("Ignoring PayMongo event type {EventType}.", eventType);
@@ -867,7 +865,6 @@ public class ProcessPaymentWebhookCommandHandler : IRequestHandler<ProcessPaymen
                 error = "Payment is not for a subscription.";
                 return false;
             }
-
             if (eventType == PaymentPaidEventType)
             {
                 var directPaymentId = TryGetString(session, "id");
@@ -891,7 +888,6 @@ public class ProcessPaymentWebhookCommandHandler : IRequestHandler<ProcessPaymen
                     error = "Missing verified payment timestamp.";
                     return false;
                 }
-
                 if (!sessionAttr.TryGetProperty("amount", out var directAmountElem) ||
                     directAmountElem.ValueKind != JsonValueKind.Number ||
                     !directAmountElem.TryGetInt64(out var directAmountCentavos))
