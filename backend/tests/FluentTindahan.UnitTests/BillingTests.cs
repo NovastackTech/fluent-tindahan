@@ -153,6 +153,30 @@ public class BillingTests
     }
 
     [Fact]
+    public async Task ApplySubscriptionPaymentCommandHandler_UnknownTenant_ShouldRejectBeforeRecordingPayment()
+    {
+        using var context = CreateInMemoryDbContext();
+        var handler = new ApplySubscriptionPaymentCommandHandler(
+            context,
+            NullLogger<ApplySubscriptionPaymentCommandHandler>.Instance);
+
+        var result = await handler.Handle(new ApplySubscriptionPaymentCommand(
+            Guid.NewGuid(),
+            PlanTier.TindahanPro,
+            BillingCycle.Monthly,
+            12900L,
+            "pay_unknown_tenant",
+            "qrph",
+            PaidAt: DateTimeOffset.UtcNow), CancellationToken.None);
+
+        result.Outcome.Should().Be(PaymentWebhookOutcome.Rejected);
+        result.Message.Should().Be("Unknown tenant.");
+        var paymentRecorded = await context.PaymentHistories.IgnoreQueryFilters()
+            .AnyAsync(p => p.GatewayReferenceId == "pay_unknown_tenant");
+        paymentRecorded.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task ApplySubscriptionPaymentCommandHandler_UpgradeFailure_ShouldKeepPendingPaymentRecord()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()

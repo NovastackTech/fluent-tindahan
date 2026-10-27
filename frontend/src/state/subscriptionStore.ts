@@ -18,6 +18,14 @@ const PENDING_BILLING_REFERENCE_KEY = 'fluent_pending_billing_reference';
 interface PendingBillingReference {
   tenantId: string;
   id: string;
+  qrPayment?: PendingQrPhPayment;
+}
+
+export interface PendingQrPhPayment {
+  paymentIntentId: string;
+  paymentMethodId: string;
+  qrCodeUrl: string;
+  orderId: string;
 }
 
 export const getPendingBillingReference = (): string | null => {
@@ -32,10 +40,24 @@ export const getPendingBillingReference = (): string | null => {
   }
 };
 
-export const setPendingBillingReference = (id: string): void => {
+export const getPendingQrPhPayment = (): PendingQrPhPayment | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(PENDING_BILLING_REFERENCE_KEY);
+    if (!raw) return null;
+    const pending = JSON.parse(raw) as PendingBillingReference;
+    return pending.tenantId === useAuthStore.getState().tenantId && pending.qrPayment?.paymentIntentId === pending.id
+      ? pending.qrPayment
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+export const setPendingBillingReference = (id: string, qrPayment?: PendingQrPhPayment): void => {
   const tenantId = useAuthStore.getState().tenantId;
   if (!tenantId || typeof window === 'undefined') return;
-  localStorage.setItem(PENDING_BILLING_REFERENCE_KEY, JSON.stringify({ tenantId, id }));
+  localStorage.setItem(PENDING_BILLING_REFERENCE_KEY, JSON.stringify({ tenantId, id, qrPayment }));
 };
 
 export const clearPendingBillingReference = (expectedId?: string): void => {
@@ -307,7 +329,12 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
 
         const effectiveTier = await persistAndApplySubscriptionState(response.data, set);
         const newEndDate = response.data?.subscriptionEndDate || null;
-        let wasActivated = effectiveTier !== 'Libre' && (previousTier === 'Libre' || !previousEndDate || newEndDate !== previousEndDate);
+        let wasActivated = effectiveTier !== 'Libre' && (
+          response.data?.paymentConfirmed === true ||
+          previousTier === 'Libre' ||
+          !previousEndDate ||
+          newEndDate !== previousEndDate
+        );
         if (!wasActivated && storedSessionId?.startsWith('pi_') && typeof window !== 'undefined') {
           try {
             const qrStatus = await get().checkQrPhStatus(storedSessionId);

@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/re
 import { FluentProvider } from '@fluentui/react-components';
 import { QrPhSubscriptionDialog } from './QrPhSubscriptionDialog';
 import { sariSariLightTheme } from '../theme/theme';
-import { getPendingBillingReference, useSubscriptionStore } from '../state/subscriptionStore';
+import { getPendingBillingReference, setPendingBillingReference, useSubscriptionStore } from '../state/subscriptionStore';
 import { useLanguageStore } from '../state/languageStore';
 
 describe('QrPhSubscriptionDialog', () => {
@@ -283,7 +283,6 @@ describe('QrPhSubscriptionDialog', () => {
   });
 
   it('clears an expired pending QR reference on reopen and generates a fresh QR code', async () => {
-    const { setPendingBillingReference } = await import('../state/subscriptionStore');
     setPendingBillingReference('pi_expired_old');
 
     const mockCheck = vi.fn().mockResolvedValueOnce({
@@ -316,6 +315,36 @@ describe('QrPhSubscriptionDialog', () => {
     });
 
     expect(getPendingBillingReference()).toBe('pi_fresh_new');
+  });
+
+  it('reuses a nonterminal pending QR instead of replacing it', async () => {
+    const pendingQr = {
+      paymentIntentId: 'pi_pending_existing',
+      paymentMethodId: 'pm_pending_existing',
+      qrCodeUrl: 'data:image/png;base64,pending_qr',
+      orderId: 'sub_pending_existing'
+    };
+    setPendingBillingReference(pendingQr.paymentIntentId, pendingQr);
+
+    const mockCheck = vi.fn().mockResolvedValue({
+      paymentIntentId: pendingQr.paymentIntentId,
+      status: 'awaiting_next_action',
+      isPaid: false,
+      amountCentavos: 12900
+    });
+    const mockGenerate = vi.fn();
+    useSubscriptionStore.setState({
+      checkQrPhStatus: mockCheck,
+      generateQrPhPayment: mockGenerate
+    });
+
+    renderDialog();
+
+    const qrImage = await screen.findByAltText('QR Ph Subscription Code');
+    expect(qrImage).toHaveAttribute('src', pendingQr.qrCodeUrl);
+    expect(mockCheck).toHaveBeenCalledWith(pendingQr.paymentIntentId);
+    expect(mockGenerate).not.toHaveBeenCalled();
+    expect(getPendingBillingReference()).toBe(pendingQr.paymentIntentId);
   });
 });
 

@@ -221,6 +221,15 @@ public class ApplySubscriptionPaymentCommandHandler : IRequestHandler<ApplySubsc
             return Rejected("Paid amount does not match the plan price.", request.TenantId);
         }
 
+        var tenantExists = await _context.Tenants
+            .IgnoreQueryFilters()
+            .AnyAsync(t => t.Id == request.TenantId, cancellationToken);
+        if (!tenantExists)
+        {
+            _logger.LogWarning("Payment {PaymentId} received for unknown tenant {TenantId}", request.PaymentId, request.TenantId);
+            return Rejected("Unknown tenant.", request.TenantId);
+        }
+
         // A payment record is persisted before the subscription update so a later failure can be recovered.
         var paymentHistory = await _context.PaymentHistories
             .IgnoreQueryFilters()

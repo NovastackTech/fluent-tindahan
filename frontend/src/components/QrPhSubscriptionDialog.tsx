@@ -26,6 +26,7 @@ import {
 import {
   clearPendingBillingReference,
   getPendingBillingReference,
+  getPendingQrPhPayment,
   setPendingBillingReference,
   useSubscriptionStore,
   type BillingCycle
@@ -226,6 +227,15 @@ export const QrPhSubscriptionDialog: React.FC<QrPhSubscriptionDialogProps> = ({
         successTimeoutRef.current = window.setTimeout(() => {
           onCloseRef.current();
         }, 1600);
+      } else if (['expired', 'failed', 'canceled', 'cancelled'].includes(statusData.status.toLowerCase())) {
+        clearPendingBillingReference(paymentIntentId);
+        stopPolling();
+        setQrResult(null);
+        setError(
+          isTagalogRef.current
+            ? 'Nag-expire ang QR Ph payment. Gumawa ng bagong code para subukan muli.'
+            : 'The QR Ph payment expired. Generate a new code to try again.'
+        );
       }
       return statusData;
     } catch {
@@ -271,6 +281,24 @@ export const QrPhSubscriptionDialog: React.FC<QrPhSubscriptionDialogProps> = ({
           }
           if (pendingStatus && ['expired', 'failed', 'canceled', 'cancelled'].includes(pendingStatus.status.toLowerCase())) {
             clearPendingBillingReference(pendingIntentId);
+            setError(null);
+          } else {
+            const pendingQr = getPendingQrPhPayment();
+            if (pendingQr) {
+              setQrResult(pendingQr);
+            } else {
+              setError(
+                isTagalogRef.current
+                  ? 'May hinihintay pang QR Ph payment. Kumpletuhin ito o hintaying mag-expire bago gumawa ng bago.'
+                  : 'A QR Ph payment is still pending. Complete it or wait for it to expire before creating a new one.'
+              );
+            }
+            setIsLoading(false);
+            stopPolling();
+            pollTimerRef.current = window.setInterval(() => {
+              handleStatusCheckRef.current(pendingIntentId);
+            }, 3000);
+            return;
           }
         }
 
@@ -278,7 +306,7 @@ export const QrPhSubscriptionDialog: React.FC<QrPhSubscriptionDialogProps> = ({
         if (!isMounted) return;
 
         try {
-          setPendingBillingReference(result.paymentIntentId);
+          setPendingBillingReference(result.paymentIntentId, result);
         } catch {
           // Continue displaying the QR code when browser storage is unavailable.
         }
@@ -395,10 +423,10 @@ export const QrPhSubscriptionDialog: React.FC<QrPhSubscriptionDialogProps> = ({
                   icon={<ArrowClockwiseRegular />}
                   onClick={() => {
                     const intentId = qrResult?.paymentIntentId || getPendingBillingReference();
-                    setError(null);
                     if (intentId) {
                       handleStatusCheck(intentId);
                     } else {
+                      setError(null);
                       setRetryTrigger(c => c + 1);
                     }
                   }}
