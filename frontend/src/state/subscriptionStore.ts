@@ -41,7 +41,7 @@ export const getPendingBillingReference = (): string | null => {
       }
     }
     const legacySessionId = localStorage.getItem(LEGACY_STORAGE_KEY_CHECKOUT_SESSION);
-    if (legacySessionId && tenantId) {
+    if (legacySessionId && tenantId && !raw) {
       setPendingBillingReference(legacySessionId);
       localStorage.removeItem(LEGACY_STORAGE_KEY_CHECKOUT_SESSION);
       return legacySessionId;
@@ -263,7 +263,7 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
     error: null,
     isUpgradeModalOpen: false,
 
-    isUpgradeAllowed: () => get().tier !== 'Libre' || IS_LIBRE_UPGRADE_ENABLED,
+    isUpgradeAllowed: () => get().tier !== 'Libre' || Boolean(get().subscriptionEndDate) || IS_LIBRE_UPGRADE_ENABLED,
     openUpgradeModal: () => set({ isUpgradeModalOpen: true }),
     closeUpgradeModal: () => set({ isUpgradeModalOpen: false }),
 

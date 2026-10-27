@@ -184,7 +184,7 @@ export const SubscriptionModal: React.FC = () => {
       </Badge>
     ) : null;
 
-  const isUpgradeAllowedForTier = currentTier === 'TindahanPro' || IS_LIBRE_UPGRADE_ENABLED;
+  const isUpgradeAllowedForTier = currentTier === 'TindahanPro' || Boolean(subscriptionEndDate) || IS_LIBRE_UPGRADE_ENABLED;
 
   const renderPaidTierActions = (targetTier: 'TindahanPro') => (
     <div className={styles.tierActionSection}>
@@ -263,7 +263,7 @@ export const SubscriptionModal: React.FC = () => {
               </MessageBar>
             )}
 
-            {currentTier === 'Libre' && !IS_LIBRE_UPGRADE_ENABLED && (
+            {!isUpgradeAllowedForTier && (
               <MessageBar intent="info" style={{ marginBottom: tokens.spacingVerticalM }}>
                 <MessageBarBody>
                   {isTagalog

@@ -121,6 +121,23 @@ describe('subscriptionStore', () => {
     });
   });
 
+  describe('isUpgradeAllowed', () => {
+    it('disallows upgrade for fresh Libre tier when IS_LIBRE_UPGRADE_ENABLED is false', () => {
+      useSubscriptionStore.setState({ tier: 'Libre', subscriptionEndDate: null });
+      expect(useSubscriptionStore.getState().isUpgradeAllowed()).toBe(false);
+    });
+
+    it('allows renewal for lapsed Pro subscriber with Libre tier and existing subscriptionEndDate', () => {
+      useSubscriptionStore.setState({ tier: 'Libre', subscriptionEndDate: '2026-01-01T00:00:00Z' });
+      expect(useSubscriptionStore.getState().isUpgradeAllowed()).toBe(true);
+    });
+
+    it('allows upgrade/renewal for active TindahanPro subscriber', () => {
+      useSubscriptionStore.setState({ tier: 'TindahanPro', subscriptionEndDate: new Date(Date.now() + 86400000).toISOString() });
+      expect(useSubscriptionStore.getState().isUpgradeAllowed()).toBe(true);
+    });
+  });
+
   it('preserves the saved tier and uses a non-raw fallback when subscription refresh fails', async () => {
     useAuthStore.setState({ tier: 'TindahanPro' });
     useSubscriptionStore.setState({ tier: 'TindahanPro' });
@@ -497,6 +514,27 @@ describe('subscriptionStore', () => {
 
       // Subsequent access reads from the new tenant-scoped structure
       expect(getPendingBillingReference()).toBe('cs_legacy_checkout_123');
+    });
+
+    it('does not migrate legacy key when another tenant has a pending reference', () => {
+      setPendingBillingReference('pi_tenant_one', {
+        paymentIntentId: 'pi_tenant_one',
+        paymentMethodId: 'pm_one',
+        qrCodeUrl: 'data:image/png;base64,mockqr',
+        orderId: 'order_one'
+      });
+
+      // Switch to a different store/tenant on the same device
+      useAuthStore.setState({ tenantId: '00000000-0000-0000-0000-000000000099' });
+      localStorage.setItem(LEGACY_STORAGE_KEY_CHECKOUT_SESSION, 'cs_legacy_checkout_456');
+
+      const result = getPendingBillingReference();
+      expect(result).toBeNull();
+      expect(localStorage.getItem(LEGACY_STORAGE_KEY_CHECKOUT_SESSION)).toBe('cs_legacy_checkout_456');
+
+      // First tenant's pending reference was NOT overwritten
+      useAuthStore.setState({ tenantId: DEFAULT_TENANT_ID });
+      expect(getPendingBillingReference()).toBe('pi_tenant_one');
     });
 
     it('clears legacy checkout session key when clearPendingBillingReference is called', () => {

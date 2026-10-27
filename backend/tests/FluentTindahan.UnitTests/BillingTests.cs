@@ -3230,6 +3230,83 @@ public class BillingTests
     }
 
     [Fact]
+    public async Task GenerateQrPhSubscription_WhenTenantIsLapsedPro_AllowsRenewal()
+    {
+        using var context = CreateInMemoryDbContext();
+        var tenant = await context.Tenants.FirstAsync(t => t.Id == _testTenantId);
+        tenant.Tier = PlanTier.Libre;
+        tenant.SubscriptionEndDate = DateTimeOffset.UtcNow.AddDays(-5);
+        await context.SaveChangesAsync();
+
+        var gatewayMock = new Mock<IPaymentGatewayService>();
+        gatewayMock.Setup(g => g.CreateQrPhPaymentIntentAsync(It.IsAny<CreateQrPhPaymentIntentRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new QrPhPaymentIntentResult(
+                PaymentIntentId: "pi_renew_123",
+                PaymentMethodId: "pm_renew_123",
+                ClientKey: "client_key",
+                Status: "awaiting_next_action",
+                AmountCentavos: 12900L,
+                QrCodeUrl: "data:image/png;base64,mockqr",
+                OrderId: "order_renew_123",
+                CreatedAt: DateTimeOffset.UtcNow
+            ));
+
+        var mediatorMock = new Mock<IMediator>();
+        var envMock = new Mock<IHostEnvironment>();
+
+        var controller = new BillingController(
+            mediatorMock.Object,
+            _currentUserServiceMock.Object,
+            gatewayMock.Object,
+            envMock.Object,
+            NullLogger<BillingController>.Instance,
+            context);
+
+        var response = await controller.GenerateQrPhSubscription(
+            new BillingController.CreateCheckoutRequest(PlanTier.TindahanPro, BillingCycle.Monthly),
+            CancellationToken.None);
+
+        response.Result.Should().BeOfType<OkObjectResult>();
+    }
+
+    [Fact]
+    public async Task CreateCheckout_WhenTenantIsLapsedPro_AllowsRenewal()
+    {
+        using var context = CreateInMemoryDbContext();
+        var tenant = await context.Tenants.FirstAsync(t => t.Id == _testTenantId);
+        tenant.Tier = PlanTier.Libre;
+        tenant.SubscriptionEndDate = DateTimeOffset.UtcNow.AddDays(-2);
+        await context.SaveChangesAsync();
+
+        var mediatorMock = new Mock<IMediator>();
+        mediatorMock.Setup(m => m.Send(It.IsAny<CreateCheckoutSessionCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CheckoutSessionResponseDto(
+                CheckoutUrl: "https://checkout.paymongo.com/cs_renew123",
+                SessionId: "cs_renew123",
+                ReferenceNumber: "ref_renew123",
+                Amount: 129m,
+                Currency: "PHP",
+                Tier: PlanTier.TindahanPro,
+                Cycle: BillingCycle.Monthly));
+
+        var envMock = new Mock<IHostEnvironment>();
+
+        var controller = new BillingController(
+            mediatorMock.Object,
+            _currentUserServiceMock.Object,
+            null!,
+            envMock.Object,
+            NullLogger<BillingController>.Instance,
+            context);
+
+        var response = await controller.CreateCheckout(
+            new BillingController.CreateCheckoutRequest(PlanTier.TindahanPro, BillingCycle.Monthly),
+            CancellationToken.None);
+
+        response.Result.Should().BeOfType<OkObjectResult>();
+    }
+
+    [Fact]
     public async Task CreateCheckout_WhenTenantIsLibreAndUpgradesPaused_ReturnsBadRequest()
     {
         using var context = CreateInMemoryDbContext();

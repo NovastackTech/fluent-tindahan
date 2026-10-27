@@ -109,6 +109,22 @@ describe('SubscriptionModal', () => {
     expect(renewBtn).toBeEnabled();
   });
 
+  it('allows lapsed Tindahan Pro subscribers (tier Libre with past subscriptionEndDate) to renew via QR Ph', () => {
+    useLanguageStore.setState({ language: 'en' });
+    useSubscriptionStore.setState({
+      isUpgradeModalOpen: true,
+      tier: 'Libre',
+      subscriptionEndDate: '2026-01-01T00:00:00Z',
+      isActive: false
+    });
+    renderModal();
+
+    expect(screen.queryByText(/Upgrading from Libre to Tindahan Pro is temporarily paused/i)).not.toBeInTheDocument();
+    const renewBtn = screen.getByRole('button', { name: /Renew via QR Ph \(Monthly\)/i });
+    expect(renewBtn).toBeInTheDocument();
+    expect(renewBtn).toBeEnabled();
+  });
+
   it('keeps plan prices visible and offers retry when subscription refresh fails', () => {
     useSubscriptionStore.setState({ isUpgradeModalOpen: true, tier: 'TindahanPro', isActive: true, error: SUBSCRIPTION_REFRESH_ERROR });
     renderModal();

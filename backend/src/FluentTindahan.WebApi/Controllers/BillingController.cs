@@ -106,7 +106,8 @@ public class BillingController : ControllerBase
                 .FirstOrDefaultAsync(t => t.Id == _currentUserService.TenantId, cancellationToken);
         }
 
-        if (!IsLibreUpgradeAllowed() && (tenant == null || tenant.Tier == PlanTier.Libre))
+        var isRenewal = tenant != null && (tenant.Tier != PlanTier.Libre || tenant.SubscriptionEndDate.HasValue);
+        if (!IsLibreUpgradeAllowed() && !isRenewal)
         {
             return BadRequest(new { message = "Upgrading from Libre to Tindahan Pro is temporarily paused." });
         }
@@ -157,7 +158,8 @@ public class BillingController : ControllerBase
                 .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
         }
 
-        if (!IsLibreUpgradeAllowed() && (tenant == null || tenant.Tier == PlanTier.Libre))
+        var isRenewal = tenant != null && (tenant.Tier != PlanTier.Libre || tenant.SubscriptionEndDate.HasValue);
+        if (!IsLibreUpgradeAllowed() && !isRenewal)
         {
             return BadRequest(new { message = "Upgrading from Libre to Tindahan Pro is temporarily paused." });
         }
@@ -489,7 +491,8 @@ public class BillingController : ControllerBase
                 .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
         }
 
-        if (!IsLibreUpgradeAllowed() && (tenant == null || tenant.Tier == PlanTier.Libre))
+        var isRenewal = tenant != null && (tenant.Tier != PlanTier.Libre || tenant.SubscriptionEndDate.HasValue);
+        if (!IsLibreUpgradeAllowed() && !isRenewal)
         {
             return BadRequest(new { message = "Upgrading from Libre to Tindahan Pro is temporarily paused." });
         }
