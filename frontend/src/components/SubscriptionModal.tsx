@@ -13,7 +13,6 @@ import {
   makeStyles,
   tokens,
   shorthands,
-  Spinner,
   MessageBar,
   MessageBarBody,
   mergeClasses
@@ -23,13 +22,13 @@ import {
   DismissRegular,
   SparkleRegular,
   StarFilled,
-  CreditCardPersonRegular,
   QrCodeRegular
 } from '@fluentui/react-icons';
 import {
   useSubscriptionStore,
   IS_MOCK_PAYMENT_ENABLED,
-  SUBSCRIPTION_REFRESH_ERROR
+  SUBSCRIPTION_REFRESH_ERROR,
+  getPendingBillingReference
 } from '../state/subscriptionStore';
 import { type PlanTier } from '../db/db';
 import { useLanguageStore } from '../state/languageStore';
@@ -127,16 +126,6 @@ const useStyles = makeStyles({
   crossIcon: {
     color: tokens.colorNeutralForeground4,
     flexShrink: 0
-  },
-  devActionSection: {
-    marginTop: tokens.spacingVerticalM,
-    ...shorthands.padding(tokens.spacingVerticalS, tokens.spacingHorizontalM),
-    backgroundColor: tokens.colorNeutralBackground3,
-    ...shorthands.borderRadius(tokens.borderRadiusSmall),
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: tokens.spacingHorizontalM
   }
 });
 
@@ -154,7 +143,6 @@ export const SubscriptionModal: React.FC = () => {
     closeUpgradeModal,
     refreshSubscription,
     confirmCheckoutSession,
-    createCheckoutSession,
     simulateMockPayment,
     isLoading,
     error
@@ -164,7 +152,7 @@ export const SubscriptionModal: React.FC = () => {
   const [qrModalTier, setQrModalTier] = useState<'TindahanPro' | null>(null);
   const handleCloseQrModal = useCallback(() => {
     setQrModalTier(null);
-    if (typeof window !== 'undefined' && localStorage.getItem('fluent_last_checkout_session_id')) {
+    if (getPendingBillingReference()) {
       void confirmCheckoutSession().then(() => refreshSubscription());
     }
   }, [confirmCheckoutSession, refreshSubscription]);
@@ -182,16 +170,7 @@ export const SubscriptionModal: React.FC = () => {
     }
   };
 
-  const handleCheckout = async (targetTier: PlanTier) => {
-    await runTierAction(targetTier, async () => {
-      const checkoutUrl = await createCheckoutSession(targetTier, 'Monthly');
-      if (checkoutUrl) {
-        window.location.href = checkoutUrl;
-      }
-    });
-  };
-
-  const handleSimulatePayment = async (targetTier: PlanTier) => {
+  const handleSimulatePayment = async (targetTier: 'TindahanPro') => {
     await runTierAction(targetTier, () => simulateMockPayment(targetTier, 'Monthly'));
   };
 
@@ -204,11 +183,7 @@ export const SubscriptionModal: React.FC = () => {
       </Badge>
     ) : null;
 
-  const renderPaidTierActions = (
-    targetTier: 'TindahanPro',
-    extendLabel: string,
-    upgradeLabel: string
-  ) => (
+  const renderPaidTierActions = (targetTier: 'TindahanPro') => (
     <div className={styles.tierActionSection}>
       <Button
         appearance="primary"
@@ -216,21 +191,9 @@ export const SubscriptionModal: React.FC = () => {
         disabled={isLoading && processingTier === targetTier}
         onClick={() => setQrModalTier(targetTier)}
       >
-        {isTagalog ? 'Magbayad gamit ang QR Ph' : 'Pay via QR Ph'}
-      </Button>
-      <Button
-        appearance="secondary"
-        icon={<CreditCardPersonRegular />}
-        disabled={isLoading && processingTier === targetTier}
-        onClick={() => handleCheckout(targetTier)}
-      >
-        {isLoading && processingTier === targetTier ? (
-          <Spinner size="tiny" />
-        ) : currentTier === targetTier ? (
-          extendLabel
-        ) : (
-          upgradeLabel
-        )}
+        {currentTier === targetTier || subscriptionEndDate
+          ? (isTagalog ? 'Mag-renew gamit ang QR Ph (Buwanan)' : 'Renew via QR Ph (Monthly)')
+          : (isTagalog ? 'Magbayad gamit ang QR Ph' : 'Pay via QR Ph')}
       </Button>
       {IS_MOCK_PAYMENT_ENABLED && (
         <Button
@@ -322,6 +285,13 @@ export const SubscriptionModal: React.FC = () => {
                   {isTagalog ? 'Aktibong Plano:' : 'Active Plan:'} {currentTier}
                   {daysRemaining !== null && ` (${daysRemaining} ${isTagalog ? 'araw natitira' : 'days left'})`}
                   {subscriptionEndDate && ` — ${new Date(subscriptionEndDate).toLocaleDateString()}`}
+                </Badge>
+              </div>
+            )}
+            {currentTier === 'Libre' && subscriptionEndDate && (
+              <div style={{ marginBottom: tokens.spacingVerticalM }}>
+                <Badge color="warning" size="large">
+                  {isTagalog ? 'Nag-expire noong:' : 'Expired on:'} {new Date(subscriptionEndDate).toLocaleDateString()}
                 </Badge>
               </div>
             )}
@@ -455,21 +425,8 @@ export const SubscriptionModal: React.FC = () => {
                   </ul>
                 </div>
 
-                {renderPaidTierActions(
-                  'TindahanPro',
-                  isTagalog ? 'Palawigin ang Pro' : 'Extend Pro',
-                  isTagalog ? 'Mag-upgrade sa Pro' : 'Upgrade to Pro'
-                )}
+                {renderPaidTierActions('TindahanPro')}
               </Card>
-            </div>
-
-            {/* Note on PayMongo payment methods */}
-            <div className={styles.devActionSection}>
-              <Text size={200}>
-                {isTagalog
-                  ? '🔒 Tumatanggap ng GCash, Maya, ShopeePay, GrabPay, Card, at 7-Eleven via PayMongo gateway.'
-                  : '🔒 Accepts GCash, Maya, ShopeePay, GrabPay, Cards, and 7-Eleven via PayMongo gateway.'}
-              </Text>
             </div>
           </DialogContent>
 

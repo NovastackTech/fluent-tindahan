@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { useSubscriptionStore, getTierLimits, SUBSCRIPTION_REFRESH_ERROR } from './subscriptionStore';
+import {
+  getPendingBillingReference,
+  setPendingBillingReference,
+  scheduleExpiry,
+  useSubscriptionStore,
+  getTierLimits,
+  SUBSCRIPTION_REFRESH_ERROR
+} from './subscriptionStore';
 import { useAuthStore } from './authStore';
 import { db } from '../db/db';
 import { apiClient, TenantProvisioningError } from '../services/apiClient';
@@ -245,20 +252,6 @@ describe('subscriptionStore', () => {
       expect(localTenant?.tier).toBe('TindahanPro');
     });
 
-    it('upgrades tier locally to NegosyoPlus for weekly cycle', async () => {
-      const newEndDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-      vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
-        data: { success: true, tier: 2, newEndDate }
-      } as any);
-      const store = useSubscriptionStore.getState();
-      await store.simulateMockPayment('NegosyoPlus', 'Weekly');
-
-      const updated = useSubscriptionStore.getState();
-      expect(updated.tier).toBe('NegosyoPlus');
-      expect(updated.isActive).toBe(true);
-      expect(updated.daysRemaining).toBeLessThanOrEqual(7);
-      expect(useAuthStore.getState().tier).toBe('NegosyoPlus');
-    });
   });
 
   describe('confirmCheckoutSession', () => {
@@ -270,11 +263,11 @@ describe('subscriptionStore', () => {
       const url = await useSubscriptionStore.getState().createCheckoutSession('TindahanPro', 'Monthly');
 
       expect(url).toBe('https://paymongo.com/pay');
-      expect(localStorage.getItem('fluent_last_checkout_session_id')).toBe('cs_test_999');
+      expect(getPendingBillingReference()).toBe('cs_test_999');
     });
 
     it('confirms checkout session, upgrades tier and clears stored session id', async () => {
-      localStorage.setItem('fluent_last_checkout_session_id', 'cs_test_999');
+      setPendingBillingReference('cs_test_999');
       const newEndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
       const postSpy = vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
@@ -294,11 +287,11 @@ describe('subscriptionStore', () => {
       });
       expect(useSubscriptionStore.getState().tier).toBe('TindahanPro');
       expect(useSubscriptionStore.getState().subscriptionEndDate).toBe(newEndDate);
-      expect(localStorage.getItem('fluent_last_checkout_session_id')).toBeNull();
+      expect(getPendingBillingReference()).toBeNull();
     });
 
     it('returns true for paid tier even if db.tenants.update rejects', async () => {
-      localStorage.setItem('fluent_last_checkout_session_id', 'cs_test_888');
+      setPendingBillingReference('cs_test_888');
       const newEndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
       vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
@@ -318,6 +311,32 @@ describe('subscriptionStore', () => {
       expect(useSubscriptionStore.getState().tier).toBe('TindahanPro');
       expect(useSubscriptionStore.getState().isActive).toBe(true);
       dbUpdateSpy.mockRestore();
+    });
+
+    it('clears a verified duplicate payment after a reload', async () => {
+      const existingEndDate = new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString();
+      useSubscriptionStore.setState({
+        tier: 'TindahanPro',
+        subscriptionEndDate: existingEndDate,
+        isActive: true
+      });
+      useAuthStore.getState().setSubscription('TindahanPro', existingEndDate);
+      setPendingBillingReference('cs_already_applied');
+
+      vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
+        data: {
+          tierName: 'TindahanPro',
+          isActive: true,
+          subscriptionEndDate: existingEndDate,
+          daysRemaining: 20,
+          paymentConfirmed: true
+        }
+      } as any);
+
+      const confirmed = await useSubscriptionStore.getState().confirmCheckoutSession();
+
+      expect(confirmed).toBe(true);
+      expect(getPendingBillingReference()).toBeNull();
     });
 
     it('generates QR Ph payment intent via /billing/qrph/generate', async () => {
@@ -383,6 +402,88 @@ describe('subscriptionStore', () => {
       expect(useSubscriptionStore.getState().tier).toBe('TindahanPro');
       expect(useSubscriptionStore.getState().subscriptionEndDate).toBe(newEndDate);
       expect(useSubscriptionStore.getState().isActive).toBe(true);
+    });
+
+    it('applies Libre limits at expiry during an open offline sale without interrupting the cart, and restores Pro on renewal', async () => {
+      const { useCartStore } = await import('./cartStore');
+      useCartStore.setState({
+        items: [{ productId: "prod-1", name: "Pancit Canton", price: 15, qty: 2, subtotal: 30 }]
+      });
+
+      const pastEndDate = new Date(Date.now() - 1000).toISOString();
+      useAuthStore.setState({ tier: 'TindahanPro', subscriptionEndDate: pastEndDate });
+      useSubscriptionStore.setState({ tier: 'TindahanPro', subscriptionEndDate: pastEndDate, isActive: true });
+
+      scheduleExpiry(pastEndDate);
+
+      expect(useSubscriptionStore.getState().tier).toBe('Libre');
+      expect(useAuthStore.getState().tier).toBe('Libre');
+      expect(useSubscriptionStore.getState().canAddProduct(35)).toBe(false);
+      expect(useCartStore.getState().items).toHaveLength(1);
+
+      const renewedEndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
+        data: {
+          tierName: 'TindahanPro',
+          subscriptionEndDate: renewedEndDate,
+          isActive: true
+        }
+      } as any);
+
+      const confirmed = await useSubscriptionStore.getState().confirmQrPhPayment('pi_renew_01', 'TindahanPro', 'Monthly');
+      expect(confirmed).toBe(true);
+      expect(useSubscriptionStore.getState().tier).toBe('TindahanPro');
+      expect(useSubscriptionStore.getState().canAddProduct(35)).toBe(true);
+      useCartStore.getState().clearCart();
+    });
+
+    it('keeps pending QR reference during early renewal until payment is confirmed or expired', async () => {
+      const existingEndDate = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString();
+      useAuthStore.setState({ tier: 'TindahanPro', subscriptionEndDate: existingEndDate });
+      useSubscriptionStore.setState({ tier: 'TindahanPro', subscriptionEndDate: existingEndDate, isActive: true });
+      setPendingBillingReference('pi_early_renew');
+
+      vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
+        data: {
+          tierName: 'TindahanPro',
+          isActive: true,
+          subscriptionEndDate: existingEndDate,
+          daysRemaining: 5
+        }
+      } as any);
+      vi.spyOn(apiClient, 'get').mockResolvedValueOnce({
+        data: {
+          paymentIntentId: 'pi_early_renew',
+          status: 'awaiting_next_action',
+          isPaid: false,
+          amountCentavos: 12900
+        }
+      } as any);
+
+      const confirmedWhilePending = await useSubscriptionStore.getState().confirmCheckoutSession();
+      expect(confirmedWhilePending).toBe(false);
+      expect(getPendingBillingReference()).toBe('pi_early_renew');
+
+      vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
+        data: {
+          tierName: 'TindahanPro',
+          isActive: true,
+          subscriptionEndDate: existingEndDate,
+          daysRemaining: 5
+        }
+      } as any);
+      vi.spyOn(apiClient, 'get').mockResolvedValueOnce({
+        data: {
+          paymentIntentId: 'pi_early_renew',
+          status: 'expired',
+          isPaid: false,
+          amountCentavos: 12900
+        }
+      } as any);
+
+      const confirmedAfterExpired = await useSubscriptionStore.getState().confirmCheckoutSession();
+      expect(confirmedAfterExpired).toBe(false);
+      expect(getPendingBillingReference()).toBeNull();
     });
   });
 });

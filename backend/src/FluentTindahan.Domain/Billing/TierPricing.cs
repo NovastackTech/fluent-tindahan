@@ -13,17 +13,8 @@ public static class TierPricing
     {
         switch (tier, cycle)
         {
-            case (PlanTier.TindahanPro, BillingCycle.Weekly):
-                centavos = 3_500;
-                return true;
             case (PlanTier.TindahanPro, BillingCycle.Monthly):
                 centavos = 12_900;
-                return true;
-            case (PlanTier.NegosyoPlus, BillingCycle.Weekly):
-                centavos = 8_900;
-                return true;
-            case (PlanTier.NegosyoPlus, BillingCycle.Monthly):
-                centavos = 34_900;
                 return true;
             default:
                 centavos = 0;
@@ -39,10 +30,7 @@ public static class TierPricing
     /// <summary>Converts integer centavos to a two-decimal peso amount for display/API responses.</summary>
     public static decimal ToPesos(long centavos) => centavos / 100m;
 
-    public static TimeSpan GetDuration(BillingCycle cycle) => cycle switch
-    {
-        BillingCycle.Weekly => TimeSpan.FromDays(7),
-        BillingCycle.Monthly => TimeSpan.FromDays(30),
-        _ => throw new InvalidOperationException($"Unknown billing cycle '{cycle}'.")
-    };
+    public static TimeSpan GetDuration(BillingCycle cycle) => cycle == BillingCycle.Monthly
+        ? TimeSpan.FromDays(30)
+        : throw new InvalidOperationException($"Unsupported billing cycle '{cycle}'.");
 }

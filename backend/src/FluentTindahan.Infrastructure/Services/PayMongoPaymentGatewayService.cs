@@ -73,17 +73,16 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
         BillingCycle cycle,
         CancellationToken cancellationToken = default)
     {
-        if (tier == PlanTier.Libre)
+        if (tier != PlanTier.TindahanPro || cycle != BillingCycle.Monthly)
         {
-            throw new InvalidOperationException("Cannot create a checkout session for Libre tier.");
+            throw new InvalidOperationException("Only the monthly Tindahan Pro plan can be purchased.");
         }
 
         var amountInCentavos = TierPricing.GetPriceCentavos(tier, cycle);
         var amount = TierPricing.ToPesos(amountInCentavos);
         var refNo = $"sub_{tenantId.ToString("N")[..8]}_{_timeProvider.GetUtcNow().ToUnixTimeMilliseconds()}_{Guid.NewGuid().ToString("N")[..8]}";
-        var tierDisplayName = tier == PlanTier.TindahanPro ? "Tindahan Pro" : "Negosyo Plus";
-        var cycleDisplayName = cycle == BillingCycle.Weekly ? "Weekly" : "Monthly";
-        var lineItemName = $"Fluent Tindahan - {tierDisplayName} ({cycleDisplayName})";
+        const string tierDisplayName = "Tindahan Pro";
+        const string lineItemName = "Fluent Tindahan - Tindahan Pro (Monthly)";
 
         // Redirect targets are built server-side from configuration only (never from client input)
         // to prevent open-redirect / phishing via PayMongo's hosted checkout.
@@ -147,6 +146,7 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
                         { "tenant_id", tenantId.ToString() },
                         { "tier", tier.ToString() },
                         { "cycle", cycle.ToString() },
+                        { "purpose", "subscription" },
                         { "reference_number", refNo }
                     },
                     reference_number = refNo
@@ -239,7 +239,10 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
                 Cycle: BillingCycle.Monthly,
                 AmountCentavos: TierPricing.GetPriceCentavos(PlanTier.TindahanPro, BillingCycle.Monthly),
                 PaymentId: $"pay_mock_{Guid.NewGuid():N}",
-                PaymentMethod: "mock"
+                PaymentMethod: "mock",
+                Currency: "PHP",
+                PaidAt: _timeProvider.GetUtcNow(),
+                Purpose: "subscription"
             );
         }
 
@@ -288,6 +291,7 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
             Guid tenantId = Guid.Empty;
             PlanTier tier = PlanTier.Libre;
             BillingCycle cycle = BillingCycle.Monthly;
+            string? purpose = null;
 
             if (attrElem.TryGetProperty("metadata", out var metaElem) && metaElem.ValueKind == JsonValueKind.Object)
             {
@@ -309,11 +313,17 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
                 {
                     cycle = parsedCycle;
                 }
+
+                purpose = metaElem.TryGetProperty("purpose", out var purposeElem)
+                    ? purposeElem.GetString()
+                    : null;
             }
 
             // Find paid payment if present
-            string paymentId = sessionId;
+            string paymentId = string.Empty;
             string paymentMethod = "paymongo";
+            string? currency = null;
+            DateTimeOffset? paidAt = null;
             long amountCentavos = tier != PlanTier.Libre ? TierPricing.GetPriceCentavos(tier, cycle) : 0;
 
             if (attrElem.TryGetProperty("payments", out var paymentsElem) &&
@@ -339,6 +349,11 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
                         {
                             amountCentavos = amt;
                         }
+
+                        currency = pAttr.TryGetProperty("currency", out var currencyElem)
+                            ? currencyElem.GetString()
+                            : null;
+                        paidAt = TryGetUnixTimestamp(pAttr, "paid_at");
 
                         if (pAttr.TryGetProperty("source", out var srcElem) &&
                             srcElem.ValueKind == JsonValueKind.Object &&
@@ -394,6 +409,10 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
                             {
                                 amountCentavos = amt;
                             }
+                            currency = pAttr.TryGetProperty("currency", out var currencyElem)
+                                ? currencyElem.GetString()
+                                : null;
+                            paidAt = TryGetUnixTimestamp(pAttr, "paid_at");
                             if (pAttr.TryGetProperty("source", out var srcElem) &&
                                 srcElem.ValueKind == JsonValueKind.Object &&
                                 srcElem.TryGetProperty("type", out var typeElem))
@@ -406,6 +425,27 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
                 }
             }
 
+            if (paymentId.StartsWith("pi_", StringComparison.OrdinalIgnoreCase))
+            {
+                var piDetails = await RetrievePaymentIntentStatusAsync(paymentId, cancellationToken);
+                paymentId = piDetails.PaymentId ?? string.Empty;
+                currency ??= piDetails.Currency;
+                paidAt ??= piDetails.PaidAt;
+                if (piDetails.AmountCentavos > 0) amountCentavos = piDetails.AmountCentavos;
+            }
+            if (paymentId.StartsWith("pay_", StringComparison.OrdinalIgnoreCase) && (!paidAt.HasValue || string.IsNullOrWhiteSpace(currency)))
+            {
+                var fetched = await TryFetchPaymentDetailsAsync(paymentId, requestMessage.Headers.Authorization!, cancellationToken);
+                if (fetched != null)
+                {
+                    isPaid = isPaid || fetched.Value.IsPaid;
+                    currency ??= fetched.Value.Currency;
+                    paidAt ??= fetched.Value.PaidAt;
+                    if (fetched.Value.AmountCentavos > 0) amountCentavos = fetched.Value.AmountCentavos;
+                    if (!string.IsNullOrWhiteSpace(fetched.Value.PaymentMethod)) paymentMethod = fetched.Value.PaymentMethod!;
+                }
+            }
+
             return new CheckoutSessionDetails(
                 SessionId: sessionId,
                 Status: status,
@@ -415,7 +455,10 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
                 Cycle: cycle,
                 AmountCentavos: amountCentavos,
                 PaymentId: paymentId,
-                PaymentMethod: paymentMethod
+                PaymentMethod: paymentMethod,
+                Currency: currency,
+                PaidAt: paidAt,
+                Purpose: purpose
             );
         }
         catch (JsonException ex)
@@ -707,7 +750,9 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
                     IsPaid: true,
                     AmountCentavos: mockData.AmountCentavos,
                     PaymentId: $"pay_mock_{paymentIntentId}",
-                    Metadata: mockData.Metadata
+                    Metadata: mockData.Metadata,
+                    Currency: "PHP",
+                    PaidAt: _timeProvider.GetUtcNow()
                 );
             }
 
@@ -735,7 +780,9 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
             var dataAttr = doc.RootElement.GetProperty("data").GetProperty("attributes");
             var status = dataAttr.GetProperty("status").GetString() ?? "unknown";
             var amount = dataAttr.GetProperty("amount").GetInt64();
-            var isPaid = string.Equals(status, "succeeded", StringComparison.OrdinalIgnoreCase);
+            var isPaid = false;
+            string? currency = null;
+            DateTimeOffset? paidAt = null;
 
             string? paymentId = null;
             if (dataAttr.TryGetProperty("payments", out var payments) &&
@@ -756,6 +803,10 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
                         {
                             paymentId = paidId.GetString();
                         }
+                        currency = pAttr.TryGetProperty("currency", out var currencyElem)
+                            ? currencyElem.GetString()
+                            : null;
+                        paidAt = TryGetUnixTimestamp(pAttr, "paid_at");
                         break;
                     }
                 }
@@ -773,13 +824,28 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
                 }
             }
 
+            if (!string.IsNullOrWhiteSpace(paymentId) && (!paidAt.HasValue || string.IsNullOrWhiteSpace(currency) || !isPaid))
+            {
+                var fetched = await TryFetchPaymentDetailsAsync(paymentId, authHeader, cancellationToken);
+                if (fetched != null)
+                {
+                    isPaid = isPaid || fetched.Value.IsPaid;
+                    currency ??= fetched.Value.Currency;
+                    paidAt ??= fetched.Value.PaidAt;
+                    if (fetched.Value.AmountCentavos > 0 && amount == 0) amount = fetched.Value.AmountCentavos;
+                    metadata ??= fetched.Value.Metadata;
+                }
+            }
+
             return new QrPhPaymentStatusResult(
                 PaymentIntentId: paymentIntentId,
                 Status: status,
                 IsPaid: isPaid,
                 AmountCentavos: amount,
                 PaymentId: paymentId,
-                Metadata: metadata
+                Metadata: metadata,
+                Currency: currency,
+                PaidAt: paidAt
             );
         }
         catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException)
@@ -788,6 +854,62 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
             throw new PaymentGatewayException("Payment gateway returned an invalid or malformed response.", ex);
         }
     }
+
+    private async Task<(bool IsPaid, long AmountCentavos, string? Currency, DateTimeOffset? PaidAt, string? PaymentMethod, Dictionary<string, string>? Metadata)?> TryFetchPaymentDetailsAsync(
+        string paymentId,
+        AuthenticationHeaderValue authHeader,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var content = await SendPayMongoJsonAsync(HttpMethod.Get, $"payments/{paymentId}", null, authHeader, cancellationToken);
+            using var doc = JsonDocument.Parse(content);
+            if (!doc.RootElement.TryGetProperty("data", out var dataElem) ||
+                !dataElem.TryGetProperty("attributes", out var pAttr) ||
+                pAttr.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            var pStatus = pAttr.TryGetProperty("status", out var psElem) ? psElem.GetString() : null;
+            var isPaid = string.Equals(pStatus, "paid", StringComparison.OrdinalIgnoreCase);
+            var amount = pAttr.TryGetProperty("amount", out var amtElem) && amtElem.TryGetInt64(out var amt) ? amt : 0L;
+            var currency = pAttr.TryGetProperty("currency", out var currElem) ? currElem.GetString() : null;
+            var paidAt = TryGetUnixTimestamp(pAttr, "paid_at");
+            string? method = null;
+            if (pAttr.TryGetProperty("source", out var srcElem) &&
+                srcElem.ValueKind == JsonValueKind.Object &&
+                srcElem.TryGetProperty("type", out var typeElem))
+            {
+                method = typeElem.GetString();
+            }
+
+            Dictionary<string, string>? metadata = null;
+            if (pAttr.TryGetProperty("metadata", out var metaElem) && metaElem.ValueKind == JsonValueKind.Object)
+            {
+                metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var prop in metaElem.EnumerateObject())
+                {
+                    metadata[prop.Name] = prop.Value.ValueKind == JsonValueKind.String
+                        ? prop.Value.GetString() ?? string.Empty
+                        : prop.Value.ToString();
+                }
+            }
+
+            return (isPaid, amount, currency, paidAt, method, metadata);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static DateTimeOffset? TryGetUnixTimestamp(JsonElement attributes, string propertyName) =>
+        attributes.TryGetProperty(propertyName, out var value) &&
+        value.ValueKind == JsonValueKind.Number &&
+        value.TryGetInt64(out var seconds)
+            ? DateTimeOffset.FromUnixTimeSeconds(seconds)
+            : null;
 
     private async Task<string> SendPayMongoJsonAsync(
         HttpMethod method,

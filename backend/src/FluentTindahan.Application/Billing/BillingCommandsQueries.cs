@@ -69,7 +69,8 @@ public record TenantSubscriptionDto(
     // Current Usage Counts
     int CurrentProductCount,
     int CurrentCustomerCount,
-    int CurrentGCashTransactionsThisMonth
+    int CurrentGCashTransactionsThisMonth,
+    bool PaymentConfirmed = false
 );
 
 public record PaymentHistoryDto(
@@ -114,9 +115,9 @@ public class CreateCheckoutSessionCommandHandler : IRequestHandler<CreateCheckou
 
     public async Task<CheckoutSessionResponseDto> Handle(CreateCheckoutSessionCommand request, CancellationToken cancellationToken)
     {
-        if (request.TargetTier == PlanTier.Libre)
+        if (request.TargetTier != PlanTier.TindahanPro || request.Cycle != BillingCycle.Monthly)
         {
-            throw new InvalidOperationException("Cannot initiate checkout session for the free Libre plan.");
+            throw new InvalidOperationException("Only the monthly Tindahan Pro plan can be purchased.");
         }
 
         var tenantId = _currentUserService.TenantId;
@@ -166,7 +167,10 @@ public record ApplySubscriptionPaymentCommand(
     BillingCycle Cycle,
     long AmountCentavos,
     string PaymentId,
-    string PaymentMethod
+    string PaymentMethod,
+    string Currency = "PHP",
+    DateTimeOffset? PaidAt = null,
+    string Purpose = "subscription"
 ) : IRequest<WebhookProcessResultDto>;
 
 public class ApplySubscriptionPaymentCommandHandler : IRequestHandler<ApplySubscriptionPaymentCommand, WebhookProcessResultDto>
@@ -187,6 +191,21 @@ public class ApplySubscriptionPaymentCommandHandler : IRequestHandler<ApplySubsc
         if (string.IsNullOrWhiteSpace(request.PaymentId))
         {
             return Rejected("Missing payment id.", request.TenantId);
+        }
+
+        if (!string.Equals(request.Currency, "PHP", StringComparison.OrdinalIgnoreCase))
+        {
+            return Rejected("Unsupported payment currency.", request.TenantId);
+        }
+
+        if (!string.Equals(request.Purpose, "subscription", StringComparison.OrdinalIgnoreCase))
+        {
+            return Rejected("Payment is not for a subscription.", request.TenantId);
+        }
+
+        if (!request.PaidAt.HasValue)
+        {
+            return Rejected("Missing verified payment timestamp.", request.TenantId);
         }
 
         if (!TierPricing.TryGetPriceCentavos(request.Tier, request.Cycle, out var expectedCentavos))
@@ -221,13 +240,13 @@ public class ApplySubscriptionPaymentCommandHandler : IRequestHandler<ApplySubsc
                 Id = Guid.NewGuid(),
                 TenantId = request.TenantId,
                 AmountCentavos = request.AmountCentavos,
-                Currency = "PHP",
+                Currency = request.Currency.ToUpperInvariant(),
                 TierPurchased = request.Tier,
                 BillingCycle = request.Cycle,
                 GatewayReferenceId = request.PaymentId,
                 PaymentMethod = request.PaymentMethod,
                 Status = "Pending",
-                CreatedAt = DateTimeOffset.UtcNow
+                CreatedAt = request.PaidAt.Value
             };
             _context.PaymentHistories.Add(paymentHistory);
 
@@ -293,17 +312,12 @@ public class ApplySubscriptionPaymentCommandHandler : IRequestHandler<ApplySubsc
                     return Rejected("Unknown tenant.", request.TenantId);
                 }
 
-                var now = DateTimeOffset.UtcNow;
                 var duration = TierPricing.GetDuration(request.Cycle);
-
-                // Renewing the same active tier extends its end date; changing tiers starts a full pass now.
-                var isSameTierRenewal = tenant.Tier == request.Tier &&
-                                        tenant.SubscriptionEndDate.HasValue &&
-                                        tenant.SubscriptionEndDate.Value > now;
-
-                var newEndDate = isSameTierRenewal
-                    ? tenant.SubscriptionEndDate!.Value.Add(duration)
-                    : now.Add(duration);
+                var periodStart = tenant.SubscriptionEndDate.HasValue &&
+                                  tenant.SubscriptionEndDate.Value > request.PaidAt.Value
+                    ? tenant.SubscriptionEndDate.Value
+                    : request.PaidAt.Value;
+                var newEndDate = periodStart.Add(duration);
 
                 tenant.Tier = request.Tier;
                 tenant.SubscriptionEndDate = newEndDate;
@@ -465,7 +479,7 @@ public class ConfirmCheckoutSessionCommandHandler : IRequestHandler<ConfirmCheck
 
                 if (!Enum.TryParse<PlanTier>(rawTier, ignoreCase: true, out var intentTier) ||
                     !Enum.IsDefined(intentTier) ||
-                    intentTier == PlanTier.Libre ||
+                    intentTier != PlanTier.TindahanPro ||
                     !Enum.TryParse<BillingCycle>(rawCycle, ignoreCase: true, out var intentCycle) ||
                     !Enum.IsDefined(intentCycle))
                 {
@@ -473,8 +487,13 @@ public class ConfirmCheckoutSessionCommandHandler : IRequestHandler<ConfirmCheck
                     return await _sender.Send(new GetTenantSubscriptionQuery(), cancellationToken);
                 }
 
+                var purpose = intentStatus.Metadata.TryGetValue("purpose", out var p) ? p : null;
                 if (!TierPricing.TryGetPriceCentavos(intentTier, intentCycle, out var expectedQrCentavos) ||
-                    intentStatus.AmountCentavos != expectedQrCentavos)
+                    intentStatus.AmountCentavos != expectedQrCentavos ||
+                    !string.Equals(purpose, "subscription", StringComparison.OrdinalIgnoreCase) ||
+                    !string.Equals(intentStatus.Currency, "PHP", StringComparison.OrdinalIgnoreCase) ||
+                    string.IsNullOrWhiteSpace(intentStatus.PaymentId) ||
+                    !intentStatus.PaidAt.HasValue)
                 {
                     _logger.LogError(
                         "ConfirmCheckoutSession: QR Ph paid amount mismatch for tenant {TenantId}. Paid {Paid}, expected {Expected}.",
@@ -489,11 +508,15 @@ public class ConfirmCheckoutSessionCommandHandler : IRequestHandler<ConfirmCheck
                     intentTier,
                     intentCycle,
                     intentStatus.AmountCentavos,
-                    intentStatus.PaymentId ?? sessionId,
-                    "QRPh"
+                    intentStatus.PaymentId,
+                    "QRPh",
+                    intentStatus.Currency!,
+                    intentStatus.PaidAt,
+                    purpose!
                 ), cancellationToken);
                 _logger.LogInformation("ConfirmCheckoutSession: QR Ph payment applied with outcome {Outcome} for tenant {TenantId}.", qrOutcome.Outcome, request.TenantId);
-                return await _sender.Send(new GetTenantSubscriptionQuery(), cancellationToken);
+                var qrSubscription = await _sender.Send(new GetTenantSubscriptionQuery(), cancellationToken);
+                return qrSubscription with { PaymentConfirmed = qrOutcome.Success };
             }
 
             var sessionDetails = await _gatewayService.RetrieveCheckoutSessionAsync(sessionId, cancellationToken);
@@ -519,15 +542,19 @@ public class ConfirmCheckoutSessionCommandHandler : IRequestHandler<ConfirmCheck
                 return await _sender.Send(new GetTenantSubscriptionQuery(), cancellationToken);
             }
 
-            if (sessionDetails.Tier == PlanTier.Libre)
+            if (sessionDetails.Tier != PlanTier.TindahanPro || sessionDetails.Cycle != BillingCycle.Monthly)
             {
-                _logger.LogWarning("ConfirmCheckoutSession: Session has Libre tier; cannot upgrade.");
+                _logger.LogWarning("ConfirmCheckoutSession: Session has an unsupported plan.");
                 return await _sender.Send(new GetTenantSubscriptionQuery(), cancellationToken);
             }
 
             // Security invariant: Ensure the paid amount matches the canonical plan price.
             if (!TierPricing.TryGetPriceCentavos(sessionDetails.Tier, sessionDetails.Cycle, out var expectedCentavos) ||
-                sessionDetails.AmountCentavos != expectedCentavos)
+                sessionDetails.AmountCentavos != expectedCentavos ||
+                !string.Equals(sessionDetails.Currency, "PHP", StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(sessionDetails.Purpose, "subscription", StringComparison.OrdinalIgnoreCase) ||
+                string.IsNullOrWhiteSpace(sessionDetails.PaymentId) ||
+                !sessionDetails.PaidAt.HasValue)
             {
                 _logger.LogError(
                     "ConfirmCheckoutSession: Paid amount mismatch for tenant {TenantId}. Paid {Paid} centavos, expected {Expected} for {Tier}/{Cycle}.",
@@ -545,11 +572,16 @@ public class ConfirmCheckoutSessionCommandHandler : IRequestHandler<ConfirmCheck
                 sessionDetails.Cycle,
                 sessionDetails.AmountCentavos,
                 sessionDetails.PaymentId,
-                sessionDetails.PaymentMethod
+                sessionDetails.PaymentMethod,
+                sessionDetails.Currency!,
+                sessionDetails.PaidAt,
+                sessionDetails.Purpose!
             );
 
             var result = await _sender.Send(applyCommand, cancellationToken);
             _logger.LogInformation("ConfirmCheckoutSession: Payment applied with outcome {Outcome} for tenant {TenantId}.", result.Outcome, request.TenantId);
+            var checkoutSubscription = await _sender.Send(new GetTenantSubscriptionQuery(), cancellationToken);
+            return checkoutSubscription with { PaymentConfirmed = result.Success };
         }
         catch (Exception ex)
         {
@@ -599,6 +631,67 @@ public class ProcessPaymentWebhookCommandHandler : IRequestHandler<ProcessPaymen
 
         if (!TryParsePaidCheckoutEvent(request.JsonPayload, out var eventType, out var payment, out var error))
         {
+            if (eventType == PaymentPaidEventType && TryGetPaymentWebhookFallback(request.JsonPayload, out var paymentIntentId, out var directPaymentId, out var directAmount, out var directCurrency, out var directPaidAt, out var directMethod, out var directMetadata))
+            {
+                var status = await _gatewayService.RetrievePaymentIntentStatusAsync(paymentIntentId, cancellationToken);
+                var metadata = status.Metadata ?? directMetadata;
+                var tenantId = Guid.Empty;
+                string? purpose = null;
+                var hasTenant = metadata != null &&
+                                metadata.TryGetValue("tenant_id", out var rawTenantId) &&
+                                Guid.TryParse(rawTenantId, out tenantId) &&
+                                tenantId != Guid.Empty;
+                var hasPurpose = metadata != null &&
+                                 metadata.TryGetValue("purpose", out purpose) &&
+                                 string.Equals(purpose, "subscription", StringComparison.OrdinalIgnoreCase);
+                var hasPlan = metadata != null &&
+                              (metadata.TryGetValue("target_tier", out var rawTier) || metadata.TryGetValue("tier", out rawTier)) &&
+                              string.Equals(rawTier, PlanTier.TindahanPro.ToString(), StringComparison.OrdinalIgnoreCase) &&
+                              metadata.TryGetValue("cycle", out var rawCycle) &&
+                              string.Equals(rawCycle, BillingCycle.Monthly.ToString(), StringComparison.OrdinalIgnoreCase);
+
+                var resolvedPaymentId = !string.IsNullOrWhiteSpace(status.PaymentId) ? status.PaymentId : directPaymentId;
+                var resolvedPaidAt = status.PaidAt ?? directPaidAt;
+                var resolvedCurrency = !string.IsNullOrWhiteSpace(status.Currency) ? status.Currency : directCurrency;
+                var resolvedAmount = status.AmountCentavos > 0 ? status.AmountCentavos : directAmount;
+                var resolvedMethod = !string.IsNullOrWhiteSpace(directMethod) ? directMethod : "QRPh";
+                if (status.IsPaid && hasTenant && hasPurpose && hasPlan &&
+                    resolvedAmount == TierPricing.GetPriceCentavos(PlanTier.TindahanPro, BillingCycle.Monthly) &&
+                    string.Equals(resolvedCurrency, "PHP", StringComparison.OrdinalIgnoreCase) &&
+                    !string.IsNullOrWhiteSpace(resolvedPaymentId) && resolvedPaidAt.HasValue)
+                {
+                    payment = new ApplySubscriptionPaymentCommand(
+                        tenantId, PlanTier.TindahanPro, BillingCycle.Monthly, resolvedAmount,
+                        resolvedPaymentId!, resolvedMethod!, resolvedCurrency!, resolvedPaidAt, purpose!);
+                    return await _sender.Send(payment, cancellationToken);
+                }
+            }
+            else if (eventType == PaidEventType && TryGetCheckoutSessionId(request.JsonPayload, out var sessionId))
+            {
+                var sessionDetails = await _gatewayService.RetrieveCheckoutSessionAsync(sessionId, cancellationToken);
+                if (sessionDetails is { IsPaid: true } &&
+                    sessionDetails.TenantId != Guid.Empty &&
+                    sessionDetails.Tier == PlanTier.TindahanPro &&
+                    sessionDetails.Cycle == BillingCycle.Monthly &&
+                    string.Equals(sessionDetails.Purpose, "subscription", StringComparison.OrdinalIgnoreCase) &&
+                    sessionDetails.AmountCentavos == TierPricing.GetPriceCentavos(PlanTier.TindahanPro, BillingCycle.Monthly) &&
+                    string.Equals(sessionDetails.Currency, "PHP", StringComparison.OrdinalIgnoreCase) &&
+                    !string.IsNullOrWhiteSpace(sessionDetails.PaymentId) &&
+                    sessionDetails.PaidAt.HasValue)
+                {
+                    return await _sender.Send(new ApplySubscriptionPaymentCommand(
+                        sessionDetails.TenantId,
+                        sessionDetails.Tier,
+                        sessionDetails.Cycle,
+                        sessionDetails.AmountCentavos,
+                        sessionDetails.PaymentId,
+                        sessionDetails.PaymentMethod,
+                        sessionDetails.Currency!,
+                        sessionDetails.PaidAt,
+                        sessionDetails.Purpose!), cancellationToken);
+                }
+            }
+
             if (eventType != null && (eventType != PaidEventType && eventType != PaymentPaidEventType || error == "Event type ignored."))
             {
                 _logger.LogInformation("Ignoring PayMongo event type {EventType}.", eventType);
@@ -610,6 +703,74 @@ public class ProcessPaymentWebhookCommandHandler : IRequestHandler<ProcessPaymen
         }
 
         return await _sender.Send(payment!, cancellationToken);
+    }
+
+    private static bool TryGetCheckoutSessionId(string json, out string sessionId)
+    {
+        sessionId = string.Empty;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var data = doc.RootElement.GetProperty("data").GetProperty("attributes").GetProperty("data");
+            sessionId = TryGetString(data, "id") ?? string.Empty;
+            return sessionId.StartsWith("cs_", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryGetPaymentWebhookFallback(
+        string json,
+        out string paymentIntentId,
+        out string? paymentId,
+        out long amountCentavos,
+        out string? currency,
+        out DateTimeOffset? paidAt,
+        out string? method,
+        out Dictionary<string, string>? metadata)
+    {
+        paymentIntentId = string.Empty;
+        paymentId = null;
+        amountCentavos = 0;
+        currency = null;
+        paidAt = null;
+        method = null;
+        metadata = null;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var data = doc.RootElement.GetProperty("data").GetProperty("attributes").GetProperty("data");
+            paymentId = TryGetString(data, "id");
+            var attributes = data.GetProperty("attributes");
+            paymentIntentId = TryGetString(attributes, "payment_intent_id") ?? string.Empty;
+            if (attributes.TryGetProperty("amount", out var amtElem) && amtElem.ValueKind == JsonValueKind.Number && amtElem.TryGetInt64(out var amt))
+            {
+                amountCentavos = amt;
+            }
+            currency = TryGetString(attributes, "currency");
+            paidAt = TryGetUnixTimestamp(attributes, "paid_at");
+            if (TryGetObject(attributes, "source", out var src))
+            {
+                method = TryGetString(src, "type");
+            }
+            if (TryGetObject(attributes, "metadata", out var metaElem))
+            {
+                metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var prop in metaElem.EnumerateObject())
+                {
+                    metadata[prop.Name] = prop.Value.ValueKind == JsonValueKind.String
+                        ? prop.Value.GetString() ?? string.Empty
+                        : prop.Value.ToString();
+                }
+            }
+            return paymentIntentId.StartsWith("pi_", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException)
+        {
+            return false;
+        }
     }
 
     /// <summary>
@@ -675,15 +836,24 @@ public class ProcessPaymentWebhookCommandHandler : IRequestHandler<ProcessPaymen
                 return false;
             }
 
-            if (!TryParseEnum<PlanTier>(TryGetString(metadata, "tier") ?? TryGetString(metadata, "target_tier"), out var tier) || tier == PlanTier.Libre)
+            if (!TryParseEnum<PlanTier>(TryGetString(metadata, "tier") ?? TryGetString(metadata, "target_tier"), out var tier) ||
+                tier != PlanTier.TindahanPro)
             {
                 error = "Missing or invalid tier metadata.";
                 return false;
             }
 
-            if (!TryParseEnum<BillingCycle>(TryGetString(metadata, "cycle"), out var cycle))
+            if (!TryParseEnum<BillingCycle>(TryGetString(metadata, "cycle"), out var cycle) ||
+                cycle != BillingCycle.Monthly)
             {
                 error = "Missing or invalid cycle metadata.";
+                return false;
+            }
+
+            var purpose = TryGetString(metadata, "purpose");
+            if (!string.Equals(purpose, "subscription", StringComparison.OrdinalIgnoreCase))
+            {
+                error = "Missing or invalid payment purpose.";
                 return false;
             }
 
@@ -698,9 +868,16 @@ public class ProcessPaymentWebhookCommandHandler : IRequestHandler<ProcessPaymen
                 }
 
                 var directCurrency = TryGetString(sessionAttr, "currency");
-                if (directCurrency != null && !string.Equals(directCurrency, "PHP", StringComparison.OrdinalIgnoreCase))
+                if (!string.Equals(directCurrency, "PHP", StringComparison.OrdinalIgnoreCase))
                 {
                     error = "Unsupported currency.";
+                    return false;
+                }
+
+                var directPaidAt = TryGetUnixTimestamp(sessionAttr, "paid_at");
+                if (!directPaidAt.HasValue)
+                {
+                    error = "Missing verified payment timestamp.";
                     return false;
                 }
 
@@ -718,7 +895,9 @@ public class ProcessPaymentWebhookCommandHandler : IRequestHandler<ProcessPaymen
                     directMethod = TryGetString(directSource, "type") ?? directMethod;
                 }
 
-                payment = new ApplySubscriptionPaymentCommand(tenantId, tier, cycle, directAmountCentavos, directPaymentId, directMethod);
+                payment = new ApplySubscriptionPaymentCommand(
+                    tenantId, tier, cycle, directAmountCentavos, directPaymentId, directMethod,
+                    directCurrency!, directPaidAt, purpose!);
                 error = string.Empty;
                 return true;
             }
@@ -758,9 +937,16 @@ public class ProcessPaymentWebhookCommandHandler : IRequestHandler<ProcessPaymen
             }
 
             var currency = TryGetString(paidAttr, "currency");
-            if (currency != null && !string.Equals(currency, "PHP", StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(currency, "PHP", StringComparison.OrdinalIgnoreCase))
             {
                 error = "Unsupported currency.";
+                return false;
+            }
+
+            var paidAt = TryGetUnixTimestamp(paidAttr, "paid_at");
+            if (!paidAt.HasValue)
+            {
+                error = "Missing verified payment timestamp.";
                 return false;
             }
 
@@ -778,7 +964,9 @@ public class ProcessPaymentWebhookCommandHandler : IRequestHandler<ProcessPaymen
                 method = TryGetString(source, "type") ?? method;
             }
 
-            payment = new ApplySubscriptionPaymentCommand(tenantId, tier, cycle, amountCentavos, paidPaymentId, method);
+            payment = new ApplySubscriptionPaymentCommand(
+                tenantId, tier, cycle, amountCentavos, paidPaymentId, method,
+                currency!, paidAt, purpose!);
             error = string.Empty;
             return true;
         }
@@ -802,6 +990,14 @@ public class ProcessPaymentWebhookCommandHandler : IRequestHandler<ProcessPaymen
         parent.TryGetProperty(name, out var value) &&
         value.ValueKind == JsonValueKind.String
             ? value.GetString()
+            : null;
+
+    private static DateTimeOffset? TryGetUnixTimestamp(JsonElement parent, string name) =>
+        parent.ValueKind == JsonValueKind.Object &&
+        parent.TryGetProperty(name, out var value) &&
+        value.ValueKind == JsonValueKind.Number &&
+        value.TryGetInt64(out var seconds)
+            ? DateTimeOffset.FromUnixTimeSeconds(seconds)
             : null;
 
     // Enum.TryParse accepts numeric strings like "99"; require a defined, named value.
@@ -854,9 +1050,9 @@ public class GetTenantSubscriptionQueryHandler : IRequestHandler<GetTenantSubscr
 
         // If tier is paid but subscriptionEndDate has passed, effective tier is Libre.
         // A null SubscriptionEndDate on a paid tier represents a lifetime plan with no expiration.
-        var isExpired = rawTier != PlanTier.Libre && endDate.HasValue && endDate.Value < now;
+        var isExpired = rawTier != PlanTier.Libre && endDate.HasValue && endDate.Value <= now;
         var effectiveTier = isExpired ? PlanTier.Libre : rawTier;
-        var isActive = effectiveTier != PlanTier.Libre && (!endDate.HasValue || endDate.Value >= now);
+        var isActive = effectiveTier != PlanTier.Libre && (!endDate.HasValue || endDate.Value > now);
 
         int? daysRemaining = (endDate.HasValue && endDate.Value > now)
             ? (int)Math.Ceiling((endDate.Value - now).TotalDays)

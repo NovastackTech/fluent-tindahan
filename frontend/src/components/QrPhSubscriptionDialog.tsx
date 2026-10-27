@@ -23,7 +23,13 @@ import {
   WarningRegular,
   ShieldCheckmarkRegular
 } from '@fluentui/react-icons';
-import { useSubscriptionStore, type BillingCycle } from '../state/subscriptionStore';
+import {
+  clearPendingBillingReference,
+  getPendingBillingReference,
+  setPendingBillingReference,
+  useSubscriptionStore,
+  type BillingCycle
+} from '../state/subscriptionStore';
 import { formatPeso } from '../utils/currency';
 import { useLanguageStore } from '../state/languageStore';
 import { playScanBeep } from '../utils/sound';
@@ -125,7 +131,7 @@ const useStyles = makeStyles({
 export interface QrPhSubscriptionDialogProps {
   open: boolean;
   onClose: () => void;
-  targetTier: 'TindahanPro' | 'NegosyoPlus';
+  targetTier: 'TindahanPro';
   cycle: BillingCycle;
   amount: number;
 }
@@ -144,7 +150,8 @@ export const QrPhSubscriptionDialog: React.FC<QrPhSubscriptionDialogProps> = ({
   const {
     generateQrPhPayment,
     checkQrPhStatus,
-    confirmQrPhPayment
+    confirmQrPhPayment,
+    subscriptionEndDate
   } = useSubscriptionStore();
 
   const [isLoading, setIsLoading] = useState(false);
@@ -177,19 +184,11 @@ export const QrPhSubscriptionDialog: React.FC<QrPhSubscriptionDialogProps> = ({
   }, []);
 
   const handleClose = () => {
-    try {
-      if (!paymentReceivedRef.current && qrResult?.paymentIntentId &&
-          localStorage.getItem('fluent_last_checkout_session_id') === qrResult.paymentIntentId) {
-        localStorage.removeItem('fluent_last_checkout_session_id');
-      }
-    } catch {
-      // Installation and payment remain usable when browser storage is unavailable.
-    }
     onClose();
   };
 
   const handleStatusCheck = useCallback(async (paymentIntentId: string) => {
-    if (isCheckingRef.current) return;
+    if (isCheckingRef.current) return null;
     isCheckingRef.current = true;
     setIsChecking(true);
 
@@ -199,7 +198,14 @@ export const QrPhSubscriptionDialog: React.FC<QrPhSubscriptionDialogProps> = ({
         paymentReceivedRef.current = true;
         stopPolling();
         try {
-          await confirmQrPhPayment(paymentIntentId, targetTier, cycle);
+          const activated = await confirmQrPhPayment(paymentIntentId, targetTier, cycle);
+          if (!activated) {
+            throw new Error(
+              isTagalogRef.current
+                ? 'Natanggap ang bayad ngunit nabigo ang pag-upgrade. Pakisubukan muli.'
+                : 'Payment received but upgrade failed. Please retry.'
+            );
+          }
         } catch (e: any) {
           setError(
             e?.response?.data?.message ||
@@ -221,8 +227,10 @@ export const QrPhSubscriptionDialog: React.FC<QrPhSubscriptionDialogProps> = ({
           onCloseRef.current();
         }, 1600);
       }
+      return statusData;
     } catch {
       // Quiet background poll retry
+      return null;
     } finally {
       isCheckingRef.current = false;
       setIsChecking(false);
@@ -254,11 +262,23 @@ export const QrPhSubscriptionDialog: React.FC<QrPhSubscriptionDialogProps> = ({
       paymentReceivedRef.current = false;
 
       try {
+        const pendingIntentId = getPendingBillingReference();
+        if (pendingIntentId) {
+          const pendingStatus = await handleStatusCheckRef.current(pendingIntentId);
+          if (!isMounted || paymentReceivedRef.current) {
+            setIsLoading(false);
+            return;
+          }
+          if (pendingStatus && ['expired', 'failed', 'canceled', 'cancelled'].includes(pendingStatus.status.toLowerCase())) {
+            clearPendingBillingReference(pendingIntentId);
+          }
+        }
+
         const result = await generateQrPhPayment(targetTier, cycle);
         if (!isMounted) return;
 
         try {
-          localStorage.setItem('fluent_last_checkout_session_id', result.paymentIntentId);
+          setPendingBillingReference(result.paymentIntentId);
         } catch {
           // Continue displaying the QR code when browser storage is unavailable.
         }
@@ -295,7 +315,7 @@ export const QrPhSubscriptionDialog: React.FC<QrPhSubscriptionDialogProps> = ({
     };
   }, [open, retryTrigger, targetTier, cycle, generateQrPhPayment, stopPolling]);
 
-  const tierDisplayName = targetTier === 'TindahanPro' ? 'Tindahan Pro' : 'Negosyo Plus';
+  const tierDisplayName = 'Tindahan Pro';
 
   useEffect(() => {
     if (!open || !qrResult?.paymentIntentId || isPaid) return;
@@ -306,14 +326,14 @@ export const QrPhSubscriptionDialog: React.FC<QrPhSubscriptionDialogProps> = ({
     };
     document.addEventListener('visibilitychange', handleVisibilityOrFocus);
     window.addEventListener('focus', handleVisibilityOrFocus);
+    window.addEventListener('online', handleVisibilityOrFocus);
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
       window.removeEventListener('focus', handleVisibilityOrFocus);
+      window.removeEventListener('online', handleVisibilityOrFocus);
     };
   }, [open, qrResult?.paymentIntentId, isPaid]);
-  const cycleDisplayName = cycle === 'Weekly'
-    ? (isTagalog ? 'Lingguhan' : 'Weekly')
-    : (isTagalog ? 'Buwanan' : 'Monthly');
+  const cycleDisplayName = isTagalog ? 'Buwanan' : 'Monthly';
 
   return (
     <Dialog open={open} onOpenChange={(_, data) => !data.open && handleClose()}>
@@ -346,6 +366,7 @@ export const QrPhSubscriptionDialog: React.FC<QrPhSubscriptionDialogProps> = ({
                 </Text>
                 <Text size={300} style={{ color: tokens.colorNeutralForeground3 }}>
                   {tierDisplayName} • {formatPeso(amount)}
+                  {subscriptionEndDate ? ` • ${isTagalog ? 'Mag-e-expire sa' : 'Expires'} ${new Date(subscriptionEndDate).toLocaleDateString()}` : ''}
                 </Text>
               </div>
             ) : isLoading ? (
@@ -373,7 +394,7 @@ export const QrPhSubscriptionDialog: React.FC<QrPhSubscriptionDialogProps> = ({
                   appearance="primary"
                   icon={<ArrowClockwiseRegular />}
                   onClick={() => {
-                    const intentId = qrResult?.paymentIntentId;
+                    const intentId = qrResult?.paymentIntentId || getPendingBillingReference();
                     setError(null);
                     if (intentId) {
                       handleStatusCheck(intentId);

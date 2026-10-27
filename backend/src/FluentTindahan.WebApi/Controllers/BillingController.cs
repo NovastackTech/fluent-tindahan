@@ -64,7 +64,7 @@ public class BillingController : ControllerBase
     );
 
     /// <summary>
-    /// Creates a PayMongo Checkout Session for upgrading to Tindahan Pro or Negosyo Plus.
+    /// Creates a PayMongo Checkout Session for Tindahan Pro monthly.
     /// </summary>
     [HttpPost("checkout")]
     [ProducesResponseType(typeof(CheckoutSessionResponseDto), StatusCodes.Status200OK)]
@@ -75,7 +75,7 @@ public class BillingController : ControllerBase
         [FromBody] CreateCheckoutRequest request,
         CancellationToken cancellationToken)
     {
-        if (request.TargetTier == PlanTier.Libre ||
+        if (request.TargetTier != PlanTier.TindahanPro || request.Cycle != BillingCycle.Monthly ||
             !TierPricing.TryGetPriceCentavos(request.TargetTier, request.Cycle, out _))
         {
             return BadRequest(new { message = "Invalid plan or billing cycle." });
@@ -111,22 +111,20 @@ public class BillingController : ControllerBase
             return Unauthorized(new { message = "A valid tenant is required." });
         }
 
-        if (request.TargetTier == PlanTier.Libre ||
+        if (request.TargetTier != PlanTier.TindahanPro || request.Cycle != BillingCycle.Monthly ||
             !TierPricing.TryGetPriceCentavos(request.TargetTier, request.Cycle, out var priceCentavos))
         {
             return BadRequest(new { message = "Invalid plan or billing cycle." });
         }
 
         var tenantId = _currentUserService.TenantId;
-        var tierDisplayName = request.TargetTier == PlanTier.TindahanPro ? "Tindahan Pro" : "Negosyo Plus";
-        var cycleDisplayName = request.Cycle == BillingCycle.Weekly ? "Weekly" : "Monthly";
         var orderRef = $"sub_{tenantId.ToString("N")[..8]}_{request.TargetTier}_{request.Cycle}_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
 
         try
         {
             var result = await _gatewayService.CreateQrPhPaymentIntentAsync(new CreateQrPhPaymentIntentRequest(
                 AmountCentavos: priceCentavos,
-                Description: $"Fluent Tindahan - {tierDisplayName} ({cycleDisplayName})",
+                Description: "Fluent Tindahan - Tindahan Pro (Monthly)",
                 OrderId: orderRef,
                 Customer: new CustomerBillingDetails(
                     Name: "Tindahan Store Owner",
@@ -197,19 +195,27 @@ public class BillingController : ControllerBase
             if (result.IsPaid &&
                 (result.Metadata.TryGetValue("target_tier", out var rawTier) || result.Metadata.TryGetValue("tier", out rawTier)) &&
                 Enum.TryParse<PlanTier>(rawTier, ignoreCase: true, out var parsedTier) &&
-                parsedTier != PlanTier.Libre &&
+                parsedTier == PlanTier.TindahanPro &&
                 result.Metadata.TryGetValue("cycle", out var rawCycle) &&
                 Enum.TryParse<BillingCycle>(rawCycle, ignoreCase: true, out var parsedCycle) &&
                 TierPricing.TryGetPriceCentavos(parsedTier, parsedCycle, out var expectedPriceCentavos) &&
-                result.AmountCentavos == expectedPriceCentavos)
+                result.AmountCentavos == expectedPriceCentavos &&
+                result.Metadata.TryGetValue("purpose", out var purpose) &&
+                string.Equals(purpose, "subscription", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(result.Currency, "PHP", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(result.PaymentId) &&
+                result.PaidAt.HasValue)
             {
                 await _mediator.Send(new ApplySubscriptionPaymentCommand(
                     tenantId,
                     parsedTier,
                     parsedCycle,
                     expectedPriceCentavos,
-                    result.PaymentId ?? paymentIntentId,
-                    "QRPh"
+                    result.PaymentId,
+                    "QRPh",
+                    result.Currency!,
+                    result.PaidAt,
+                    purpose
                 ), cancellationToken);
             }
 
@@ -251,7 +257,7 @@ public class BillingController : ControllerBase
             return BadRequest(new { message = "PaymentIntentId is required." });
         }
 
-        if (request.TargetTier == PlanTier.Libre ||
+        if (request.TargetTier != PlanTier.TindahanPro || request.Cycle != BillingCycle.Monthly ||
             !TierPricing.TryGetPriceCentavos(request.TargetTier, request.Cycle, out var expectedCentavos))
         {
             return BadRequest(new { message = "Invalid plan or billing cycle." });
@@ -274,7 +280,7 @@ public class BillingController : ControllerBase
                 return StatusCode(StatusCodes.Status403Forbidden, new { message = "Payment intent does not belong to the current store." });
             }
 
-            if (!statusResult.Metadata.TryGetValue("target_tier", out var intentTier) ||
+            if (!(statusResult.Metadata.TryGetValue("target_tier", out var intentTier) || statusResult.Metadata.TryGetValue("tier", out intentTier)) ||
                 !string.Equals(intentTier, request.TargetTier.ToString(), StringComparison.OrdinalIgnoreCase))
             {
                 return BadRequest(new { message = "Payment intent target plan does not match requested plan." });
@@ -286,6 +292,22 @@ public class BillingController : ControllerBase
                 return BadRequest(new { message = "Payment intent billing cycle does not match requested cycle." });
             }
 
+            if (!statusResult.Metadata.TryGetValue("purpose", out var purpose) ||
+                !string.Equals(purpose, "subscription", StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest(new { message = "Payment intent is not for a subscription." });
+            }
+
+            if (!string.Equals(statusResult.Currency, "PHP", StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest(new { message = "Payment currency must be PHP." });
+            }
+
+            if (string.IsNullOrWhiteSpace(statusResult.PaymentId) || !statusResult.PaidAt.HasValue)
+            {
+                return BadRequest(new { message = "Payment verification is incomplete. Please retry shortly." });
+            }
+
             if (statusResult.AmountCentavos != expectedCentavos)
             {
                 _logger.LogError("Paid amount {Paid} does not match expected {Expected} for tier {Tier}.",
@@ -293,14 +315,16 @@ public class BillingController : ControllerBase
                 return BadRequest(new { message = "Payment amount does not match plan price." });
             }
 
-            var paymentId = statusResult.PaymentId ?? request.PaymentIntentId;
             var outcome = await _mediator.Send(new ApplySubscriptionPaymentCommand(
                 _currentUserService.TenantId,
                 request.TargetTier,
                 request.Cycle,
                 expectedCentavos,
-                paymentId,
-                "QRPh"
+                statusResult.PaymentId,
+                "QRPh",
+                statusResult.Currency!,
+                statusResult.PaidAt,
+                purpose
             ), cancellationToken);
 
             if (!outcome.Success)
@@ -309,7 +333,7 @@ public class BillingController : ControllerBase
             }
 
             var subscription = await _mediator.Send(new GetTenantSubscriptionQuery(), cancellationToken);
-            return Ok(subscription);
+            return Ok(subscription with { PaymentConfirmed = true });
         }
         catch (PaymentGatewayException ex)
         {
@@ -409,7 +433,8 @@ public class BillingController : ControllerBase
             return NotFound();
         }
 
-        if (!TierPricing.TryGetPriceCentavos(request.TargetTier, request.Cycle, out var priceCentavos))
+        if (request.TargetTier != PlanTier.TindahanPro || request.Cycle != BillingCycle.Monthly ||
+            !TierPricing.TryGetPriceCentavos(request.TargetTier, request.Cycle, out var priceCentavos))
         {
             return BadRequest(new { message = "Invalid plan or billing cycle." });
         }
@@ -420,7 +445,10 @@ public class BillingController : ControllerBase
             request.Cycle,
             priceCentavos,
             $"mock_pay_{Guid.NewGuid():N}",
-            "mock"), cancellationToken);
+            "mock",
+            "PHP",
+            DateTimeOffset.UtcNow,
+            "subscription"), cancellationToken);
 
         return result.Success ? Ok(result) : BadRequest(new { message = result.Message });
     }

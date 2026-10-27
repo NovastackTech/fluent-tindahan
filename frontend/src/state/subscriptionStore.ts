@@ -11,8 +11,39 @@ import { useAuthStore } from './authStore';
 import { useLanguageStore } from './languageStore';
 import { getLocalizedSyncErrorMessage } from '../utils/syncErrors';
 
-export type BillingCycle = 'Weekly' | 'Monthly';
+export type BillingCycle = 'Monthly';
 export const SUBSCRIPTION_REFRESH_ERROR = 'SUBSCRIPTION_REFRESH_ERROR';
+const PENDING_BILLING_REFERENCE_KEY = 'fluent_pending_billing_reference';
+
+interface PendingBillingReference {
+  tenantId: string;
+  id: string;
+}
+
+export const getPendingBillingReference = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(PENDING_BILLING_REFERENCE_KEY);
+    if (!raw) return null;
+    const pending = JSON.parse(raw) as PendingBillingReference;
+    return pending.tenantId === useAuthStore.getState().tenantId ? pending.id : null;
+  } catch {
+    return null;
+  }
+};
+
+export const setPendingBillingReference = (id: string): void => {
+  const tenantId = useAuthStore.getState().tenantId;
+  if (!tenantId || typeof window === 'undefined') return;
+  localStorage.setItem(PENDING_BILLING_REFERENCE_KEY, JSON.stringify({ tenantId, id }));
+};
+
+export const clearPendingBillingReference = (expectedId?: string): void => {
+  if (typeof window === 'undefined') return;
+  if (!expectedId || getPendingBillingReference() === expectedId) {
+    localStorage.removeItem(PENDING_BILLING_REFERENCE_KEY);
+  }
+};
 
 /**
  * Mock payments exist only in Vite dev builds. In production bundles this is statically `false`,
@@ -50,9 +81,9 @@ export interface SubscriptionState {
   canAddGCashTxn: (monthlyCount: number) => boolean;
   refreshSubscription: () => Promise<void>;
   confirmCheckoutSession: (sessionId?: string) => Promise<boolean>;
-  createCheckoutSession: (targetTier: PlanTier, cycle: BillingCycle) => Promise<string>;
-  simulateMockPayment: (targetTier: PlanTier, cycle: BillingCycle) => Promise<void>;
-  generateQrPhPayment: (targetTier: PlanTier, cycle: BillingCycle) => Promise<{
+  createCheckoutSession: (targetTier: 'TindahanPro', cycle: BillingCycle) => Promise<string>;
+  simulateMockPayment: (targetTier: 'TindahanPro', cycle: BillingCycle) => Promise<void>;
+  generateQrPhPayment: (targetTier: 'TindahanPro', cycle: BillingCycle) => Promise<{
     paymentIntentId: string;
     paymentMethodId: string;
     clientKey: string | null;
@@ -69,7 +100,7 @@ export interface SubscriptionState {
     amountCentavos: number;
     paymentId?: string;
   }>;
-  confirmQrPhPayment: (paymentIntentId: string, targetTier: PlanTier, cycle: BillingCycle) => Promise<boolean>;
+  confirmQrPhPayment: (paymentIntentId: string, targetTier: 'TindahanPro', cycle: BillingCycle) => Promise<boolean>;
 }
 
 export const getTierLimits = (tier: PlanTier): TierLimits => {
@@ -127,8 +158,9 @@ async function persistAndApplySubscriptionState(
   data: SubscriptionSyncPayload,
   set: (state: Partial<SubscriptionState>) => void
 ): Promise<PlanTier> {
-  const effectiveTier: PlanTier = data.tierName || (data.tier === 1 ? 'TindahanPro' : data.tier === 2 ? 'NegosyoPlus' : 'Libre');
+  const storedTier: PlanTier = data.tierName || (data.tier === 1 ? 'TindahanPro' : data.tier === 2 ? 'NegosyoPlus' : 'Libre');
   const endDate = data.subscriptionEndDate || null;
+  const effectiveTier = getEffectiveTier(storedTier, endDate);
 
   useAuthStore.getState().setSubscription(effectiveTier, endDate);
 
@@ -149,16 +181,40 @@ async function persistAndApplySubscriptionState(
   set({
     tier: effectiveTier,
     subscriptionEndDate: endDate,
-    isActive: data.isActive,
-    daysRemaining: data.daysRemaining,
+    isActive: effectiveTier !== 'Libre' && Boolean(data.isActive ?? true),
+    daysRemaining: effectiveTier === 'Libre' && endDate ? 0 : (data.daysRemaining ?? (endDate ? Math.max(0, Math.ceil((Date.parse(endDate) - Date.now()) / (24 * 60 * 60 * 1000))) : null)),
     isLoading: false
   });
 
+  scheduleExpiry(endDate);
   return effectiveTier;
 }
 
+const getEffectiveTier = (tier: PlanTier, endDate: string | null): PlanTier =>
+  tier !== 'Libre' && endDate && Date.parse(endDate) <= Date.now() ? 'Libre' : tier;
+
+let expiryTimer: number | undefined;
+
+export const scheduleExpiry = (endDate: string | null): void => {
+  if (typeof window === 'undefined') return;
+  if (expiryTimer !== undefined) window.clearTimeout(expiryTimer);
+  if (!endDate) return;
+  const remaining = Date.parse(endDate) - Date.now();
+  if (remaining <= 0) {
+    if (useAuthStore.getState().tier !== 'Libre') {
+      useAuthStore.getState().setSubscription('Libre', endDate);
+    }
+    useSubscriptionStore.setState({ tier: 'Libre', isActive: false, daysRemaining: 0 });
+    return;
+  }
+  expiryTimer = window.setTimeout(() => scheduleExpiry(endDate), Math.min(remaining, 2_147_483_647));
+};
+
 export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
-  const currentTier = useAuthStore.getState().tier || 'Libre';
+  const currentTier = getEffectiveTier(
+    useAuthStore.getState().tier || 'Libre',
+    useAuthStore.getState().subscriptionEndDate
+  );
   const currentEndDate = useAuthStore.getState().subscriptionEndDate;
 
   return {
@@ -218,8 +274,11 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
 
         // Check if expired offline
         const now = new Date();
-        const isExpired = fallbackEndDate ? new Date(fallbackEndDate) < now : false;
+        const isExpired = fallbackEndDate ? Date.parse(fallbackEndDate) <= now.getTime() : false;
         const effective = isExpired ? 'Libre' : fallbackTier;
+        if (effective !== fallbackTier) {
+          useAuthStore.getState().setSubscription('Libre', fallbackEndDate);
+        }
 
         set({
           tier: effective,
@@ -238,23 +297,39 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
       set({ isLoading: true, error: null });
       try {
         await ensureTenantProvisioned();
-        const storedSessionId = sessionId || (typeof window !== 'undefined' ? localStorage.getItem('fluent_last_checkout_session_id') : null);
+        const previousTier = get().tier;
+        const previousEndDate = get().subscriptionEndDate;
+        const storedSessionId = sessionId || getPendingBillingReference();
 
         const response = await apiClient.post('/billing/confirm-session', {
           sessionId: storedSessionId || undefined
         });
 
         const effectiveTier = await persistAndApplySubscriptionState(response.data, set);
-
-        if (effectiveTier !== 'Libre' && typeof window !== 'undefined') {
+        const newEndDate = response.data?.subscriptionEndDate || null;
+        let wasActivated = effectiveTier !== 'Libre' && (previousTier === 'Libre' || !previousEndDate || newEndDate !== previousEndDate);
+        if (!wasActivated && storedSessionId?.startsWith('pi_') && typeof window !== 'undefined') {
           try {
-            localStorage.removeItem('fluent_last_checkout_session_id');
+            const qrStatus = await get().checkQrPhStatus(storedSessionId);
+            if (qrStatus?.isPaid && effectiveTier !== 'Libre') {
+              wasActivated = true;
+            } else if (['expired', 'failed', 'canceled', 'cancelled'].includes(String(qrStatus?.status || '').toLowerCase())) {
+              clearPendingBillingReference(storedSessionId);
+            }
+          } catch {
+            // Ignore status check failure
+          }
+        }
+
+        if (wasActivated && typeof window !== 'undefined') {
+          try {
+            clearPendingBillingReference(storedSessionId || undefined);
           } catch {
             // Ignore
           }
         }
 
-        return effectiveTier !== 'Libre';
+        return wasActivated;
       } catch (err) {
         console.error('[Subscription] Failed to confirm checkout session:', err);
         set({ isLoading: false });
@@ -262,19 +337,19 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
       }
     },
 
-    createCheckoutSession: async (targetTier: PlanTier, cycle: BillingCycle) => {
+    createCheckoutSession: async (_targetTier: 'TindahanPro', _cycle: BillingCycle) => {
       set({ isLoading: true, error: null });
       try {
         await ensureTenantProvisioned();
         // Redirect URLs are built server-side from configuration (prevents open redirects).
         const response = await apiClient.post('/billing/checkout', {
-          targetTier: targetTier === 'TindahanPro' ? 1 : 2,
-          cycle: cycle === 'Weekly' ? 0 : 1
+          targetTier: 1,
+          cycle: 1
         });
 
         if (response.data?.sessionId && typeof window !== 'undefined') {
           try {
-            localStorage.setItem('fluent_last_checkout_session_id', response.data.sessionId);
+            setPendingBillingReference(response.data.sessionId);
           } catch {
             // Ignore
           }
@@ -288,7 +363,7 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
       }
     },
 
-    simulateMockPayment: async (targetTier: PlanTier, cycle: BillingCycle) => {
+    simulateMockPayment: async (targetTier: 'TindahanPro', _cycle: BillingCycle) => {
       if (!IS_MOCK_PAYMENT_ENABLED) {
         throw new Error('Mock payments are only available in development builds.');
       }
@@ -297,8 +372,8 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
       try {
         await ensureTenantProvisioned();
         const response = await apiClient.post('/billing/mock-pay', {
-          targetTier: targetTier === 'TindahanPro' ? 1 : 2,
-          cycle: cycle === 'Weekly' ? 0 : 1
+          targetTier: 1,
+          cycle: 1
         });
         const payment = response.data;
         if (payment?.success === false) {
@@ -344,11 +419,11 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
       }
     },
 
-    generateQrPhPayment: async (targetTier: PlanTier, cycle: BillingCycle) => {
+    generateQrPhPayment: async (_targetTier: 'TindahanPro', _cycle: BillingCycle) => {
       await ensureTenantProvisioned();
       const response = await apiClient.post('/billing/qrph/generate', {
-        targetTier: targetTier === 'TindahanPro' ? 1 : 2,
-        cycle: cycle === 'Weekly' ? 0 : 1
+        targetTier: 1,
+        cycle: 1
       });
       return response.data;
     },
@@ -358,14 +433,14 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
       return response.data;
     },
 
-    confirmQrPhPayment: async (paymentIntentId: string, targetTier: PlanTier, cycle: BillingCycle) => {
+    confirmQrPhPayment: async (paymentIntentId: string, targetTier: 'TindahanPro', _cycle: BillingCycle) => {
       set({ isLoading: true, error: null });
       try {
         await ensureTenantProvisioned();
         const response = await apiClient.post('/billing/qrph/confirm', {
           paymentIntentId,
-          targetTier: targetTier === 'TindahanPro' ? 1 : 2,
-          cycle: cycle === 'Weekly' ? 0 : 1
+          targetTier: 1,
+          cycle: 1
         });
 
         const subscription = response.data;
@@ -379,6 +454,10 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
               ? 'NegosyoPlus'
               : targetTier;
         const subscriptionEndDate = subscription?.subscriptionEndDate || null;
+        const effectiveTier = getEffectiveTier(responseTier, subscriptionEndDate);
+        if (effectiveTier === 'Libre') {
+          throw new Error('Subscription activation could not be confirmed.');
+        }
         const auth = useAuthStore.getState();
         auth.setSubscription(responseTier, subscriptionEndDate);
 
@@ -408,11 +487,12 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
 
         if (typeof window !== 'undefined') {
           try {
-            localStorage.removeItem('fluent_last_checkout_session_id');
+            clearPendingBillingReference(paymentIntentId);
           } catch {
             // Ignore
           }
         }
+        scheduleExpiry(subscriptionEndDate);
         return true;
       } catch (err: any) {
         set({ isLoading: false, error: err?.response?.data?.message || err.message });
@@ -427,7 +507,7 @@ useAuthStore.subscribe((authState, prevAuthState) => {
     authState.tier !== prevAuthState?.tier ||
     authState.subscriptionEndDate !== prevAuthState?.subscriptionEndDate
   ) {
-    const effectiveTier = authState.tier || 'Libre';
+    const effectiveTier = getEffectiveTier(authState.tier || 'Libre', authState.subscriptionEndDate);
     const endDate = authState.subscriptionEndDate || null;
     const daysRemaining = endDate
       ? Math.max(0, Math.ceil((Date.parse(endDate) - Date.now()) / (24 * 60 * 60 * 1000)))
@@ -438,8 +518,11 @@ useAuthStore.subscribe((authState, prevAuthState) => {
       isActive: effectiveTier !== 'Libre',
       daysRemaining
     });
+    scheduleExpiry(endDate);
   }
 });
+
+scheduleExpiry(useAuthStore.getState().subscriptionEndDate);
 
 useLanguageStore.subscribe((langState, prevLangState) => {
   if (langState.language !== prevLangState?.language) {

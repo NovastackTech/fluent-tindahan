@@ -87,13 +87,23 @@ describe('SubscriptionModal', () => {
     expect(screen.queryByRole('button', { name: /Lingguhan|Weekly|Sachet/i })).not.toBeInTheDocument();
   });
 
+  it('offers QR Ph only', () => {
+    useLanguageStore.setState({ language: 'en' });
+    useSubscriptionStore.setState({ isUpgradeModalOpen: true });
+    renderModal();
+
+    expect(screen.getByRole('button', { name: /Pay via QR Ph/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Upgrade to Pro|Renew Pro/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/PayMongo gateway|7-Eleven|Cards/i)).not.toBeInTheDocument();
+  });
+
   it('keeps plan prices visible and offers retry when subscription refresh fails', () => {
     useSubscriptionStore.setState({ isUpgradeModalOpen: true, error: SUBSCRIPTION_REFRESH_ERROR });
     renderModal();
 
     expect(screen.getByText('₱129.00')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Subukan muli|Retry/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Mag-upgrade sa Pro|Upgrade to Pro/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Magbayad gamit ang QR Ph|Pay via QR Ph/i })).toBeEnabled();
     expect(screen.queryByText(/Request failed with status code 500/i)).not.toBeInTheDocument();
   });
 
