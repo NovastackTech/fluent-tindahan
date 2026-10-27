@@ -28,7 +28,6 @@ import {
 } from '@fluentui/react-icons';
 import {
   useSubscriptionStore,
-  type BillingCycle,
   IS_MOCK_PAYMENT_ENABLED,
   SUBSCRIPTION_REFRESH_ERROR
 } from '../state/subscriptionStore';
@@ -41,7 +40,7 @@ import { useAuthStore } from '../state/authStore';
 
 const useStyles = makeStyles({
   surface: {
-    maxWidth: '900px',
+    maxWidth: '640px',
     width: '95vw',
     ...shorthands.padding(tokens.spacingVerticalL, tokens.spacingHorizontalL),
     backgroundColor: tokens.colorNeutralBackground1,
@@ -63,12 +62,6 @@ const useStyles = makeStyles({
     flexDirection: 'column',
     gap: tokens.spacingVerticalS,
     marginTop: tokens.spacingVerticalM
-  },
-  cycleToggle: {
-    display: 'flex',
-    justifyContent: 'center',
-    gap: tokens.spacingHorizontalS,
-    marginBottom: tokens.spacingVerticalL
   },
   cardsGrid: {
     display: 'grid',
@@ -167,12 +160,14 @@ export const SubscriptionModal: React.FC = () => {
     error
   } = useSubscriptionStore();
 
-  const [cycle, setCycle] = useState<BillingCycle>('Monthly');
   const [processingTier, setProcessingTier] = useState<PlanTier | null>(null);
-  const [qrModalTier, setQrModalTier] = useState<'TindahanPro' | 'NegosyoPlus' | null>(null);
+  const [qrModalTier, setQrModalTier] = useState<'TindahanPro' | null>(null);
   const handleCloseQrModal = useCallback(() => {
     setQrModalTier(null);
-  }, []);
+    if (typeof window !== 'undefined' && localStorage.getItem('fluent_last_checkout_session_id')) {
+      void confirmCheckoutSession().then(() => refreshSubscription());
+    }
+  }, [confirmCheckoutSession, refreshSubscription]);
   const isRefreshError = error === SUBSCRIPTION_REFRESH_ERROR;
   const displayedError = getLocalizedSyncErrorMessage(error, language) || error;
 
@@ -189,7 +184,7 @@ export const SubscriptionModal: React.FC = () => {
 
   const handleCheckout = async (targetTier: PlanTier) => {
     await runTierAction(targetTier, async () => {
-      const checkoutUrl = await createCheckoutSession(targetTier, cycle);
+      const checkoutUrl = await createCheckoutSession(targetTier, 'Monthly');
       if (checkoutUrl) {
         window.location.href = checkoutUrl;
       }
@@ -197,12 +192,10 @@ export const SubscriptionModal: React.FC = () => {
   };
 
   const handleSimulatePayment = async (targetTier: PlanTier) => {
-    await runTierAction(targetTier, () => simulateMockPayment(targetTier, cycle));
+    await runTierAction(targetTier, () => simulateMockPayment(targetTier, 'Monthly'));
   };
 
-  const cycleUnitText = cycle === 'Weekly'
-    ? (isTagalog ? '/ linggo' : '/ week')
-    : (isTagalog ? '/ buwan' : '/ month');
+  const cycleUnitText = isTagalog ? '/ buwan' : '/ month';
 
   const renderActiveBadge = (targetTier: PlanTier) =>
     currentTier === targetTier ? (
@@ -212,7 +205,7 @@ export const SubscriptionModal: React.FC = () => {
     ) : null;
 
   const renderPaidTierActions = (
-    targetTier: 'TindahanPro' | 'NegosyoPlus',
+    targetTier: 'TindahanPro',
     extendLabel: string,
     upgradeLabel: string
   ) => (
@@ -266,8 +259,8 @@ export const SubscriptionModal: React.FC = () => {
             <br />
             <Text size={300} style={{ color: tokens.colorNeutralForeground3 }}>
               {isTagalog
-                ? 'Piliin ang swak na sachet o buwanang plano para sa iyong negosyo'
-                : 'Select the right sachet weekly or monthly plan for your store'}
+                ? 'Piliin ang swak na buwanang plano para sa iyong negosyo'
+                : 'Select the right monthly plan for your store'}
             </Text>
           </div>
           <Button
@@ -321,24 +314,6 @@ export const SubscriptionModal: React.FC = () => {
                 </Button>
               </div>
             )}
-
-            {/* Cycle Toggle */}
-            <div className={styles.cycleToggle}>
-              <Button
-                appearance={cycle === 'Weekly' ? 'primary' : 'secondary'}
-                onClick={() => setCycle('Weekly')}
-                size="medium"
-              >
-                {isTagalog ? 'Lingguhan (Sachet Pass)' : 'Weekly Pass (Sachet)'}
-              </Button>
-              <Button
-                appearance={cycle === 'Monthly' ? 'primary' : 'secondary'}
-                onClick={() => setCycle('Monthly')}
-                size="medium"
-              >
-                {isTagalog ? 'Buwanan (Mas Matipid ⭐)' : 'Monthly (Best Value ⭐)'}
-              </Button>
-            </div>
 
             {/* Current Active Plan Notice */}
             {currentTier !== 'Libre' && (
@@ -441,7 +416,7 @@ export const SubscriptionModal: React.FC = () => {
 
                   <div className={styles.priceSection}>
                     <Text size={700} weight="bold">
-                      {formatPeso(cycle === 'Weekly' ? 35 : 129)}
+                      {formatPeso(129)}
                     </Text>
                     <Text size={300} style={{ color: tokens.colorNeutralForeground3 }}>
                       {cycleUnitText}
@@ -486,52 +461,6 @@ export const SubscriptionModal: React.FC = () => {
                   isTagalog ? 'Mag-upgrade sa Pro' : 'Upgrade to Pro'
                 )}
               </Card>
-
-              {/* NEGOSYO PLUS */}
-              <Card
-                className={mergeClasses(styles.tierCard, currentTier === 'NegosyoPlus' && styles.activeTierCard)}
-                style={{ overflow: 'visible' }}
-              >
-                <div>
-                  <div className={styles.cardHeader}>
-                    <Text weight="bold" size={500}>Negosyo Plus</Text>
-                    {renderActiveBadge('NegosyoPlus')}
-                  </div>
-                  <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-                    {isTagalog ? 'Para sa minimart o lumalaking tindahan' : 'For minimarts & high-volume stores'}
-                  </Text>
-
-                  <div className={styles.priceSection}>
-                    <Text size={700} weight="bold">
-                      {formatPeso(cycle === 'Weekly' ? 89 : 349)}
-                    </Text>
-                    <Text size={300} style={{ color: tokens.colorNeutralForeground3 }}>
-                      {cycleUnitText}
-                    </Text>
-                  </div>
-
-                  <ul className={styles.featureList}>
-                    <li className={styles.featureItem}>
-                      <CheckmarkRegular className={styles.checkIcon} />
-                      <Text weight="semibold">{isTagalog ? 'Lahat ng Pro features kasama' : 'All Pro features included'}</Text>
-                    </li>
-                    <li className={styles.featureItem}>
-                      <CheckmarkRegular className={styles.checkIcon} />
-                      <Text weight="semibold">{isTagalog ? 'Hanggang 4 sabay na devices' : 'Up to 4 synced devices'}</Text>
-                    </li>
-                    <li className={styles.featureItem}>
-                      <CheckmarkRegular className={styles.checkIcon} />
-                      <span>{isTagalog ? 'Priority Support at Remote Recovery' : 'Priority support & remote recovery'}</span>
-                    </li>
-                  </ul>
-                </div>
-
-                {renderPaidTierActions(
-                  'NegosyoPlus',
-                  isTagalog ? 'Palawigin ang Negosyo Plus' : 'Extend Negosyo Plus',
-                  isTagalog ? 'Mag-upgrade sa Negosyo' : 'Upgrade to Negosyo'
-                )}
-              </Card>
             </div>
 
             {/* Note on PayMongo payment methods */}
@@ -558,12 +487,8 @@ export const SubscriptionModal: React.FC = () => {
           open={Boolean(qrModalTier)}
           onClose={handleCloseQrModal}
           targetTier={qrModalTier}
-          cycle={cycle}
-          amount={
-            qrModalTier === 'TindahanPro'
-              ? (cycle === 'Weekly' ? 35 : 129)
-              : (cycle === 'Weekly' ? 89 : 349)
-          }
+          cycle="Monthly"
+          amount={129}
         />
       )}
     </>

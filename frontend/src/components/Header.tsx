@@ -172,7 +172,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
   const businessName = useAuthStore((s) => s.businessName);
   const isOnboarded = useAuthStore((s) => s.isOnboarded);
   const { t, language, toggleLanguage } = useTranslation();
-  const { isInstallable, isStandalone, isInstalled, promptInstall } = usePwaStore();
+  const { isInstallable, isIos, isStandalone, isInstalled, promptInstall } = usePwaStore();
   const { tier, openUpgradeModal } = useSubscriptionStore();
   const openDisclaimer = useDisclaimerStore((s) => s.openDisclaimer);
   const safeLogout = useSafeLogout({
@@ -408,7 +408,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
   };
 
   const renderPwaInstallAction = (inTray = false) => {
-    if (!isInstallable || isStandalone || isInstalled) return null;
+    if ((!isInstallable && !isIos) || isStandalone || isInstalled) return null;
     return (
       <Tooltip content={t.pwa.installHeaderTooltip} relationship="label">
         <Button

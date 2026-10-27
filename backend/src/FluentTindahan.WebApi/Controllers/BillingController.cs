@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using FluentTindahan.Application.Billing;
 using FluentTindahan.Application.Common.Interfaces;
@@ -25,6 +26,7 @@ public class BillingController : ControllerBase
     private readonly IPaymentGatewayService _gatewayService;
     private readonly IHostEnvironment _environment;
     private readonly ILogger<BillingController> _logger;
+    private readonly IApplicationDbContext? _dbContext;
 
     [ActivatorUtilitiesConstructor]
     public BillingController(
@@ -32,13 +34,15 @@ public class BillingController : ControllerBase
         ICurrentUserService currentUserService,
         IPaymentGatewayService gatewayService,
         IHostEnvironment environment,
-        ILogger<BillingController> logger)
+        ILogger<BillingController> logger,
+        IApplicationDbContext? dbContext = null)
     {
         _mediator = mediator;
         _currentUserService = currentUserService;
         _gatewayService = gatewayService;
         _environment = environment;
         _logger = logger;
+        _dbContext = dbContext;
     }
 
     public BillingController(
@@ -46,7 +50,7 @@ public class BillingController : ControllerBase
         ICurrentUserService currentUserService,
         IHostEnvironment environment,
         ILogger<BillingController> logger)
-        : this(mediator, currentUserService, null!, environment, logger)
+        : this(mediator, currentUserService, null!, environment, logger, null)
     {
     }
 
@@ -138,6 +142,19 @@ public class BillingController : ControllerBase
                 }
             ), cancellationToken);
 
+            var dbContext = _dbContext ?? HttpContext?.RequestServices.GetService<IApplicationDbContext>();
+            if (dbContext != null)
+            {
+                var tenant = await dbContext.Tenants
+                    .IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
+                if (tenant != null)
+                {
+                    tenant.CheckoutSessionId = result.PaymentIntentId;
+                    await dbContext.SaveChangesAsync(cancellationToken);
+                }
+            }
+
             return Ok(result);
         }
         catch (PaymentGatewayException ex)
@@ -175,6 +192,25 @@ public class BillingController : ControllerBase
                 _logger.LogWarning("Tenant {TenantId} attempted to access QR Ph status for intent {IntentId} belonging to another tenant or with missing tenant metadata.",
                     tenantId, paymentIntentId);
                 return StatusCode(StatusCodes.Status403Forbidden, new { message = "Payment intent does not belong to the current store." });
+            }
+
+            if (result.IsPaid &&
+                (result.Metadata.TryGetValue("target_tier", out var rawTier) || result.Metadata.TryGetValue("tier", out rawTier)) &&
+                Enum.TryParse<PlanTier>(rawTier, ignoreCase: true, out var parsedTier) &&
+                parsedTier != PlanTier.Libre &&
+                result.Metadata.TryGetValue("cycle", out var rawCycle) &&
+                Enum.TryParse<BillingCycle>(rawCycle, ignoreCase: true, out var parsedCycle) &&
+                TierPricing.TryGetPriceCentavos(parsedTier, parsedCycle, out var expectedPriceCentavos) &&
+                result.AmountCentavos == expectedPriceCentavos)
+            {
+                await _mediator.Send(new ApplySubscriptionPaymentCommand(
+                    tenantId,
+                    parsedTier,
+                    parsedCycle,
+                    expectedPriceCentavos,
+                    result.PaymentId ?? paymentIntentId,
+                    "QRPh"
+                ), cancellationToken);
             }
 
             return Ok(result);
@@ -412,4 +448,3 @@ public class BillingController : ControllerBase
         return Ok(new { message = "Subscription successfully reset to Libre." });
     }
 }
-

@@ -229,6 +229,7 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
             }
 
             _logger.LogInformation("Retrieving mock checkout session {SessionId} (Development).", sessionId);
+
             return new CheckoutSessionDetails(
                 SessionId: sessionId,
                 Status: "paid",
@@ -295,7 +296,7 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
                     tenantId = parsedTenantId;
                 }
 
-                if (metaElem.TryGetProperty("tier", out var tierElem) &&
+                if ((metaElem.TryGetProperty("tier", out var tierElem) || metaElem.TryGetProperty("target_tier", out tierElem)) &&
                     Enum.TryParse<PlanTier>(tierElem.GetString(), ignoreCase: true, out var parsedTier) &&
                     Enum.IsDefined(parsedTier))
                 {
@@ -351,6 +352,60 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
                 }
             }
 
+            if (!isPaid &&
+                attrElem.TryGetProperty("payment_intent", out var piElem) &&
+                piElem.ValueKind == JsonValueKind.Object &&
+                piElem.TryGetProperty("attributes", out var piAttr) &&
+                piAttr.ValueKind == JsonValueKind.Object)
+            {
+                var piStatus = piAttr.TryGetProperty("status", out var pisElem) ? pisElem.GetString() : null;
+                if (string.Equals(piStatus, "succeeded", StringComparison.OrdinalIgnoreCase))
+                {
+                    isPaid = true;
+                    if (piElem.TryGetProperty("id", out var piIdElem) && !string.IsNullOrWhiteSpace(piIdElem.GetString()))
+                    {
+                        paymentId = piIdElem.GetString()!;
+                    }
+                    if (piAttr.TryGetProperty("amount", out var piAmtElem) && piAmtElem.TryGetInt64(out var piAmt))
+                    {
+                        amountCentavos = piAmt;
+                    }
+                }
+
+                if (piAttr.TryGetProperty("payments", out var piPayments) &&
+                    piPayments.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var p in piPayments.EnumerateArray())
+                    {
+                        var pid = p.TryGetProperty("id", out var idElem) ? idElem.GetString() : null;
+                        if (string.IsNullOrWhiteSpace(pid) ||
+                            !p.TryGetProperty("attributes", out var pAttr) ||
+                            pAttr.ValueKind != JsonValueKind.Object)
+                        {
+                            continue;
+                        }
+
+                        var pStatus = pAttr.TryGetProperty("status", out var psElem) ? psElem.GetString() : null;
+                        if (string.Equals(pStatus, "paid", StringComparison.OrdinalIgnoreCase))
+                        {
+                            paymentId = pid;
+                            isPaid = true;
+                            if (pAttr.TryGetProperty("amount", out var amtElem) && amtElem.TryGetInt64(out var amt))
+                            {
+                                amountCentavos = amt;
+                            }
+                            if (pAttr.TryGetProperty("source", out var srcElem) &&
+                                srcElem.ValueKind == JsonValueKind.Object &&
+                                srcElem.TryGetProperty("type", out var typeElem))
+                            {
+                                paymentMethod = typeElem.GetString() ?? paymentMethod;
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+
             return new CheckoutSessionDetails(
                 SessionId: sessionId,
                 Status: status,
@@ -365,19 +420,15 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
         }
         catch (JsonException ex)
         {
-            _logger.LogError(ex, "Failed to parse PayMongo checkout session retrieval response for {SessionId}.", sessionId);
+            _logger.LogError(ex, "Failed to parse PayMongo checkout session response for {SessionId}.", sessionId);
             return null;
         }
     }
 
-    /// <summary>
-    /// Verifies a <c>Paymongo-Signature</c> header (<c>t=&lt;unix&gt;,te=&lt;hmac&gt;,li=&lt;hmac&gt;</c>).
-    /// Fails closed: a missing secret is only tolerated in Development, timestamps older than
-    /// <see cref="WebhookTimestampTolerance"/> are rejected, and Production with a live key requires the live-mode <c>li</c> signature.
-    /// </summary>
     public bool VerifyWebhookSignature(string jsonPayload, string signatureHeader)
     {
         var webhookSecret = _configuration["PayMongo:WebhookSecret"];
+
         if (IsMissingOrMock(webhookSecret))
         {
             if (_environment.IsDevelopment())
@@ -397,7 +448,8 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
 
         try
         {
-            var isTestSecret = webhookSecret!.Contains("test", StringComparison.OrdinalIgnoreCase);
+            var isTestSecret = webhookSecret!.Contains("test", StringComparison.OrdinalIgnoreCase) ||
+                (_configuration["PayMongo:SecretKey"]?.Trim().StartsWith("sk_test_", StringComparison.OrdinalIgnoreCase) ?? false);
             var mustRequireLiveSignature = _environment.IsProduction() && !isTestSecret;
 
             string? timestamp = null;
@@ -692,6 +744,21 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
             {
                 var firstPayment = payments[0];
                 paymentId = firstPayment.TryGetProperty("id", out var pid) ? pid.GetString() : null;
+                foreach (var p in payments.EnumerateArray())
+                {
+                    if (p.TryGetProperty("attributes", out var pAttr) &&
+                        pAttr.ValueKind == JsonValueKind.Object &&
+                        pAttr.TryGetProperty("status", out var psElem) &&
+                        string.Equals(psElem.GetString(), "paid", StringComparison.OrdinalIgnoreCase))
+                    {
+                        isPaid = true;
+                        if (p.TryGetProperty("id", out var paidId) && !string.IsNullOrWhiteSpace(paidId.GetString()))
+                        {
+                            paymentId = paidId.GetString();
+                        }
+                        break;
+                    }
+                }
             }
 
             Dictionary<string, string>? metadata = null;
