@@ -244,8 +244,8 @@ export const GCashPage: React.FC = () => {
     if (!canAddGCashTxn(currentMonthTxnCount)) {
       setFormErrorMessage(
         language === 'tl'
-          ? 'Naabot na ang limitasyon ng Libreng plano (30 GCash transactions kada buwan). Mag-upgrade sa Tindahan Pro o Negosyo Plus upang magtala pa.'
-          : 'Limit reached for Libre plan (30 GCash transactions per month). Please upgrade to Tindahan Pro or Negosyo Plus to log more transactions.'
+          ? 'Naabot na ang limitasyon ng Libreng plano (30 GCash transactions kada buwan). Mag-upgrade sa Tindahan Pro upang magtala pa.'
+          : 'Limit reached for Libre plan (30 GCash transactions per month). Please upgrade to Tindahan Pro to log more transactions.'
       );
       openUpgradeModal();
       return;

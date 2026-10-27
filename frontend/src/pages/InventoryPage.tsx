@@ -658,8 +658,8 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
     if (!canAddProduct(products.length)) {
       setLimitBanner(
         language === 'tl'
-          ? 'Naabot na ang limitasyon ng Libreng plano (30 produkto). Mag-upgrade sa Tindahan Pro o Negosyo Plus upang magdagdag pa.'
-          : 'Limit reached for Libre plan (30 products maximum). Please upgrade to Tindahan Pro or Negosyo Plus to add more products.'
+          ? 'Naabot na ang limitasyon ng Libreng plano (30 produkto). Mag-upgrade sa Tindahan Pro upang magdagdag pa.'
+          : 'Limit reached for Libre plan (30 products maximum). Please upgrade to Tindahan Pro to add more products.'
       );
       openUpgradeModal();
       return;
@@ -766,8 +766,8 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
         if (!canAddProduct(products.length)) {
           setModalGeneralError(
             language === 'tl'
-              ? 'Naabot na ang limitasyon ng Libreng plano (30 produkto). Mag-upgrade sa Tindahan Pro o Negosyo Plus upang magdagdag pa.'
-              : 'Limit reached for Libre plan (30 products maximum). Please upgrade to Tindahan Pro or Negosyo Plus to add more products.'
+              ? 'Naabot na ang limitasyon ng Libreng plano (30 produkto). Mag-upgrade sa Tindahan Pro upang magdagdag pa.'
+              : 'Limit reached for Libre plan (30 products maximum). Please upgrade to Tindahan Pro to add more products.'
           );
           openUpgradeModal();
           return;

@@ -596,7 +596,7 @@ export const en: Translations = {
     gcashLimit: 'Monthly GCash Logs:',
     csvImportStatus: 'CSV Bulk Import / Export:',
     unlimited: 'Unlimited',
-    lockedForLibre: 'Locked (Requires Pro or Plus)',
+    lockedForLibre: 'Locked (Requires Pro)',
     unlocked: 'Unlocked',
     popularBadge: 'MOST POPULAR'
   },

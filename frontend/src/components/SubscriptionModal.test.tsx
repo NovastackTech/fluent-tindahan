@@ -53,14 +53,14 @@ describe('SubscriptionModal', () => {
     expect(screen.queryByText(/Mga Plano at Subscription ng Tindahan/i)).not.toBeInTheDocument();
   });
 
-  it('renders all 3 tier cards when open', () => {
+  it('renders Libre and Tindahan Pro tier cards when open', () => {
     useSubscriptionStore.setState({ isUpgradeModalOpen: true });
     renderModal();
 
     expect(screen.getByText(/Mga Plano at Subscription ng Tindahan/i)).toBeInTheDocument();
     expect(screen.getByText('Libre')).toBeInTheDocument();
     expect(screen.getByText('Tindahan Pro')).toBeInTheDocument();
-    expect(screen.getByText('Negosyo Plus')).toBeInTheDocument();
+    expect(screen.queryByText('Negosyo Plus')).not.toBeInTheDocument();
   });
 
   it('does not emit Keyborg disposal warnings under StrictMode', () => {
@@ -78,20 +78,13 @@ describe('SubscriptionModal', () => {
     expect(warnings).not.toMatch(/Keyborg instance .* disposed incorrectly|mergeClasses\(\):.*multiple identifiers/i);
   });
 
-  it('toggles pricing between Monthly and Sachet Weekly', () => {
+  it('renders monthly pricing without Sachet Weekly or Negosyo Plus', () => {
     useSubscriptionStore.setState({ isUpgradeModalOpen: true });
     renderModal();
 
-    // Default is Monthly: ₱129.00 and ₱349.00
     expect(screen.getByText('₱129.00')).toBeInTheDocument();
-    expect(screen.getByText('₱349.00')).toBeInTheDocument();
-
-    // Switch to Weekly Sachet
-    const weeklyBtn = screen.getByRole('button', { name: /Lingguhan|Weekly/i });
-    fireEvent.click(weeklyBtn);
-
-    expect(screen.getByText('₱35.00')).toBeInTheDocument();
-    expect(screen.getByText('₱89.00')).toBeInTheDocument();
+    expect(screen.queryByText('₱349.00')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Lingguhan|Weekly|Sachet/i })).not.toBeInTheDocument();
   });
 
   it('keeps plan prices visible and offers retry when subscription refresh fails', () => {
@@ -99,7 +92,6 @@ describe('SubscriptionModal', () => {
     renderModal();
 
     expect(screen.getByText('₱129.00')).toBeInTheDocument();
-    expect(screen.getByText('₱349.00')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Subukan muli|Retry/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Mag-upgrade sa Pro|Upgrade to Pro/i })).toBeEnabled();
     expect(screen.queryByText(/Request failed with status code 500/i)).not.toBeInTheDocument();
@@ -137,7 +129,6 @@ describe('SubscriptionModal', () => {
     renderModal();
 
     const testUpgradeBtns = screen.getAllByRole('button', { name: /Subukan \(Simulate Test\)/i });
-    // First simulate button is for Tindahan Pro
     fireEvent.click(testUpgradeBtns[0]);
 
     await waitFor(() => {
@@ -209,4 +200,3 @@ describe('SubscriptionModal', () => {
     expect(screen.getByText(/Subscription details could not be refreshed/i)).toBeInTheDocument();
   });
 });
-

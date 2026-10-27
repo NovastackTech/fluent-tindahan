@@ -398,9 +398,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
   const [regPin, setRegPin] = useState('');
   const [regOfferGcash, setRegOfferGcash] = useState(true);
 
-  // Pricing State
-  const [billingCycle, setBillingCycle] = useState<'Monthly' | 'Weekly'>('Monthly');
-
   // Profit Calculator State
   const [calcDailySales, setCalcDailySales] = useState<number>(8000);
   const [calcGcashTxns, setCalcGcashTxns] = useState<number>(60);
@@ -633,12 +630,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
     },
     {
       title: t.landing.planProTitle,
-      price: billingCycle === 'Weekly'
-        ? `${t.common.pesos}35 / ${t.landing.perWeek}`
-        : `${t.common.pesos}129 / ${t.landing.perMonth}`,
-      subPrice: billingCycle === 'Weekly'
-        ? t.landing.monthlyPassAlternative.replace('{price}', `${t.common.pesos}129 / ${t.landing.perMonth}`)
-        : t.landing.weeklyPassAlternative.replace('{price}', `${t.common.pesos}35 / ${t.landing.perWeek}`),
+      price: `${t.common.pesos}129 / ${t.landing.perMonth}`,
+      subPrice: '',
       desc: t.landing.planProDesc,
       features: [
         t.landing.planProFeature1,
@@ -650,25 +643,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
       ],
       highlighted: true,
       btnAppearance: 'primary' as const
-    },
-    {
-      title: t.landing.planPlusTitle,
-      price: billingCycle === 'Weekly'
-        ? `${t.common.pesos}89 / ${t.landing.perWeek}`
-        : `${t.common.pesos}349 / ${t.landing.perMonth}`,
-      subPrice: billingCycle === 'Weekly'
-        ? t.landing.monthlyPassAlternative.replace('{price}', `${t.common.pesos}349 / ${t.landing.perMonth}`)
-        : t.landing.weeklyPassAlternative.replace('{price}', `${t.common.pesos}89 / ${t.landing.perWeek}`),
-      desc: t.landing.planPlusDesc,
-      features: [
-        t.landing.planPlusFeature1,
-        t.landing.planPlusFeature2,
-        t.landing.planPlusFeature3,
-        t.landing.planPlusFeature4,
-        t.landing.planPlusFeature5
-      ],
-      highlighted: false,
-      btnAppearance: 'secondary' as const
     }
   ];
 
@@ -1160,24 +1134,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
         <div className={styles.sectionHeader}>
           <Text className={styles.sectionTitle}>{t.landing.pricingTitle}</Text>
           <Text className={styles.sectionSubtitle}>{t.landing.pricingSubtitle}</Text>
-        </div>
-
-        {/* Cycle Toggle */}
-        <div className={styles.cycleToggle}>
-          <Button
-            appearance={billingCycle === 'Weekly' ? 'primary' : 'secondary'}
-            onClick={() => setBillingCycle('Weekly')}
-            size="medium"
-          >
-            {t.landing.pricingToggleWeekly}
-          </Button>
-          <Button
-            appearance={billingCycle === 'Monthly' ? 'primary' : 'secondary'}
-            onClick={() => setBillingCycle('Monthly')}
-            size="medium"
-          >
-            {t.landing.pricingToggleMonthly}
-          </Button>
         </div>
 
         <div className={styles.pricingGrid}>

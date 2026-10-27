@@ -672,7 +672,7 @@ export const tl: Translations = {
     gcashLimit: 'GCash Logs bawat Buwan:',
     csvImportStatus: 'CSV Bulk Import / Export:',
     unlimited: 'Walang Limitasyon (Unlimited)',
-    lockedForLibre: 'Naka-lock (Kailangan ng Pro/Plus)',
+    lockedForLibre: 'Naka-lock (Kailangan ng Pro)',
     unlocked: 'Bukás (Unlocked)',
     popularBadge: 'PINAKASIKAT'
   },
