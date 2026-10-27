@@ -312,6 +312,14 @@ public class ApplySubscriptionPaymentCommandHandler : IRequestHandler<ApplySubsc
                 paymentHistory.Status = "Pending";
                 _context.Entry(paymentHistory).State = EntityState.Unchanged;
 
+                if (await _context.PaymentHistories
+                    .IgnoreQueryFilters()
+                    .AsNoTracking()
+                    .AnyAsync(p => p.GatewayReferenceId == request.PaymentId && p.Status == "Paid", cancellationToken))
+                {
+                    return new WebhookProcessResultDto(PaymentWebhookOutcome.Duplicate, "Payment already processed.", request.TenantId, null, null);
+                }
+
                 if (attempt >= maxRetries)
                 {
                     throw;

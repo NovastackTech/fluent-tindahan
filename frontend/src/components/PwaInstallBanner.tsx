@@ -65,7 +65,7 @@ export const PwaInstallBanner: React.FC = () => {
     closeIosInstallModal
   } = usePwaStore();
 
-  const hideBanner = isStandalone || isInstalled || (isDismissed && !isIos) || (!isInstallable && !isIos);
+  const hideBanner = isStandalone || isInstalled || isDismissed || (!isInstallable && !isIos);
 
   if (hideBanner && !showIosInstallModal) {
     return null;
