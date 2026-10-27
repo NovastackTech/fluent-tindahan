@@ -759,11 +759,17 @@ public class BillingTests
         var envMock = new Mock<IHostEnvironment>();
         envMock.Setup(e => e.EnvironmentName).Returns("Development");
 
+        var configMock = new Mock<IConfiguration>();
+        configMock.Setup(c => c["Billing:AllowLibreUpgrade"]).Returns("true");
+
         var controller = new BillingController(
             mediatorMock.Object,
             _currentUserServiceMock.Object,
+            null!,
             envMock.Object,
-            NullLogger<BillingController>.Instance);
+            NullLogger<BillingController>.Instance,
+            null,
+            configMock.Object);
 
         var response = await controller.MockPay(
             new BillingController.MockPayRequest(PlanTier.TindahanPro, BillingCycle.Monthly),
@@ -3133,6 +3139,117 @@ public class BillingTests
 
         parsed.Should().BeFalse();
         error.Should().Be("Payment is not for a subscription.");
+    }
+
+    [Fact]
+    public async Task MockPay_InDevelopment_WhenLibreUpgradePaused_ReturnsBadRequest()
+    {
+        using var context = CreateInMemoryDbContext();
+        var mediatorMock = new Mock<IMediator>();
+        var envMock = new Mock<IHostEnvironment>();
+        envMock.Setup(e => e.EnvironmentName).Returns("Development");
+
+        var controller = new BillingController(
+            mediatorMock.Object,
+            _currentUserServiceMock.Object,
+            null!,
+            envMock.Object,
+            NullLogger<BillingController>.Instance,
+            context);
+
+        var response = await controller.MockPay(
+            new BillingController.MockPayRequest(PlanTier.TindahanPro, BillingCycle.Monthly),
+            CancellationToken.None);
+
+        response.Result.Should().BeOfType<BadRequestObjectResult>()
+            .Which.Value.Should().BeEquivalentTo(new { message = "Upgrading from Libre to Tindahan Pro is temporarily paused." });
+    }
+
+    [Fact]
+    public async Task GenerateQrPhSubscription_WhenTenantIsLibreAndUpgradesPaused_ReturnsBadRequest()
+    {
+        using var context = CreateInMemoryDbContext();
+        var gatewayMock = new Mock<IPaymentGatewayService>();
+        var mediatorMock = new Mock<IMediator>();
+        var envMock = new Mock<IHostEnvironment>();
+
+        var controller = new BillingController(
+            mediatorMock.Object,
+            _currentUserServiceMock.Object,
+            gatewayMock.Object,
+            envMock.Object,
+            NullLogger<BillingController>.Instance,
+            context);
+
+        var response = await controller.GenerateQrPhSubscription(
+            new BillingController.CreateCheckoutRequest(PlanTier.TindahanPro, BillingCycle.Monthly),
+            CancellationToken.None);
+
+        response.Result.Should().BeOfType<BadRequestObjectResult>()
+            .Which.Value.Should().BeEquivalentTo(new { message = "Upgrading from Libre to Tindahan Pro is temporarily paused." });
+    }
+
+    [Fact]
+    public async Task GenerateQrPhSubscription_WhenTenantIsActiveTindahanPro_AllowsRenewal()
+    {
+        using var context = CreateInMemoryDbContext();
+        var tenant = await context.Tenants.FirstAsync(t => t.Id == _testTenantId);
+        tenant.Tier = PlanTier.TindahanPro;
+        tenant.SubscriptionEndDate = DateTimeOffset.UtcNow.AddDays(10);
+        await context.SaveChangesAsync();
+
+        var gatewayMock = new Mock<IPaymentGatewayService>();
+        gatewayMock.Setup(g => g.CreateQrPhPaymentIntentAsync(It.IsAny<CreateQrPhPaymentIntentRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new QrPhPaymentIntentResult(
+                PaymentIntentId: "pi_renew_123",
+                PaymentMethodId: "pm_renew_123",
+                ClientKey: "client_key",
+                Status: "awaiting_next_action",
+                AmountCentavos: 12900L,
+                QrCodeUrl: "data:image/png;base64,mockqr",
+                OrderId: "order_renew_123",
+                CreatedAt: DateTimeOffset.UtcNow
+            ));
+
+        var mediatorMock = new Mock<IMediator>();
+        var envMock = new Mock<IHostEnvironment>();
+
+        var controller = new BillingController(
+            mediatorMock.Object,
+            _currentUserServiceMock.Object,
+            gatewayMock.Object,
+            envMock.Object,
+            NullLogger<BillingController>.Instance,
+            context);
+
+        var response = await controller.GenerateQrPhSubscription(
+            new BillingController.CreateCheckoutRequest(PlanTier.TindahanPro, BillingCycle.Monthly),
+            CancellationToken.None);
+
+        response.Result.Should().BeOfType<OkObjectResult>();
+    }
+
+    [Fact]
+    public async Task CreateCheckout_WhenTenantIsLibreAndUpgradesPaused_ReturnsBadRequest()
+    {
+        using var context = CreateInMemoryDbContext();
+        var mediatorMock = new Mock<IMediator>();
+        var envMock = new Mock<IHostEnvironment>();
+
+        var controller = new BillingController(
+            mediatorMock.Object,
+            _currentUserServiceMock.Object,
+            null!,
+            envMock.Object,
+            NullLogger<BillingController>.Instance,
+            context);
+
+        var response = await controller.CreateCheckout(
+            new BillingController.CreateCheckoutRequest(PlanTier.TindahanPro, BillingCycle.Monthly),
+            CancellationToken.None);
+
+        response.Result.Should().BeOfType<BadRequestObjectResult>()
+            .Which.Value.Should().BeEquivalentTo(new { message = "Upgrading from Libre to Tindahan Pro is temporarily paused." });
     }
 
     [Fact]

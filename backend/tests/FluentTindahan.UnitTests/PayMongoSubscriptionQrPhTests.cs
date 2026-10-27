@@ -287,13 +287,17 @@ public class PayMongoSubscriptionQrPhTests
                 DateTimeOffset.UtcNow));
 
         var mediatorMock = new Mock<IMediator>();
+        var configMock = new Mock<IConfiguration>();
+        configMock.Setup(c => c["Billing:AllowLibreUpgrade"]).Returns("true");
 
         var controller = new BillingController(
             mediatorMock.Object,
             _currentUserServiceMock.Object,
             gatewayMock.Object,
             _devEnvMock.Object,
-            NullLogger<BillingController>.Instance);
+            NullLogger<BillingController>.Instance,
+            null,
+            configMock.Object);
 
         // Act 1: Reject Libre plan
         var badResult = await controller.GenerateQrPhSubscription(

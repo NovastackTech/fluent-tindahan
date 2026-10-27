@@ -27,6 +27,7 @@ import {
 import {
   useSubscriptionStore,
   IS_MOCK_PAYMENT_ENABLED,
+  IS_LIBRE_UPGRADE_ENABLED,
   SUBSCRIPTION_REFRESH_ERROR,
   getPendingBillingReference
 } from '../state/subscriptionStore';
@@ -183,19 +184,23 @@ export const SubscriptionModal: React.FC = () => {
       </Badge>
     ) : null;
 
+  const isUpgradeAllowedForTier = currentTier === 'TindahanPro' || IS_LIBRE_UPGRADE_ENABLED;
+
   const renderPaidTierActions = (targetTier: 'TindahanPro') => (
     <div className={styles.tierActionSection}>
       <Button
-        appearance="primary"
-        icon={<QrCodeRegular />}
-        disabled={isLoading && processingTier === targetTier}
-        onClick={() => setQrModalTier(targetTier)}
+        appearance={isUpgradeAllowedForTier ? 'primary' : 'secondary'}
+        icon={isUpgradeAllowedForTier ? <QrCodeRegular /> : undefined}
+        disabled={!isUpgradeAllowedForTier || (isLoading && processingTier === targetTier)}
+        onClick={() => isUpgradeAllowedForTier && setQrModalTier(targetTier)}
       >
-        {currentTier === targetTier || subscriptionEndDate
+        {!isUpgradeAllowedForTier
+          ? (isTagalog ? 'Pansamantalang Naka-pause ang Pag-upgrade' : 'Upgrades Temporarily Paused')
+          : currentTier === targetTier || subscriptionEndDate
           ? (isTagalog ? 'Mag-renew gamit ang QR Ph (Buwanan)' : 'Renew via QR Ph (Monthly)')
           : (isTagalog ? 'Magbayad gamit ang QR Ph' : 'Pay via QR Ph')}
       </Button>
-      {IS_MOCK_PAYMENT_ENABLED && (
+      {IS_MOCK_PAYMENT_ENABLED && isUpgradeAllowedForTier && (
         <Button
           appearance="subtle"
           size="small"
@@ -255,6 +260,16 @@ export const SubscriptionModal: React.FC = () => {
                     {isTagalog ? 'Subukan muli' : 'Retry'}
                   </Button>
                 )}
+              </MessageBar>
+            )}
+
+            {currentTier === 'Libre' && !IS_LIBRE_UPGRADE_ENABLED && (
+              <MessageBar intent="info" style={{ marginBottom: tokens.spacingVerticalM }}>
+                <MessageBarBody>
+                  {isTagalog
+                    ? 'Pansamantalang naka-pause ang pag-upgrade mula Libre patungong Tindahan Pro habang may system maintenance. Mananatiling aktibo ang iyong kasalukuyang Libre features.'
+                    : 'Upgrading from Libre to Tindahan Pro is temporarily paused for system maintenance. Your existing Libre features remain active.'}
+                </MessageBarBody>
               </MessageBar>
             )}
 

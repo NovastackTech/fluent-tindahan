@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using FluentTindahan.Application.Billing;
 using FluentTindahan.Application.Common.Interfaces;
 using FluentTindahan.Domain.Billing;
+using FluentTindahan.Domain.Entities;
 using FluentTindahan.Domain.Enums;
 using FluentTindahan.Domain.Interfaces;
 using FluentTindahan.WebApi.Authorization;
@@ -85,10 +86,29 @@ public class BillingController : ControllerBase
         [FromBody] CreateCheckoutRequest request,
         CancellationToken cancellationToken)
     {
+        if (_currentUserService.TenantId == Guid.Empty)
+        {
+            return Unauthorized(new { message = "A valid tenant is required." });
+        }
+
         if (request.TargetTier != PlanTier.TindahanPro || request.Cycle != BillingCycle.Monthly ||
             !TierPricing.TryGetPriceCentavos(request.TargetTier, request.Cycle, out _))
         {
             return BadRequest(new { message = "Invalid plan or billing cycle." });
+        }
+
+        var dbContext = _dbContext ?? HttpContext?.RequestServices.GetService<IApplicationDbContext>();
+        Tenant? tenant = null;
+        if (dbContext != null)
+        {
+            tenant = await dbContext.Tenants
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(t => t.Id == _currentUserService.TenantId, cancellationToken);
+        }
+
+        if (!IsLibreUpgradeAllowed() && (tenant == null || tenant.Tier == PlanTier.Libre))
+        {
+            return BadRequest(new { message = "Upgrading from Libre to Tindahan Pro is temporarily paused." });
         }
 
         try
@@ -128,6 +148,20 @@ public class BillingController : ControllerBase
         }
 
         var tenantId = _currentUserService.TenantId;
+        var dbContext = _dbContext ?? HttpContext?.RequestServices.GetService<IApplicationDbContext>();
+        Tenant? tenant = null;
+        if (dbContext != null)
+        {
+            tenant = await dbContext.Tenants
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
+        }
+
+        if (!IsLibreUpgradeAllowed() && (tenant == null || tenant.Tier == PlanTier.Libre))
+        {
+            return BadRequest(new { message = "Upgrading from Libre to Tindahan Pro is temporarily paused." });
+        }
+
         var orderRef = $"sub_{tenantId.ToString("N")[..8]}_{request.TargetTier}_{request.Cycle}_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
 
         try
@@ -150,17 +184,10 @@ public class BillingController : ControllerBase
                 }
             ), cancellationToken);
 
-            var dbContext = _dbContext ?? HttpContext?.RequestServices.GetService<IApplicationDbContext>();
-            if (dbContext != null)
+            if (dbContext != null && tenant != null)
             {
-                var tenant = await dbContext.Tenants
-                    .IgnoreQueryFilters()
-                    .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
-                if (tenant != null)
-                {
-                    tenant.CheckoutSessionId = result.PaymentIntentId;
-                    await dbContext.SaveChangesAsync(cancellationToken);
-                }
+                tenant.CheckoutSessionId = result.PaymentIntentId;
+                await dbContext.SaveChangesAsync(cancellationToken);
             }
 
             return Ok(result);
@@ -452,8 +479,23 @@ public class BillingController : ControllerBase
             return BadRequest(new { message = "Invalid plan or billing cycle." });
         }
 
+        var tenantId = _currentUserService.TenantId;
+        var dbContext = _dbContext ?? HttpContext?.RequestServices.GetService<IApplicationDbContext>();
+        Tenant? tenant = null;
+        if (dbContext != null)
+        {
+            tenant = await dbContext.Tenants
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
+        }
+
+        if (!IsLibreUpgradeAllowed() && (tenant == null || tenant.Tier == PlanTier.Libre))
+        {
+            return BadRequest(new { message = "Upgrading from Libre to Tindahan Pro is temporarily paused." });
+        }
+
         var result = await _mediator.Send(new ApplySubscriptionPaymentCommand(
-            _currentUserService.TenantId,
+            tenantId,
             request.TargetTier,
             request.Cycle,
             priceCentavos,

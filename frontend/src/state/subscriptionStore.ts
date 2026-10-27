@@ -85,6 +85,7 @@ export const clearPendingBillingReference = (expectedId?: string): void => {
  * so the mock UI and code path are tree-shaken out and can never unlock paid tiers on the counter.
  */
 export const IS_MOCK_PAYMENT_ENABLED = import.meta.env.DEV;
+export const IS_LIBRE_UPGRADE_ENABLED = false;
 
 export interface TierLimits {
   maxProducts: number;
@@ -108,6 +109,7 @@ export interface SubscriptionState {
   isUpgradeModalOpen: boolean;
 
   // Actions
+  isUpgradeAllowed: () => boolean;
   openUpgradeModal: () => void;
   closeUpgradeModal: () => void;
   getLimits: () => TierLimits;
@@ -261,6 +263,7 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
     error: null,
     isUpgradeModalOpen: false,
 
+    isUpgradeAllowed: () => get().tier !== 'Libre' || IS_LIBRE_UPGRADE_ENABLED,
     openUpgradeModal: () => set({ isUpgradeModalOpen: true }),
     closeUpgradeModal: () => set({ isUpgradeModalOpen: false }),
 

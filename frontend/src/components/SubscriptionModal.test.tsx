@@ -87,23 +87,35 @@ describe('SubscriptionModal', () => {
     expect(screen.queryByRole('button', { name: /Lingguhan|Weekly|Sachet/i })).not.toBeInTheDocument();
   });
 
-  it('offers QR Ph only', () => {
+  it('disables upgrade action and displays pause notice for Libre tier', () => {
     useLanguageStore.setState({ language: 'en' });
-    useSubscriptionStore.setState({ isUpgradeModalOpen: true });
+    useSubscriptionStore.setState({ isUpgradeModalOpen: true, tier: 'Libre' });
     renderModal();
 
-    expect(screen.getByRole('button', { name: /Pay via QR Ph/i })).toBeInTheDocument();
+    expect(screen.getByText(/Upgrading from Libre to Tindahan Pro is temporarily paused/i)).toBeInTheDocument();
+    const pausedBtn = screen.getByRole('button', { name: /Upgrades Temporarily Paused/i });
+    expect(pausedBtn).toBeInTheDocument();
+    expect(pausedBtn).toBeDisabled();
     expect(screen.queryByRole('button', { name: /Upgrade to Pro|Renew Pro/i })).not.toBeInTheDocument();
-    expect(screen.queryByText(/PayMongo gateway|7-Eleven|Cards/i)).not.toBeInTheDocument();
+  });
+
+  it('allows active Tindahan Pro subscribers to renew via QR Ph', () => {
+    useLanguageStore.setState({ language: 'en' });
+    useSubscriptionStore.setState({ isUpgradeModalOpen: true, tier: 'TindahanPro', isActive: true });
+    renderModal();
+
+    const renewBtn = screen.getByRole('button', { name: /Renew via QR Ph \(Monthly\)/i });
+    expect(renewBtn).toBeInTheDocument();
+    expect(renewBtn).toBeEnabled();
   });
 
   it('keeps plan prices visible and offers retry when subscription refresh fails', () => {
-    useSubscriptionStore.setState({ isUpgradeModalOpen: true, error: SUBSCRIPTION_REFRESH_ERROR });
+    useSubscriptionStore.setState({ isUpgradeModalOpen: true, tier: 'TindahanPro', isActive: true, error: SUBSCRIPTION_REFRESH_ERROR });
     renderModal();
 
     expect(screen.getByText('₱129.00')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Subukan muli|Retry/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Magbayad gamit ang QR Ph|Pay via QR Ph/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Mag-renew gamit ang QR Ph|Renew via QR Ph/i })).toBeEnabled();
     expect(screen.queryByText(/Request failed with status code 500/i)).not.toBeInTheDocument();
   });
 
@@ -130,12 +142,12 @@ describe('SubscriptionModal', () => {
     expect(useSubscriptionStore.getState().isUpgradeModalOpen).toBe(false);
   });
 
-  it('allows simulating upgrade to Pro in development test mode', async () => {
+  it('allows simulating renewal to Pro in development test mode', async () => {
     const newEndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
     vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
       data: { success: true, tier: 1, newEndDate }
     } as any);
-    useSubscriptionStore.setState({ isUpgradeModalOpen: true });
+    useSubscriptionStore.setState({ isUpgradeModalOpen: true, tier: 'TindahanPro', isActive: true });
     renderModal();
 
     const testUpgradeBtns = screen.getAllByRole('button', { name: /Subukan \(Simulate Test\)/i });
