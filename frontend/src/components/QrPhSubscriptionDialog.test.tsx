@@ -346,5 +346,34 @@ describe('QrPhSubscriptionDialog', () => {
     expect(mockGenerate).not.toHaveBeenCalled();
     expect(getPendingBillingReference()).toBe(pendingQr.paymentIntentId);
   });
+
+  it('clears stale hosted checkout session and generates fresh QR without polling', async () => {
+    setPendingBillingReference('cs_abandoned_hosted_checkout');
+
+    const mockCheck = vi.fn();
+    const mockGenerate = vi.fn().mockResolvedValue({
+      paymentIntentId: 'pi_fresh_after_cs',
+      paymentMethodId: 'pm_fresh_after_cs',
+      clientKey: 'client_003',
+      status: 'awaiting_next_action',
+      amountCentavos: 12900,
+      qrCodeUrl: 'data:image/png;base64,fresh_qr_after_cs',
+      orderId: 'sub_fresh_order',
+      createdAt: '2026-10-28T00:00:00Z'
+    });
+
+    useSubscriptionStore.setState({
+      checkQrPhStatus: mockCheck,
+      generateQrPhPayment: mockGenerate
+    });
+
+    renderDialog();
+
+    const qrImage = await screen.findByAltText('QR Ph Subscription Code');
+    expect(qrImage).toHaveAttribute('src', 'data:image/png;base64,fresh_qr_after_cs');
+    expect(mockCheck).not.toHaveBeenCalled();
+    expect(mockGenerate).toHaveBeenCalledWith('TindahanPro', 'Monthly');
+    expect(getPendingBillingReference()).toBe('pi_fresh_after_cs');
+  });
 });
 

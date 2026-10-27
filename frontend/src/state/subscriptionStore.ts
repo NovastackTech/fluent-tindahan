@@ -351,16 +351,21 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
           !previousEndDate ||
           newEndDate !== previousEndDate
         );
-        if (!wasActivated && storedSessionId?.startsWith('pi_') && typeof window !== 'undefined') {
-          try {
-            const qrStatus = await get().checkQrPhStatus(storedSessionId);
-            if (qrStatus?.isPaid && effectiveTier !== 'Libre') {
-              wasActivated = true;
-            } else if (['expired', 'failed', 'canceled', 'cancelled'].includes(String(qrStatus?.status || '').toLowerCase())) {
-              clearPendingBillingReference(storedSessionId);
+        if (!wasActivated && typeof window !== 'undefined' && storedSessionId) {
+          const isQrIntent = storedSessionId.startsWith('pi_') || !!getPendingQrPhPayment();
+          if (isQrIntent) {
+            try {
+              const qrStatus = await get().checkQrPhStatus(storedSessionId);
+              if (qrStatus?.isPaid && effectiveTier !== 'Libre') {
+                wasActivated = true;
+              } else if (['expired', 'failed', 'canceled', 'cancelled'].includes(String(qrStatus?.status || '').toLowerCase())) {
+                clearPendingBillingReference(storedSessionId);
+              }
+            } catch {
+              // Ignore status check failure
             }
-          } catch {
-            // Ignore status check failure
+          } else {
+            clearPendingBillingReference(storedSessionId);
           }
         }
 

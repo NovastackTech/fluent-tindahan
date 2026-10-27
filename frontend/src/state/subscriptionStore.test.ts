@@ -505,6 +505,23 @@ describe('subscriptionStore', () => {
       expect(getPendingBillingReference()).toBeNull();
     });
 
+    it('clears unactivated non-QR pending reference when confirmCheckoutSession does not activate', async () => {
+      setPendingBillingReference('cs_unpaid_abandoned');
+
+      vi.spyOn(apiClient, 'post').mockResolvedValueOnce({
+        data: {
+          tierName: 'Libre',
+          isActive: false,
+          subscriptionEndDate: null,
+          daysRemaining: 0
+        }
+      } as any);
+
+      const confirmed = await useSubscriptionStore.getState().confirmCheckoutSession();
+      expect(confirmed).toBe(false);
+      expect(getPendingBillingReference()).toBeNull();
+    });
+
     it('migrates legacy checkout session storage key to tenant-scoped reference', () => {
       localStorage.setItem(LEGACY_STORAGE_KEY_CHECKOUT_SESSION, 'cs_legacy_checkout_123');
 

@@ -272,7 +272,11 @@ export const QrPhSubscriptionDialog: React.FC<QrPhSubscriptionDialogProps> = ({
       paymentReceivedRef.current = false;
 
       try {
-        const pendingIntentId = getPendingBillingReference();
+        let pendingIntentId = getPendingBillingReference();
+        if (pendingIntentId && !pendingIntentId.startsWith('pi_') && !getPendingQrPhPayment()) {
+          clearPendingBillingReference(pendingIntentId);
+          pendingIntentId = null;
+        }
         if (pendingIntentId) {
           const pendingStatus = await handleStatusCheckRef.current(pendingIntentId);
           if (!isMounted || paymentReceivedRef.current) {
@@ -423,9 +427,12 @@ export const QrPhSubscriptionDialog: React.FC<QrPhSubscriptionDialogProps> = ({
                   icon={<ArrowClockwiseRegular />}
                   onClick={() => {
                     const intentId = qrResult?.paymentIntentId || getPendingBillingReference();
-                    if (intentId) {
+                    if (intentId && (intentId.startsWith('pi_') || getPendingQrPhPayment())) {
                       handleStatusCheck(intentId);
                     } else {
+                      if (intentId) {
+                        clearPendingBillingReference(intentId);
+                      }
                       setError(null);
                       setRetryTrigger(c => c + 1);
                     }
