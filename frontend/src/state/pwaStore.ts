@@ -15,6 +15,7 @@ export interface PwaState {
   isInstallable: boolean;
   isIos: boolean;
   isDismissed: boolean;
+  showIosInstallModal: boolean;
   deferredPrompt: BeforeInstallPromptEvent | null;
   needRefresh: boolean;
   offlineReady: boolean;
@@ -25,6 +26,7 @@ export interface PwaState {
   setDeferredPrompt: (e: BeforeInstallPromptEvent | null) => void;
   promptInstall: () => Promise<boolean>;
   dismissPrompt: () => void;
+  closeIosInstallModal: () => void;
   setNeedRefresh: (need: boolean) => void;
   setOfflineReady: (ready: boolean) => void;
   setOtherTabsHaveCart: (have: boolean) => void;
@@ -44,8 +46,10 @@ export function detectIsStandalone(): boolean {
 export function detectIsIos(): boolean {
   if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent || '';
-  const isIosDevice = /iPad|iPhone|iPod/.test(ua);
-  const isIpadOs = navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1;
+  const isIosDevice = /iPad|iPhone|iPod/i.test(ua);
+  const isIpadOs =
+    (navigator.platform === 'MacIntel' || /Macintosh/i.test(ua)) &&
+    (navigator.maxTouchPoints || 0) > 1;
   return isIosDevice || isIpadOs;
 }
 
@@ -57,6 +61,7 @@ export const usePwaStore = create<PwaState>((set, get) => ({
   isInstallable: false,
   isIos: detectIsIos() && !detectIsStandalone(),
   isDismissed: typeof localStorage !== 'undefined' && localStorage.getItem(STORAGE_DISMISSED_KEY) === 'true',
+  showIosInstallModal: false,
   deferredPrompt: null,
   needRefresh: false,
   offlineReady: false,
@@ -73,7 +78,15 @@ export const usePwaStore = create<PwaState>((set, get) => ({
 
   promptInstall: async () => {
     const prompt = get().deferredPrompt;
-    if (!prompt) return false;
+    if (!prompt) {
+      if (get().isIos) {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.removeItem(STORAGE_DISMISSED_KEY);
+        }
+        set({ isDismissed: false, showIosInstallModal: true });
+      }
+      return false;
+    }
 
     try {
       await prompt.prompt();
@@ -107,8 +120,10 @@ export const usePwaStore = create<PwaState>((set, get) => ({
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem(STORAGE_DISMISSED_KEY, 'true');
     }
-    set({ isDismissed: true });
+    set({ isDismissed: true, showIosInstallModal: false });
   },
+
+  closeIosInstallModal: () => set({ showIosInstallModal: false }),
 
   setNeedRefresh: (need) => set({ needRefresh: need }),
   setOfflineReady: (ready) => set({ offlineReady: ready }),

@@ -342,7 +342,13 @@ export const App: React.FC = () => {
       const hasStoredCheckoutSession = typeof window !== 'undefined' && !!localStorage.getItem('fluent_last_checkout_session_id');
 
       if (isBillingSuccess || hasStoredCheckoutSession) {
-        await useSubscriptionStore.getState().confirmCheckoutSession();
+        let confirmed = await useSubscriptionStore.getState().confirmCheckoutSession();
+        if (!confirmed && isBillingSuccess) {
+          for (let attempt = 0; attempt < 2 && !confirmed; attempt++) {
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+            confirmed = await useSubscriptionStore.getState().confirmCheckoutSession();
+          }
+        }
       }
 
       await useSubscriptionStore.getState().refreshSubscription();
@@ -361,6 +367,21 @@ export const App: React.FC = () => {
     };
 
     handleBillingReturn().catch(console.error);
+
+    const handleVisibilityRefresh = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (localStorage.getItem('fluent_last_checkout_session_id')) {
+        void useSubscriptionStore.getState().confirmCheckoutSession().then(() => {
+          return useSubscriptionStore.getState().refreshSubscription();
+        });
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityRefresh);
+    window.addEventListener('focus', handleVisibilityRefresh);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityRefresh);
+      window.removeEventListener('focus', handleVisibilityRefresh);
+    };
   }, [isOnboarded, isOnboardingStatusReady]);
 
   const billingMessage = billingNotice === 'success'

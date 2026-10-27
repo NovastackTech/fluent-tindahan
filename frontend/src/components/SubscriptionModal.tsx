@@ -172,7 +172,10 @@ export const SubscriptionModal: React.FC = () => {
   const [qrModalTier, setQrModalTier] = useState<'TindahanPro' | 'NegosyoPlus' | null>(null);
   const handleCloseQrModal = useCallback(() => {
     setQrModalTier(null);
-  }, []);
+    if (typeof window !== 'undefined' && localStorage.getItem('fluent_last_checkout_session_id')) {
+      void confirmCheckoutSession().then(() => refreshSubscription());
+    }
+  }, [confirmCheckoutSession, refreshSubscription]);
   const isRefreshError = error === SUBSCRIPTION_REFRESH_ERROR;
   const displayedError = getLocalizedSyncErrorMessage(error, language) || error;
 

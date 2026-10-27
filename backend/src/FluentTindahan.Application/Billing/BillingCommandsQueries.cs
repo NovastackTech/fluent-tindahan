@@ -202,11 +202,56 @@ public class ApplySubscriptionPaymentCommandHandler : IRequestHandler<ApplySubsc
             return Rejected("Paid amount does not match the plan price.", request.TenantId);
         }
 
+        // A payment record is persisted before the subscription update so a later failure can be recovered.
+        var paymentHistory = await _context.PaymentHistories
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(p => p.GatewayReferenceId == request.PaymentId, cancellationToken);
+
         // Idempotency: gateway retries must never extend the subscription twice.
-        if (await PaymentAlreadyAppliedAsync(request.PaymentId, cancellationToken))
+        if (paymentHistory?.Status == "Paid")
         {
             _logger.LogInformation("Duplicate payment {PaymentId} ignored (already applied).", request.PaymentId);
             return new WebhookProcessResultDto(PaymentWebhookOutcome.Duplicate, "Payment already processed.", request.TenantId, null, null);
+        }
+
+        if (paymentHistory == null)
+        {
+            paymentHistory = new PaymentHistory
+            {
+                Id = Guid.NewGuid(),
+                TenantId = request.TenantId,
+                AmountCentavos = request.AmountCentavos,
+                Currency = "PHP",
+                TierPurchased = request.Tier,
+                BillingCycle = request.Cycle,
+                GatewayReferenceId = request.PaymentId,
+                PaymentMethod = request.PaymentMethod,
+                Status = "Pending",
+                CreatedAt = DateTimeOffset.UtcNow
+            };
+            _context.PaymentHistories.Add(paymentHistory);
+
+            try
+            {
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException)
+            {
+                _context.Entry(paymentHistory).State = EntityState.Detached;
+                paymentHistory = await _context.PaymentHistories
+                    .IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(p => p.GatewayReferenceId == request.PaymentId, cancellationToken);
+
+                if (paymentHistory == null)
+                {
+                    throw;
+                }
+
+                if (paymentHistory.Status == "Paid")
+                {
+                    return new WebhookProcessResultDto(PaymentWebhookOutcome.Duplicate, "Payment already processed.", request.TenantId, null, null);
+                }
+            }
         }
 
         const int maxRetries = 3;
@@ -241,24 +286,11 @@ public class ApplySubscriptionPaymentCommandHandler : IRequestHandler<ApplySubsc
             tenant.Tier = request.Tier;
             tenant.SubscriptionEndDate = newEndDate;
 
-            var paymentHistory = new PaymentHistory
-            {
-                Id = Guid.NewGuid(),
-                TenantId = tenant.Id,
-                AmountCentavos = request.AmountCentavos,
-                Currency = "PHP",
-                TierPurchased = request.Tier,
-                BillingCycle = request.Cycle,
-                GatewayReferenceId = request.PaymentId,
-                PaymentMethod = request.PaymentMethod,
-                Status = "Paid",
-                CreatedAt = now
-            };
-            _context.PaymentHistories.Add(paymentHistory);
+            paymentHistory.Status = "Paid";
 
             try
             {
-                // Tenant update + payment row commit atomically in one SaveChanges.
+                // The payment row was already persisted above; this commit only completes the upgrade.
                 await _context.SaveChangesAsync(cancellationToken);
 
                 _logger.LogInformation("Tenant {TenantId} upgraded to {Tier} via payment {PaymentId}. New expiration: {EndDate}",
@@ -277,7 +309,8 @@ public class ApplySubscriptionPaymentCommandHandler : IRequestHandler<ApplySubsc
                     request.PaymentId, request.TenantId, attempt, maxRetries);
 
                 _context.Entry(tenant).State = EntityState.Detached;
-                _context.Entry(paymentHistory).State = EntityState.Detached;
+                paymentHistory.Status = "Pending";
+                _context.Entry(paymentHistory).State = EntityState.Unchanged;
 
                 if (attempt >= maxRetries)
                 {
@@ -286,25 +319,14 @@ public class ApplySubscriptionPaymentCommandHandler : IRequestHandler<ApplySubsc
             }
             catch (DbUpdateException)
             {
-                // Possibly lost a race with a concurrent retry; the unique index on GatewayReferenceId rejected our insert.
-                if (!await PaymentAlreadyAppliedAsync(request.PaymentId, CancellationToken.None))
-                {
-                    throw;
-                }
-
-                _logger.LogInformation("Concurrent duplicate payment {PaymentId} ignored.", request.PaymentId);
-                return new WebhookProcessResultDto(PaymentWebhookOutcome.Duplicate, "Payment already processed.", request.TenantId, null, null);
+                paymentHistory.Status = "Pending";
+                _context.Entry(paymentHistory).State = EntityState.Unchanged;
+                throw;
             }
         }
 
         throw new UnreachableException("Retry loop must either succeed, return duplicate, or rethrow on final attempt.");
     }
-
-    private Task<bool> PaymentAlreadyAppliedAsync(string paymentId, CancellationToken cancellationToken) =>
-        _context.PaymentHistories
-            .IgnoreQueryFilters()
-            .AsNoTracking()
-            .AnyAsync(p => p.GatewayReferenceId == paymentId, cancellationToken);
 
     private static WebhookProcessResultDto Rejected(string message, Guid? tenantId) =>
         new(PaymentWebhookOutcome.Rejected, message, tenantId, null, null);
@@ -398,6 +420,62 @@ public class ConfirmCheckoutSessionCommandHandler : IRequestHandler<ConfirmCheck
 
         try
         {
+            if (sessionId.StartsWith("pi_", StringComparison.OrdinalIgnoreCase))
+            {
+                var intentStatus = await _gatewayService.RetrievePaymentIntentStatusAsync(sessionId, cancellationToken);
+                if (!intentStatus.IsPaid)
+                {
+                    _logger.LogInformation("ConfirmCheckoutSession: Payment intent {SessionId} is not in paid status ({Status}).", sessionId, intentStatus.Status);
+                    return await _sender.Send(new GetTenantSubscriptionQuery(), cancellationToken);
+                }
+
+                if (intentStatus.Metadata == null ||
+                    !intentStatus.Metadata.TryGetValue("tenant_id", out var rawTenantId) ||
+                    !Guid.TryParse(rawTenantId, out var intentTenantId) ||
+                    intentTenantId == Guid.Empty ||
+                    intentTenantId != request.TenantId)
+                {
+                    _logger.LogWarning("ConfirmCheckoutSession: Payment intent tenant metadata missing or mismatched for {SessionId}.", sessionId);
+                    return await _sender.Send(new GetTenantSubscriptionQuery(), cancellationToken);
+                }
+
+                var rawTier = intentStatus.Metadata.TryGetValue("target_tier", out var tt) ? tt
+                    : intentStatus.Metadata.TryGetValue("tier", out var t) ? t : null;
+                var rawCycle = intentStatus.Metadata.TryGetValue("cycle", out var c) ? c : null;
+
+                if (!Enum.TryParse<PlanTier>(rawTier, ignoreCase: true, out var intentTier) ||
+                    !Enum.IsDefined(intentTier) ||
+                    intentTier == PlanTier.Libre ||
+                    !Enum.TryParse<BillingCycle>(rawCycle, ignoreCase: true, out var intentCycle) ||
+                    !Enum.IsDefined(intentCycle))
+                {
+                    _logger.LogWarning("ConfirmCheckoutSession: Payment intent plan/cycle metadata invalid for {SessionId}.", sessionId);
+                    return await _sender.Send(new GetTenantSubscriptionQuery(), cancellationToken);
+                }
+
+                if (!TierPricing.TryGetPriceCentavos(intentTier, intentCycle, out var expectedQrCentavos) ||
+                    intentStatus.AmountCentavos != expectedQrCentavos)
+                {
+                    _logger.LogError(
+                        "ConfirmCheckoutSession: QR Ph paid amount mismatch for tenant {TenantId}. Paid {Paid}, expected {Expected}.",
+                        request.TenantId,
+                        intentStatus.AmountCentavos,
+                        expectedQrCentavos);
+                    return await _sender.Send(new GetTenantSubscriptionQuery(), cancellationToken);
+                }
+
+                var qrOutcome = await _sender.Send(new ApplySubscriptionPaymentCommand(
+                    request.TenantId,
+                    intentTier,
+                    intentCycle,
+                    intentStatus.AmountCentavos,
+                    intentStatus.PaymentId ?? sessionId,
+                    "QRPh"
+                ), cancellationToken);
+                _logger.LogInformation("ConfirmCheckoutSession: QR Ph payment applied with outcome {Outcome} for tenant {TenantId}.", qrOutcome.Outcome, request.TenantId);
+                return await _sender.Send(new GetTenantSubscriptionQuery(), cancellationToken);
+            }
+
             var sessionDetails = await _gatewayService.RetrieveCheckoutSessionAsync(sessionId, cancellationToken);
             if (sessionDetails == null)
             {
@@ -475,6 +553,7 @@ public record ProcessPaymentWebhookCommand(
 public class ProcessPaymentWebhookCommandHandler : IRequestHandler<ProcessPaymentWebhookCommand, WebhookProcessResultDto>
 {
     public const string PaidEventType = "checkout_session.payment.paid";
+    public const string PaymentPaidEventType = "payment.paid";
 
     private readonly IPaymentGatewayService _gatewayService;
     private readonly ISender _sender;
@@ -500,7 +579,7 @@ public class ProcessPaymentWebhookCommandHandler : IRequestHandler<ProcessPaymen
 
         if (!TryParsePaidCheckoutEvent(request.JsonPayload, out var eventType, out var payment, out var error))
         {
-            if (eventType != null && eventType != PaidEventType)
+            if (eventType != null && (eventType != PaidEventType && eventType != PaymentPaidEventType || error == "Event type ignored."))
             {
                 _logger.LogInformation("Ignoring PayMongo event type {EventType}.", eventType);
                 return new WebhookProcessResultDto(PaymentWebhookOutcome.Ignored, "Event type ignored.", null, null, null);
@@ -552,7 +631,7 @@ public class ProcessPaymentWebhookCommandHandler : IRequestHandler<ProcessPaymen
                 return false;
             }
 
-            if (eventType != PaidEventType)
+            if (eventType != PaidEventType && eventType != PaymentPaidEventType)
             {
                 error = "Event type ignored.";
                 return false;
@@ -576,7 +655,7 @@ public class ProcessPaymentWebhookCommandHandler : IRequestHandler<ProcessPaymen
                 return false;
             }
 
-            if (!TryParseEnum<PlanTier>(TryGetString(metadata, "tier"), out var tier) || tier == PlanTier.Libre)
+            if (!TryParseEnum<PlanTier>(TryGetString(metadata, "tier") ?? TryGetString(metadata, "target_tier"), out var tier) || tier == PlanTier.Libre)
             {
                 error = "Missing or invalid tier metadata.";
                 return false;
@@ -586,6 +665,42 @@ public class ProcessPaymentWebhookCommandHandler : IRequestHandler<ProcessPaymen
             {
                 error = "Missing or invalid cycle metadata.";
                 return false;
+            }
+
+            if (eventType == PaymentPaidEventType)
+            {
+                var directPaymentId = TryGetString(session, "id");
+                var directStatus = TryGetString(sessionAttr, "status");
+                if (string.IsNullOrWhiteSpace(directPaymentId) || !string.Equals(directStatus, "paid", StringComparison.OrdinalIgnoreCase))
+                {
+                    error = "No payment in paid status found.";
+                    return false;
+                }
+
+                var directCurrency = TryGetString(sessionAttr, "currency");
+                if (directCurrency != null && !string.Equals(directCurrency, "PHP", StringComparison.OrdinalIgnoreCase))
+                {
+                    error = "Unsupported currency.";
+                    return false;
+                }
+
+                if (!sessionAttr.TryGetProperty("amount", out var directAmountElem) ||
+                    directAmountElem.ValueKind != JsonValueKind.Number ||
+                    !directAmountElem.TryGetInt64(out var directAmountCentavos))
+                {
+                    error = "Missing payment amount.";
+                    return false;
+                }
+
+                var directMethod = "QRPh";
+                if (TryGetObject(sessionAttr, "source", out var directSource))
+                {
+                    directMethod = TryGetString(directSource, "type") ?? directMethod;
+                }
+
+                payment = new ApplySubscriptionPaymentCommand(tenantId, tier, cycle, directAmountCentavos, directPaymentId, directMethod);
+                error = string.Empty;
+                return true;
             }
 
             if (!sessionAttr.TryGetProperty("payments", out var payments) ||

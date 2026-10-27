@@ -350,11 +350,25 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
         targetTier: targetTier === 'TindahanPro' ? 1 : 2,
         cycle: cycle === 'Weekly' ? 0 : 1
       });
+      if (response.data?.paymentIntentId && typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('fluent_last_checkout_session_id', response.data.paymentIntentId);
+        } catch {
+          // Ignore
+        }
+      }
       return response.data;
     },
 
     checkQrPhStatus: async (paymentIntentId: string) => {
       const response = await apiClient.get(`/billing/qrph/${paymentIntentId}/status`);
+      if (response.data?.paymentIntentId && typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('fluent_last_checkout_session_id', response.data.paymentIntentId);
+        } catch {
+          // Ignore
+        }
+      }
       return response.data;
     },
 
@@ -369,7 +383,9 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
         });
 
         const subscription = response.data;
-        const responseTier = typeof subscription?.tier === 'string'
+        const responseTier = typeof subscription?.tierName === 'string'
+          ? subscription.tierName as PlanTier
+          : typeof subscription?.tier === 'string'
           ? subscription.tier as PlanTier
           : subscription?.tier === 1
             ? 'TindahanPro'
@@ -404,6 +420,13 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
           isLoading: false
         });
 
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.removeItem('fluent_last_checkout_session_id');
+          } catch {
+            // Ignore
+          }
+        }
         return true;
       } catch (err: any) {
         set({ isLoading: false, error: err?.response?.data?.message || err.message });
@@ -411,6 +434,25 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
       }
     }
   };
+});
+
+useAuthStore.subscribe((authState, prevAuthState) => {
+  if (
+    authState.tier !== prevAuthState?.tier ||
+    authState.subscriptionEndDate !== prevAuthState?.subscriptionEndDate
+  ) {
+    const effectiveTier = authState.tier || 'Libre';
+    const endDate = authState.subscriptionEndDate || null;
+    const daysRemaining = endDate
+      ? Math.max(0, Math.ceil((Date.parse(endDate) - Date.now()) / (24 * 60 * 60 * 1000)))
+      : null;
+    useSubscriptionStore.setState({
+      tier: effectiveTier,
+      subscriptionEndDate: endDate,
+      isActive: effectiveTier !== 'Libre',
+      daysRemaining
+    });
+  }
 });
 
 useLanguageStore.subscribe((langState, prevLangState) => {

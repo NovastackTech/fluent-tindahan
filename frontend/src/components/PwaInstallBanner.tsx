@@ -7,7 +7,13 @@ import {
   MessageBarTitle,
   MessageBarBody,
   MessageBarActions,
-  Button
+  Button,
+  Dialog,
+  DialogSurface,
+  DialogBody,
+  DialogTitle,
+  DialogContent,
+  DialogActions
 } from '@fluentui/react-components';
 import { ArrowDownloadRegular, DismissRegular, ShareRegular } from '@fluentui/react-icons';
 import { usePwaStore } from '../state/pwaStore';
@@ -47,65 +53,107 @@ const useStyles = makeStyles({
 export const PwaInstallBanner: React.FC = () => {
   const styles = useStyles();
   const { t } = useTranslation();
-  const { isStandalone, isInstalled, isInstallable, isIos, isDismissed, promptInstall, dismissPrompt } = usePwaStore();
+  const {
+    isStandalone,
+    isInstalled,
+    isInstallable,
+    isIos,
+    isDismissed,
+    showIosInstallModal,
+    promptInstall,
+    dismissPrompt,
+    closeIosInstallModal
+  } = usePwaStore();
 
-  // If already running as standalone app, marked installed, or merchant dismissed prompt, don't show
-  if (isStandalone || isInstalled || isDismissed || (!isInstallable && !isIos)) {
+  const hideBanner = isStandalone || isInstalled || (isDismissed && !isIos) || (!isInstallable && !isIos);
+
+  if (hideBanner && !showIosInstallModal) {
     return null;
   }
 
   const handleInstall = async () => {
-    if (isInstallable) {
-      await promptInstall();
-    }
+    await promptInstall();
   };
 
   return (
-    <div className={styles.container}>
-      <MessageBar
-        className={styles.banner}
-        intent="success"
-        layout="multiline"
-      >
-        <MessageBarBody>
-          <MessageBarTitle>
-            {t.pwa.installTitle}
-          </MessageBarTitle>
-          <div>{t.pwa.installDesc}</div>
-          {isIos && !isInstallable && (
-            <div className={styles.iosBox}>
-              <ShareRegular fontSize={16} />
-              <span>{t.pwa.iosInstructionsDesc}</span>
-            </div>
-          )}
-        </MessageBarBody>
-        <MessageBarActions
-          containerAction={
-            <div className={styles.actions}>
-              {isInstallable && (
-                <Button
-                  size="small"
-                  appearance="primary"
-                  icon={<ArrowDownloadRegular />}
-                  onClick={handleInstall}
-                  aria-label={t.pwa.installBtn || 'Install App'}
-                >
-                  {t.pwa.installBtn}
-                </Button>
+    <>
+      {!hideBanner && (
+        <div className={styles.container}>
+          <MessageBar
+            className={styles.banner}
+            intent="success"
+            layout="multiline"
+          >
+            <MessageBarBody>
+              <MessageBarTitle>
+                {t.pwa.installTitle}
+              </MessageBarTitle>
+              <div>{t.pwa.installDesc}</div>
+              {isIos && !isInstallable && (
+                <div className={styles.iosBox}>
+                  <ShareRegular fontSize={16} />
+                  <span>{t.pwa.iosInstructionsDesc}</span>
+                </div>
               )}
-              <Button
-                size="small"
-                appearance="subtle"
-                icon={<DismissRegular />}
-                onClick={dismissPrompt}
-                aria-label={t.pwa.dismissBtn || 'Dismiss'}
-              >
-                {t.pwa.dismissBtn}
-              </Button>
-            </div>
-          }
-        />
-      </MessageBar>
-    </div>
+            </MessageBarBody>
+            <MessageBarActions
+              containerAction={
+                <div className={styles.actions}>
+                  {(isInstallable || isIos) && (
+                    <Button
+                      size="small"
+                      appearance="primary"
+                      icon={<ArrowDownloadRegular />}
+                      onClick={handleInstall}
+                      aria-label={t.pwa.installBtn || 'Install App'}
+                    >
+                      {t.pwa.installBtn}
+                    </Button>
+                  )}
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    icon={<DismissRegular />}
+                    onClick={dismissPrompt}
+                    aria-label={t.pwa.dismissBtn || 'Dismiss'}
+                  >
+                    {t.pwa.dismissBtn}
+                  </Button>
+                </div>
+              }
+            />
+          </MessageBar>
+        </div>
+      )}
+      {showIosInstallModal && (
+        <Dialog
+          open={showIosInstallModal}
+          onOpenChange={(_, data) => {
+            if (!data.open) closeIosInstallModal();
+          }}
+        >
+          <DialogSurface>
+            <DialogBody>
+              <DialogTitle>{t.pwa.iosInstructionsTitle}</DialogTitle>
+              <DialogContent>
+                <div className={styles.iosBox}>
+                  <ShareRegular fontSize={20} />
+                  <span>{t.pwa.iosInstructionsDesc}</span>
+                </div>
+              </DialogContent>
+              <DialogActions>
+                <Button
+                  appearance="primary"
+                  onClick={closeIosInstallModal}
+                  aria-label={t.common.close || 'Close'}
+                >
+                  {t.common.close}
+                </Button>
+              </DialogActions>
+            </DialogBody>
+          </DialogSurface>
+        </Dialog>
+      )}
+    </>
   );
 };

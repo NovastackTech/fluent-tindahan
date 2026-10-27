@@ -276,6 +276,21 @@ export const QrPhSubscriptionDialog: React.FC<QrPhSubscriptionDialogProps> = ({
   }, [open, retryTrigger, targetTier, cycle, generateQrPhPayment, stopPolling]);
 
   const tierDisplayName = targetTier === 'TindahanPro' ? 'Tindahan Pro' : 'Negosyo Plus';
+
+  useEffect(() => {
+    if (!open || !qrResult?.paymentIntentId || isPaid) return;
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        void handleStatusCheckRef.current(qrResult.paymentIntentId);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+    };
+  }, [open, qrResult?.paymentIntentId, isPaid]);
   const cycleDisplayName = cycle === 'Weekly'
     ? (isTagalog ? 'Lingguhan' : 'Weekly')
     : (isTagalog ? 'Buwanan' : 'Monthly');
