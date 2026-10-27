@@ -106,7 +106,7 @@ public class SubscriptionMonitorService : BackgroundService
                 .IgnoreQueryFilters()
                 .Where(t => t.Tier != PlanTier.Libre &&
                             t.SubscriptionEndDate.HasValue &&
-                            t.SubscriptionEndDate.Value < now)
+                            t.SubscriptionEndDate.Value <= now)
                 .ExecuteUpdateAsync(s => s.SetProperty(t => t.Tier, PlanTier.Libre), cancellationToken);
 
             if (downgradedCount > 0)
@@ -121,7 +121,7 @@ public class SubscriptionMonitorService : BackgroundService
             .IgnoreQueryFilters()
             .Where(t => t.Tier != PlanTier.Libre &&
                         t.SubscriptionEndDate.HasValue &&
-                        t.SubscriptionEndDate.Value < now)
+                        t.SubscriptionEndDate.Value <= now)
             .ToListAsync(cancellationToken);
 
         if (expiredTenants.Count == 0)

@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/re
 import { FluentProvider } from '@fluentui/react-components';
 import { QrPhSubscriptionDialog } from './QrPhSubscriptionDialog';
 import { sariSariLightTheme } from '../theme/theme';
-import { useSubscriptionStore } from '../state/subscriptionStore';
+import { getPendingBillingReference, setPendingBillingReference, useSubscriptionStore } from '../state/subscriptionStore';
 import { useLanguageStore } from '../state/languageStore';
 
 describe('QrPhSubscriptionDialog', () => {
@@ -83,7 +83,7 @@ describe('QrPhSubscriptionDialog', () => {
     expect(img).toHaveAttribute('src', 'data:image/png;base64,mock_qr_sub');
   });
 
-  it('clears an abandoned QR intent when the dialog closes', async () => {
+  it('keeps a pending QR intent when the dialog closes', async () => {
     useSubscriptionStore.setState({
       generateQrPhPayment: vi.fn().mockResolvedValue({
         paymentIntentId: 'pi_abandoned',
@@ -96,10 +96,10 @@ describe('QrPhSubscriptionDialog', () => {
     renderDialog({ onClose });
 
     await screen.findByAltText('QR Ph Subscription Code');
-    expect(localStorage.getItem('fluent_last_checkout_session_id')).toBe('pi_abandoned');
+    expect(getPendingBillingReference()).toBe('pi_abandoned');
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
-    expect(localStorage.getItem('fluent_last_checkout_session_id')).toBeNull();
+    expect(getPendingBillingReference()).toBe('pi_abandoned');
     expect(onClose).toHaveBeenCalledOnce();
   });
 
@@ -279,8 +279,72 @@ describe('QrPhSubscriptionDialog', () => {
       </FluentProvider>
     );
 
-    // Ensure generateQrPhPayment was NOT called again
     expect(mockGenerate).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears an expired pending QR reference on reopen and generates a fresh QR code', async () => {
+    setPendingBillingReference('pi_expired_old');
+
+    const mockCheck = vi.fn().mockResolvedValueOnce({
+      paymentIntentId: 'pi_expired_old',
+      status: 'expired',
+      isPaid: false,
+      amountCentavos: 12900
+    });
+    const mockGenerate = vi.fn().mockResolvedValueOnce({
+      paymentIntentId: 'pi_fresh_new',
+      paymentMethodId: 'pm_fresh_new',
+      clientKey: 'ck_fresh',
+      status: 'awaiting_next_action',
+      amountCentavos: 12900,
+      qrCodeUrl: 'data:image/png;base64,fresh_qr',
+      orderId: 'sub_fresh_ref',
+      createdAt: '2026-10-27T00:00:00Z'
+    });
+
+    useSubscriptionStore.setState({
+      checkQrPhStatus: mockCheck,
+      generateQrPhPayment: mockGenerate
+    });
+
+    renderDialog();
+
+    await waitFor(() => {
+      expect(mockCheck).toHaveBeenCalledWith('pi_expired_old');
+      expect(mockGenerate).toHaveBeenCalledWith('TindahanPro', 'Monthly');
+    });
+
+    expect(getPendingBillingReference()).toBe('pi_fresh_new');
+  });
+
+  it('reuses a nonterminal pending QR instead of replacing it', async () => {
+    const pendingQr = {
+      paymentIntentId: 'pi_pending_existing',
+      paymentMethodId: 'pm_pending_existing',
+      qrCodeUrl: 'data:image/png;base64,pending_qr',
+      orderId: 'sub_pending_existing'
+    };
+    setPendingBillingReference(pendingQr.paymentIntentId, pendingQr);
+
+    const mockCheck = vi.fn().mockResolvedValue({
+      paymentIntentId: pendingQr.paymentIntentId,
+      status: 'awaiting_next_action',
+      isPaid: false,
+      amountCentavos: 12900
+    });
+    const mockGenerate = vi.fn();
+    useSubscriptionStore.setState({
+      checkQrPhStatus: mockCheck,
+      generateQrPhPayment: mockGenerate
+    });
+
+    renderDialog();
+
+    const qrImage = await screen.findByAltText('QR Ph Subscription Code');
+    expect(qrImage).toHaveAttribute('src', pendingQr.qrCodeUrl);
+    expect(mockCheck).toHaveBeenCalledWith(pendingQr.paymentIntentId);
+    expect(mockGenerate).not.toHaveBeenCalled();
+    expect(getPendingBillingReference()).toBe(pendingQr.paymentIntentId);
   });
 });
 

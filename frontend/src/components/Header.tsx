@@ -533,14 +533,14 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activeTab, forceColl
                   }}
                   style={{ padding: '0px 4px', height: '22px', minWidth: 'auto' }}
                   title="View Subscription Plans"
-                  aria-label={tier === 'NegosyoPlus' ? 'Negosyo Plus Plan' : tier === 'TindahanPro' ? 'Tindahan Pro Plan' : 'Libre Plan'}
+                  aria-label={tier !== 'Libre' ? 'Tindahan Pro Plan' : 'Libre Plan'}
                 >
                   <Badge
-                    color={tier === 'NegosyoPlus' ? 'important' : tier === 'TindahanPro' ? 'warning' : 'informative'}
+                    color={tier !== 'Libre' ? 'warning' : 'informative'}
                     appearance="filled"
                     size="small"
                   >
-                    {tier === 'NegosyoPlus' ? 'NEGOSYO+' : tier === 'TindahanPro' ? 'PRO' : 'LIBRE'}
+                    {tier !== 'Libre' ? 'PRO' : 'LIBRE'}
                   </Badge>
                 </Button>
               )}

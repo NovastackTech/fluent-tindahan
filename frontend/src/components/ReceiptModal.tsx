@@ -24,6 +24,7 @@ import {
   BluetoothRegular
 } from '@fluentui/react-icons';
 import { useAuthStore } from '../state/authStore';
+import { useSubscriptionStore } from '../state/subscriptionStore';
 import { useTranslation } from '../state/languageStore';
 import { usePrinterStore } from '../state/printerStore';
 import { formatPeso } from '../utils/currency';
@@ -241,7 +242,7 @@ const useStyles = makeStyles({
 export const ReceiptModal: React.FC<ReceiptModalProps> = ({ open, onClose, data, embedded = false }) => {
   const styles = useStyles();
   const businessName = useAuthStore((s) => s.businessName);
-  const tier = useAuthStore((s) => s.tier);
+  const tier = useSubscriptionStore((s) => s.tier);
   const { t } = useTranslation();
   const { paperWidth, setPaperWidth } = usePrinterStore();
   const [copied, setCopied] = useState(false);
@@ -480,7 +481,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ open, onClose, data,
             </div>
           ) : (
             <div style={{ textAlign: 'center', marginTop: '6px', fontSize: '10px', color: tokens.colorPaletteGreenForeground1 }}>
-              ✓ {tier === 'NegosyoPlus' ? 'Negosyo Plus' : 'Tindahan Pro'} Verified Receipt
+              ✓ Tindahan Pro Verified Receipt
             </div>
           )}
         </div>

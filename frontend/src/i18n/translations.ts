@@ -571,7 +571,6 @@ export interface Translations {
     currentPlan: string;
     libreTier: string;
     proTier: string;
-    plusTier: string;
     managePlanBtn: string;
     upgradeBtn: string;
     statusActive: string;
@@ -759,19 +758,8 @@ export interface Translations {
     planProFeature4: string;
     planProFeature5: string;
     planProFeature6: string;
-    planPlusTitle: string;
-    planPlusDesc: string;
-    planPlusFeature1: string;
-    planPlusFeature2: string;
-    planPlusFeature3: string;
-    planPlusFeature4: string;
-    planPlusFeature5: string;
-    pricingToggleWeekly: string;
     pricingToggleMonthly: string;
-    perWeek: string;
     perMonth: string;
-    monthlyPassAlternative: string;
-    weeklyPassAlternative: string;
     startNowBtn: string;
     testimonialsTitle: string;
     testimonialsSubtitle: string;

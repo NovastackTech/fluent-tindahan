@@ -29,7 +29,12 @@ import { initSyncEngine, restoreTenantDataFromServer } from './sync/syncEngine';
 import { usePwaStore, initPwaListeners } from './state/pwaStore';
 import { initServiceWorker } from './pwa/registerServiceWorker';
 import { initPwaTabCoordinator } from './pwa/pwaTabCoordinator';
-import { useSubscriptionStore } from './state/subscriptionStore';
+import {
+  clearPendingBillingReference,
+  getPendingBillingReference,
+  scheduleExpiry,
+  useSubscriptionStore
+} from './state/subscriptionStore';
 import { useAuthStore } from './state/authStore';
 import { db } from './db/db';
 import { DEFAULT_TENANT_ID } from './db/seedData';
@@ -192,7 +197,7 @@ export const App: React.FC = () => {
     const billingParam = searchParams.get('billing')?.toLowerCase();
     if (billingParam === 'cancel') {
       try {
-        localStorage.removeItem('fluent_last_checkout_session_id');
+        clearPendingBillingReference();
       } catch {
         // Ignore
       }
@@ -348,10 +353,11 @@ export const App: React.FC = () => {
     };
 
     const handleBillingReturn = async () => {
-      const hasStoredCheckoutSession = typeof window !== 'undefined' && !!localStorage.getItem('fluent_last_checkout_session_id');
+      const hasStoredCheckoutSession = !!getPendingBillingReference();
+      let confirmed = false;
 
       if (isBillingSuccess || hasStoredCheckoutSession) {
-        let confirmed = await confirmOnce();
+        confirmed = await confirmOnce();
         if (!confirmed && isBillingSuccess) {
           for (let attempt = 0; attempt < 2 && !confirmed; attempt++) {
             await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -362,7 +368,7 @@ export const App: React.FC = () => {
 
       await useSubscriptionStore.getState().refreshSubscription();
 
-      if (isBillingSuccess) {
+      if (isBillingSuccess && confirmed) {
         setBillingNotice('success');
         if (window.history && window.history.replaceState) {
           const url = new URL(window.location.href);
@@ -379,20 +385,23 @@ export const App: React.FC = () => {
 
     const handleVisibilityRefresh = () => {
       if (document.visibilityState !== 'visible') return;
-      if (localStorage.getItem('fluent_last_checkout_session_id')) {
+      scheduleExpiry(useAuthStore.getState().subscriptionEndDate);
+      if (getPendingBillingReference()) {
         window.clearTimeout(focusTimer);
         focusTimer = window.setTimeout(() => {
-          if (!localStorage.getItem('fluent_last_checkout_session_id')) return;
+          if (!getPendingBillingReference()) return;
           void confirmOnce().then(() => useSubscriptionStore.getState().refreshSubscription());
         }, 250);
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityRefresh);
     window.addEventListener('focus', handleVisibilityRefresh);
+    window.addEventListener('online', handleVisibilityRefresh);
     return () => {
       window.clearTimeout(focusTimer);
       document.removeEventListener('visibilitychange', handleVisibilityRefresh);
       window.removeEventListener('focus', handleVisibilityRefresh);
+      window.removeEventListener('online', handleVisibilityRefresh);
     };
   }, [isOnboarded, isOnboardingStatusReady]);
 

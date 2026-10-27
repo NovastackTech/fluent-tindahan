@@ -321,7 +321,6 @@ describe('LandingPage Component', () => {
     const pesoSymbol = translations.tl.common.pesos;
     expect(screen.getByText(`${pesoSymbol}129 / ${t.perMonth}`)).toBeInTheDocument();
     expect(screen.queryByText(`${pesoSymbol}349 / ${t.perMonth}`)).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: t.pricingToggleWeekly })).not.toBeInTheDocument();
   });
 
   it('uses English translations for pricing labels and features', () => {

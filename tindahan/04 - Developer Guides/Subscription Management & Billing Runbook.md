@@ -115,12 +115,12 @@ SaaS subscription payment records (**append-only**).
 - `TenantId` (`uuid`, FK $\rightarrow$ `Tenants.Id`, CASCADE): Multi-tenant isolation ID.
 - `AmountCentavos` (`bigint`, NOT NULL): Integer centavos (e.g., `12900` = ₱129.00).
 - `Currency` (`varchar(10)`, NOT NULL, Default: `'PHP'`): Currency code.
-- `TierPurchased` (`integer`, NOT NULL): `1` = `TindahanPro`, `2` = `NegosyoPlus`.
-- `BillingCycle` (`integer`, NOT NULL): `0` = `Weekly`, `1` = `Monthly`.
+- `TierPurchased` (`integer`, NOT NULL): Purchases use `1` = `TindahanPro`; legacy enum values remain readable.
+- `BillingCycle` (`integer`, NOT NULL): Purchases use `1` = `Monthly`; legacy enum values remain readable.
 - `GatewayReferenceId` (`varchar(150)`, NOT NULL): PayMongo payment ID.
 - `Status` (`varchar(50)`, NOT NULL, Default: `'Paid'`): Status.
 - `PaymentMethod` (`varchar(50)`, NOT NULL, Default: `'paymongo'`): Payment gateway source.
-- `CreatedAt` (`timestamptz`, NOT NULL, Default: `now()`): Webhook receipt timestamp.
+- `CreatedAt` (`timestamptz`, NOT NULL, Default: `now()`): Verified PayMongo `paid_at` timestamp.
 - *Indexes*: `IX_PaymentHistories_TenantId`, `IX_PaymentHistories_TenantId_CreatedAt`, `IX_PaymentHistories_GatewayReferenceId` (**UNIQUE**).
 
 ---
@@ -144,11 +144,12 @@ SaaS subscription payment records (**append-only**).
 
 ## 3. Subscription Tiers & Capabilities
 
-| Tier | Code | Price (Monthly) | Price (Weekly) | Limits & Features |
-| :--- | :---: | :---: | :---: | :--- |
-| **Libre** | `0` | ₱0.00 | — | Up to 50 products, 30 debtors, 30 GCash txns/month, 1 device, watermarked receipts. |
-| **Tindahan Pro** | `1` | ₱129.00 | ₱39.00 | **Unlimited** products, debtors, and GCash logs; up to 2 devices; CSV catalog import; unwatermarked receipts; profit analytics. |
-| **Negosyo Plus** | `2` | ₱349.00 | ₱89.00 | All Pro features + up to 5 staff accounts, Staff RBAC (hides profit/capital margins from tindera), up to 4 devices, audit trail logs. |
+| Tier | Code | Price | Limits & Features |
+| :--- | :---: | :---: | :--- |
+| **Libre** | `0` | ₱0.00 | Up to 30 products, 30 debtors, 30 GCash txns/month, 1 device, watermarked receipts. Existing products remain usable after expiry. |
+| **Tindahan Pro** | `1` | ₱129.00 / 30 days | **Unlimited** products, debtors, and GCash logs; up to 2 devices; CSV catalog import; unwatermarked receipts; profit analytics. |
+
+Each renewal uses a fresh payment. A verified payment sets the new expiry to `max(PayMongo paid_at, current expiry) + 30 days`.
 
 ---
 
@@ -233,7 +234,7 @@ ORDER BY "CreatedAt" DESC;
 
 ### Step 3: Diagnostic Decision Matrix
 
-#### Case A: `Tenants.Tier` is ALREADY updated (`1` or `2`) in the DB
+#### Case A: `Tenants.Tier` is ALREADY updated (`1`) in the DB
 * **Diagnosis**: The payment and webhook succeeded! The client's PWA is simply running on stale cached state in IndexedDB because the device was offline or hasn't refetched the tenant profile.
 * **Resolution**:
   1. Have the store owner confirm their device has an active internet connection.
@@ -251,8 +252,8 @@ ORDER BY "CreatedAt" DESC;
 ```sql
 -- 1. Upgrade the tenant's tier and extend expiration
 UPDATE "Tenants"
-SET "Tier" = 1, -- 1 = TindahanPro, 2 = NegosyoPlus
-    "SubscriptionEndDate" = NOW() + INTERVAL '30 days' -- or '7 days' for weekly
+SET "Tier" = 1,
+    "SubscriptionEndDate" = GREATEST(COALESCE("SubscriptionEndDate", '<PAYMONGO_PAID_AT>'), '<PAYMONGO_PAID_AT>') + INTERVAL '30 days'
 WHERE id = '<TENANT_UUID>';
 
 -- 2. Insert audit trail record in PaymentHistories
@@ -272,12 +273,12 @@ INSERT INTO "PaymentHistories" (
     '<TENANT_UUID>',
     12900,               -- Amount in centavos (e.g. 12900 for ₱129.00)
     'PHP',
-    1,                   -- 1 = TindahanPro, 2 = NegosyoPlus
-    1,                   -- 0 = Weekly, 1 = Monthly
+    1,                   -- TindahanPro
+    1,                   -- Monthly (30 days)
     '<PAYMONGO_REF_NO>', -- Transaction ref from gateway/receipt
     'Paid',
     'paymongo',
-    NOW()
+    '<PAYMONGO_PAID_AT>'
 );
 ```
 
