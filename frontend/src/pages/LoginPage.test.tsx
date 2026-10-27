@@ -1040,6 +1040,7 @@ describe('LoginPage Component', () => {
       expect(useAuthStore.getState().refreshToken).toBeNull();
       expect(useAuthStore.getState().reauthRequired).toBe(false);
       expect(screen.getByTestId('login-reset-success-banner')).toBeInTheDocument();
+      expect(screen.queryByTestId('login-otp-info-banner')).not.toBeInTheDocument();
     });
   });
 
