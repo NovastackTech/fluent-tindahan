@@ -217,8 +217,8 @@ export const UtangPage: React.FC = () => {
     if (!canAddCustomer(customers.length)) {
       setNewCustLimitError(
         language === 'tl'
-          ? 'Naabot na ang limitasyon ng Libreng plano (30 may utang). Mag-upgrade sa Tindahan Pro o Negosyo Plus upang magtala pa.'
-          : 'Limit reached for Libre plan (30 debtors maximum). Please upgrade to Tindahan Pro or Negosyo Plus to add more debtors.'
+          ? 'Naabot na ang limitasyon ng Libreng plano (30 may utang). Mag-upgrade sa Tindahan Pro upang magtala pa.'
+          : 'Limit reached for Libre plan (30 debtors maximum). Please upgrade to Tindahan Pro to add more debtors.'
       );
       openUpgradeModal();
       return;
@@ -417,8 +417,8 @@ export const UtangPage: React.FC = () => {
             if (!canAddCustomer(customers.length)) {
               setPageBannerMessage(
                 language === 'tl'
-                  ? 'Naabot na ang limitasyon ng Libreng plano (30 may utang). Mag-upgrade sa Tindahan Pro o Negosyo Plus upang magtala pa.'
-                  : 'Limit reached for Libre plan (30 debtors maximum). Please upgrade to Tindahan Pro or Negosyo Plus to add more debtors.'
+                  ? 'Naabot na ang limitasyon ng Libreng plano (30 may utang). Mag-upgrade sa Tindahan Pro upang magtala pa.'
+                  : 'Limit reached for Libre plan (30 debtors maximum). Please upgrade to Tindahan Pro to add more debtors.'
               );
               openUpgradeModal();
               return;

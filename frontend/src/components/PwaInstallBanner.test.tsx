@@ -102,6 +102,10 @@ describe('PwaInstallBanner', () => {
     renderBanner();
 
     expect(screen.getByText(/Share|Add to Home Screen/i)).toBeInTheDocument();
+    const installBtn = screen.getByRole('button', { name: /I-install ang App|Install App/i });
+    expect(installBtn).toBeInTheDocument();
+    fireEvent.click(installBtn);
+    expect(usePwaStore.getState().showIosInstallModal).toBe(true);
   });
 
   it('guarantees every button has a non-empty accessible name and aria-label immediately on render (issue #124)', () => {

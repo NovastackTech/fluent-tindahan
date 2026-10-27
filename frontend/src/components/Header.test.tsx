@@ -114,6 +114,24 @@ describe('Header', () => {
       expect(promptInstallSpy).toHaveBeenCalledTimes(1);
     });
 
+    it('renders PWA install button on iOS devices when not in standalone mode', () => {
+      const promptInstallSpy = vi.fn().mockResolvedValue(false);
+      usePwaStore.setState({
+        isInstallable: false,
+        isIos: true,
+        isStandalone: false,
+        isInstalled: false,
+        promptInstall: promptInstallSpy
+      });
+
+      renderHeader();
+
+      const installBtn = screen.getByRole('button', { name: /I-install ang Fluent Tindahan sa device|Install Fluent Tindahan to device/i });
+      expect(installBtn).toBeInTheDocument();
+      fireEvent.click(installBtn);
+      expect(promptInstallSpy).toHaveBeenCalledTimes(1);
+    });
+
     it('does not render PWA install button when isInstalled is true', () => {
       usePwaStore.setState({
         isInstallable: true,

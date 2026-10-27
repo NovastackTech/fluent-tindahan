@@ -315,24 +315,13 @@ describe('LandingPage Component', () => {
     expect(screen.getByText(translations.tl.subscription.popularBadge)).toBeInTheDocument();
   });
 
-  it('renders translated plan prices and toggles between Monthly and Weekly', () => {
+  it('renders translated plan prices without Sachet toggle or Negosyo Plus', () => {
     renderLandingPage();
 
-    // Default Monthly pricing: ₱129 for Pro, ₱349 for Plus
     const pesoSymbol = translations.tl.common.pesos;
     expect(screen.getByText(`${pesoSymbol}129 / ${t.perMonth}`)).toBeInTheDocument();
-    expect(screen.getByText(`${pesoSymbol}349 / ${t.perMonth}`)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: t.pricingToggleWeekly })).toBeInTheDocument();
-
-    // Toggle to Weekly
-    fireEvent.click(screen.getByRole('button', { name: t.pricingToggleWeekly }));
-    expect(screen.getByText(`${pesoSymbol}35 / ${t.perWeek}`)).toBeInTheDocument();
-    expect(screen.getByText(`${pesoSymbol}89 / ${t.perWeek}`)).toBeInTheDocument();
-
-    // Toggle back to Monthly
-    fireEvent.click(screen.getByRole('button', { name: t.pricingToggleMonthly }));
-    expect(screen.getByText(`${pesoSymbol}129 / ${t.perMonth}`)).toBeInTheDocument();
-    expect(screen.getByText(`${pesoSymbol}349 / ${t.perMonth}`)).toBeInTheDocument();
+    expect(screen.queryByText(`${pesoSymbol}349 / ${t.perMonth}`)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: t.pricingToggleWeekly })).not.toBeInTheDocument();
   });
 
   it('uses English translations for pricing labels and features', () => {
@@ -342,6 +331,5 @@ describe('LandingPage Component', () => {
     const englishLanding = translations.en.landing;
     expect(screen.getByText(`${translations.en.common.pesos}129 / ${englishLanding.perMonth}`)).toBeInTheDocument();
     expect(screen.getByText(englishLanding.planFreeFeature1)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: englishLanding.pricingToggleWeekly })).toBeInTheDocument();
   });
 });

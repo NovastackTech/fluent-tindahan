@@ -337,12 +337,27 @@ export const App: React.FC = () => {
 
     const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
     const isBillingSuccess = searchParams?.get('billing') === 'success';
+    let confirmInFlight: Promise<boolean> | undefined;
+    let focusTimer: number | undefined;
+    const confirmOnce = () => {
+      if (!confirmInFlight) {
+        confirmInFlight = useSubscriptionStore.getState().confirmCheckoutSession()
+          .finally(() => { confirmInFlight = undefined; });
+      }
+      return confirmInFlight;
+    };
 
     const handleBillingReturn = async () => {
       const hasStoredCheckoutSession = typeof window !== 'undefined' && !!localStorage.getItem('fluent_last_checkout_session_id');
 
       if (isBillingSuccess || hasStoredCheckoutSession) {
-        await useSubscriptionStore.getState().confirmCheckoutSession();
+        let confirmed = await confirmOnce();
+        if (!confirmed && isBillingSuccess) {
+          for (let attempt = 0; attempt < 2 && !confirmed; attempt++) {
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+            confirmed = await confirmOnce();
+          }
+        }
       }
 
       await useSubscriptionStore.getState().refreshSubscription();
@@ -361,6 +376,24 @@ export const App: React.FC = () => {
     };
 
     handleBillingReturn().catch(console.error);
+
+    const handleVisibilityRefresh = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (localStorage.getItem('fluent_last_checkout_session_id')) {
+        window.clearTimeout(focusTimer);
+        focusTimer = window.setTimeout(() => {
+          if (!localStorage.getItem('fluent_last_checkout_session_id')) return;
+          void confirmOnce().then(() => useSubscriptionStore.getState().refreshSubscription());
+        }, 250);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityRefresh);
+    window.addEventListener('focus', handleVisibilityRefresh);
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.removeEventListener('visibilitychange', handleVisibilityRefresh);
+      window.removeEventListener('focus', handleVisibilityRefresh);
+    };
   }, [isOnboarded, isOnboardingStatusReady]);
 
   const billingMessage = billingNotice === 'success'

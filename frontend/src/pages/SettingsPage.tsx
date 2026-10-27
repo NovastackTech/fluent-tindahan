@@ -471,7 +471,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNavigate }) => {
           </Badge>
         </div>
 
-        {isInstallable && !isStandalone && !isInstalled && (
+        {(isInstallable || isIos) && !isStandalone && !isInstalled && (
           <div style={{ marginTop: '12px' }}>
             <Button
               appearance="primary"
