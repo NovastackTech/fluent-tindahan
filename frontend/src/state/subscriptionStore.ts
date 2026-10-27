@@ -350,25 +350,11 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
         targetTier: targetTier === 'TindahanPro' ? 1 : 2,
         cycle: cycle === 'Weekly' ? 0 : 1
       });
-      if (response.data?.paymentIntentId && typeof window !== 'undefined') {
-        try {
-          localStorage.setItem('fluent_last_checkout_session_id', response.data.paymentIntentId);
-        } catch {
-          // Ignore
-        }
-      }
       return response.data;
     },
 
     checkQrPhStatus: async (paymentIntentId: string) => {
       const response = await apiClient.get(`/billing/qrph/${paymentIntentId}/status`);
-      if (response.data?.paymentIntentId && typeof window !== 'undefined') {
-        try {
-          localStorage.setItem('fluent_last_checkout_session_id', response.data.paymentIntentId);
-        } catch {
-          // Ignore
-        }
-      }
       return response.data;
     },
 

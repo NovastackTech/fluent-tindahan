@@ -15,6 +15,7 @@ describe('QrPhSubscriptionDialog', () => {
   afterEach(() => {
     cleanup();
     vi.clearAllTimers();
+    localStorage.clear();
   });
 
   const renderDialog = (props: Partial<Parameters<typeof QrPhSubscriptionDialog>[0]> = {}) => {
@@ -80,6 +81,26 @@ describe('QrPhSubscriptionDialog', () => {
     const img = await screen.findByAltText('QR Ph Subscription Code');
     expect(img).toBeInTheDocument();
     expect(img).toHaveAttribute('src', 'data:image/png;base64,mock_qr_sub');
+  });
+
+  it('clears an abandoned QR intent when the dialog closes', async () => {
+    useSubscriptionStore.setState({
+      generateQrPhPayment: vi.fn().mockResolvedValue({
+        paymentIntentId: 'pi_abandoned',
+        paymentMethodId: 'pm_abandoned',
+        qrCodeUrl: 'data:image/png;base64,qr',
+        orderId: 'sub_abandoned'
+      })
+    });
+    const onClose = vi.fn();
+    renderDialog({ onClose });
+
+    await screen.findByAltText('QR Ph Subscription Code');
+    expect(localStorage.getItem('fluent_last_checkout_session_id')).toBe('pi_abandoned');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(localStorage.getItem('fluent_last_checkout_session_id')).toBeNull();
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
   it('displays error and allows retrying when generation fails', async () => {

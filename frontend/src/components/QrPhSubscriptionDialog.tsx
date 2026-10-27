@@ -163,6 +163,7 @@ export const QrPhSubscriptionDialog: React.FC<QrPhSubscriptionDialogProps> = ({
   const pollTimerRef = useRef<number | null>(null);
   const successTimeoutRef = useRef<number | null>(null);
   const isCheckingRef = useRef(false);
+  const paymentReceivedRef = useRef(false);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const isTagalogRef = useRef(isTagalog);
@@ -175,6 +176,18 @@ export const QrPhSubscriptionDialog: React.FC<QrPhSubscriptionDialogProps> = ({
     }
   }, []);
 
+  const handleClose = () => {
+    try {
+      if (!paymentReceivedRef.current && qrResult?.paymentIntentId &&
+          localStorage.getItem('fluent_last_checkout_session_id') === qrResult.paymentIntentId) {
+        localStorage.removeItem('fluent_last_checkout_session_id');
+      }
+    } catch {
+      // Installation and payment remain usable when browser storage is unavailable.
+    }
+    onClose();
+  };
+
   const handleStatusCheck = useCallback(async (paymentIntentId: string) => {
     if (isCheckingRef.current) return;
     isCheckingRef.current = true;
@@ -183,6 +196,7 @@ export const QrPhSubscriptionDialog: React.FC<QrPhSubscriptionDialogProps> = ({
     try {
       const statusData = await checkQrPhStatus(paymentIntentId);
       if (statusData.isPaid) {
+        paymentReceivedRef.current = true;
         stopPolling();
         try {
           await confirmQrPhPayment(paymentIntentId, targetTier, cycle);
@@ -237,11 +251,17 @@ export const QrPhSubscriptionDialog: React.FC<QrPhSubscriptionDialogProps> = ({
       setIsLoading(true);
       setError(null);
       setIsPaid(false);
+      paymentReceivedRef.current = false;
 
       try {
         const result = await generateQrPhPayment(targetTier, cycle);
         if (!isMounted) return;
 
+        try {
+          localStorage.setItem('fluent_last_checkout_session_id', result.paymentIntentId);
+        } catch {
+          // Continue displaying the QR code when browser storage is unavailable.
+        }
         setQrResult(result);
         setIsLoading(false);
 
@@ -296,7 +316,7 @@ export const QrPhSubscriptionDialog: React.FC<QrPhSubscriptionDialogProps> = ({
     : (isTagalog ? 'Buwanan' : 'Monthly');
 
   return (
-    <Dialog open={open} onOpenChange={(_, data) => !data.open && onClose()}>
+    <Dialog open={open} onOpenChange={(_, data) => !data.open && handleClose()}>
       <DialogSurface className={styles.surface}>
         <DialogBody>
           <div className={styles.header}>
@@ -310,7 +330,7 @@ export const QrPhSubscriptionDialog: React.FC<QrPhSubscriptionDialogProps> = ({
               appearance="subtle"
               size="small"
               icon={<DismissRegular />}
-              onClick={onClose}
+              onClick={handleClose}
               aria-label={isTagalog ? 'Isara' : 'Close'}
             />
           </div>
@@ -430,7 +450,7 @@ export const QrPhSubscriptionDialog: React.FC<QrPhSubscriptionDialogProps> = ({
 
           {!isPaid && (
             <DialogActions style={{ justifyContent: 'space-between', marginTop: '16px' }}>
-              <Button appearance="subtle" onClick={onClose}>
+              <Button appearance="subtle" onClick={handleClose}>
                 {isTagalog ? 'Kanselahin' : 'Cancel'}
               </Button>
               {qrResult && !isLoading && !error && (

@@ -257,41 +257,59 @@ public class ApplySubscriptionPaymentCommandHandler : IRequestHandler<ApplySubsc
         const int maxRetries = 3;
         for (var attempt = 1; attempt <= maxRetries; attempt++)
         {
-            var tenant = await _context.Tenants
-                .IgnoreQueryFilters()
-                .FirstOrDefaultAsync(t => t.Id == request.TenantId, cancellationToken);
-
-            if (tenant == null)
-            {
-                _logger.LogWarning("Payment {PaymentId} received for unknown tenant {TenantId}", request.PaymentId, request.TenantId);
-                return Rejected("Unknown tenant.", request.TenantId);
-            }
-
-            var now = DateTimeOffset.UtcNow;
-            var duration = TierPricing.GetDuration(request.Cycle);
-
-            // Mid-term tier change rule:
-            // Renewing the SAME active tier extends the existing SubscriptionEndDate.
-            // Switching tiers mid-term (or subscribing for the first time / after expiration) starts the new tier
-            // pass from 'now' for the full purchased duration, preventing cheaper tiers from artificially
-            // extending premium tier access without payment.
-            var isSameTierRenewal = tenant.Tier == request.Tier &&
-                                    tenant.SubscriptionEndDate.HasValue &&
-                                    tenant.SubscriptionEndDate.Value > now;
-
-            var newEndDate = isSameTierRenewal
-                ? tenant.SubscriptionEndDate!.Value.Add(duration)
-                : now.Add(duration);
-
-            tenant.Tier = request.Tier;
-            tenant.SubscriptionEndDate = newEndDate;
-
-            paymentHistory.Status = "Paid";
+            await using var transaction = _context.Database.IsRelational()
+                ? await _context.Database.BeginTransactionAsync(cancellationToken)
+                : null;
+            Tenant? tenant = null;
 
             try
             {
-                // The payment row was already persisted above; this commit only completes the upgrade.
+                if (transaction != null)
+                {
+                    var claimed = await _context.PaymentHistories.IgnoreQueryFilters()
+                        .Where(p => p.GatewayReferenceId == request.PaymentId && p.Status == "Pending")
+                        .ExecuteUpdateAsync(s => s.SetProperty(p => p.Status, "Paid"), cancellationToken);
+                    if (claimed == 0)
+                    {
+                        return new WebhookProcessResultDto(PaymentWebhookOutcome.Duplicate, "Payment already processed.", request.TenantId, null, null);
+                    }
+                    paymentHistory.Status = "Paid";
+                    _context.Entry(paymentHistory).State = EntityState.Unchanged;
+                }
+                else
+                {
+                    paymentHistory.Status = "Paid";
+                }
+
+                tenant = await _context.Tenants
+                    .IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(t => t.Id == request.TenantId, cancellationToken);
+
+                if (tenant == null)
+                {
+                    _logger.LogWarning("Payment {PaymentId} received for unknown tenant {TenantId}", request.PaymentId, request.TenantId);
+                    paymentHistory.Status = "Pending";
+                    _context.Entry(paymentHistory).State = EntityState.Unchanged;
+                    return Rejected("Unknown tenant.", request.TenantId);
+                }
+
+                var now = DateTimeOffset.UtcNow;
+                var duration = TierPricing.GetDuration(request.Cycle);
+
+                // Renewing the same active tier extends its end date; changing tiers starts a full pass now.
+                var isSameTierRenewal = tenant.Tier == request.Tier &&
+                                        tenant.SubscriptionEndDate.HasValue &&
+                                        tenant.SubscriptionEndDate.Value > now;
+
+                var newEndDate = isSameTierRenewal
+                    ? tenant.SubscriptionEndDate!.Value.Add(duration)
+                    : now.Add(duration);
+
+                tenant.Tier = request.Tier;
+                tenant.SubscriptionEndDate = newEndDate;
+
                 await _context.SaveChangesAsync(cancellationToken);
+                if (transaction != null) await transaction.CommitAsync(cancellationToken);
 
                 _logger.LogInformation("Tenant {TenantId} upgraded to {Tier} via payment {PaymentId}. New expiration: {EndDate}",
                     tenant.Id, request.Tier, request.PaymentId, newEndDate);
@@ -308,17 +326,10 @@ public class ApplySubscriptionPaymentCommandHandler : IRequestHandler<ApplySubsc
                 _logger.LogWarning(ex, "Concurrency conflict applying payment {PaymentId} to tenant {TenantId} on attempt {Attempt}/{MaxRetries}. Retrying...",
                     request.PaymentId, request.TenantId, attempt, maxRetries);
 
-                _context.Entry(tenant).State = EntityState.Detached;
+                if (transaction != null) await transaction.RollbackAsync(cancellationToken);
+                if (tenant != null) _context.Entry(tenant).State = EntityState.Detached;
                 paymentHistory.Status = "Pending";
                 _context.Entry(paymentHistory).State = EntityState.Unchanged;
-
-                if (await _context.PaymentHistories
-                    .IgnoreQueryFilters()
-                    .AsNoTracking()
-                    .AnyAsync(p => p.GatewayReferenceId == request.PaymentId && p.Status == "Paid", cancellationToken))
-                {
-                    return new WebhookProcessResultDto(PaymentWebhookOutcome.Duplicate, "Payment already processed.", request.TenantId, null, null);
-                }
 
                 if (attempt >= maxRetries)
                 {
@@ -327,6 +338,7 @@ public class ApplySubscriptionPaymentCommandHandler : IRequestHandler<ApplySubsc
             }
             catch (DbUpdateException)
             {
+                if (transaction != null) await transaction.RollbackAsync(cancellationToken);
                 paymentHistory.Status = "Pending";
                 _context.Entry(paymentHistory).State = EntityState.Unchanged;
                 throw;
