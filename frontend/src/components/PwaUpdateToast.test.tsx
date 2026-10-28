@@ -15,7 +15,8 @@ describe('PwaUpdateToast', () => {
       needRefresh: false,
       otherTabsHaveCart: false,
       isSaleInProgress: false,
-      hasActiveReceipt: false
+      hasActiveReceipt: false,
+      hasUnsavedWork: false
     });
     useCartStore.getState().clearCart();
   });
@@ -178,6 +179,18 @@ describe('PwaUpdateToast', () => {
 
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /I-reload para Mag-update|Reload & Update/i })).toBeDisabled();
+  });
+
+  it('does not cover a form that has unsaved input', () => {
+    usePwaStore.setState({
+      needRefresh: true,
+      hasUnsavedWork: true
+    });
+
+    renderToast();
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByText(/Tapusin o isara muna ang bukas na form|Finish or close the open form/i)).toBeInTheDocument();
   });
 
   it('keeps the dialog open and offers retry when navigation does not occur', async () => {

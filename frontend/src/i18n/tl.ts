@@ -569,6 +569,7 @@ export const tl: Translations = {
     updateRetryMsg: 'Hindi natapos ang update. Pindutin ang I-reload para Mag-update upang subukan muli.',
     updateWaitMsg: 'Pakisara muna ang benta bago i-update.',
     updateOtherTabsWaitMsg: 'May bukas na benta sa isa pang tab. Pakitapos o pakisara muna bago mag-update.',
+    updateUnsavedWorkWaitMsg: 'Tapusin o isara muna ang bukas na form bago mag-update para hindi mawala ang iyong inilagay.',
     pwaSection: 'PWA (Progressive Web App)',
     pwaDesc: 'I-install ang app sa iyong Android, iPhone, o computer para sa buong offline experience.',
     appStatus: 'Katayuan ng App:',

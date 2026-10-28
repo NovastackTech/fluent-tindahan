@@ -46,7 +46,7 @@ function executeReload(): void {
 function canSafelyReload(): boolean {
   const hasLocalCart = useCartStore.getState().items.length > 0;
   const pwaState = usePwaStore.getState();
-  return !hasLocalCart && !pwaState.isSaleInProgress && !pwaState.hasActiveReceipt && !pwaState.otherTabsHaveCart;
+  return !hasLocalCart && !pwaState.isSaleInProgress && !pwaState.hasActiveReceipt && !pwaState.otherTabsHaveCart && !pwaState.hasUnsavedWork;
 }
 
 function triggerDeferredReloadSubscription(): void {
@@ -272,6 +272,7 @@ export function _resetUpdateSWFunctionForTest(): void {
   }
   usePwaStore.getState().setIsSaleInProgress(false);
   usePwaStore.getState().setHasActiveReceipt(false);
+  usePwaStore.getState().setHasUnsavedWork(false);
 }
 
 /**

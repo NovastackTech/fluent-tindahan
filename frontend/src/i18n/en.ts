@@ -569,6 +569,7 @@ export const en: Translations = {
     updateRetryMsg: 'The update did not finish. Tap Reload & Update to try again.',
     updateWaitMsg: 'Please complete or clear the cart before updating.',
     updateOtherTabsWaitMsg: 'Another open till tab has an active transaction. Complete or clear it before updating.',
+    updateUnsavedWorkWaitMsg: 'Finish or close the open form before updating so your input is not lost.',
     pwaSection: 'Progressive Web App (PWA)',
     pwaDesc: 'Install the app on your Android phone, iPhone, or PC for a native, offline-ready experience.',
     appStatus: 'App Environment:',

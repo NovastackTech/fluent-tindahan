@@ -8,12 +8,14 @@ import { db } from '../db/db';
 import { useLanguageStore } from '../state/languageStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
 import { useAuthStore } from '../state/authStore';
+import { usePwaStore } from '../state/pwaStore';
 
 describe('InventoryPage', () => {
   beforeEach(async () => {
     useLanguageStore.setState({ language: 'tl' });
     useAuthStore.setState({ tenantId: 't-1' });
     useSubscriptionStore.setState({ tier: 'Libre', isUpgradeModalOpen: false });
+    usePwaStore.getState().setHasUnsavedWork(false);
     await db.products.clear();
     await db.syncQueue.clear();
 
@@ -131,6 +133,7 @@ describe('InventoryPage', () => {
     fireEvent.click(addBtn);
 
     expect(screen.getByText(/Magdagdag ng Bagong Produkto|Add New Product/i)).toBeInTheDocument();
+    expect(usePwaStore.getState().hasUnsavedWork).toBe(true);
   });
 
   it('shows inline validation when saving a product with a blank name', () => {
@@ -285,6 +288,30 @@ describe('InventoryPage', () => {
     expect(await screen.findByText(/Ginagamit na ng ibang produkto ang barcode|barcode is already assigned/i)).toBeInTheDocument();
     expect(await db.products.where('tenantId').equals('t-1').count()).toBe(2);
     expect(await db.syncQueue.count()).toBe(0);
+  });
+
+  it('allows unrelated edits when the product already has a duplicate', async () => {
+    await db.products.add({
+      id: 'inv-duplicate',
+      tenantId: 't-1',
+      name: 'Lucky Me Pancit Canton Kalamansi',
+      price: 17,
+      cost: 14,
+      barcode: '4800016644026',
+      category: 'Instant Noodles',
+      stockQty: 8,
+      updatedAt: new Date().toISOString()
+    });
+    renderInventory();
+    await screen.findAllByText(/Lucky Me Pancit Canton Kalamansi/i);
+
+    fireEvent.click(screen.getAllByRole('button', { name: /Baguhin ang Produkto|Edit Product/i })[0]);
+    const stockInput = screen.getByRole('spinbutton', { name: /Kasalukuyang Stock|Current Stock Qty/i });
+    fireEvent.change(stockInput, { target: { value: '4' } });
+    fireEvent.click(screen.getByRole('button', { name: /I-save|Save/i }));
+
+    await waitFor(async () => expect((await db.products.get('inv-1'))?.stockQty).toBe(4));
+    expect(screen.queryByText(/May produkto nang may parehong pangalan|product with this name already exists/i)).not.toBeInTheDocument();
   });
 
   it('blocks saving a product with SRP exceeding reasonable maximum limit 999,999.99', async () => {

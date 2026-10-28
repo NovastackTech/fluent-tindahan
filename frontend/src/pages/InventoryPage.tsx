@@ -43,6 +43,7 @@ import { BarcodeScannerModal } from '../components/BarcodeScannerModal';
 import { QuickRegisterProductDialog } from '../components/QuickRegisterProductDialog';
 import { playScanBeep } from '../utils/sound';
 import { useSubscriptionStore } from '../state/subscriptionStore';
+import { usePwaStore } from '../state/pwaStore';
 import {
   getCatalog,
   findCatalogByName,
@@ -366,6 +367,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
   const { t, language } = useTranslation();
   const tenantId = useAuthStore((s) => s.tenantId);
   const { tier, canAddProduct, openUpgradeModal } = useSubscriptionStore();
+  const setHasUnsavedWork = usePwaStore((s) => s.setHasUnsavedWork);
 
   // Live Query from local Dexie database
   const productsResult = useLiveQuery(
@@ -418,6 +420,11 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
   const [limitBanner, setLimitBanner] = useState<string | null>(null);
   const [modalGeneralError, setModalGeneralError] = useState<string | null>(null);
   const isSavingProductRef = useRef(false);
+
+  React.useEffect(() => {
+    setHasUnsavedWork(isModalOpen || isQuickRegOpen);
+    return () => setHasUnsavedWork(false);
+  }, [isModalOpen, isQuickRegOpen, setHasUnsavedWork]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -771,14 +778,18 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
     try {
       const normalizedName = formName.trim().toLowerCase();
       const normalizedBarcode = formBarcode.trim().toLowerCase();
-      const duplicateProduct = await db.products
-        .where('tenantId')
-        .equals(tenantId)
-        .filter((product) => product.id !== editingProduct?.id && (
-          product.name.trim().toLowerCase() === normalizedName ||
-          Boolean(normalizedBarcode && product.barcode?.trim().toLowerCase() === normalizedBarcode)
-        ))
-        .first();
+      const nameChanged = modalMode === 'add' || editingProduct?.name.trim().toLowerCase() !== normalizedName;
+      const barcodeChanged = modalMode === 'add' || (editingProduct?.barcode ?? '').trim().toLowerCase() !== normalizedBarcode;
+      const duplicateProduct = nameChanged || barcodeChanged
+        ? await db.products
+          .where('tenantId')
+          .equals(tenantId)
+          .filter((product) => product.id !== editingProduct?.id && (
+            (nameChanged && product.name.trim().toLowerCase() === normalizedName) ||
+            Boolean(barcodeChanged && normalizedBarcode && product.barcode?.trim().toLowerCase() === normalizedBarcode)
+          ))
+          .first()
+        : undefined;
 
       if (duplicateProduct) {
         if (duplicateProduct.name.trim().toLowerCase() === normalizedName) {

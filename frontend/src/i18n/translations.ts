@@ -558,6 +558,7 @@ export interface Translations {
     updateRetryMsg: string;
     updateWaitMsg: string;
     updateOtherTabsWaitMsg: string;
+    updateUnsavedWorkWaitMsg: string;
     pwaSection: string;
     pwaDesc: string;
     appStatus: string;

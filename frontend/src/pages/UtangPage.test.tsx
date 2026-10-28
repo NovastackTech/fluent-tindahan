@@ -6,6 +6,7 @@ import { sariSariLightTheme } from '../theme/theme';
 import { db } from '../db/db';
 import { useAuthStore } from '../state/authStore';
 import { useLanguageStore } from '../state/languageStore';
+import { usePwaStore } from '../state/pwaStore';
 
 describe('UtangPage', () => {
   beforeEach(async () => {
@@ -14,6 +15,7 @@ describe('UtangPage', () => {
     await db.customers.clear();
     await db.utangLedger.clear();
     await db.syncQueue.clear();
+    usePwaStore.getState().setHasUnsavedWork(false);
   });
 
   const renderUtang = () => {
@@ -83,6 +85,7 @@ describe('UtangPage', () => {
     fireEvent.click(addBtn);
 
     expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(usePwaStore.getState().hasUnsavedWork).toBe(true);
 
     const nameInput = screen.getByRole('textbox', { name: /Pangalan ng Suki|Customer Name/i });
     const phoneInput = screen.getByRole('textbox', { name: /Cellphone Number|Mobile Number/i });

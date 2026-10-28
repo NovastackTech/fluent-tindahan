@@ -59,7 +59,7 @@ const useStyles = makeStyles({
 export const PwaUpdateToast: React.FC = () => {
   const styles = useStyles();
   const { t } = useTranslation();
-  const { needRefresh, otherTabsHaveCart, isSaleInProgress, hasActiveReceipt } = usePwaStore();
+  const { needRefresh, otherTabsHaveCart, isSaleInProgress, hasActiveReceipt, hasUnsavedWork } = usePwaStore();
   const cartItemCount = useCartStore((s) => s.items.length);
   const [isUpdating, setIsUpdating] = React.useState(false);
   const [showRetry, setShowRetry] = React.useState(false);
@@ -67,7 +67,7 @@ export const PwaUpdateToast: React.FC = () => {
   const updateButtonRef = React.useRef<HTMLButtonElement>(null);
   const hasLocalItems = cartItemCount > 0;
   const hasActiveSale = isSaleInProgress || hasActiveReceipt;
-  const hasReloadBlocker = hasLocalItems || otherTabsHaveCart || hasActiveSale;
+  const hasReloadBlocker = hasLocalItems || otherTabsHaveCart || hasActiveSale || hasUnsavedWork;
 
   React.useEffect(() => {
     return () => {
@@ -113,7 +113,9 @@ export const PwaUpdateToast: React.FC = () => {
       ? t.pwa.updateWaitMsg
       : otherTabsHaveCart
         ? t.pwa.updateOtherTabsWaitMsg
-        : null;
+        : hasUnsavedWork
+          ? t.pwa.updateUnsavedWorkWaitMsg
+          : null;
 
   if (hasReloadBlocker) return (
     <div className={styles.container}>
