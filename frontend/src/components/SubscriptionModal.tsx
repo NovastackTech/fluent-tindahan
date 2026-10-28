@@ -15,7 +15,8 @@ import {
   shorthands,
   MessageBar,
   MessageBarBody,
-  mergeClasses
+  mergeClasses,
+  Spinner
 } from '@fluentui/react-components';
 import {
   CheckmarkRegular,
@@ -151,6 +152,11 @@ export const SubscriptionModal: React.FC = () => {
 
   const [processingTier, setProcessingTier] = useState<PlanTier | null>(null);
   const [qrModalTier, setQrModalTier] = useState<'TindahanPro' | null>(null);
+  const [verificationStatus, setVerificationStatus] = useState<'idle' | 'checking' | 'notFound' | 'error'>('idle');
+  const handleCloseModal = useCallback(() => {
+    setVerificationStatus('idle');
+    closeUpgradeModal();
+  }, [closeUpgradeModal]);
   const handleCloseQrModal = useCallback(() => {
     setQrModalTier(null);
     if (getPendingBillingReference()) {
@@ -216,7 +222,7 @@ export const SubscriptionModal: React.FC = () => {
 
   return (
     <>
-      <Dialog open={isUpgradeModalOpen} onOpenChange={(_, data) => !data.open && closeUpgradeModal()}>
+      <Dialog open={isUpgradeModalOpen} onOpenChange={(_, data) => !data.open && handleCloseModal()}>
       <DialogSurface className={styles.surface}>
         <DialogTitle className={styles.headerContainer}>
           <div>
@@ -233,7 +239,7 @@ export const SubscriptionModal: React.FC = () => {
           <Button
             appearance="subtle"
             icon={<DismissRegular />}
-            onClick={closeUpgradeModal}
+            onClick={handleCloseModal}
             aria-label="Close"
           />
         </DialogTitle>
@@ -273,22 +279,46 @@ export const SubscriptionModal: React.FC = () => {
             )}
 
             {currentTier === 'Libre' && (
-              <div style={{ marginBottom: tokens.spacingVerticalM, display: 'flex', justifyContent: 'flex-end' }}>
+              <div style={{ marginBottom: tokens.spacingVerticalM, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: tokens.spacingVerticalS }}>
                 <Button
                   appearance="subtle"
                   size="small"
-                  disabled={isLoading}
+                  disabled={isLoading || verificationStatus === 'checking'}
                   onClick={async () => {
-                    const upgraded = await confirmCheckoutSession();
-                    if (upgraded) {
-                      closeUpgradeModal();
-                    } else {
+                    setVerificationStatus('checking');
+                    try {
+                      const upgraded = await confirmCheckoutSession();
+                      if (upgraded) {
+                        handleCloseModal();
+                        return;
+                      }
                       await refreshSubscription();
+                      setVerificationStatus(useSubscriptionStore.getState().error ? 'error' : 'notFound');
+                    } catch {
+                      setVerificationStatus('error');
                     }
                   }}
                 >
                   {isTagalog ? 'Nakatapos na ng bayad? I-verify ang status' : 'Already paid? Verify subscription'}
                 </Button>
+                {verificationStatus !== 'idle' && (
+                  <MessageBar
+                    intent={verificationStatus === 'error' ? 'error' : verificationStatus === 'notFound' ? 'warning' : 'info'}
+                    aria-live="polite"
+                  >
+                    <MessageBarBody>
+                      {verificationStatus === 'checking' && (
+                        <><Spinner size="tiny" /> {isTagalog ? 'Tinitingnan ang status ng bayad…' : 'Checking payment status…'}</>
+                      )}
+                      {verificationStatus === 'notFound' && (isTagalog
+                        ? 'Wala pang nakitang kumpirmadong bayad. Kung kakabayad mo lang, maghintay sandali at subukan muli.'
+                        : 'No completed payment was found yet. If you just paid, wait a moment and try again.')}
+                      {verificationStatus === 'error' && (isTagalog
+                        ? 'Hindi ma-verify ang bayad ngayon. Tingnan ang iyong koneksyon at subukan muli.'
+                        : 'Payment could not be verified right now. Check your connection and try again.')}
+                    </MessageBarBody>
+                  </MessageBar>
+                )}
               </div>
             )}
 
@@ -445,7 +475,7 @@ export const SubscriptionModal: React.FC = () => {
           </DialogContent>
 
           <DialogActions>
-            <Button appearance="subtle" onClick={closeUpgradeModal}>
+            <Button appearance="subtle" onClick={handleCloseModal}>
               {isTagalog ? 'Isara' : 'Close'}
             </Button>
           </DialogActions>

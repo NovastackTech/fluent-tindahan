@@ -565,6 +565,8 @@ export const en: Translations = {
     updateTitle: 'New App Version Available!',
     updateDesc: 'An updated version of Fluent Tindahan is ready with enhancements and performance fixes.',
     updateBtn: 'Reload & Update',
+    updateProgressMsg: 'Updating Fluent Tindahan…',
+    updateRetryMsg: 'The update did not finish. Tap Reload & Update to try again.',
     updateWaitMsg: 'Please complete or clear the cart before updating.',
     updateOtherTabsWaitMsg: 'Another open till tab has an active transaction. Complete or clear it before updating.',
     pwaSection: 'Progressive Web App (PWA)',

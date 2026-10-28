@@ -32,7 +32,6 @@ function executeReload(): void {
     deferredReloadUnsubscribe = null;
   }
   if (typeof window === 'undefined') return;
-  usePwaStore.getState().setNeedRefresh(false);
   try {
     window.location.reload();
   } catch {
@@ -160,9 +159,6 @@ export async function reloadAppForUpdate(): Promise<void> {
     return;
   }
   isReloading = true;
-
-  // Clear banner state immediately so it does not linger
-  usePwaStore.getState().setNeedRefresh(false);
 
   // 1. Listen for controllerchange: when the new service worker activates and claims the page,
   // reload immediately so the page fetches from the new service worker.

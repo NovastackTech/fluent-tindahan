@@ -7,9 +7,16 @@ import {
   MessageBarTitle,
   MessageBarBody,
   MessageBarActions,
-  Button
+  Button,
+  Dialog,
+  DialogSurface,
+  DialogTitle,
+  DialogBody,
+  DialogContent,
+  DialogActions,
+  Spinner
 } from '@fluentui/react-components';
-import { ArrowClockwiseRegular, DismissRegular, WarningRegular } from '@fluentui/react-icons';
+import { ArrowClockwiseRegular, WarningRegular } from '@fluentui/react-icons';
 import { usePwaStore } from '../state/pwaStore';
 import { useCartStore } from '../state/cartStore';
 import { reloadAppForUpdate } from '../pwa/registerServiceWorker';
@@ -37,16 +44,30 @@ const useStyles = makeStyles({
     marginTop: tokens.spacingVerticalXXS,
     fontSize: tokens.fontSizeBase200,
     color: tokens.colorPaletteDarkOrangeForeground1
+  },
+  dialogSurface: {
+    maxWidth: '480px',
+    width: 'calc(100vw - 32px)'
+  },
+  dialogContent: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: tokens.spacingVerticalM
   }
 });
 
 export const PwaUpdateToast: React.FC = () => {
   const styles = useStyles();
   const { t } = useTranslation();
-  const { needRefresh, setNeedRefresh, otherTabsHaveCart, isSaleInProgress, hasActiveReceipt } = usePwaStore();
+  const { needRefresh, otherTabsHaveCart, isSaleInProgress, hasActiveReceipt } = usePwaStore();
   const cartItemCount = useCartStore((s) => s.items.length);
   const [isUpdating, setIsUpdating] = React.useState(false);
+  const [showRetry, setShowRetry] = React.useState(false);
   const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const updateButtonRef = React.useRef<HTMLButtonElement>(null);
+  const hasLocalItems = cartItemCount > 0;
+  const hasActiveSale = isSaleInProgress || hasActiveReceipt;
+  const hasReloadBlocker = hasLocalItems || otherTabsHaveCart || hasActiveSale;
 
   React.useEffect(() => {
     return () => {
@@ -56,34 +77,36 @@ export const PwaUpdateToast: React.FC = () => {
     };
   }, []);
 
+  React.useEffect(() => {
+    if (!needRefresh || hasReloadBlocker) return;
+    const focusTimer = window.setTimeout(() => updateButtonRef.current?.focus(), 0);
+    return () => window.clearTimeout(focusTimer);
+  }, [needRefresh, hasReloadBlocker]);
+
   if (!needRefresh) {
     return null;
   }
 
-  const hasLocalItems = cartItemCount > 0;
-  const hasActiveSale = isSaleInProgress || hasActiveReceipt;
-  const isBlocked = hasLocalItems || otherTabsHaveCart || hasActiveSale || isUpdating;
-
   const handleUpdate = async () => {
-    if (isBlocked) {
+    if (hasReloadBlocker || isUpdating) {
       return;
     }
+    setShowRetry(false);
     setIsUpdating(true);
     try {
       await reloadAppForUpdate();
     } catch {
       setIsUpdating(false);
+      setShowRetry(true);
+      return;
     }
     if (timerRef.current) {
       clearTimeout(timerRef.current);
     }
     timerRef.current = setTimeout(() => {
       setIsUpdating(false);
+      setShowRetry(true);
     }, 3000);
-  };
-
-  const handleDismiss = () => {
-    setNeedRefresh(false);
   };
 
   const warningMessage = hasLocalItems || hasActiveSale
@@ -92,7 +115,7 @@ export const PwaUpdateToast: React.FC = () => {
         ? t.pwa.updateOtherTabsWaitMsg
         : null;
 
-  return (
+  if (hasReloadBlocker) return (
     <div className={styles.container}>
       <MessageBar
         className={styles.bar}
@@ -119,25 +142,48 @@ export const PwaUpdateToast: React.FC = () => {
                 appearance="primary"
                 icon={<ArrowClockwiseRegular />}
                 onClick={handleUpdate}
-                disabled={isBlocked}
+                disabled
                 title={warningMessage || undefined}
                 aria-label={t.pwa.updateBtn || 'Update App'}
               >
                 {t.pwa.updateBtn}
-              </Button>
-              <Button
-                size="small"
-                appearance="subtle"
-                icon={<DismissRegular />}
-                onClick={handleDismiss}
-                aria-label={t.pwa.dismissBtn || 'Dismiss'}
-              >
-                {t.pwa.dismissBtn}
               </Button>
             </div>
           }
         />
       </MessageBar>
     </div>
+  );
+
+  return (
+    <Dialog open modalType="alert">
+      <DialogSurface className={styles.dialogSurface} aria-label={t.pwa.updateTitle}>
+        <DialogBody>
+          <DialogTitle>{t.pwa.updateTitle}</DialogTitle>
+          <DialogContent className={styles.dialogContent}>
+            <span>{t.pwa.updateDesc}</span>
+            {isUpdating && <span role="status">{t.pwa.updateProgressMsg}</span>}
+            {showRetry && (
+              <MessageBar intent="warning">
+                <MessageBarBody>{t.pwa.updateRetryMsg}</MessageBarBody>
+              </MessageBar>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button
+              ref={updateButtonRef}
+              autoFocus
+              appearance="primary"
+              icon={isUpdating ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />}
+              onClick={handleUpdate}
+              disabled={isUpdating}
+              aria-label={t.pwa.updateBtn || 'Update App'}
+            >
+              {t.pwa.updateBtn}
+            </Button>
+          </DialogActions>
+        </DialogBody>
+      </DialogSurface>
+    </Dialog>
   );
 };

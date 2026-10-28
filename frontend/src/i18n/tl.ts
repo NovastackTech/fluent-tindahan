@@ -565,6 +565,8 @@ export const tl: Translations = {
     updateTitle: 'May Bagong Bersyon ng App!',
     updateDesc: 'May bagong update ang Fluent Tindahan na may mga bagong feature at bilis.',
     updateBtn: 'I-reload para Mag-update',
+    updateProgressMsg: 'Ina-update ang Fluent Tindahan…',
+    updateRetryMsg: 'Hindi natapos ang update. Pindutin ang I-reload para Mag-update upang subukan muli.',
     updateWaitMsg: 'Pakisara muna ang benta bago i-update.',
     updateOtherTabsWaitMsg: 'May bukas na benta sa isa pang tab. Pakitapos o pakisara muna bago mag-update.',
     pwaSection: 'PWA (Progressive Web App)',

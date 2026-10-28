@@ -455,7 +455,7 @@ describe('registerServiceWorker', () => {
     });
   });
 
-  it('clears needRefresh state immediately when reloadAppForUpdate is executed', async () => {
+  it('keeps needRefresh active until page navigation replaces the app', async () => {
     const originalLocation = window.location;
     const reloadMock = vi.fn();
     Object.defineProperty(window, 'location', {
@@ -470,7 +470,7 @@ describe('registerServiceWorker', () => {
     _resetUpdateSWFunctionForTest();
     await reloadAppForUpdate();
 
-    expect(usePwaStore.getState().needRefresh).toBe(false);
+    expect(usePwaStore.getState().needRefresh).toBe(true);
     expect(reloadMock).toHaveBeenCalledTimes(1);
 
     Object.defineProperty(window, 'location', {

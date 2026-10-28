@@ -262,6 +262,31 @@ describe('InventoryPage', () => {
     });
   });
 
+  it('blocks duplicate product names and barcodes for the active tenant', async () => {
+    renderInventory();
+    fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Produkto|Add Product/i }));
+
+    const nameInput = screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i });
+    const barcodeInput = screen.getByRole('textbox', { name: /Barcode/i });
+    fireEvent.change(nameInput, { target: { value: '  lucky me pancit canton kalamansi  ' } });
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Presyo ng Tinda|Retail Price/i }), {
+      target: { value: '20' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: /I-save|Save/i }));
+
+    expect(await screen.findByText(/May produkto nang may parehong pangalan|product with this name already exists/i)).toBeInTheDocument();
+    expect(nameInput).toHaveAttribute('aria-invalid', 'true');
+    expect(await db.products.where('tenantId').equals('t-1').count()).toBe(2);
+
+    fireEvent.change(nameInput, { target: { value: 'Different Product' } });
+    fireEvent.change(barcodeInput, { target: { value: ' 4800011223344 ' } });
+    fireEvent.click(screen.getByRole('button', { name: /I-save|Save/i }));
+
+    expect(await screen.findByText(/Ginagamit na ng ibang produkto ang barcode|barcode is already assigned/i)).toBeInTheDocument();
+    expect(await db.products.where('tenantId').equals('t-1').count()).toBe(2);
+    expect(await db.syncQueue.count()).toBe(0);
+  });
+
   it('blocks saving a product with SRP exceeding reasonable maximum limit 999,999.99', async () => {
     renderInventory();
 

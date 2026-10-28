@@ -554,6 +554,8 @@ export interface Translations {
     updateTitle: string;
     updateDesc: string;
     updateBtn: string;
+    updateProgressMsg: string;
+    updateRetryMsg: string;
     updateWaitMsg: string;
     updateOtherTabsWaitMsg: string;
     pwaSection: string;

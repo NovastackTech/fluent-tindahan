@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import {
   makeStyles,
   tokens,
@@ -417,6 +417,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [limitBanner, setLimitBanner] = useState<string | null>(null);
   const [modalGeneralError, setModalGeneralError] = useState<string | null>(null);
+  const isSavingProductRef = useRef(false);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -478,6 +479,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
   const handleFormNameChange = (val: string) => {
     setFormName(val);
     if (formNameError) setFormNameError('');
+    if (modalGeneralError) setModalGeneralError(null);
     const match = findCatalogByName(val);
     if (match) {
       applyCatalogItem(match, 'name');
@@ -486,6 +488,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
 
   const handleFormBarcodeChange = (val: string) => {
     setFormBarcode(val);
+    if (modalGeneralError) setModalGeneralError(null);
     const match = findCatalogByBarcode(val);
     if (match) {
       applyCatalogItem(match, 'barcode');
@@ -710,6 +713,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
 
   // Save Add/Edit Product
   const handleSaveProduct = async () => {
+    setModalGeneralError(null);
     setFormNameError('');
     setFormCostError('');
     setFormPriceError('');
@@ -759,9 +763,36 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
       return;
     }
 
+    if (isSavingProductRef.current) return;
+    isSavingProductRef.current = true;
+
     const nowIso = new Date().toISOString();
 
     try {
+      const normalizedName = formName.trim().toLowerCase();
+      const normalizedBarcode = formBarcode.trim().toLowerCase();
+      const duplicateProduct = await db.products
+        .where('tenantId')
+        .equals(tenantId)
+        .filter((product) => product.id !== editingProduct?.id && (
+          product.name.trim().toLowerCase() === normalizedName ||
+          Boolean(normalizedBarcode && product.barcode?.trim().toLowerCase() === normalizedBarcode)
+        ))
+        .first();
+
+      if (duplicateProduct) {
+        if (duplicateProduct.name.trim().toLowerCase() === normalizedName) {
+          setFormNameError(language === 'tl'
+            ? 'May produkto nang may parehong pangalan. I-edit o i-restock ang kasalukuyang produkto.'
+            : 'A product with this name already exists. Edit or restock the existing product instead.');
+        } else {
+          setModalGeneralError(language === 'tl'
+            ? 'Ginagamit na ng ibang produkto ang barcode na ito.'
+            : 'This barcode is already assigned to another product.');
+        }
+        return;
+      }
+
       if (modalMode === 'add') {
         if (!canAddProduct(products.length)) {
           setModalGeneralError(
@@ -808,6 +839,8 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
       setIsModalOpen(false);
     } catch (err) {
       console.error('Failed to save product:', err);
+    } finally {
+      isSavingProductRef.current = false;
     }
   };
 
