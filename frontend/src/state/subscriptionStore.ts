@@ -266,7 +266,7 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
     isActive: currentTier !== 'Libre',
     daysRemaining: null,
     allowLibreUpgrade: IS_LIBRE_UPGRADE_ENABLED,
-    enableHostedCheckout: true,
+    enableHostedCheckout: false,
     isLoading: false,
     error: null,
     isUpgradeModalOpen: false,

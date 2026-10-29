@@ -105,11 +105,6 @@ public class BillingController : ControllerBase
             return BadRequest(new { message = "Invalid plan or billing cycle." });
         }
 
-        if (!IsHostedCheckoutEnabled())
-        {
-            return BadRequest(new { message = "Hosted checkout is currently disabled." });
-        }
-
         var dbContext = _dbContext ?? HttpContext?.RequestServices.GetService<IApplicationDbContext>();
         Tenant? tenant = null;
         if (dbContext != null)
@@ -123,6 +118,11 @@ public class BillingController : ControllerBase
         if (!IsLibreUpgradeAllowed() && !isRenewal)
         {
             return BadRequest(new { message = "Upgrading from Libre to Tindahan Pro is temporarily paused." });
+        }
+
+        if (!IsHostedCheckoutEnabled())
+        {
+            return BadRequest(new { message = "Hosted checkout is currently disabled." });
         }
 
         try

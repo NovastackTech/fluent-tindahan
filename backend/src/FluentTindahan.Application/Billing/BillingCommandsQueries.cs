@@ -72,7 +72,7 @@ public record TenantSubscriptionDto(
     int CurrentGCashTransactionsThisMonth,
     bool PaymentConfirmed = false,
     bool AllowLibreUpgrade = true,
-    bool EnableHostedCheckout = true
+    bool EnableHostedCheckout = false
 );
 
 public record PaymentHistoryDto(

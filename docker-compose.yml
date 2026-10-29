@@ -49,7 +49,7 @@ services:
       PayMongo__WebhookSecret: ${PAYMONGO_WEBHOOK_SECRET:-}
       PayMongo__FrontendOrigin: ${PAYMONGO_FRONTEND_ORIGIN:-http://localhost}
       Billing__AllowLibreUpgrade: ${BILLING_ALLOW_LIBRE_UPGRADE:-true}
-      Billing__EnableHostedCheckout: ${BILLING_ENABLE_HOSTED_CHECKOUT:-true}
+      Billing__EnableHostedCheckout: ${BILLING_ENABLE_HOSTED_CHECKOUT:-false}
       Smtp__Host: ${SMTP_HOST:-}
       Smtp__Port: ${SMTP_PORT:-587}
       Smtp__Username: ${SMTP_USERNAME:-}
