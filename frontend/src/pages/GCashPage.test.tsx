@@ -9,6 +9,7 @@ import { calculateGCashFee, DEFAULT_GCASH_FEE_TIERS, useGCashFeeStore } from '..
 import { useAuthStore } from '../state/authStore';
 import { toLocalDateKey } from '../utils/date';
 import { kickSync } from '../sync/syncEngine';
+import { usePwaStore } from '../state/pwaStore';
 
 vi.mock('../sync/syncEngine', async () => {
   const actual = await vi.importActual<typeof import('../sync/syncEngine')>('../sync/syncEngine');
@@ -26,6 +27,7 @@ describe('GCashPage', () => {
     await db.gcashTxns.clear();
     await db.gcashTxnResolutions.clear();
     await db.syncQueue.clear();
+    usePwaStore.getState().setHasUnsavedWork(false);
   });
 
   const renderGCash = () => {
@@ -41,6 +43,15 @@ describe('GCashPage', () => {
 
     expect(toLocalDateKey(localDate)).toBe('2026-10-12');
     expect(toLocalDateKey(localDate.toISOString())).toBe('2026-10-12');
+  });
+
+  it('marks a started GCash entry as unsaved work', async () => {
+    renderGCash();
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Halaga|Amount/i }), {
+      target: { value: '500' }
+    });
+
+    await waitFor(() => expect(usePwaStore.getState().hasUnsavedWork).toBe(true));
   });
 
   it('renders GCash Hub header and Cash In / Cash Out tabs', () => {

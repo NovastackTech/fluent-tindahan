@@ -32,7 +32,6 @@ function executeReload(): void {
     deferredReloadUnsubscribe = null;
   }
   if (typeof window === 'undefined') return;
-  usePwaStore.getState().setNeedRefresh(false);
   try {
     window.location.reload();
   } catch {
@@ -47,7 +46,7 @@ function executeReload(): void {
 function canSafelyReload(): boolean {
   const hasLocalCart = useCartStore.getState().items.length > 0;
   const pwaState = usePwaStore.getState();
-  return !hasLocalCart && !pwaState.isSaleInProgress && !pwaState.hasActiveReceipt && !pwaState.otherTabsHaveCart;
+  return !hasLocalCart && !pwaState.isSaleInProgress && !pwaState.hasActiveReceipt && !pwaState.otherTabsHaveCart && !pwaState.hasUnsavedWork;
 }
 
 function triggerDeferredReloadSubscription(): void {
@@ -161,9 +160,6 @@ export async function reloadAppForUpdate(): Promise<void> {
   }
   isReloading = true;
 
-  // Clear banner state immediately so it does not linger
-  usePwaStore.getState().setNeedRefresh(false);
-
   // 1. Listen for controllerchange: when the new service worker activates and claims the page,
   // reload immediately so the page fetches from the new service worker.
   let controllerChangeFired = false;
@@ -276,6 +272,7 @@ export function _resetUpdateSWFunctionForTest(): void {
   }
   usePwaStore.getState().setIsSaleInProgress(false);
   usePwaStore.getState().setHasActiveReceipt(false);
+  usePwaStore.getState().setHasUnsavedWork(false);
 }
 
 /**

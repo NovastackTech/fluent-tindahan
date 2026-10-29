@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   makeStyles,
   tokens,
@@ -35,6 +35,7 @@ import { useTranslation } from '../state/languageStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
 import { formatPeso } from '../utils/currency';
 import { normalizePhilippineMobile } from '../utils/philippineMobile';
+import { usePwaStore } from '../state/pwaStore';
 
 const useStyles = makeStyles({
   container: {
@@ -125,6 +126,7 @@ export const UtangPage: React.FC = () => {
   const [isNewCustomerOpen, setIsNewCustomerOpen] = useState(false);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
   const [isAddCreditOpen, setIsAddCreditOpen] = useState(false);
+  const setHasUnsavedWork = usePwaStore((s) => s.setHasUnsavedWork);
   const [isSaving, setIsSaving] = useState(false);
   const savingRef = useRef(false);
 
@@ -145,6 +147,12 @@ export const UtangPage: React.FC = () => {
   const [creditAmount, setCreditAmount] = useState('');
   const [creditAmountError, setCreditAmountError] = useState('');
   const [creditNotes, setCreditNotes] = useState('');
+
+  const hasOpenEntryForm = isNewCustomerOpen || isPaymentOpen || isAddCreditOpen;
+  useEffect(() => {
+    setHasUnsavedWork(hasOpenEntryForm);
+    return () => setHasUnsavedWork(false);
+  }, [hasOpenEntryForm, setHasUnsavedWork]);
 
   const tenantId = useAuthStore((s) => s.tenantId);
 

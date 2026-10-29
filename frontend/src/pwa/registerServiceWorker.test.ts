@@ -20,7 +20,8 @@ describe('registerServiceWorker', () => {
       offlineReady: false,
       isSaleInProgress: false,
       hasActiveReceipt: false,
-      otherTabsHaveCart: false
+      otherTabsHaveCart: false,
+      hasUnsavedWork: false
     });
     vi.clearAllMocks();
   });
@@ -300,6 +301,38 @@ describe('registerServiceWorker', () => {
     vi.useRealTimers();
   });
 
+  it('defers reload while a form has unsaved work', async () => {
+    vi.useFakeTimers();
+    const originalLocation = window.location;
+    const reloadMock = vi.fn();
+    Object.defineProperty(window, 'location', {
+      value: { ...originalLocation, reload: reloadMock },
+      configurable: true,
+      writable: true
+    });
+    usePwaStore.getState().setHasUnsavedWork(true);
+    Object.defineProperty(navigator, 'serviceWorker', {
+      value: { register: vi.fn() },
+      configurable: true,
+      writable: true
+    });
+
+    await initServiceWorker();
+    const options = (registerSW as any).mock.calls[0][0];
+    options.onNeedReload();
+    expect(reloadMock).not.toHaveBeenCalled();
+
+    usePwaStore.getState().setHasUnsavedWork(false);
+    vi.advanceTimersByTime(500);
+    expect(reloadMock).toHaveBeenCalledTimes(1);
+
+    Object.defineProperty(window, 'location', {
+      value: originalLocation,
+      configurable: true,
+      writable: true
+    });
+  });
+
   it('reloads page via onNeedReload when cart is empty and no sale in progress', async () => {
     const originalLocation = window.location;
     const reloadMock = vi.fn();
@@ -455,7 +488,7 @@ describe('registerServiceWorker', () => {
     });
   });
 
-  it('clears needRefresh state immediately when reloadAppForUpdate is executed', async () => {
+  it('keeps needRefresh active until page navigation replaces the app', async () => {
     const originalLocation = window.location;
     const reloadMock = vi.fn();
     Object.defineProperty(window, 'location', {
@@ -470,7 +503,7 @@ describe('registerServiceWorker', () => {
     _resetUpdateSWFunctionForTest();
     await reloadAppForUpdate();
 
-    expect(usePwaStore.getState().needRefresh).toBe(false);
+    expect(usePwaStore.getState().needRefresh).toBe(true);
     expect(reloadMock).toHaveBeenCalledTimes(1);
 
     Object.defineProperty(window, 'location', {

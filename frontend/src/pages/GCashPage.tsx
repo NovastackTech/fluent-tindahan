@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import Dexie from 'dexie';
 import {
   makeStyles,
@@ -32,6 +32,7 @@ import { formatPeso } from '../utils/currency';
 import { toLocalDateKey } from '../utils/date';
 import { useTodayKey } from '../hooks/useTodayKey';
 import { normalizePhilippineMobile } from '../utils/philippineMobile';
+import { usePwaStore } from '../state/pwaStore';
 
 
 const useStyles = makeStyles({
@@ -121,6 +122,7 @@ export const GCashPage: React.FC = () => {
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [formErrorMessage, setFormErrorMessage] = useState<string | null>(null);
+  const setHasUnsavedWork = usePwaStore((s) => s.setHasUnsavedWork);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [resolutionRefDrafts, setResolutionRefDrafts] = useState<Record<string, string>>({});
   const [resolutionErrors, setResolutionErrors] = useState<Record<string, string>>({});
@@ -166,6 +168,14 @@ export const GCashPage: React.FC = () => {
     }
     return '';
   }, [customFee, txnType, numAmount, t.gcash.feeCannotBeNegative, t.gcash.feeExceedsAmount]);
+
+  const hasUnsavedEntry = Boolean(
+    amount.trim() || refNo.trim() || customerPhone.trim() || notes.trim() || customFee?.trim()
+  );
+  useEffect(() => {
+    setHasUnsavedWork(hasUnsavedEntry);
+    return () => setHasUnsavedWork(false);
+  }, [hasUnsavedEntry, setHasUnsavedWork]);
 
   // Live query for GCash logs
   const allTxns = useLiveQuery(

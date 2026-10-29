@@ -8,12 +8,14 @@ import { db } from '../db/db';
 import { useLanguageStore } from '../state/languageStore';
 import { useSubscriptionStore } from '../state/subscriptionStore';
 import { useAuthStore } from '../state/authStore';
+import { usePwaStore } from '../state/pwaStore';
 
 describe('InventoryPage', () => {
   beforeEach(async () => {
     useLanguageStore.setState({ language: 'tl' });
     useAuthStore.setState({ tenantId: 't-1' });
     useSubscriptionStore.setState({ tier: 'Libre', isUpgradeModalOpen: false });
+    usePwaStore.getState().setHasUnsavedWork(false);
     await db.products.clear();
     await db.syncQueue.clear();
 
@@ -131,6 +133,7 @@ describe('InventoryPage', () => {
     fireEvent.click(addBtn);
 
     expect(screen.getByText(/Magdagdag ng Bagong Produkto|Add New Product/i)).toBeInTheDocument();
+    expect(usePwaStore.getState().hasUnsavedWork).toBe(true);
   });
 
   it('shows inline validation when saving a product with a blank name', () => {
@@ -260,6 +263,76 @@ describe('InventoryPage', () => {
       expect(added?.stockQty).toBe(50);
       expect(added?.category).toBe('Dairy');
     });
+  });
+
+  it('blocks duplicate product names and barcodes for the active tenant', async () => {
+    renderInventory();
+    fireEvent.click(screen.getByRole('button', { name: /Magdagdag ng Produkto|Add Product/i }));
+
+    const nameInput = screen.getByRole('textbox', { name: /Pangalan ng Produkto|Product Name/i });
+    const barcodeInput = screen.getByRole('textbox', { name: /Barcode/i });
+    fireEvent.change(nameInput, { target: { value: '  lucky me pancit canton kalamansi  ' } });
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Presyo ng Tinda|Retail Price/i }), {
+      target: { value: '20' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: /I-save|Save/i }));
+
+    expect(await screen.findByText(/May produkto nang may parehong pangalan|product with this name already exists/i)).toBeInTheDocument();
+    expect(nameInput).toHaveAttribute('aria-invalid', 'true');
+    expect(await db.products.where('tenantId').equals('t-1').count()).toBe(2);
+
+    fireEvent.change(nameInput, { target: { value: 'Different Product' } });
+    fireEvent.change(barcodeInput, { target: { value: ' 4800011223344 ' } });
+    fireEvent.click(screen.getByRole('button', { name: /I-save|Save/i }));
+
+    expect(await screen.findByText(/Ginagamit na ng ibang produkto ang barcode|barcode is already assigned/i)).toBeInTheDocument();
+    expect(await db.products.where('tenantId').equals('t-1').count()).toBe(2);
+    expect(await db.syncQueue.count()).toBe(0);
+  });
+
+  it('shows the barcode error when only the barcode changes on a product with a duplicate name', async () => {
+    await db.products.add({
+      ...(await db.products.get('inv-1'))!,
+      id: 'inv-duplicate',
+      barcode: '4800019998887'
+    });
+    renderInventory();
+    await screen.findAllByText(/Lucky Me Pancit Canton Kalamansi/i);
+
+    fireEvent.click(screen.getAllByRole('button', { name: /Baguhin ang Produkto|Edit Product/i })[0]);
+    fireEvent.change(screen.getByRole('textbox', { name: /Barcode/i }), {
+      target: { value: '4800019998887' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: /I-save|Save/i }));
+
+    expect(await screen.findByText(/Ginagamit na ng ibang produkto ang barcode|barcode is already assigned/i)).toBeInTheDocument();
+    expect(screen.queryByText(/May produkto nang may parehong pangalan|product with this name already exists/i)).not.toBeInTheDocument();
+    expect((await db.products.get('inv-1'))?.barcode).toBe('4800016644026');
+    expect(await db.syncQueue.count()).toBe(0);
+  });
+
+  it('allows unrelated edits when the product already has a duplicate', async () => {
+    await db.products.add({
+      id: 'inv-duplicate',
+      tenantId: 't-1',
+      name: 'Lucky Me Pancit Canton Kalamansi',
+      price: 17,
+      cost: 14,
+      barcode: '4800016644026',
+      category: 'Instant Noodles',
+      stockQty: 8,
+      updatedAt: new Date().toISOString()
+    });
+    renderInventory();
+    await screen.findAllByText(/Lucky Me Pancit Canton Kalamansi/i);
+
+    fireEvent.click(screen.getAllByRole('button', { name: /Baguhin ang Produkto|Edit Product/i })[0]);
+    const stockInput = screen.getByRole('spinbutton', { name: /Kasalukuyang Stock|Current Stock Qty/i });
+    fireEvent.change(stockInput, { target: { value: '4' } });
+    fireEvent.click(screen.getByRole('button', { name: /I-save|Save/i }));
+
+    await waitFor(async () => expect((await db.products.get('inv-1'))?.stockQty).toBe(4));
+    expect(screen.queryByText(/May produkto nang may parehong pangalan|product with this name already exists/i)).not.toBeInTheDocument();
   });
 
   it('blocks saving a product with SRP exceeding reasonable maximum limit 999,999.99', async () => {

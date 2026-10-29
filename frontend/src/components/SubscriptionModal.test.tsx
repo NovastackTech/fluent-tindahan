@@ -135,6 +135,18 @@ describe('SubscriptionModal', () => {
     expect(screen.queryByText(/Request failed with status code 500/i)).not.toBeInTheDocument();
   });
 
+  it('shows inline feedback when subscription verification finds no completed payment', async () => {
+    useLanguageStore.setState({ language: 'en' });
+    vi.spyOn(useSubscriptionStore.getState(), 'confirmCheckoutSession').mockResolvedValue(false);
+    vi.spyOn(useSubscriptionStore.getState(), 'refreshSubscription').mockResolvedValue();
+    useSubscriptionStore.setState({ isUpgradeModalOpen: true, tier: 'Libre', error: null });
+    renderModal();
+
+    fireEvent.click(screen.getByRole('button', { name: /Already paid\? Verify subscription/i }));
+
+    expect(await screen.findByText(/No completed payment was found yet/i)).toBeInTheDocument();
+  });
+
   it('hides subscription errors in demo mode', () => {
     useLanguageStore.setState({ language: 'en' });
     useAuthStore.setState({ isDemo: true });

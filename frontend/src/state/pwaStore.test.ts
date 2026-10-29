@@ -15,7 +15,8 @@ describe('pwaStore', () => {
       offlineReady: false,
       otherTabsHaveCart: false,
       isSaleInProgress: false,
-      hasActiveReceipt: false
+      hasActiveReceipt: false,
+      hasUnsavedWork: false
     });
   });
 
