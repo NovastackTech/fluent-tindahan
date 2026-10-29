@@ -26,6 +26,7 @@ describe('GCashPage', () => {
     DEFAULT_GCASH_FEE_TIERS.forEach((fee, index) => useGCashFeeStore.getState().setFeeForTenant(tenantId, index, fee));
     await db.gcashTxns.clear();
     await db.gcashTxnResolutions.clear();
+    await db.gcashBalanceEntries.clear();
     await db.syncQueue.clear();
     usePwaStore.getState().setHasUnsavedWork(false);
   });
@@ -60,6 +61,49 @@ describe('GCashPage', () => {
     expect(screen.getByText(/GCash.*Hub/i)).toBeInTheDocument();
     expect(screen.getAllByText(/Cash In/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Cash Out/i).length).toBeGreaterThan(0);
+  });
+
+  it('sets beginning balances offline and excludes older transactions', async () => {
+    await db.gcashTxns.add({ id: 'old', tenantId: useAuthStore.getState().tenantId, type: 'CashOut', amount: 500, fee: 5, refNo: 'OLD', date: '2020-01-01T00:00:00.000Z' });
+    renderGCash();
+    fireEvent.click(screen.getAllByRole('button', { name: /Itakda ang panimulang balanse|Set beginning balances/i }).at(-1)!);
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Cash na magagamit sa cash-out|Cash available for cash-out/i }), { target: { value: '1000.25' } });
+    fireEvent.change(screen.getByRole('spinbutton', { name: /GCash na magagamit sa cash-in|GCash available for cash-in/i }), { target: { value: '2000.50' } });
+    fireEvent.click(screen.getAllByRole('button', { name: /Itakda ang panimulang balanse|Set beginning balances/i }).at(-1)!);
+
+    await waitFor(() => expect(screen.getByTestId('gcash-cash-capacity')).toHaveTextContent('1,000.25'));
+    expect(screen.getByTestId('gcash-wallet-capacity')).toHaveTextContent('2,000.50');
+    expect(await db.gcashBalanceEntries.count()).toBe(1);
+    expect((await db.syncQueue.toArray()).some((item) => item.entity === 'GCashBalanceEntry')).toBe(true);
+  });
+
+  it('derives balances with centavo fees and records append-only adjustments', async () => {
+    const tenantId = useAuthStore.getState().tenantId;
+    await db.gcashBalanceEntries.add({ id: 'opening', tenantId, kind: 'Opening', cashDelta: 1000, walletDelta: 1000, date: '2026-01-01T00:00:00.000Z', reason: 'Beginning balances' });
+    await db.gcashTxns.add({ id: 'cash-in', tenantId, type: 'CashIn', amount: 100.01, fee: 5.02, refNo: 'BAL-1', date: '2026-01-02T00:00:00.000Z' });
+    renderGCash();
+
+    await waitFor(() => expect(screen.getByTestId('gcash-cash-capacity')).toHaveTextContent('1,105.03'));
+    expect(screen.getByTestId('gcash-wallet-capacity')).toHaveTextContent('899.99');
+    fireEvent.click(screen.getByRole('button', { name: /Ayusin ang mga balanse|Adjust balances/i }));
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Halaga ng pagbabago|Adjustment amount/i }), { target: { value: '25.50' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /Dahilan|Reason/i }), { target: { value: 'Added cash float' } });
+    fireEvent.click(screen.getByRole('button', { name: /I-save ang pagbabago|Save adjustment/i }));
+
+    await waitFor(() => expect(screen.getByTestId('gcash-cash-capacity')).toHaveTextContent('1,130.53'));
+    expect((await db.gcashBalanceEntries.where('kind').equals('Adjustment').first())?.reason).toBe('Added cash float');
+    await db.gcashBalanceEntries.add({ id: 'conflict-opening', tenantId, kind: 'Opening', cashDelta: 500, walletDelta: 500, date: '2026-01-03T00:00:00.000Z', reason: 'Beginning balances', syncStatus: 'Conflict' });
+    fireEvent.click(await screen.findByRole('button', { name: /Isara|Dismiss/i }));
+    await waitFor(async () => expect(await db.gcashBalanceEntries.get('conflict-opening')).toBeUndefined());
+  });
+
+  it('warns about insufficient capacity without blocking the transaction', async () => {
+    const tenantId = useAuthStore.getState().tenantId;
+    await db.gcashBalanceEntries.add({ id: 'opening', tenantId, kind: 'Opening', cashDelta: 10, walletDelta: 10, date: '2020-01-01T00:00:00.000Z', reason: 'Beginning balances' });
+    renderGCash();
+    fireEvent.change(screen.getByRole('spinbutton', { name: /Halaga.*Amount|Amount/i }), { target: { value: '100' } });
+    await waitFor(() => expect(screen.getByText(/Kulang ang naitalang balanse|recorded balance is insufficient/i)).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /Itala ang GCash|Record GCash|Cash-In/i })).not.toBeDisabled();
   });
 
   it('localizes the monthly Libre counter label in English', () => {

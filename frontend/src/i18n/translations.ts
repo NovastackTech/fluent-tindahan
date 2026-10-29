@@ -200,6 +200,12 @@ export interface Translations {
     duplicateRefWarning: string;
     phoneInvalid: string;
     saveFailed: string;
+    cashCapacity: string;
+    walletCapacity: string;
+    setBeginningBalances: string;
+    adjustBalances: string;
+    balanceHistory: string;
+    insufficientCapacity: string;
   };
   dashboard: {
     title: string;

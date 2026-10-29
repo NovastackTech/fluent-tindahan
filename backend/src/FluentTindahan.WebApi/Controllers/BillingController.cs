@@ -151,11 +151,19 @@ public class BillingController : ControllerBase
         var tenantId = _currentUserService.TenantId;
         var dbContext = _dbContext ?? HttpContext?.RequestServices.GetService<IApplicationDbContext>();
         Tenant? tenant = null;
+        FluentTindahan.Domain.Entities.User? owner = null;
         if (dbContext != null)
         {
             tenant = await dbContext.Tenants
                 .IgnoreQueryFilters()
                 .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
+            owner = await dbContext.Users
+                .AsNoTracking()
+                .IgnoreQueryFilters()
+                .Where(u => u.TenantId == tenantId && u.AccountStatus != FluentTindahan.Domain.Entities.User.StatusDeleted)
+                .OrderByDescending(u => u.Role == "Owner")
+                .ThenBy(u => u.CreatedAt)
+                .FirstOrDefaultAsync(cancellationToken);
         }
 
         var isRenewal = tenant != null && (tenant.Tier != PlanTier.Libre || tenant.SubscriptionEndDate.HasValue);
@@ -165,25 +173,38 @@ public class BillingController : ControllerBase
         }
 
         var orderRef = $"sub_{tenantId.ToString("N")[..8]}_{request.TargetTier}_{request.Cycle}_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+        var businessName = !string.IsNullOrWhiteSpace(tenant?.BusinessName) ? tenant!.BusinessName.Trim() : null;
+        var ownerName = !string.IsNullOrWhiteSpace(owner?.OwnerName) ? owner!.OwnerName!.Trim() : null;
+        var ownerEmail = !string.IsNullOrWhiteSpace(owner?.Email) ? owner!.Email.Trim() : null;
+        var ownerPhone = !string.IsNullOrWhiteSpace(owner?.Phone) ? owner!.Phone.Trim() : null;
+
+        var description = businessName != null
+            ? $"Fluent Tindahan - Tindahan Pro (Monthly) - {businessName} (Tenant: {tenantId})"
+            : $"Fluent Tindahan - Tindahan Pro (Monthly) (Tenant: {tenantId})";
+
+        var metadata = new Dictionary<string, string>
+        {
+            { "tenant_id", tenantId.ToString() },
+            { "target_tier", request.TargetTier.ToString() },
+            { "cycle", request.Cycle.ToString() },
+            { "purpose", "subscription" }
+        };
+        if (businessName != null) metadata["business_name"] = businessName;
+        if (ownerEmail != null) metadata["owner_email"] = ownerEmail;
+        if (ownerPhone != null) metadata["owner_phone"] = ownerPhone;
 
         try
         {
             var result = await _gatewayService.CreateQrPhPaymentIntentAsync(new CreateQrPhPaymentIntentRequest(
                 AmountCentavos: priceCentavos,
-                Description: "Fluent Tindahan - Tindahan Pro (Monthly)",
+                Description: description,
                 OrderId: orderRef,
                 Customer: new CustomerBillingDetails(
-                    Name: "Tindahan Store Owner",
-                    Email: "owner@fluent-tindahan.ph",
-                    Phone: "09000000000"
+                    Name: businessName ?? ownerName ?? "Tindahan Store Owner",
+                    Email: ownerEmail ?? "owner@fluent-tindahan.ph",
+                    Phone: ownerPhone ?? "09000000000"
                 ),
-                Metadata: new Dictionary<string, string>
-                {
-                    { "tenant_id", tenantId.ToString() },
-                    { "target_tier", request.TargetTier.ToString() },
-                    { "cycle", request.Cycle.ToString() },
-                    { "purpose", "subscription" }
-                }
+                Metadata: metadata
             ), cancellationToken);
 
             if (dbContext != null && tenant != null)

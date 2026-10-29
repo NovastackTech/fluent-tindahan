@@ -506,6 +506,43 @@ public class BatchSyncComprehensiveTests
     }
 
     [Fact]
+    public async Task ProcessBatchSync_GCashBalanceEntries_AreAppendOnlyAndAllowOneOpening()
+    {
+        var (context, userMock) = CreateInMemoryContext();
+        var handler = new ProcessBatchSyncCommandHandler(context, userMock.Object, NullLogger<ProcessBatchSyncCommandHandler>.Instance);
+        var openingId = Guid.NewGuid();
+        var adjustmentId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        SyncOperationDto Entry(Guid id, string kind, decimal cash, decimal wallet, string reason, Guid? openingEntryId = null) => new()
+        {
+            SyncId = Guid.NewGuid().ToString(), Entity = "GCashBalanceEntry", Action = "Insert", Timestamp = now,
+            Payload = JsonSerializer.SerializeToElement(new { id, kind, cashDelta = cash, walletDelta = wallet, date = now, reason, openingEntryId })
+        };
+        var batch = new BatchSyncRequestDto
+        {
+            DeviceId = Guid.NewGuid(),
+            Operations = new List<SyncOperationDto>
+            {
+                Entry(openingId, "Opening", 1000.25m, 2000.50m, "Beginning balances"),
+                Entry(adjustmentId, "Adjustment", -25.50m, 0m, "Removed excess cash", openingId),
+                Entry(Guid.NewGuid(), "Opening", 1m, 1m, "Duplicate opening")
+            }
+        };
+
+        var response = await handler.Handle(new ProcessBatchSyncCommand(batch), CancellationToken.None);
+
+        response.Results.Select(result => result.Status).Should().Equal("Success", "Success", "Conflict");
+        response.Results[2].Error.Should().Be("Another device already set beginning balances.");
+        var entries = await context.GCashBalanceEntries.IgnoreQueryFilters().OrderBy(entry => entry.Date).ToListAsync();
+        entries.Should().HaveCount(2);
+        entries.Single(entry => entry.Id == adjustmentId).CashDelta.Should().Be(-25.50m);
+
+        batch.Operations = new List<SyncOperationDto> { Entry(Guid.NewGuid(), "Adjustment", 1m, 1m, "Invalid", openingId) };
+        var invalid = await handler.Handle(new ProcessBatchSyncCommand(batch), CancellationToken.None);
+        invalid.Results.Single().Status.Should().Be("Failed");
+    }
+
+    [Fact]
     public async Task ProcessBatchSync_SaleWithItemsAndUtang_PersistsSaleAndItems()
     {
         var (context, userMock) = CreateInMemoryContext();

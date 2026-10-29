@@ -13,6 +13,7 @@ public interface IApplicationDbContext
     DbSet<Sale> Sales { get; }
     DbSet<SaleItem> SaleItems { get; }
     DbSet<GCashTxn> GCashTransactions { get; }
+    DbSet<GCashBalanceEntry> GCashBalanceEntries { get; }
     DbSet<PaymentHistory> PaymentHistories { get; }
     DbSet<UserRefreshToken> UserRefreshTokens { get; }
 

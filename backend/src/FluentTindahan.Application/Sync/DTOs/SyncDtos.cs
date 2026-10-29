@@ -11,7 +11,7 @@ public class BatchSyncRequestDto
 public class SyncOperationDto
 {
     public string SyncId { get; set; } = string.Empty;
-    public string Entity { get; set; } = string.Empty; // "Product", "Customer", "Sale", "UtangLedger", "GCashTxn"
+    public string Entity { get; set; } = string.Empty; // "Product", "Customer", "Sale", "UtangLedger", "GCashTxn", "GCashBalanceEntry"
     public string Action { get; set; } = "Insert";     // "Insert", "Update", "Delete"
     public DateTimeOffset Timestamp { get; set; } = DateTimeOffset.UtcNow;
     public JsonElement Payload { get; set; }
