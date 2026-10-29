@@ -23,7 +23,8 @@ import {
   DismissRegular,
   SparkleRegular,
   StarFilled,
-  QrCodeRegular
+  QrCodeRegular,
+  CreditCardPersonRegular
 } from '@fluentui/react-icons';
 import {
   useSubscriptionStore,
@@ -146,6 +147,7 @@ export const SubscriptionModal: React.FC = () => {
     closeUpgradeModal,
     refreshSubscription,
     confirmCheckoutSession,
+    createCheckoutSession,
     simulateMockPayment,
     isLoading,
     error
