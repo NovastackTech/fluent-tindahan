@@ -85,7 +85,7 @@ export const clearPendingBillingReference = (expectedId?: string): void => {
  * so the mock UI and code path are tree-shaken out and can never unlock paid tiers on the counter.
  */
 export const IS_MOCK_PAYMENT_ENABLED = import.meta.env.DEV;
-export const IS_LIBRE_UPGRADE_ENABLED = false;
+export const IS_LIBRE_UPGRADE_ENABLED = true;
 
 export interface TierLimits {
   maxProducts: number;
@@ -104,6 +104,8 @@ export interface SubscriptionState {
   subscriptionEndDate: string | null;
   isActive: boolean;
   daysRemaining: number | null;
+  allowLibreUpgrade: boolean;
+  enableHostedCheckout: boolean;
   isLoading: boolean;
   error: string | null;
   isUpgradeModalOpen: boolean;
@@ -189,6 +191,8 @@ interface SubscriptionSyncPayload {
   businessName?: string;
   isActive?: boolean;
   daysRemaining?: number | null;
+  allowLibreUpgrade?: boolean;
+  enableHostedCheckout?: boolean;
 }
 
 async function persistAndApplySubscriptionState(
@@ -220,6 +224,8 @@ async function persistAndApplySubscriptionState(
     subscriptionEndDate: endDate,
     isActive: effectiveTier !== 'Libre' && Boolean(data.isActive ?? true),
     daysRemaining: effectiveTier === 'Libre' && endDate ? 0 : (data.daysRemaining ?? (endDate ? Math.max(0, Math.ceil((Date.parse(endDate) - Date.now()) / (24 * 60 * 60 * 1000))) : null)),
+    ...(typeof data.allowLibreUpgrade === 'boolean' ? { allowLibreUpgrade: data.allowLibreUpgrade } : {}),
+    ...(typeof data.enableHostedCheckout === 'boolean' ? { enableHostedCheckout: data.enableHostedCheckout } : {}),
     isLoading: false
   });
 
@@ -259,11 +265,13 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
     subscriptionEndDate: currentEndDate,
     isActive: currentTier !== 'Libre',
     daysRemaining: null,
+    allowLibreUpgrade: IS_LIBRE_UPGRADE_ENABLED,
+    enableHostedCheckout: false,
     isLoading: false,
     error: null,
     isUpgradeModalOpen: false,
 
-    isUpgradeAllowed: () => get().tier !== 'Libre' || Boolean(get().subscriptionEndDate) || IS_LIBRE_UPGRADE_ENABLED,
+    isUpgradeAllowed: () => get().tier !== 'Libre' || Boolean(get().subscriptionEndDate) || get().allowLibreUpgrade,
     openUpgradeModal: () => set({ isUpgradeModalOpen: true }),
     closeUpgradeModal: () => set({ isUpgradeModalOpen: false }),
 

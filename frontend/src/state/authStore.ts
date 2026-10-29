@@ -189,6 +189,7 @@ export async function clearAllLocalDexieTables(): Promise<void> {
     db.utangLedger,
     db.gcashTxns,
     db.gcashTxnResolutions,
+    db.gcashBalanceEntries,
     db.syncQueue,
     db.deadLetterQueue,
     db.tenants

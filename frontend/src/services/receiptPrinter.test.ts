@@ -61,7 +61,7 @@ describe('receiptPrinter', () => {
   });
 
   describe('generateEscPosReceipt', () => {
-    it('generates valid ESC/POS byte sequence with initialization, text, and cut commands', () => {
+    it('generates valid ESC/POS byte sequence with initialization, text, feed, and cut commands', () => {
       const bytes = generateEscPosReceipt(sampleData, "Aling Nena's Store", '58mm');
       expect(bytes).toBeInstanceOf(Uint8Array);
       expect(bytes.length).toBeGreaterThan(50);
@@ -77,6 +77,7 @@ describe('receiptPrinter', () => {
       expect(text).toContain('TOTAL:');
       expect(text).toContain('P39.00');
       expect(text).toContain('Nanay Nena');
+      expect(text).toContain('Maraming Salamat po!\n\n\n\n\n');
     });
 
     it('wraps long items nicely for 80mm rolls', () => {
@@ -180,8 +181,12 @@ describe('receiptPrinter', () => {
       expect(res.error).toContain('not supported');
     });
 
-    it('connects to GATT and writes chunks when device is paired', async () => {
-      const writeValueMock = vi.fn().mockResolvedValue(undefined);
+    it('connects to GATT and writes 20-byte BLE MTU-safe chunks when device is paired', async () => {
+      const writtenChunks: Uint8Array[] = [];
+      const writeValueMock = vi.fn().mockImplementation(async (chunk: Uint8Array) => {
+        writtenChunks.push(chunk);
+      });
+      const writeValueWithoutResponseMock = vi.fn();
       const disconnectMock = vi.fn();
 
       const fakeDevice = {
@@ -192,8 +197,9 @@ describe('receiptPrinter', () => {
               {
                 getCharacteristics: vi.fn().mockResolvedValue([
                   {
-                    properties: { write: true },
-                    writeValue: writeValueMock
+                    properties: { write: true, writeWithoutResponse: false },
+                    writeValue: writeValueMock,
+                    writeValueWithoutResponse: writeValueWithoutResponseMock
                   }
                 ])
               }
@@ -210,6 +216,9 @@ describe('receiptPrinter', () => {
       const res = await printBluetoothReceipt(sampleData, 'Store', { paperWidth: '58mm' });
       expect(res.success).toBe(true);
       expect(writeValueMock).toHaveBeenCalled();
+      expect(writeValueWithoutResponseMock).not.toHaveBeenCalled();
+      expect(writtenChunks.length).toBeGreaterThan(10);
+      expect(writtenChunks.every((c) => c.byteLength <= 20)).toBe(true);
       expect(disconnectMock).toHaveBeenCalled();
 
       delete (navigator as any).bluetooth;

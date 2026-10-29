@@ -29,5 +29,6 @@ public class Tenant
     public ICollection<Sale> Sales { get; set; } = new List<Sale>();
     public ICollection<UtangLedger> UtangLedgers { get; set; } = new List<UtangLedger>();
     public ICollection<GCashTxn> GCashTransactions { get; set; } = new List<GCashTxn>();
+    public ICollection<GCashBalanceEntry> GCashBalanceEntries { get; set; } = new List<GCashBalanceEntry>();
     public ICollection<PaymentHistory> PaymentHistories { get; set; } = new List<PaymentHistory>();
 }

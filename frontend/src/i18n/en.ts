@@ -230,7 +230,13 @@ export const en: Translations = {
     feeCannotBeNegative: 'Service fee cannot be negative.',
     duplicateRefWarning: 'This reference number has already been used. Duplicate entries are not allowed.',
     phoneInvalid: 'Must be a valid 11-digit Philippine mobile number (09XXXXXXXXX).',
-    saveFailed: 'Could not save the transaction on this device. Please try again.'
+    saveFailed: 'Could not save the transaction on this device. Please try again.',
+    cashCapacity: 'Cash available for cash-out',
+    walletCapacity: 'GCash available for cash-in',
+    setBeginningBalances: 'Set beginning balances',
+    adjustBalances: 'Adjust balances',
+    balanceHistory: 'Balance adjustment history',
+    insufficientCapacity: 'The recorded balance is insufficient. You can still save this transaction.'
   },
   dashboard: {
     title: 'Store Performance Dashboard',

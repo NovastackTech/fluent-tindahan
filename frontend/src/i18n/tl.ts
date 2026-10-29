@@ -230,7 +230,13 @@ export const tl: Translations = {
     feeCannotBeNegative: 'Ang service fee ay hindi maaaring negatibo.',
     duplicateRefWarning: 'Ginamit na ang reference number. Hindi maaaring magtala ng doble.',
     phoneInvalid: 'Dapat ay wastong 11-digit Philippine mobile number (09XXXXXXXXX).',
-    saveFailed: 'Hindi na-save ang transaksyon sa device. Subukan muli.'
+    saveFailed: 'Hindi na-save ang transaksyon sa device. Subukan muli.',
+    cashCapacity: 'Cash na magagamit sa cash-out',
+    walletCapacity: 'GCash na magagamit sa cash-in',
+    setBeginningBalances: 'Itakda ang panimulang balanse',
+    adjustBalances: 'Ayusin ang mga balanse',
+    balanceHistory: 'Kasaysayan ng pagbabago sa balanse',
+    insufficientCapacity: 'Kulang ang naitalang balanse. Maaari mo pa ring i-save ang transaksyon.'
   },
   dashboard: {
     title: 'Pangkalahatang Dashboard ng Tindahan',

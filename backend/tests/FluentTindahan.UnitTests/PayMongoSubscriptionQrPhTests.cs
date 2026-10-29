@@ -12,10 +12,13 @@ using Moq.Protected;
 using FluentTindahan.Application.Billing;
 using FluentTindahan.Application.Common.Interfaces;
 using FluentTindahan.Domain.Billing;
+using FluentTindahan.Domain.Entities;
 using FluentTindahan.Domain.Enums;
 using FluentTindahan.Domain.Interfaces;
+using FluentTindahan.Infrastructure.Persistence;
 using FluentTindahan.Infrastructure.Services;
 using FluentTindahan.WebApi.Controllers;
+using Microsoft.EntityFrameworkCore;
 using Xunit;
 
 namespace FluentTindahan.UnitTests;
@@ -428,6 +431,125 @@ public class PayMongoSubscriptionQrPhTests
 
         capturedBody.Should().NotBeNull();
         capturedBody.Should().Contain("\"qrph\"");
+        capturedBody.Should().Contain(_testTenantId.ToString());
+    }
+
+    [Fact]
+    public async Task CreateCheckoutSessionAsync_And_GenerateQrPhSubscription_IncludeTenantBusinessNameAndOwnerContact()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+        await using var dbContext = new AppDbContext(options, _currentUserServiceMock.Object);
+        dbContext.Tenants.Add(new Tenant
+        {
+            Id = _testTenantId,
+            BusinessName = "Aling Nena's Sari-Sari Store",
+            Tier = PlanTier.Libre
+        });
+        dbContext.Users.Add(new User
+        {
+            Id = Guid.NewGuid(),
+            TenantId = _testTenantId,
+            Role = "Owner",
+            OwnerName = "Nena Santos",
+            Email = "nena@tindahan.ph",
+            Phone = "09171234567"
+        });
+        await dbContext.SaveChangesAsync();
+
+        string? capturedCheckoutBody = null;
+        var handlerMock = new Mock<HttpMessageHandler>();
+        handlerMock.Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .Returns<HttpRequestMessage, CancellationToken>(async (req, ct) =>
+            {
+                capturedCheckoutBody = await req.Content!.ReadAsStringAsync(ct);
+                var csJson = JsonSerializer.Serialize(new
+                {
+                    data = new
+                    {
+                        id = "cs_test_123",
+                        attributes = new
+                        {
+                            checkout_url = "https://checkout.paymongo.com/cs_test_123"
+                        }
+                    }
+                });
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(csJson)
+                };
+            });
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                { "PayMongo:SecretKey", "sk_test_valid_key" },
+                { "PayMongo:FrontendOrigin", "http://localhost:5173" },
+                { "Billing:AllowLibreUpgrade", "true" }
+            })
+            .Build();
+
+        var service = new PayMongoPaymentGatewayService(
+            new HttpClient(handlerMock.Object),
+            config,
+            _devEnvMock.Object,
+            TimeProvider.System,
+            NullLogger<PayMongoPaymentGatewayService>.Instance,
+            dbContext);
+
+        await service.CreateCheckoutSessionAsync(_testTenantId, PlanTier.TindahanPro, BillingCycle.Monthly);
+
+        capturedCheckoutBody.Should().NotBeNull();
+        using (var doc = JsonDocument.Parse(capturedCheckoutBody!))
+        {
+            var attrs = doc.RootElement.GetProperty("data").GetProperty("attributes");
+            attrs.GetProperty("description").GetString().Should().Be(
+                $"Fluent Tindahan Subscription for Tindahan Pro - Aling Nena's Sari-Sari Store (Tenant: {_testTenantId})");
+            var billing = attrs.GetProperty("billing");
+            billing.GetProperty("name").GetString().Should().Be("Aling Nena's Sari-Sari Store");
+            billing.GetProperty("email").GetString().Should().Be("nena@tindahan.ph");
+            billing.GetProperty("phone").GetString().Should().Be("09171234567");
+            var metadata = attrs.GetProperty("metadata");
+            metadata.GetProperty("business_name").GetString().Should().Be("Aling Nena's Sari-Sari Store");
+            metadata.GetProperty("owner_email").GetString().Should().Be("nena@tindahan.ph");
+            metadata.GetProperty("owner_phone").GetString().Should().Be("09171234567");
+        }
+
+        CreateQrPhPaymentIntentRequest? capturedQrRequest = null;
+        var gatewayMock = new Mock<IPaymentGatewayService>();
+        gatewayMock.Setup(g => g.CreateQrPhPaymentIntentAsync(It.IsAny<CreateQrPhPaymentIntentRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<CreateQrPhPaymentIntentRequest, CancellationToken>((req, _) => capturedQrRequest = req)
+            .ReturnsAsync(new QrPhPaymentIntentResult(
+                "pi_sub_123", "pm_sub_123", "ck_123", "awaiting_next_action", 12900, "data:image/png;base64,qr", "sub_ref", DateTimeOffset.UtcNow));
+
+        var controller = new BillingController(
+            new Mock<IMediator>().Object,
+            _currentUserServiceMock.Object,
+            gatewayMock.Object,
+            _devEnvMock.Object,
+            NullLogger<BillingController>.Instance,
+            dbContext,
+            config);
+
+        await controller.GenerateQrPhSubscription(
+            new BillingController.CreateCheckoutRequest(PlanTier.TindahanPro, BillingCycle.Monthly),
+            CancellationToken.None);
+
+        capturedQrRequest.Should().NotBeNull();
+        capturedQrRequest!.Description.Should().Be(
+            $"Fluent Tindahan - Tindahan Pro (Monthly) - Aling Nena's Sari-Sari Store (Tenant: {_testTenantId})");
+        capturedQrRequest.Customer.Name.Should().Be("Aling Nena's Sari-Sari Store");
+        capturedQrRequest.Customer.Email.Should().Be("nena@tindahan.ph");
+        capturedQrRequest.Customer.Phone.Should().Be("09171234567");
+        capturedQrRequest.Metadata.Should().NotBeNull();
+        capturedQrRequest.Metadata!["business_name"].Should().Be("Aling Nena's Sari-Sari Store");
+        capturedQrRequest.Metadata!["owner_email"].Should().Be("nena@tindahan.ph");
+        capturedQrRequest.Metadata!["owner_phone"].Should().Be("09171234567");
     }
 
     [Fact]
