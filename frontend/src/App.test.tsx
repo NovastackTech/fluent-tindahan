@@ -33,6 +33,7 @@ describe('App', () => {
       isOnboardingStatusReady: false
     });
     useCartStore.getState().clearCart();
+    usePwaStore.getState().setNeedRefresh(false);
     _resetUpdateSWFunctionForTest();
     _resetPwaTabCoordinatorForTest();
 

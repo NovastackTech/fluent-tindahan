@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { FluentProvider } from '@fluentui/react-components';
 import { sariSariLightTheme } from '../theme/theme';
 import { PwaUpdateToast } from './PwaUpdateToast';
@@ -9,13 +9,20 @@ import * as pwaRegister from '../pwa/registerServiceWorker';
 
 describe('PwaUpdateToast', () => {
   beforeEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
     usePwaStore.setState({
       needRefresh: false,
       otherTabsHaveCart: false,
       isSaleInProgress: false,
-      hasActiveReceipt: false
+      hasActiveReceipt: false,
+      hasUnsavedWork: false
     });
     useCartStore.getState().clearCart();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   const renderToast = () => {
@@ -32,21 +39,36 @@ describe('PwaUpdateToast', () => {
     expect(screen.queryByText(/May Bagong Bersyon ng App!|New App Version Available!/i)).not.toBeInTheDocument();
   });
 
-  it('renders update banner when needRefresh is true', () => {
+  it('renders a mandatory update dialog when reload is safe', () => {
     usePwaStore.setState({ needRefresh: true });
     renderToast();
 
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
     expect(screen.getByText(/May Bagong Bersyon ng App!|New App Version Available!/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /I-reload para Mag-update|Reload & Update/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Mamaya na|Maybe later/i })).not.toBeInTheDocument();
   });
 
-  it('triggers update reload when clicking update button with empty cart', () => {
+  it('cannot be dismissed with Escape or an outside click', () => {
+    usePwaStore.setState({ needRefresh: true });
+    renderToast();
+
+    fireEvent.keyDown(screen.getByRole('alertdialog'), { key: 'Escape' });
+    fireEvent.mouseDown(document.body);
+    fireEvent.click(document.body);
+
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    expect(usePwaStore.getState().needRefresh).toBe(true);
+  });
+
+  it('triggers update reload when clicking update button with empty cart', async () => {
     const reloadSpy = vi.spyOn(pwaRegister, 'reloadAppForUpdate').mockResolvedValue(undefined);
     usePwaStore.setState({ needRefresh: true });
     renderToast();
 
     const updateBtn = screen.getByRole('button', { name: /I-reload para Mag-update|Reload & Update/i });
     expect(updateBtn).not.toBeDisabled();
+    await waitFor(() => expect(updateBtn).toHaveFocus());
     expect(screen.queryByText(/Pakisara muna ang benta bago i-update|Please complete or clear the cart before updating/i)).not.toBeInTheDocument();
 
     fireEvent.click(updateBtn);
@@ -72,6 +94,7 @@ describe('PwaUpdateToast', () => {
 
     renderToast();
 
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     const updateBtn = screen.getByRole('button', { name: /I-reload para Mag-update|Reload & Update/i });
     expect(updateBtn).toBeDisabled();
     expect(screen.getByText(/Pakisara muna ang benta bago i-update|Please complete or clear the cart before updating/i)).toBeInTheDocument();
@@ -82,7 +105,7 @@ describe('PwaUpdateToast', () => {
     reloadSpy.mockRestore();
   });
 
-  it('re-enables update button when cart is cleared', () => {
+  it('switches automatically to the mandatory dialog when the cart is cleared', () => {
     usePwaStore.setState({ needRefresh: true });
     useCartStore.setState({
       items: [
@@ -96,21 +119,17 @@ describe('PwaUpdateToast', () => {
       ]
     });
 
-    const { rerender } = renderToast();
+    renderToast();
     const updateBtn = screen.getByRole('button', { name: /I-reload para Mag-update|Reload & Update/i });
     expect(updateBtn).toBeDisabled();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
 
-    // Clear cart
     act(() => {
       useCartStore.setState({ items: [] });
     });
-    rerender(
-      <FluentProvider theme={sariSariLightTheme}>
-        <PwaUpdateToast />
-      </FluentProvider>
-    );
 
-    expect(updateBtn).not.toBeDisabled();
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /I-reload para Mag-update|Reload & Update/i })).not.toBeDisabled();
     expect(screen.queryByText(/Pakisara muna ang benta bago i-update|Please complete or clear the cart before updating/i)).not.toBeInTheDocument();
   });
 
@@ -125,6 +144,7 @@ describe('PwaUpdateToast', () => {
 
     renderToast();
 
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     const updateBtn = screen.getByRole('button', { name: /I-reload para Mag-update|Reload & Update/i });
     expect(updateBtn).toBeDisabled();
     expect(
@@ -149,13 +169,48 @@ describe('PwaUpdateToast', () => {
     expect(screen.getByText(/Pakisara muna ang benta|Please complete or clear the cart/i)).toBeInTheDocument();
   });
 
-  it('dismisses toast when clicking dismiss button', () => {
+  it('keeps the app usable while a sale is in progress', () => {
+    usePwaStore.setState({
+      needRefresh: true,
+      isSaleInProgress: true
+    });
+
+    renderToast();
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /I-reload para Mag-update|Reload & Update/i })).toBeDisabled();
+  });
+
+  it('does not cover a form that has unsaved input', () => {
+    usePwaStore.setState({
+      needRefresh: true,
+      hasUnsavedWork: true
+    });
+
+    renderToast();
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByText(/Tapusin o isara muna ang bukas na form|Finish or close the open form/i)).toBeInTheDocument();
+  });
+
+  it('keeps the dialog open and offers retry when navigation does not occur', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(pwaRegister, 'reloadAppForUpdate').mockResolvedValue(undefined);
     usePwaStore.setState({ needRefresh: true });
     renderToast();
 
-    const dismissBtn = screen.getByRole('button', { name: /Mamaya na|Maybe later/i });
-    fireEvent.click(dismissBtn);
+    fireEvent.click(screen.getByRole('button', { name: /I-reload para Mag-update|Reload & Update/i }));
+    await act(async () => Promise.resolve());
 
-    expect(usePwaStore.getState().needRefresh).toBe(false);
+    expect(screen.getByText(/Ina-update ang Fluent Tindahan|Updating Fluent Tindahan/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /I-reload para Mag-update|Reload & Update/i })).toBeDisabled();
+
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+
+    expect(screen.getByText(/Hindi natapos ang update|The update did not finish/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /I-reload para Mag-update|Reload & Update/i })).not.toBeDisabled();
+    expect(usePwaStore.getState().needRefresh).toBe(true);
   });
 });
