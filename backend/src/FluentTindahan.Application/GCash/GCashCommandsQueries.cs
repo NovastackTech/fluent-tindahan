@@ -24,6 +24,32 @@ public record GCashTxnDto(
 
 public record GetGCashTransactionsQuery(int? Limit = 500, DateTimeOffset? Before = null, Guid? BeforeId = null) : IRequest<List<GCashTxnDto>>;
 
+public record GCashBalanceEntryDto(Guid Id, Guid TenantId, string Kind, decimal CashDelta, decimal WalletDelta, DateTimeOffset Date, string Reason, Guid? OpeningEntryId);
+public record GetGCashBalanceEntriesQuery(int? Limit = 500, DateTimeOffset? Before = null, Guid? BeforeId = null) : IRequest<List<GCashBalanceEntryDto>>;
+
+public class GetGCashBalanceEntriesQueryHandler : IRequestHandler<GetGCashBalanceEntriesQuery, List<GCashBalanceEntryDto>>
+{
+    private readonly IApplicationDbContext _context;
+    public GetGCashBalanceEntriesQueryHandler(IApplicationDbContext context) => _context = context;
+
+    public async Task<List<GCashBalanceEntryDto>> Handle(GetGCashBalanceEntriesQuery request, CancellationToken cancellationToken)
+    {
+        var limit = Math.Clamp(request.Limit ?? 500, 1, 1000);
+        var query = _context.GCashBalanceEntries.AsNoTracking().AsQueryable();
+        if (request.Before.HasValue)
+        {
+            var before = request.Before.Value;
+            var beforeId = request.BeforeId ?? Guid.Empty;
+            query = request.BeforeId.HasValue
+                ? query.Where(e => e.Date < before || (e.Date == before && e.Id.CompareTo(beforeId) < 0))
+                : query.Where(e => e.Date < before);
+        }
+        return await query.OrderByDescending(e => e.Date).ThenByDescending(e => e.Id).Take(limit)
+            .Select(e => new GCashBalanceEntryDto(e.Id, e.TenantId, e.Kind, e.CashDelta, e.WalletDelta, e.Date, e.Reason, e.OpeningEntryId))
+            .ToListAsync(cancellationToken);
+    }
+}
+
 public class GetGCashTransactionsQueryHandler : IRequestHandler<GetGCashTransactionsQuery, List<GCashTxnDto>>
 {
     private readonly IApplicationDbContext _context;

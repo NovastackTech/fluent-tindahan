@@ -4,12 +4,15 @@ using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using FluentTindahan.Application.Common.Interfaces;
 using FluentTindahan.Domain.Billing;
+using FluentTindahan.Domain.Entities;
 using FluentTindahan.Domain.Enums;
+using FluentTindahan.Domain.Interfaces;
 
 namespace FluentTindahan.Infrastructure.Services;
 
@@ -27,19 +30,22 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
     private readonly IHostEnvironment _environment;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<PayMongoPaymentGatewayService> _logger;
+    private readonly IApplicationDbContext? _dbContext;
 
     public PayMongoPaymentGatewayService(
         HttpClient httpClient,
         IConfiguration configuration,
         IHostEnvironment environment,
         TimeProvider timeProvider,
-        ILogger<PayMongoPaymentGatewayService> logger)
+        ILogger<PayMongoPaymentGatewayService> logger,
+        IApplicationDbContext? dbContext = null)
     {
         _httpClient = httpClient;
         _configuration = configuration;
         _environment = environment;
         _timeProvider = timeProvider;
         _logger = logger;
+        _dbContext = dbContext;
     }
 
     /// <summary>Peso price for a tier/cycle. Derived from the canonical centavo price list.</summary>
@@ -114,16 +120,61 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
             );
         }
 
+        string? businessName = null;
+        string? ownerName = null;
+        string? ownerEmail = null;
+        string? ownerPhone = null;
+
+        if (_dbContext != null)
+        {
+            var tenant = await _dbContext.Tenants
+                .AsNoTracking()
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
+            var owner = await _dbContext.Users
+                .AsNoTracking()
+                .IgnoreQueryFilters()
+                .Where(u => u.TenantId == tenantId && u.AccountStatus != User.StatusDeleted)
+                .OrderByDescending(u => u.Role == "Owner")
+                .ThenBy(u => u.CreatedAt)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            businessName = !string.IsNullOrWhiteSpace(tenant?.BusinessName) ? tenant!.BusinessName.Trim() : null;
+            ownerName = !string.IsNullOrWhiteSpace(owner?.OwnerName) ? owner!.OwnerName!.Trim() : null;
+            ownerEmail = !string.IsNullOrWhiteSpace(owner?.Email) ? owner!.Email.Trim() : null;
+            ownerPhone = !string.IsNullOrWhiteSpace(owner?.Phone) ? owner!.Phone.Trim() : null;
+        }
+
+        var billing = new Dictionary<string, string>
+        {
+            ["name"] = businessName ?? ownerName ?? "Fluent Tindahan Subscriber"
+        };
+        if (ownerEmail != null) billing["email"] = ownerEmail;
+        if (ownerPhone != null) billing["phone"] = ownerPhone;
+
+        var description = businessName != null
+            ? $"Fluent Tindahan Subscription for {tierDisplayName} - {businessName} (Tenant: {tenantId})"
+            : $"Fluent Tindahan Subscription for {tierDisplayName} (Tenant: {tenantId})";
+
+        var metadata = new Dictionary<string, string>
+        {
+            { "tenant_id", tenantId.ToString() },
+            { "tier", tier.ToString() },
+            { "cycle", cycle.ToString() },
+            { "purpose", "subscription" },
+            { "reference_number", refNo }
+        };
+        if (businessName != null) metadata["business_name"] = businessName;
+        if (ownerEmail != null) metadata["owner_email"] = ownerEmail;
+        if (ownerPhone != null) metadata["owner_phone"] = ownerPhone;
+
         var requestPayload = new
         {
             data = new
             {
                 attributes = new
                 {
-                    billing = new
-                    {
-                        name = "Fluent Tindahan Subscriber"
-                    },
+                    billing,
                     send_email_receipt = false,
                     show_description = true,
                     show_line_items = true,
@@ -138,17 +189,10 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
                         }
                     },
                     payment_method_types = new[] { "qrph", "gcash", "paymaya", "card", "grab_pay", "dob", "dob_ubp" },
-                    description = $"Fluent Tindahan Subscription for {tierDisplayName}",
+                    description,
                     success_url = successUrl,
                     cancel_url = cancelUrl,
-                    metadata = new Dictionary<string, string>
-                    {
-                        { "tenant_id", tenantId.ToString() },
-                        { "tier", tier.ToString() },
-                        { "cycle", cycle.ToString() },
-                        { "purpose", "subscription" },
-                        { "reference_number", refNo }
-                    },
+                    metadata,
                     reference_number = refNo
                 }
             }
@@ -666,9 +710,9 @@ public class PayMongoPaymentGatewayService : IPaymentGatewayService
                         type = "qrph",
                         billing = new
                         {
-                            name = request.Customer.Name,
-                            email = request.Customer.Email ?? "suki@fluent-tindahan.ph",
-                            phone = request.Customer.Phone ?? "09000000000"
+                            name = !string.IsNullOrWhiteSpace(request.Customer.Name) ? request.Customer.Name.Trim() : "Fluent Tindahan Subscriber",
+                            email = !string.IsNullOrWhiteSpace(request.Customer.Email) ? request.Customer.Email.Trim() : "suki@fluent-tindahan.ph",
+                            phone = !string.IsNullOrWhiteSpace(request.Customer.Phone) ? request.Customer.Phone.Trim() : "09000000000"
                         }
                     }
                 }

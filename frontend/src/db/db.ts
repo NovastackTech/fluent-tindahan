@@ -85,9 +85,22 @@ export interface GCashTxnResolutionRecord {
   correctedRefNo?: string;
 }
 
+export interface GCashBalanceEntryRecord {
+  id: string;
+  tenantId: string;
+  kind: 'Opening' | 'Adjustment';
+  cashDelta: number;
+  walletDelta: number;
+  date: string;
+  reason: string;
+  openingEntryId?: string;
+  syncStatus?: 'Conflict' | 'Failed';
+  conflictReason?: string;
+}
+
 export interface SyncQueueRecord {
   id: string; // syncId UUID
-  entity: 'Product' | 'Customer' | 'Sale' | 'UtangLedger' | 'GCashTxn';
+  entity: 'Product' | 'Customer' | 'Sale' | 'UtangLedger' | 'GCashTxn' | 'GCashBalanceEntry';
   action: 'Insert' | 'Update' | 'Delete';
   timestamp: string; // ISO string
   payload: any;
@@ -137,6 +150,7 @@ export class FluentTindahanDatabase extends Dexie {
   utangLedger!: Table<UtangLedgerRecord, string>;
   gcashTxns!: Table<GCashTxnRecord, string>;
   gcashTxnResolutions!: Table<GCashTxnResolutionRecord, string>;
+  gcashBalanceEntries!: Table<GCashBalanceEntryRecord, string>;
   syncQueue!: Table<SyncQueueRecord, string>;
   deadLetterQueue!: Table<DeadLetterRecord, string>;
   tenants!: Table<TenantRecord, string>;
@@ -198,6 +212,9 @@ export class FluentTindahanDatabase extends Dexie {
     this.version(6).stores({
       sales: 'id, tenantId, date, paymentMethod, customerId, [tenantId+date]',
       utangLedger: 'id, tenantId, customerId, type, date, refSaleId, [tenantId+customerId]'
+    });
+    this.version(7).stores({
+      gcashBalanceEntries: 'id, tenantId, kind, date, [tenantId+kind], [tenantId+date]'
     });
   }
 }

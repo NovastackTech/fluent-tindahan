@@ -56,7 +56,8 @@ html, body {
     width: 100% !important;
     max-width: 58mm !important;
     margin: 0 auto !important;
-    padding: 3mm !important;
+    padding: 3mm 3mm 12mm 3mm !important;
+    overflow: visible !important;
     font-family: 'Courier New', Courier, monospace !important;
     font-size: 11px !important;
     line-height: 1.25 !important;

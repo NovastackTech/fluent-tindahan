@@ -6,6 +6,7 @@ import {
   type CustomerRecord,
   type UtangLedgerRecord,
   type GCashTxnRecord,
+  type GCashBalanceEntryRecord,
   type SaleRecord,
   type SaleItemRecord,
   type DeadLetterRecord
@@ -158,7 +159,7 @@ let globalQueueOrder = 0;
  * includes db.syncQueue). Call `kickSync()` after the transaction commits.
  */
 export async function addSyncRecord(
-  entity: 'Product' | 'Customer' | 'Sale' | 'UtangLedger' | 'GCashTxn',
+  entity: 'Product' | 'Customer' | 'Sale' | 'UtangLedger' | 'GCashTxn' | 'GCashBalanceEntry',
   action: 'Insert' | 'Update' | 'Delete',
   payload: any
 ): Promise<string> {
@@ -194,7 +195,7 @@ export async function kickSync() {
 }
 
 export async function enqueueSync(
-  entity: 'Product' | 'Customer' | 'Sale' | 'UtangLedger' | 'GCashTxn',
+  entity: 'Product' | 'Customer' | 'Sale' | 'UtangLedger' | 'GCashTxn' | 'GCashBalanceEntry',
   action: 'Insert' | 'Update' | 'Delete',
   payload: any
 ): Promise<string> {
@@ -410,6 +411,7 @@ export async function processSyncQueue(options?: { force?: boolean }): Promise<{
     let failCount = 0;
     let duplicateRefCount = 0;
     let otherGCashConflictCount = 0;
+    let balanceConflictCount = 0;
 
     for (const res of results) {
       const original = pendingItems.find((p) => p.id === res.syncId);
@@ -419,7 +421,7 @@ export async function processSyncQueue(options?: { force?: boolean }): Promise<{
         await db.syncQueue.delete(original.id);
         successCount++;
       } else if (
-        original.entity === 'GCashTxn' &&
+        (original.entity === 'GCashTxn' || original.entity === 'GCashBalanceEntry') &&
         (res.status === 'DuplicateRef' || res.status === 'Conflict')
       ) {
         // GCash conflicts need manual attention and should not retry automatically.
@@ -429,7 +431,7 @@ export async function processSyncQueue(options?: { force?: boolean }): Promise<{
         else otherGCashConflictCount++;
 
         // Mark/flag the local row so the UI can show it needs attention
-        if (original.payload?.id) {
+        if (original.entity === 'GCashTxn' && original.payload?.id) {
           const localTxn = await db.gcashTxns.get(original.payload.id);
           if (localTxn) {
             await db.gcashTxns.update(original.payload.id, {
@@ -442,6 +444,13 @@ export async function processSyncQueue(options?: { force?: boolean }): Promise<{
               )
             });
           }
+        }
+        if (original.entity === 'GCashBalanceEntry' && original.payload?.id) {
+          balanceConflictCount++;
+          await db.gcashBalanceEntries.update(original.payload.id, {
+            syncStatus: 'Conflict',
+            conflictReason: res.error || 'Another device already set beginning balances.'
+          });
         }
       } else {
         failCount++;
@@ -484,6 +493,12 @@ export async function processSyncQueue(options?: { force?: boolean }): Promise<{
     }
     if (conflictMessages.length > 0) {
       store.setLastErrorMessage(conflictMessages.join(' '));
+    }
+    if (balanceConflictCount > 0) {
+      await pullGCashBalanceEntriesFromServer();
+      store.setLastErrorMessage(
+        `${balanceConflictCount} GCash balance entr${balanceConflictCount === 1 ? 'y needs' : 'ies need'} reconciliation.`
+      );
     }
     await updateQueueCounts();
 
@@ -772,7 +787,7 @@ export async function clearDeadLetterQueue() {
   await updateQueueCounts();
 }
 
-async function getPendingEntityIds(entity: 'Product' | 'Customer' | 'Sale' | 'UtangLedger' | 'GCashTxn'): Promise<Set<string>> {
+async function getPendingEntityIds(entity: 'Product' | 'Customer' | 'Sale' | 'UtangLedger' | 'GCashTxn' | 'GCashBalanceEntry'): Promise<Set<string>> {
   const [pending, deadLetter] = await Promise.all([
     db.syncQueue.where('entity').equals(entity).toArray(),
     db.deadLetterQueue.where('entity').equals(entity).toArray()
@@ -968,6 +983,43 @@ export async function pullGCashFromServer(): Promise<number> {
   }
 }
 
+export async function pullGCashBalanceEntriesFromServer(): Promise<number> {
+  try {
+    await ensureTenantProvisioned();
+    let allEntries: any[] = [];
+    let before: string | undefined;
+    let beforeId: string | undefined;
+    for (;;) {
+      const response = await apiClient.get('/gcash/balance-entries', { params: { limit: 1000, before, beforeId } });
+      const entries = response.data;
+      if (!Array.isArray(entries) || entries.length === 0) break;
+      allEntries = allEntries.concat(entries);
+      if (entries.length < 1000) break;
+      const last = entries[entries.length - 1];
+      if (!last.date || (last.date === before && last.id === beforeId)) break;
+      before = last.date;
+      beforeId = last.id;
+    }
+    const records: GCashBalanceEntryRecord[] = allEntries.map((entry: any) => ({
+      id: entry.id,
+      tenantId: entry.tenantId,
+      kind: entry.kind === 'Opening' ? 'Opening' : 'Adjustment',
+      cashDelta: Number(entry.cashDelta),
+      walletDelta: Number(entry.walletDelta),
+      date: entry.date,
+      reason: entry.reason,
+      openingEntryId: entry.openingEntryId || undefined
+    }));
+    const pendingIds = await getPendingEntityIds('GCashBalanceEntry');
+    const safe = records.filter((entry) => !pendingIds.has(entry.id));
+    if (safe.length) await db.gcashBalanceEntries.bulkPut(safe);
+    return safe.length;
+  } catch (err) {
+    console.warn('Failed to pull GCash balance entries from server:', err);
+    return 0;
+  }
+}
+
 export async function pullSalesFromServer(): Promise<number> {
   try {
     await ensureTenantProvisioned();
@@ -1047,6 +1099,7 @@ export async function restoreTenantDataFromServer(): Promise<void> {
     pullCustomersFromServer(),
     pullUtangFromServer(),
     pullGCashFromServer(),
+    pullGCashBalanceEntriesFromServer(),
     pullSalesFromServer()
   ]);
   await updateQueueCounts();
@@ -1076,9 +1129,10 @@ export function initSyncEngine() {
         db.products.where('tenantId').equals(activeTenant).count(),
         db.customers.where('tenantId').equals(activeTenant).count(),
         db.utangLedger.where('tenantId').equals(activeTenant).count(),
-        db.gcashTxns.where('tenantId').equals(activeTenant).count()
-      ]).then(([pCount, cCount, uCount, gCount]) => {
-        if (pCount === 0 && cCount === 0 && uCount === 0 && gCount === 0) {
+        db.gcashTxns.where('tenantId').equals(activeTenant).count(),
+        db.gcashBalanceEntries.where('tenantId').equals(activeTenant).count()
+      ]).then(([pCount, cCount, uCount, gCount, bCount]) => {
+        if (pCount === 0 && cCount === 0 && uCount === 0 && gCount === 0 && bCount === 0) {
           restoreTenantDataFromServer().catch(console.error);
         }
       }).catch(console.error);

@@ -29,6 +29,16 @@ public class GCashController : ControllerBase
         return Ok(result);
     }
 
+    [HttpGet("balance-entries")]
+    public async Task<ActionResult<List<GCashBalanceEntryDto>>> GetBalanceEntries(
+        [FromQuery] int? limit,
+        [FromQuery] DateTimeOffset? before,
+        [FromQuery] Guid? beforeId,
+        CancellationToken cancellationToken)
+    {
+        return Ok(await _mediator.Send(new GetGCashBalanceEntriesQuery(limit, before, beforeId), cancellationToken));
+    }
+
     [HttpPost]
     [ProducesResponseType(typeof(GCashTxnDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]

@@ -96,7 +96,9 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
                 string? error = null;
                 if (status == "DuplicateRef" || status == "Conflict")
                 {
-                    error = TryExtractRefNo(op.Payload, out var refStr) && !string.IsNullOrWhiteSpace(refStr)
+                    error = string.Equals(op.Entity?.Trim(), "GCashBalanceEntry", StringComparison.OrdinalIgnoreCase)
+                        ? "Another device already set beginning balances."
+                        : TryExtractRefNo(op.Payload, out var refStr) && !string.IsNullOrWhiteSpace(refStr)
                         ? $"Duplicate GCash reference number '{refStr.Trim()}' for this tenant."
                         : "Duplicate GCash reference number for this tenant.";
                 }
@@ -245,6 +247,7 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
             "sale" => 3,
             "utangledger" or "utang" => 4,
             "gcashtxn" or "gcash" => 5,
+            "gcashbalanceentry" => 5,
             _ => 6
         };
 
@@ -308,6 +311,7 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
             "utangledger" or "utang" => await HandleUtangLedgerAsync(op, tenantId, action, counters, cancellationToken),
             "sale" => await HandleSaleAsync(op, tenantId, action, counters, cancellationToken),
             "gcashtxn" or "gcash" => await HandleGCashTxnAsync(op, tenantId, effectiveTier, action, counters, cancellationToken),
+            "gcashbalanceentry" => await HandleGCashBalanceEntryAsync(op, tenantId, action, cancellationToken),
             _ => throw new NotSupportedException($"Entity type '{op.Entity}' is not supported for synchronization.")
         };
     }
@@ -862,6 +866,94 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
         return "Success";
     }
 
+    private async Task<string> HandleGCashBalanceEntryAsync(SyncOperationDto op, Guid tenantId, string action, CancellationToken cancellationToken)
+    {
+        if (action != "insert")
+        {
+            throw new InvalidOperationException("GCash balance entries are append-only.");
+        }
+
+        var raw = JsonSerializer.Deserialize<GCashBalanceEntrySyncPayload>(op.Payload.GetRawText(), JsonOptions)
+            ?? throw new ArgumentException("GCash balance entry payload is invalid.");
+        if (raw.Id == Guid.Empty) throw new ArgumentException("GCash balance entry ID is required.");
+
+        if (await _context.GCashBalanceEntries.IgnoreQueryFilters()
+            .AnyAsync(e => e.Id == raw.Id && e.TenantId == tenantId, cancellationToken))
+        {
+            return "Success";
+        }
+
+        const decimal maxBalance = 10_000_000m;
+        var isOpening = string.Equals(raw.Kind, "Opening", StringComparison.OrdinalIgnoreCase);
+        var isAdjustment = string.Equals(raw.Kind, "Adjustment", StringComparison.OrdinalIgnoreCase);
+        if (!isOpening && !isAdjustment)
+            throw new ArgumentException("GCash balance entry kind must be Opening or Adjustment.");
+        if (Math.Abs(raw.CashDelta) > maxBalance || Math.Abs(raw.WalletDelta) > maxBalance)
+        {
+            throw new ArgumentException("GCash balance amount exceeds the allowed maximum.");
+        }
+        if (isOpening)
+        {
+            if (raw.CashDelta < 0 || raw.WalletDelta < 0)
+                throw new ArgumentException("Beginning balances cannot be negative.");
+            if (await _context.GCashBalanceEntries.IgnoreQueryFilters()
+                .AnyAsync(e => e.TenantId == tenantId && e.Kind == "Opening", cancellationToken))
+                return "Conflict";
+        }
+        else
+        {
+            if (string.IsNullOrWhiteSpace(raw.Reason))
+                throw new ArgumentException("A reason is required for balance adjustments.");
+            if (raw.Reason.Trim().Length > 500)
+                throw new ArgumentException("Balance adjustment reason cannot exceed 500 characters.");
+            if ((raw.CashDelta == 0) == (raw.WalletDelta == 0))
+                throw new ArgumentException("An adjustment must change exactly one balance.");
+            var openingId = await _context.GCashBalanceEntries.IgnoreQueryFilters()
+                .Where(e => e.TenantId == tenantId && e.Kind == "Opening")
+                .Select(e => (Guid?)e.Id)
+                .SingleOrDefaultAsync(cancellationToken);
+            if (!openingId.HasValue)
+                throw new InvalidOperationException("Set beginning balances before adding adjustments.");
+            if (!raw.OpeningEntryId.HasValue || raw.OpeningEntryId.Value != openingId.Value)
+                return "Conflict";
+        }
+
+        var entry = new GCashBalanceEntry
+        {
+            Id = raw.Id,
+            TenantId = tenantId,
+            Kind = isOpening ? "Opening" : "Adjustment",
+            CashDelta = raw.CashDelta,
+            WalletDelta = raw.WalletDelta,
+            Date = raw.Date != default ? raw.Date : op.Timestamp,
+            Reason = isOpening ? (string.IsNullOrWhiteSpace(raw.Reason) ? "Beginning balances" : raw.Reason.Trim()) : raw.Reason!.Trim(),
+            OpeningEntryId = isOpening ? null : raw.OpeningEntryId
+        };
+        _context.GCashBalanceEntries.Add(entry);
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+            return "Success";
+        }
+        catch (DbUpdateException ex) when (IsOpeningBalanceUniqueViolation(ex))
+        {
+            _context.Entry(entry).State = EntityState.Detached;
+            return "Conflict";
+        }
+    }
+
+    private static bool IsOpeningBalanceUniqueViolation(DbUpdateException ex)
+    {
+        for (Exception? current = ex; current != null; current = current.InnerException)
+        {
+            if (current.GetType().FullName == "Npgsql.PostgresException" &&
+                current.GetType().GetProperty("SqlState")?.GetValue(current) as string == "23505" &&
+                current.GetType().GetProperty("ConstraintName")?.GetValue(current) as string == GCashBalanceEntry.OpeningUniqueIndexName)
+                return true;
+        }
+        return false;
+    }
+
     // Payload helper classes for deserialization
     public class ProductSyncPayload
     {
@@ -926,5 +1018,16 @@ public class ProcessBatchSyncCommandHandler : IRequestHandler<ProcessBatchSyncCo
         public string? CustomerPhone { get; set; }
         public DateTimeOffset Date { get; set; }
         public string? Notes { get; set; }
+    }
+
+    public class GCashBalanceEntrySyncPayload
+    {
+        public Guid Id { get; set; }
+        public string? Kind { get; set; }
+        public decimal CashDelta { get; set; }
+        public decimal WalletDelta { get; set; }
+        public DateTimeOffset Date { get; set; }
+        public string? Reason { get; set; }
+        public Guid? OpeningEntryId { get; set; }
     }
 }

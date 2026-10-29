@@ -13,16 +13,19 @@ import {
   Badge,
   Divider,
   MessageBar,
-  MessageBarBody
+  MessageBarActions,
+  MessageBarBody,
+  Select
 } from '@fluentui/react-components';
 import {
   ArrowUploadRegular,
   ArrowDownloadRegular,
   CheckmarkRegular,
+  DismissRegular,
   HistoryRegular
 } from '@fluentui/react-icons';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, isGCashTxnUnresolved, normalizeRef, type GCashTxnRecord } from '../db/db';
+import { db, isGCashTxnUnresolved, normalizeRef, type GCashTxnRecord, type GCashBalanceEntryRecord } from '../db/db';
 import { useAuthStore } from '../state/authStore';
 import { addSyncRecord, kickSync } from '../sync/syncEngine';
 import { useTranslation } from '../state/languageStore';
@@ -107,6 +110,9 @@ const useStyles = makeStyles({
 });
 
 export const MAX_GCASH_AMOUNT = 100000;
+const toCentavos = (value: number) => Math.round(value * 100);
+const fromCentavos = (value: number) => value / 100;
+const createTimestamp = () => new Date().toISOString();
 
 export const GCashPage: React.FC = () => {
   const styles = useStyles();
@@ -127,6 +133,15 @@ export const GCashPage: React.FC = () => {
   const [resolutionRefDrafts, setResolutionRefDrafts] = useState<Record<string, string>>({});
   const [resolutionErrors, setResolutionErrors] = useState<Record<string, string>>({});
   const [resolvingTxnId, setResolvingTxnId] = useState<string | null>(null);
+  const [showBalanceForm, setShowBalanceForm] = useState(false);
+  const [openingCash, setOpeningCash] = useState('');
+  const [openingWallet, setOpeningWallet] = useState('');
+  const [adjustTarget, setAdjustTarget] = useState<'cash' | 'wallet'>('cash');
+  const [adjustDirection, setAdjustDirection] = useState<'add' | 'withdraw'>('add');
+  const [adjustAmount, setAdjustAmount] = useState('');
+  const [adjustReason, setAdjustReason] = useState('');
+  const [balanceError, setBalanceError] = useState('');
+  const [isSavingBalance, setIsSavingBalance] = useState(false);
   const savingRef = useRef(false);
 
   const tenantId = useAuthStore((s) => s.tenantId);
@@ -170,7 +185,8 @@ export const GCashPage: React.FC = () => {
   }, [customFee, txnType, numAmount, t.gcash.feeCannotBeNegative, t.gcash.feeExceedsAmount]);
 
   const hasUnsavedEntry = Boolean(
-    amount.trim() || refNo.trim() || customerPhone.trim() || notes.trim() || customFee?.trim()
+    amount.trim() || refNo.trim() || customerPhone.trim() || notes.trim() || customFee?.trim() ||
+    openingCash.trim() || openingWallet.trim() || adjustAmount.trim() || adjustReason.trim()
   );
   useEffect(() => {
     setHasUnsavedWork(hasUnsavedEntry);
@@ -180,6 +196,10 @@ export const GCashPage: React.FC = () => {
   // Live query for GCash logs
   const allTxns = useLiveQuery(
     () => db.gcashTxns.where('tenantId').equals(tenantId).reverse().sortBy('date'),
+    [tenantId]
+  ) || [];
+  const balanceEntries = useLiveQuery(
+    () => db.gcashBalanceEntries.where('tenantId').equals(tenantId).sortBy('date'),
     [tenantId]
   ) || [];
   const enteredRefNorm = normalizeRef(refNo);
@@ -233,6 +253,95 @@ export const GCashPage: React.FC = () => {
   const todayCashIn = countedTodayTxns.filter((t) => t.type === 'CashIn').reduce((s, t) => s + t.amount, 0);
   const todayCashOut = countedTodayTxns.filter((t) => t.type === 'CashOut').reduce((s, t) => s + t.amount, 0);
   const todayFees = countedTodayTxns.reduce((s, t) => s + t.fee, 0);
+
+  const activeBalanceEntries = balanceEntries.filter((entry) => entry.syncStatus !== 'Conflict');
+  const openingEntry = activeBalanceEntries.find((entry) => entry.kind === 'Opening');
+  const balance = (() => {
+    if (!openingEntry) return null;
+    let cash = toCentavos(openingEntry.cashDelta);
+    let wallet = toCentavos(openingEntry.walletDelta);
+    for (const entry of activeBalanceEntries) {
+      if (entry.kind === 'Adjustment' && entry.date >= openingEntry.date) {
+        cash += toCentavos(entry.cashDelta);
+        wallet += toCentavos(entry.walletDelta);
+      }
+    }
+    for (const txn of allTxns) {
+      if (txn.date < openingEntry.date || isGCashTxnUnresolved(txn) || resolutionsByTxnId.has(txn.id)) continue;
+      const amountCents = toCentavos(txn.amount);
+      const feeCents = toCentavos(txn.fee);
+      if (txn.type === 'CashIn') {
+        cash += amountCents + feeCents;
+        wallet -= amountCents;
+      } else {
+        cash -= amountCents - feeCents;
+        wallet += amountCents;
+      }
+    }
+    return { cashCentavos: cash, walletCentavos: wallet };
+  })();
+
+  const projectedBalance = balance && isAmountValid && !customFeeError ? {
+    cashCentavos: balance.cashCentavos + (txnType === 'CashIn'
+      ? toCentavos(numAmount) + toCentavos(activeFee)
+      : -(toCentavos(numAmount) - toCentavos(activeFee))),
+    walletCentavos: balance.walletCentavos + (txnType === 'CashIn'
+      ? -toCentavos(numAmount)
+      : toCentavos(numAmount))
+  } : null;
+  const hasCapacityShortfall = Boolean(projectedBalance && (
+    (txnType === 'CashIn' && projectedBalance.walletCentavos < 0) ||
+    (txnType === 'CashOut' && projectedBalance.cashCentavos < 0)
+  ));
+
+  const saveBalanceEntry = async (entry: GCashBalanceEntryRecord) => {
+    await db.transaction('rw', db.gcashBalanceEntries, db.syncQueue, async () => {
+      if (entry.kind === 'Opening') {
+        const existing = (await db.gcashBalanceEntries.where('[tenantId+kind]').equals([tenantId, 'Opening']).toArray()).find((item) => item.syncStatus !== 'Conflict');
+        if (existing) throw new Error('opening-exists');
+      }
+      await db.gcashBalanceEntries.add(entry);
+      await addSyncRecord('GCashBalanceEntry', 'Insert', entry);
+    });
+    void Dexie.ignoreTransaction(() => kickSync().catch((err) => console.warn('Background sync trigger failed:', err)));
+  };
+
+  const handleSaveOpening = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const cash = Number(openingCash);
+    const wallet = Number(openingWallet);
+    if (!openingCash.trim() || !openingWallet.trim() || !Number.isFinite(cash) || !Number.isFinite(wallet) || cash < 0 || wallet < 0 || cash > 10_000_000 || wallet > 10_000_000) {
+      setBalanceError(language === 'tl' ? 'Maglagay ng wastong halagang zero o higit pa.' : 'Enter valid amounts of zero or more.');
+      return;
+    }
+    setIsSavingBalance(true);
+    setBalanceError('');
+    try {
+      await saveBalanceEntry({ id: crypto.randomUUID(), tenantId, kind: 'Opening', cashDelta: fromCentavos(toCentavos(cash)), walletDelta: fromCentavos(toCentavos(wallet)), date: createTimestamp(), reason: 'Beginning balances' });
+      setOpeningCash(''); setOpeningWallet(''); setShowBalanceForm(false);
+    } catch (error) {
+      setBalanceError(error instanceof Error && error.message === 'opening-exists'
+        ? (language === 'tl' ? 'Naitakda na ang panimulang balanse.' : 'Beginning balances are already set.')
+        : t.gcash.saveFailed);
+    } finally { setIsSavingBalance(false); }
+  };
+
+  const handleSaveAdjustment = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const value = Number(adjustAmount);
+    if (!openingEntry || !Number.isFinite(value) || value <= 0 || value > 10_000_000 || !adjustReason.trim()) {
+      setBalanceError(language === 'tl' ? 'Kailangan ang positibong halaga at dahilan.' : 'A positive amount and reason are required.');
+      return;
+    }
+    const signed = fromCentavos(toCentavos(value)) * (adjustDirection === 'add' ? 1 : -1);
+    const date = createTimestamp();
+    setIsSavingBalance(true); setBalanceError('');
+    try {
+      await saveBalanceEntry({ id: crypto.randomUUID(), tenantId, kind: 'Adjustment', cashDelta: adjustTarget === 'cash' ? signed : 0, walletDelta: adjustTarget === 'wallet' ? signed : 0, date, reason: adjustReason.trim(), openingEntryId: openingEntry.id });
+      setAdjustAmount(''); setAdjustReason(''); setShowBalanceForm(false);
+    } catch { setBalanceError(t.gcash.saveFailed); }
+    finally { setIsSavingBalance(false); }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -473,6 +582,105 @@ export const GCashPage: React.FC = () => {
         </Text>
       </div>
 
+      <div className={styles.gridTwo} style={{ marginBottom: tokens.spacingVerticalM }}>
+        <Card className={styles.summaryCard}>
+          <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>{t.gcash.cashCapacity}</Text>
+          <Text data-testid="gcash-cash-capacity" size={400} weight="bold" style={{ display: 'block' }}>
+            {balance ? formatPeso(fromCentavos(balance.cashCentavos)) : (language === 'tl' ? 'Hindi pa naitakda' : 'Not set')}
+          </Text>
+        </Card>
+        <Card className={styles.summaryCard}>
+          <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>{t.gcash.walletCapacity}</Text>
+          <Text data-testid="gcash-wallet-capacity" size={400} weight="bold" style={{ display: 'block' }}>
+            {balance ? formatPeso(fromCentavos(balance.walletCentavos)) : (language === 'tl' ? 'Hindi pa naitakda' : 'Not set')}
+          </Text>
+        </Card>
+      </div>
+
+      <Card className={styles.card}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <div>
+            <Text weight="bold">{openingEntry ? t.gcash.adjustBalances : t.gcash.setBeginningBalances}</Text>
+            {!openingEntry && <Text size={200} style={{ display: 'block', color: tokens.colorNeutralForeground3 }}>{language === 'tl' ? 'Ilagay ang cash at GCash na magagamit ngayon.' : 'Enter the cash and GCash funds available now.'}</Text>}
+          </div>
+          <Button onClick={() => { setShowBalanceForm((value) => !value); setBalanceError(''); }}>
+            {openingEntry ? t.gcash.adjustBalances : t.gcash.setBeginningBalances}
+          </Button>
+        </div>
+
+        {showBalanceForm && !openingEntry && (
+          <form onSubmit={handleSaveOpening} className={styles.gridTwo}>
+            <div>
+              <Text size={200} weight="semibold">{t.gcash.cashCapacity}</Text>
+              <Input type="number" min="0" max="10000000" step="0.01" aria-label={t.gcash.cashCapacity} contentBefore="₱" style={{ width: '100%', marginTop: '4px' }} placeholder="0.00" value={openingCash} onChange={(_, data) => setOpeningCash(data.value)} />
+            </div>
+            <div>
+              <Text size={200} weight="semibold">{t.gcash.walletCapacity}</Text>
+              <Input type="number" min="0" max="10000000" step="0.01" aria-label={t.gcash.walletCapacity} contentBefore="₱" style={{ width: '100%', marginTop: '4px' }} placeholder="0.00" value={openingWallet} onChange={(_, data) => setOpeningWallet(data.value)} />
+            </div>
+            <Button type="submit" appearance="primary" disabled={isSavingBalance} style={{ alignSelf: 'end' }}>{t.gcash.setBeginningBalances}</Button>
+          </form>
+        )}
+
+        {showBalanceForm && openingEntry && (
+          <form onSubmit={handleSaveAdjustment} className={styles.gridTwo}>
+            <div>
+              <Text size={200} weight="semibold">{language === 'tl' ? 'Balanse' : 'Balance'}</Text>
+              <Select aria-label={language === 'tl' ? 'Balanse' : 'Balance'} style={{ width: '100%', marginTop: '4px' }} value={adjustTarget} onChange={(_, data) => setAdjustTarget(data.value as 'cash' | 'wallet')}>
+              <option value="cash">{t.gcash.cashCapacity}</option>
+              <option value="wallet">{t.gcash.walletCapacity}</option>
+            </Select>
+            </div>
+            <div>
+              <Text size={200} weight="semibold">{language === 'tl' ? 'Uri ng pagbabago' : 'Adjustment direction'}</Text>
+              <Select aria-label={language === 'tl' ? 'Uri ng pagbabago' : 'Adjustment direction'} style={{ width: '100%', marginTop: '4px' }} value={adjustDirection} onChange={(_, data) => setAdjustDirection(data.value as 'add' | 'withdraw')}>
+              <option value="add">{language === 'tl' ? 'Dagdag' : 'Add'}</option>
+              <option value="withdraw">{language === 'tl' ? 'Bawas' : 'Withdraw'}</option>
+            </Select>
+            </div>
+            <div>
+              <Text size={200} weight="semibold">{language === 'tl' ? 'Halaga ng pagbabago' : 'Adjustment amount'}</Text>
+              <Input type="number" min="0.01" max="10000000" step="0.01" aria-label={language === 'tl' ? 'Halaga ng pagbabago' : 'Adjustment amount'} contentBefore="₱" style={{ width: '100%', marginTop: '4px' }} placeholder="0.00" value={adjustAmount} onChange={(_, data) => setAdjustAmount(data.value)} />
+            </div>
+            <div>
+              <Text size={200} weight="semibold">{language === 'tl' ? 'Dahilan' : 'Reason'}</Text>
+              <Input maxLength={500} aria-label={language === 'tl' ? 'Dahilan' : 'Reason'} style={{ width: '100%', marginTop: '4px' }} placeholder={language === 'tl' ? 'Dahilan (kailangan)' : 'Reason (required)'} value={adjustReason} onChange={(_, data) => setAdjustReason(data.value)} />
+            </div>
+            <Button type="submit" appearance="primary" disabled={isSavingBalance} style={{ alignSelf: 'end' }}>{language === 'tl' ? 'I-save ang pagbabago' : 'Save adjustment'}</Button>
+
+          </form>
+        )}
+
+        {balanceError && <MessageBar intent="error" style={{ marginTop: '8px' }}><MessageBarBody>{balanceError}</MessageBarBody></MessageBar>}
+        {balanceEntries.some((entry) => entry.syncStatus === 'Conflict') && (
+          <MessageBar intent="warning" style={{ marginTop: '8px' }}>
+            <MessageBarBody>{language === 'tl' ? 'May panimulang balanse mula sa ibang device. Hindi isinama ang lokal na salungat na tala.' : 'Another device set the beginning balances. The conflicting local entry is excluded.'}</MessageBarBody>
+            <MessageBarActions
+              containerAction={
+                <Button
+                  appearance="subtle"
+                  aria-label={language === 'tl' ? 'Isara' : 'Dismiss'}
+                  icon={<DismissRegular />}
+                  onClick={() => void db.gcashBalanceEntries.bulkDelete(balanceEntries.filter((entry) => entry.syncStatus === 'Conflict').map((entry) => entry.id))}
+                />
+              }
+            />
+          </MessageBar>
+        )}
+
+        {openingEntry && activeBalanceEntries.some((entry) => entry.kind === 'Adjustment') && (
+          <div style={{ marginTop: '12px' }}>
+            <Text weight="semibold">{t.gcash.balanceHistory}</Text>
+            {activeBalanceEntries.filter((entry) => entry.kind === 'Adjustment').slice().reverse().map((entry) => (
+              <div key={entry.id} className={styles.logRow}>
+                <Text size={200}>{entry.cashDelta ? 'Cash' : 'GCash'}: {entry.reason}</Text>
+                <Text size={200}>{formatPeso(entry.cashDelta || entry.walletDelta)} · {new Date(entry.date).toLocaleString()}</Text>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
       {/* Daily Tally Summary */}
       <div className={styles.summaryGrid}>
         <Card className={styles.summaryCard}>
@@ -691,6 +899,25 @@ export const GCashPage: React.FC = () => {
               <MessageBar intent="success" layout="multiline">
                 <MessageBarBody>{successMessage}</MessageBarBody>
               </MessageBar>
+            </div>
+          )}
+
+          {projectedBalance && (
+            <div style={{ marginTop: '12px' }}>
+              <Text size={200}>
+                {language === 'tl' ? 'Tinatayang matitirang balanse:' : 'Projected remaining balance:'} {' '}
+                {formatPeso(fromCentavos(txnType === 'CashIn' ? projectedBalance.walletCentavos : projectedBalance.cashCentavos))}
+              </Text>
+              {hasCapacityShortfall && (
+                <MessageBar intent="warning" layout="multiline" style={{ marginTop: '6px' }}>
+                  <MessageBarBody>
+                    {t.gcash.insufficientCapacity} {' '}
+                    {txnType === 'CashOut' && (language === 'tl'
+                      ? `Cash payout: ${formatPeso(Math.max(0, numAmount - activeFee))}.`
+                      : `Cash payout: ${formatPeso(Math.max(0, numAmount - activeFee))}.`)}
+                  </MessageBarBody>
+                </MessageBar>
+              )}
             </div>
           )}
 

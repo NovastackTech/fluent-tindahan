@@ -25,6 +25,7 @@ public class AppDbContext : DbContext, IApplicationDbContext
     public DbSet<Sale> Sales => Set<Sale>();
     public DbSet<SaleItem> SaleItems => Set<SaleItem>();
     public DbSet<GCashTxn> GCashTransactions => Set<GCashTxn>();
+    public DbSet<GCashBalanceEntry> GCashBalanceEntries => Set<GCashBalanceEntry>();
     public DbSet<PaymentHistory> PaymentHistories => Set<PaymentHistory>();
     public DbSet<UserRefreshToken> UserRefreshTokens => Set<UserRefreshToken>();
 
@@ -263,6 +264,33 @@ public class AppDbContext : DbContext, IApplicationDbContext
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
+        modelBuilder.Entity<GCashBalanceEntry>(builder =>
+        {
+            builder.ToTable("GCashBalanceEntries", table =>
+            {
+                table.HasCheckConstraint("CK_GCashBalanceEntries_Kind", "\"Kind\" IN ('Opening', 'Adjustment')");
+                table.HasCheckConstraint("CK_GCashBalanceEntries_Amounts", "ABS(\"CashDelta\") <= 10000000 AND ABS(\"WalletDelta\") <= 10000000");
+                table.HasCheckConstraint("CK_GCashBalanceEntries_Shape", "(\"Kind\" = 'Opening' AND \"CashDelta\" >= 0 AND \"WalletDelta\" >= 0 AND \"OpeningEntryId\" IS NULL) OR (\"Kind\" = 'Adjustment' AND \"OpeningEntryId\" IS NOT NULL AND ((\"CashDelta\" <> 0 AND \"WalletDelta\" = 0) OR (\"CashDelta\" = 0 AND \"WalletDelta\" <> 0)) AND BTRIM(\"Reason\") <> '')");
+            });
+            builder.HasKey(e => e.Id);
+            builder.Property(e => e.Id).HasDefaultValueSql("gen_random_uuid()");
+            builder.Property(e => e.Kind).IsRequired().HasMaxLength(20);
+            builder.Property(e => e.CashDelta).HasPrecision(12, 2);
+            builder.Property(e => e.WalletDelta).HasPrecision(12, 2);
+            builder.Property(e => e.Reason).IsRequired().HasMaxLength(500);
+            builder.Property(e => e.OpeningEntryId);
+            builder.HasIndex(e => e.TenantId);
+            builder.HasIndex(e => new { e.TenantId, e.Date });
+            builder.HasIndex(e => e.TenantId)
+                .IsUnique()
+                .HasDatabaseName(GCashBalanceEntry.OpeningUniqueIndexName)
+                .HasFilter("\"Kind\" = 'Opening'");
+            builder.HasOne(e => e.Tenant)
+                .WithMany(t => t.GCashBalanceEntries)
+                .HasForeignKey(e => e.TenantId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
         // PaymentHistory
         modelBuilder.Entity<PaymentHistory>(builder =>
         {
@@ -324,6 +352,7 @@ public class AppDbContext : DbContext, IApplicationDbContext
         ConfigureTenantFilter<Sale>(modelBuilder);
         ConfigureTenantFilter<SaleItem>(modelBuilder);
         ConfigureTenantFilter<GCashTxn>(modelBuilder);
+        ConfigureTenantFilter<GCashBalanceEntry>(modelBuilder);
         ConfigureTenantFilter<PaymentHistory>(modelBuilder);
         ConfigureTenantFilter<UserRefreshToken>(modelBuilder);
     }

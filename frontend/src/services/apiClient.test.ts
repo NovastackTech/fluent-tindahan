@@ -19,6 +19,7 @@ describe('apiClient', () => {
     resetTenantProvisionCache();
     await db.tenants.clear();
     await db.products.clear();
+    await db.gcashBalanceEntries.clear();
     await db.syncQueue.clear();
     useGCashFeeStore.setState({ feesByTenant: {} });
     useAuthStore.setState({
@@ -212,6 +213,15 @@ describe('apiClient', () => {
       stockQty: 1,
       updatedAt: new Date().toISOString()
     });
+    await db.gcashBalanceEntries.put({
+      id: 'local-balance-opening',
+      tenantId: localTenantId,
+      kind: 'Opening',
+      cashDelta: 5000,
+      walletDelta: 3000,
+      date: new Date().toISOString(),
+      reason: 'Opening balance'
+    });
     await db.syncQueue.put({
       id: 'local-sync',
       entity: 'Product',
@@ -231,6 +241,7 @@ describe('apiClient', () => {
     expect(useAuthStore.getState().serverConfirmedTenantId).toBe(serverTenantId);
     expect(useAuthStore.getState().serverConfirmedUserId).toBe(userId);
     expect((await db.products.get('local-product'))?.tenantId).toBe(serverTenantId);
+    expect((await db.gcashBalanceEntries.get('local-balance-opening'))?.tenantId).toBe(serverTenantId);
     expect((await db.syncQueue.get('local-sync'))?.payload.tenantId).toBe(serverTenantId);
     expect(await db.tenants.get(localTenantId)).toBeUndefined();
     expect((await db.tenants.get(serverTenantId))?.businessName).toBe('Ate Rose Tindahan');

@@ -23,12 +23,12 @@ import {
   DismissRegular,
   SparkleRegular,
   StarFilled,
-  QrCodeRegular
+  QrCodeRegular,
+  CreditCardPersonRegular
 } from '@fluentui/react-icons';
 import {
   useSubscriptionStore,
   IS_MOCK_PAYMENT_ENABLED,
-  IS_LIBRE_UPGRADE_ENABLED,
   SUBSCRIPTION_REFRESH_ERROR,
   getPendingBillingReference
 } from '../state/subscriptionStore';
@@ -141,10 +141,13 @@ export const SubscriptionModal: React.FC = () => {
     tier: currentTier,
     subscriptionEndDate,
     daysRemaining,
+    allowLibreUpgrade,
+    enableHostedCheckout,
     isUpgradeModalOpen,
     closeUpgradeModal,
     refreshSubscription,
     confirmCheckoutSession,
+    createCheckoutSession,
     simulateMockPayment,
     isLoading,
     error
@@ -177,6 +180,15 @@ export const SubscriptionModal: React.FC = () => {
     }
   };
 
+  const handleCheckout = async (targetTier: 'TindahanPro') => {
+    await runTierAction(targetTier, async () => {
+      const checkoutUrl = await createCheckoutSession(targetTier, 'Monthly');
+      if (checkoutUrl) {
+        window.location.href = checkoutUrl;
+      }
+    });
+  };
+
   const handleSimulatePayment = async (targetTier: 'TindahanPro') => {
     await runTierAction(targetTier, () => simulateMockPayment(targetTier, 'Monthly'));
   };
@@ -189,7 +201,7 @@ export const SubscriptionModal: React.FC = () => {
       </Badge>
     ) : null;
 
-  const isUpgradeAllowedForTier = currentTier === 'TindahanPro' || Boolean(subscriptionEndDate) || IS_LIBRE_UPGRADE_ENABLED;
+  const isUpgradeAllowedForTier = currentTier === 'TindahanPro' || Boolean(subscriptionEndDate) || allowLibreUpgrade;
 
   const renderPaidTierActions = (targetTier: 'TindahanPro') => (
     <div className={styles.tierActionSection}>
@@ -205,6 +217,22 @@ export const SubscriptionModal: React.FC = () => {
           ? (isTagalog ? 'Mag-renew gamit ang QR Ph (Buwanan)' : 'Renew via QR Ph (Monthly)')
           : (isTagalog ? 'Magbayad gamit ang QR Ph' : 'Pay via QR Ph')}
       </Button>
+      {enableHostedCheckout && isUpgradeAllowedForTier && (
+        <Button
+          appearance="secondary"
+          icon={<CreditCardPersonRegular />}
+          disabled={isLoading && processingTier === targetTier}
+          onClick={() => void handleCheckout(targetTier)}
+        >
+          {isLoading && processingTier === targetTier ? (
+            <Spinner size="tiny" />
+          ) : currentTier === targetTier || subscriptionEndDate ? (
+            isTagalog ? 'Mag-renew via PayMongo Checkout' : 'Renew via PayMongo Checkout'
+          ) : (
+            isTagalog ? 'Magbayad via PayMongo Checkout (GCash / Maya / Card)' : 'Pay via PayMongo Checkout (GCash / Maya / Card)'
+          )}
+        </Button>
+      )}
       {IS_MOCK_PAYMENT_ENABLED && isUpgradeAllowedForTier && (
         <Button
           appearance="subtle"

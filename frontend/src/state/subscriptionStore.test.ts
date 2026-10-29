@@ -31,6 +31,7 @@ describe('subscriptionStore', () => {
       subscriptionEndDate: null,
       isActive: false,
       daysRemaining: null,
+      allowLibreUpgrade: true,
       isLoading: false,
       error: null,
       isUpgradeModalOpen: false
@@ -122,13 +123,18 @@ describe('subscriptionStore', () => {
   });
 
   describe('isUpgradeAllowed', () => {
-    it('disallows upgrade for fresh Libre tier when IS_LIBRE_UPGRADE_ENABLED is false', () => {
-      useSubscriptionStore.setState({ tier: 'Libre', subscriptionEndDate: null });
+    it('allows upgrade for fresh Libre tier by default when allowLibreUpgrade is true', () => {
+      useSubscriptionStore.setState({ tier: 'Libre', subscriptionEndDate: null, allowLibreUpgrade: true });
+      expect(useSubscriptionStore.getState().isUpgradeAllowed()).toBe(true);
+    });
+
+    it('disallows upgrade for fresh Libre tier when allowLibreUpgrade is false', () => {
+      useSubscriptionStore.setState({ tier: 'Libre', subscriptionEndDate: null, allowLibreUpgrade: false });
       expect(useSubscriptionStore.getState().isUpgradeAllowed()).toBe(false);
     });
 
-    it('allows renewal for lapsed Pro subscriber with Libre tier and existing subscriptionEndDate', () => {
-      useSubscriptionStore.setState({ tier: 'Libre', subscriptionEndDate: '2026-01-01T00:00:00Z' });
+    it('allows renewal for lapsed Pro subscriber with Libre tier and existing subscriptionEndDate even when allowLibreUpgrade is false', () => {
+      useSubscriptionStore.setState({ tier: 'Libre', subscriptionEndDate: '2026-01-01T00:00:00Z', allowLibreUpgrade: false });
       expect(useSubscriptionStore.getState().isUpgradeAllowed()).toBe(true);
     });
 

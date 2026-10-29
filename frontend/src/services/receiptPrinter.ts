@@ -55,11 +55,11 @@ export function generateThermalReceiptHtml(
     .receipt-container {
       width: ${maxContentMm};
       margin: 0 auto;
-      padding: 4mm 1mm;
+      padding: 4mm 1mm 12mm 1mm;
       box-sizing: border-box;
     }
     .text-center { text-align: center; }
-    .text-right { text-align: right; }
+    .text-right { text-align: right; white-space: nowrap; }
     .bold { font-weight: bold; }
     .title {
       font-size: ${is58 ? '14px' : '16px'};
@@ -75,19 +75,20 @@ export function generateThermalReceiptHtml(
     .row {
       display: flex;
       justify-content: space-between;
+      gap: 4px;
       margin: 2px 0;
       word-break: break-word;
     }
     .row-item {
       display: flex;
       justify-content: space-between;
+      align-items: flex-start;
+      gap: 4px;
       margin: 2px 0;
     }
     .item-name {
-      max-width: 70%;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      flex: 1;
+      word-break: break-word;
     }
     .total-row {
       font-size: ${is58 ? '13px' : '15px'};
@@ -333,6 +334,9 @@ export function generateEscPosReceipt(
   bytes.push(...encoder.encode('*** FOR ACKNOWLEDGMENT ONLY ***\n'));
   bytes.push(...encoder.encode('Maraming Salamat po!\n'));
 
+  // Extra line feeds so paper clears the manual tear bar before cutting/tearing
+  bytes.push(...encoder.encode('\n\n\n\n'));
+
   // Feed 4 lines: ESC d 4
   bytes.push(0x1B, 0x64, 0x04);
 
@@ -411,14 +415,28 @@ export async function printBluetoothReceipt(
       return { success: false, error: 'No writable ESC/POS characteristic found on printer.' };
     }
 
-    // Chunk size safe for Bluetooth LE MTU
-    const chunkSize = 512;
+    // 20-byte chunks fit standard BLE 4.0 ATT MTU (23-byte MTU - 3-byte header)
+    // and prevent thermal printer UART RX buffer overflow that truncates receipts mid-print.
+    const chunkSize = 20;
+    const canWriteWithResponse =
+      Boolean(writeChar.properties?.write) &&
+      (typeof writeChar.writeValueWithResponse === 'function' || typeof writeChar.writeValue === 'function');
+
     for (let i = 0; i < rawBytes.length; i += chunkSize) {
       const chunk = rawBytes.slice(i, i + chunkSize);
-      if (writeChar.writeValueWithoutResponse) {
+      if (canWriteWithResponse) {
+        if (typeof writeChar.writeValueWithResponse === 'function') {
+          await writeChar.writeValueWithResponse(chunk);
+        } else {
+          await writeChar.writeValue(chunk);
+        }
+      } else if (typeof writeChar.writeValueWithoutResponse === 'function') {
         await writeChar.writeValueWithoutResponse(chunk);
       } else {
         await writeChar.writeValue(chunk);
+      }
+      if (i + chunkSize < rawBytes.length) {
+        await new Promise((res) => setTimeout(res, 15));
       }
     }
 
