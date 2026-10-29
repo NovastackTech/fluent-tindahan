@@ -396,7 +396,7 @@ public class BillingController : ControllerBase
             }
 
             var subscription = await _mediator.Send(new GetTenantSubscriptionQuery(), cancellationToken);
-            return Ok(subscription with { PaymentConfirmed = true });
+            return Ok(subscription with { PaymentConfirmed = true, AllowLibreUpgrade = IsLibreUpgradeAllowed() });
         }
         catch (PaymentGatewayException ex)
         {
@@ -429,7 +429,7 @@ public class BillingController : ControllerBase
             var result = await _mediator.Send(
                 new ConfirmCheckoutSessionCommand(_currentUserService.TenantId, request?.SessionId),
                 cancellationToken);
-            return Ok(result);
+            return Ok(result with { AllowLibreUpgrade = IsLibreUpgradeAllowed() });
         }
         catch (PaymentGatewayException ex)
         {
@@ -454,7 +454,7 @@ public class BillingController : ControllerBase
         try
         {
             var result = await _mediator.Send(new GetTenantSubscriptionQuery(), cancellationToken);
-            return Ok(result);
+            return Ok(result with { AllowLibreUpgrade = IsLibreUpgradeAllowed() });
         }
         catch (UnauthorizedAccessException ex)
         {

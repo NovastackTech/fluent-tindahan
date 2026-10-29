@@ -32,6 +32,7 @@ describe('SubscriptionModal', () => {
       subscriptionEndDate: null,
       isActive: false,
       daysRemaining: null,
+      allowLibreUpgrade: true,
       isLoading: false,
       error: null,
       isUpgradeModalOpen: false
@@ -87,9 +88,20 @@ describe('SubscriptionModal', () => {
     expect(screen.queryByRole('button', { name: /Lingguhan|Weekly|Sachet/i })).not.toBeInTheDocument();
   });
 
-  it('disables upgrade action and displays pause notice for Libre tier', () => {
+  it('enables QR Ph upgrade button for Libre tier when allowLibreUpgrade is true', () => {
     useLanguageStore.setState({ language: 'en' });
-    useSubscriptionStore.setState({ isUpgradeModalOpen: true, tier: 'Libre' });
+    useSubscriptionStore.setState({ isUpgradeModalOpen: true, tier: 'Libre', allowLibreUpgrade: true });
+    renderModal();
+
+    expect(screen.queryByText(/Upgrading from Libre to Tindahan Pro is temporarily paused/i)).not.toBeInTheDocument();
+    const payBtn = screen.getByRole('button', { name: /Pay via QR Ph/i });
+    expect(payBtn).toBeInTheDocument();
+    expect(payBtn).toBeEnabled();
+  });
+
+  it('disables upgrade action and displays pause notice for Libre tier when allowLibreUpgrade is false', () => {
+    useLanguageStore.setState({ language: 'en' });
+    useSubscriptionStore.setState({ isUpgradeModalOpen: true, tier: 'Libre', allowLibreUpgrade: false });
     renderModal();
 
     expect(screen.getByText(/Upgrading from Libre to Tindahan Pro is temporarily paused/i)).toBeInTheDocument();

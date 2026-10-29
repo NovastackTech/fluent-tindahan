@@ -28,7 +28,6 @@ import {
 import {
   useSubscriptionStore,
   IS_MOCK_PAYMENT_ENABLED,
-  IS_LIBRE_UPGRADE_ENABLED,
   SUBSCRIPTION_REFRESH_ERROR,
   getPendingBillingReference
 } from '../state/subscriptionStore';
@@ -141,6 +140,7 @@ export const SubscriptionModal: React.FC = () => {
     tier: currentTier,
     subscriptionEndDate,
     daysRemaining,
+    allowLibreUpgrade,
     isUpgradeModalOpen,
     closeUpgradeModal,
     refreshSubscription,
@@ -189,7 +189,7 @@ export const SubscriptionModal: React.FC = () => {
       </Badge>
     ) : null;
 
-  const isUpgradeAllowedForTier = currentTier === 'TindahanPro' || Boolean(subscriptionEndDate) || IS_LIBRE_UPGRADE_ENABLED;
+  const isUpgradeAllowedForTier = currentTier === 'TindahanPro' || Boolean(subscriptionEndDate) || allowLibreUpgrade;
 
   const renderPaidTierActions = (targetTier: 'TindahanPro') => (
     <div className={styles.tierActionSection}>
