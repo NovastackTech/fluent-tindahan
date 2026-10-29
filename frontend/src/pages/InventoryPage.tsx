@@ -792,7 +792,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
         : undefined;
 
       if (duplicateProduct) {
-        if (duplicateProduct.name.trim().toLowerCase() === normalizedName) {
+        if (nameChanged && duplicateProduct.name.trim().toLowerCase() === normalizedName) {
           setFormNameError(language === 'tl'
             ? 'May produkto nang may parehong pangalan. I-edit o i-restock ang kasalukuyang produkto.'
             : 'A product with this name already exists. Edit or restock the existing product instead.');

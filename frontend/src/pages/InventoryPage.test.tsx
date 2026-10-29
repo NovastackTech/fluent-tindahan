@@ -290,6 +290,27 @@ describe('InventoryPage', () => {
     expect(await db.syncQueue.count()).toBe(0);
   });
 
+  it('shows the barcode error when only the barcode changes on a product with a duplicate name', async () => {
+    await db.products.add({
+      ...(await db.products.get('inv-1'))!,
+      id: 'inv-duplicate',
+      barcode: '4800019998887'
+    });
+    renderInventory();
+    await screen.findAllByText(/Lucky Me Pancit Canton Kalamansi/i);
+
+    fireEvent.click(screen.getAllByRole('button', { name: /Baguhin ang Produkto|Edit Product/i })[0]);
+    fireEvent.change(screen.getByRole('textbox', { name: /Barcode/i }), {
+      target: { value: '4800019998887' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: /I-save|Save/i }));
+
+    expect(await screen.findByText(/Ginagamit na ng ibang produkto ang barcode|barcode is already assigned/i)).toBeInTheDocument();
+    expect(screen.queryByText(/May produkto nang may parehong pangalan|product with this name already exists/i)).not.toBeInTheDocument();
+    expect((await db.products.get('inv-1'))?.barcode).toBe('4800016644026');
+    expect(await db.syncQueue.count()).toBe(0);
+  });
+
   it('allows unrelated edits when the product already has a duplicate', async () => {
     await db.products.add({
       id: 'inv-duplicate',
