@@ -65,6 +65,14 @@ public class BillingController : ControllerBase
         return string.Equals(config["Billing:AllowLibreUpgrade"], "true", StringComparison.OrdinalIgnoreCase);
     }
 
+    private bool IsHostedCheckoutEnabled()
+    {
+        var config = _configuration ?? HttpContext?.RequestServices.GetService<IConfiguration>();
+        if (config == null) return true;
+        var raw = config["Billing:EnableHostedCheckout"];
+        return string.IsNullOrWhiteSpace(raw) || string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>
     /// Checkout request. Redirect URLs are intentionally not accepted from the client;
     /// they are built server-side from <c>PayMongo:FrontendOrigin</c>.
@@ -95,6 +103,11 @@ public class BillingController : ControllerBase
             !TierPricing.TryGetPriceCentavos(request.TargetTier, request.Cycle, out _))
         {
             return BadRequest(new { message = "Invalid plan or billing cycle." });
+        }
+
+        if (!IsHostedCheckoutEnabled())
+        {
+            return BadRequest(new { message = "Hosted checkout is currently disabled." });
         }
 
         var dbContext = _dbContext ?? HttpContext?.RequestServices.GetService<IApplicationDbContext>();
@@ -396,7 +409,12 @@ public class BillingController : ControllerBase
             }
 
             var subscription = await _mediator.Send(new GetTenantSubscriptionQuery(), cancellationToken);
-            return Ok(subscription with { PaymentConfirmed = true, AllowLibreUpgrade = IsLibreUpgradeAllowed() });
+            return Ok(subscription with
+            {
+                PaymentConfirmed = true,
+                AllowLibreUpgrade = IsLibreUpgradeAllowed(),
+                EnableHostedCheckout = IsHostedCheckoutEnabled()
+            });
         }
         catch (PaymentGatewayException ex)
         {
@@ -429,7 +447,11 @@ public class BillingController : ControllerBase
             var result = await _mediator.Send(
                 new ConfirmCheckoutSessionCommand(_currentUserService.TenantId, request?.SessionId),
                 cancellationToken);
-            return Ok(result with { AllowLibreUpgrade = IsLibreUpgradeAllowed() });
+            return Ok(result with
+            {
+                AllowLibreUpgrade = IsLibreUpgradeAllowed(),
+                EnableHostedCheckout = IsHostedCheckoutEnabled()
+            });
         }
         catch (PaymentGatewayException ex)
         {
@@ -454,7 +476,11 @@ public class BillingController : ControllerBase
         try
         {
             var result = await _mediator.Send(new GetTenantSubscriptionQuery(), cancellationToken);
-            return Ok(result with { AllowLibreUpgrade = IsLibreUpgradeAllowed() });
+            return Ok(result with
+            {
+                AllowLibreUpgrade = IsLibreUpgradeAllowed(),
+                EnableHostedCheckout = IsHostedCheckoutEnabled()
+            });
         }
         catch (UnauthorizedAccessException ex)
         {

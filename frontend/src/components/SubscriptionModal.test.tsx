@@ -33,6 +33,7 @@ describe('SubscriptionModal', () => {
       isActive: false,
       daysRemaining: null,
       allowLibreUpgrade: true,
+      enableHostedCheckout: true,
       isLoading: false,
       error: null,
       isUpgradeModalOpen: false
@@ -88,15 +89,33 @@ describe('SubscriptionModal', () => {
     expect(screen.queryByRole('button', { name: /Lingguhan|Weekly|Sachet/i })).not.toBeInTheDocument();
   });
 
-  it('enables QR Ph upgrade button for Libre tier when allowLibreUpgrade is true', () => {
+  it('enables QR Ph and PayMongo Hosted Checkout upgrade buttons when allowLibreUpgrade and enableHostedCheckout are true', () => {
     useLanguageStore.setState({ language: 'en' });
-    useSubscriptionStore.setState({ isUpgradeModalOpen: true, tier: 'Libre', allowLibreUpgrade: true });
+    useSubscriptionStore.setState({
+      isUpgradeModalOpen: true,
+      tier: 'Libre',
+      allowLibreUpgrade: true,
+      enableHostedCheckout: true
+    });
     renderModal();
 
     expect(screen.queryByText(/Upgrading from Libre to Tindahan Pro is temporarily paused/i)).not.toBeInTheDocument();
-    const payBtn = screen.getByRole('button', { name: /Pay via QR Ph/i });
-    expect(payBtn).toBeInTheDocument();
-    expect(payBtn).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Pay via QR Ph/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Pay via PayMongo Checkout/i })).toBeEnabled();
+  });
+
+  it('hides PayMongo Hosted Checkout button when enableHostedCheckout is false', () => {
+    useLanguageStore.setState({ language: 'en' });
+    useSubscriptionStore.setState({
+      isUpgradeModalOpen: true,
+      tier: 'Libre',
+      allowLibreUpgrade: true,
+      enableHostedCheckout: false
+    });
+    renderModal();
+
+    expect(screen.getByRole('button', { name: /Pay via QR Ph/i })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /PayMongo Checkout/i })).not.toBeInTheDocument();
   });
 
   it('disables upgrade action and displays pause notice for Libre tier when allowLibreUpgrade is false', () => {

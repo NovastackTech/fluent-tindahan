@@ -105,6 +105,7 @@ export interface SubscriptionState {
   isActive: boolean;
   daysRemaining: number | null;
   allowLibreUpgrade: boolean;
+  enableHostedCheckout: boolean;
   isLoading: boolean;
   error: string | null;
   isUpgradeModalOpen: boolean;
@@ -191,6 +192,7 @@ interface SubscriptionSyncPayload {
   isActive?: boolean;
   daysRemaining?: number | null;
   allowLibreUpgrade?: boolean;
+  enableHostedCheckout?: boolean;
 }
 
 async function persistAndApplySubscriptionState(
@@ -223,6 +225,7 @@ async function persistAndApplySubscriptionState(
     isActive: effectiveTier !== 'Libre' && Boolean(data.isActive ?? true),
     daysRemaining: effectiveTier === 'Libre' && endDate ? 0 : (data.daysRemaining ?? (endDate ? Math.max(0, Math.ceil((Date.parse(endDate) - Date.now()) / (24 * 60 * 60 * 1000))) : null)),
     ...(typeof data.allowLibreUpgrade === 'boolean' ? { allowLibreUpgrade: data.allowLibreUpgrade } : {}),
+    ...(typeof data.enableHostedCheckout === 'boolean' ? { enableHostedCheckout: data.enableHostedCheckout } : {}),
     isLoading: false
   });
 
@@ -263,6 +266,7 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
     isActive: currentTier !== 'Libre',
     daysRemaining: null,
     allowLibreUpgrade: IS_LIBRE_UPGRADE_ENABLED,
+    enableHostedCheckout: true,
     isLoading: false,
     error: null,
     isUpgradeModalOpen: false,
