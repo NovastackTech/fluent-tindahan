@@ -243,7 +243,7 @@ export const App: React.FC = () => {
       if (!hasExistingStore || auth.tenantId === DEFAULT_TENANT_ID) {
         try {
           const tenantId = auth.tenantId;
-          const [productCount, salesCount, saleItemCount, customerCount, ledgerCount, gcashCount, resolutionCount, tenant, persistedTenants] = await Promise.all([
+          const [productCount, salesCount, saleItemCount, customerCount, ledgerCount, gcashCount, resolutionCount, balanceEntryCount, tenant, persistedTenants] = await Promise.all([
             db.products.where('tenantId').equals(tenantId).count(),
             db.sales.where('tenantId').equals(tenantId).count(),
             db.saleItems.where('tenantId').equals(tenantId).count(),
@@ -251,6 +251,7 @@ export const App: React.FC = () => {
             db.utangLedger.where('tenantId').equals(tenantId).count(),
             db.gcashTxns.where('tenantId').equals(tenantId).count(),
             db.gcashTxnResolutions.where('tenantId').equals(tenantId).count(),
+            db.gcashBalanceEntries.where('tenantId').equals(tenantId).count(),
             db.tenants.get(tenantId),
             db.tenants.toArray()
           ]);
@@ -282,6 +283,7 @@ export const App: React.FC = () => {
               || ledgerCount > 0
               || gcashCount > 0
               || resolutionCount > 0
+              || balanceEntryCount > 0
               || Boolean(tenant && tenant.id !== DEFAULT_TENANT_ID)
               || (auth.consentAccepted && !onboardingWasStarted);
           }
@@ -327,13 +329,14 @@ export const App: React.FC = () => {
     const checkAndPullCatalog = async () => {
       const activeTenantId = useAuthStore.getState().tenantId;
       if (activeTenantId) {
-        const [prodCount, custCount, utangCount, gcashCount] = await Promise.all([
+        const [prodCount, custCount, utangCount, gcashCount, balanceCount] = await Promise.all([
           db.products.where('tenantId').equals(activeTenantId).count(),
           db.customers.where('tenantId').equals(activeTenantId).count(),
           db.utangLedger.where('tenantId').equals(activeTenantId).count(),
-          db.gcashTxns.where('tenantId').equals(activeTenantId).count()
+          db.gcashTxns.where('tenantId').equals(activeTenantId).count(),
+          db.gcashBalanceEntries.where('tenantId').equals(activeTenantId).count()
         ]);
-        if (prodCount === 0 && custCount === 0 && utangCount === 0 && gcashCount === 0) {
+        if (prodCount === 0 && custCount === 0 && utangCount === 0 && gcashCount === 0 && balanceCount === 0) {
           await restoreTenantDataFromServer();
         }
       }

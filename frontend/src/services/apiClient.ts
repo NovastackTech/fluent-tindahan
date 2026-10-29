@@ -477,6 +477,7 @@ async function provisionTenantSession({
       db.utangLedger,
       db.gcashTxns,
       db.gcashTxnResolutions,
+      db.gcashBalanceEntries,
       db.tenants,
       db.syncQueue,
       db.deadLetterQueue
@@ -490,6 +491,7 @@ async function provisionTenantSession({
       await db.utangLedger.where('tenantId').equals(tenantId).modify({ tenantId: canonicalTenantId });
       await db.gcashTxns.where('tenantId').equals(tenantId).modify({ tenantId: canonicalTenantId });
       await db.gcashTxnResolutions.where('tenantId').equals(tenantId).modify({ tenantId: canonicalTenantId });
+      await db.gcashBalanceEntries.where('tenantId').equals(tenantId).modify({ tenantId: canonicalTenantId });
 
       const sourceTenant = await db.tenants.get(tenantId);
       const destinationTenant = await db.tenants.get(canonicalTenantId);

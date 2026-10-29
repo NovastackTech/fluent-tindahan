@@ -1129,9 +1129,10 @@ export function initSyncEngine() {
         db.products.where('tenantId').equals(activeTenant).count(),
         db.customers.where('tenantId').equals(activeTenant).count(),
         db.utangLedger.where('tenantId').equals(activeTenant).count(),
-        db.gcashTxns.where('tenantId').equals(activeTenant).count()
-      ]).then(([pCount, cCount, uCount, gCount]) => {
-        if (pCount === 0 && cCount === 0 && uCount === 0 && gCount === 0) {
+        db.gcashTxns.where('tenantId').equals(activeTenant).count(),
+        db.gcashBalanceEntries.where('tenantId').equals(activeTenant).count()
+      ]).then(([pCount, cCount, uCount, gCount, bCount]) => {
+        if (pCount === 0 && cCount === 0 && uCount === 0 && gCount === 0 && bCount === 0) {
           restoreTenantDataFromServer().catch(console.error);
         }
       }).catch(console.error);
