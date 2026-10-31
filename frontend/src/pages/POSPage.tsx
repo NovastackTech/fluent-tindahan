@@ -172,6 +172,9 @@ const useStyles = makeStyles({
     boxShadow: tokens.shadow16,
     zIndex: 85,
     cursor: 'pointer',
+    '@media (max-width: 519px)': {
+      bottom: 'calc(68px + max(8px, env(safe-area-inset-bottom, 8px)))'
+    },
     '@media (min-width: 768px)': {
       left: '50%',
       right: 'auto',
