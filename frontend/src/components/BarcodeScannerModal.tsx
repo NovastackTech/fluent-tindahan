@@ -180,8 +180,13 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         return;
       }
 
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+        || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
       const qrCode = new Html5Qrcode(SCANNER_ELEMENT_ID, {
         verbose: false,
+        experimentalFeatures: {
+          useBarCodeDetectorIfSupported: !isIOS
+        },
         formatsToSupport: [
           Html5QrcodeSupportedFormats.EAN_13,
           Html5QrcodeSupportedFormats.EAN_8,

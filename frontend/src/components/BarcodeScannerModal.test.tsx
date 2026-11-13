@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { FluentProvider } from '@fluentui/react-components';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -32,6 +32,10 @@ vi.mock('html5-qrcode', () => ({
 describe('BarcodeScannerModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   const renderModal = (props: {
@@ -119,6 +123,23 @@ describe('BarcodeScannerModal', () => {
       expect.objectContaining({ formatsToSupport: expect.arrayContaining([0, 2, 4]) })
     );
     expect(mockStart.mock.calls[0][1]).not.toHaveProperty('formatsToSupport');
+  });
+
+  it('uses the ZXing decoder fallback on iOS', async () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15'
+    );
+    mockStart.mockResolvedValue(null);
+
+    renderModal();
+
+    await waitFor(() => expect(Html5Qrcode).toHaveBeenCalled());
+    expect(Html5Qrcode).toHaveBeenCalledWith(
+      'fluent-tindahan-barcode-reader',
+      expect.objectContaining({
+        experimentalFeatures: { useBarCodeDetectorIfSupported: false }
+      })
+    );
   });
 
   it('displays camera permission error when start fails with NotAllowedError', async () => {
