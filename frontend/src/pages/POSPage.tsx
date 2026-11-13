@@ -57,6 +57,7 @@ import { ConfirmStockOverrideDialog, type InsufficientStockItem } from '../compo
 import { usePosSettingsStore } from '../state/posSettingsStore';
 import { playScanBeep } from '../utils/sound';
 import { useTranslation } from '../state/languageStore';
+import { useProductPhotoUrls } from '../hooks/useProductPhotoUrls';
 
 const useStyles = makeStyles({
   container: {
@@ -154,6 +155,13 @@ const useStyles = makeStyles({
     fontWeight: 'bold',
     color: tokens.colorBrandForeground1
   },
+  productImage: {
+    width: '100%',
+    height: '88px',
+    objectFit: 'cover',
+    marginBottom: tokens.spacingVerticalXS,
+    ...shorthands.borderRadius(tokens.borderRadiusMedium)
+  },
   floatingCartBar: {
     position: 'fixed',
     bottom: '62px', // above bottom navigation on mobile
@@ -172,6 +180,9 @@ const useStyles = makeStyles({
     boxShadow: tokens.shadow16,
     zIndex: 85,
     cursor: 'pointer',
+    '@media (max-width: 519px)': {
+      bottom: 'calc(68px + max(8px, env(safe-area-inset-bottom, 8px)))'
+    },
     '@media (min-width: 768px)': {
       left: '50%',
       right: 'auto',
@@ -305,6 +316,7 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
 
   const tenantId = useAuthStore((s) => s.tenantId);
   const userId = useAuthStore((s) => s.userId);
+  const productPhotoUrls = useProductPhotoUrls(tenantId);
 
   // Barcode scanner & quick registration states
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -1073,6 +1085,9 @@ export const POSPage: React.FC<POSPageProps> = ({ onNavigate }) => {
               }
             >
               <div>
+                {productPhotoUrls.get(p.id) && (
+                  <img className={styles.productImage} src={productPhotoUrls.get(p.id)} alt={`${p.name} — ${t.inventory.photoLabel}`} />
+                )}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '4px' }}>
                   <Text weight="semibold" size={300} style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', flex: 1 }}>
                     {p.name}

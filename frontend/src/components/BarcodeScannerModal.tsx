@@ -25,6 +25,7 @@ import {
   WarningRegular
 } from '@fluentui/react-icons';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
+import type { IScannerControls } from '@zxing/browser';
 import { playScanBeep } from '../utils/sound';
 import { useTranslation } from '../state/languageStore';
 
@@ -117,6 +118,8 @@ const useStyles = makeStyles({
 });
 
 const SCANNER_ELEMENT_ID = 'fluent-tindahan-barcode-reader';
+const isIOSDevice = () => /iPad|iPhone|iPod/.test(navigator.userAgent)
+  || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
 export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   isOpen,
@@ -134,6 +137,8 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const [manualCode, setManualCode] = useState('');
 
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
+  const zxingControlsRef = useRef<IScannerControls | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const isScanningRef = useRef(false);
   const runIdRef = useRef(0);
 
@@ -147,6 +152,11 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   });
 
   const stopScanner = useCallback(async () => {
+    if (zxingControlsRef.current) {
+      zxingControlsRef.current.stop();
+      zxingControlsRef.current = null;
+    }
+
     if (html5QrCodeRef.current && isScanningRef.current) {
       try {
         await html5QrCodeRef.current.stop();
@@ -154,9 +164,9 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       } catch {
         // Stop error can be safely ignored on teardown
       }
-      isScanningRef.current = false;
       html5QrCodeRef.current = null;
     }
+    isScanningRef.current = false;
   }, []);
 
   const handleBarcodeDetected = useCallback((code: string) => {
@@ -180,13 +190,55 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         return;
       }
 
-      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
-        || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      if (isIOSDevice()) {
+        const video = videoRef.current;
+        if (!video) {
+          throw new Error('Scanner video element not found');
+        }
+
+        const { BarcodeFormat, BrowserMultiFormatReader } = await import('@zxing/browser');
+        const reader = new BrowserMultiFormatReader(undefined, {
+          delayBetweenScanAttempts: 100
+        });
+        reader.possibleFormats = [
+          BarcodeFormat.EAN_13,
+          BarcodeFormat.EAN_8,
+          BarcodeFormat.UPC_A,
+          BarcodeFormat.UPC_E,
+          BarcodeFormat.CODE_128,
+          BarcodeFormat.CODE_39,
+          BarcodeFormat.QR_CODE
+        ];
+        const controls = await reader.decodeFromConstraints(
+          {
+            audio: false,
+            video: {
+              facingMode,
+              width: { ideal: 1280 },
+              height: { ideal: 720 }
+            }
+          },
+          video,
+          (result) => {
+            if (result) {
+              handleBarcodeDetected(result.getText());
+            }
+          }
+        );
+
+        if (runId !== runIdRef.current) {
+          controls.stop();
+          return;
+        }
+
+        zxingControlsRef.current = controls;
+        isScanningRef.current = true;
+        setIsLoading(false);
+        return;
+      }
+
       const qrCode = new Html5Qrcode(SCANNER_ELEMENT_ID, {
         verbose: false,
-        experimentalFeatures: {
-          useBarCodeDetectorIfSupported: !isIOS
-        },
         formatsToSupport: [
           Html5QrcodeSupportedFormats.EAN_13,
           Html5QrcodeSupportedFormats.EAN_8,
@@ -303,6 +355,8 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     }
   };
 
+  const isIOS = isIOSDevice();
+
   return (
     <Dialog open={isOpen} onOpenChange={(_, data) => !data.open && onClose()}>
       <DialogSurface className={styles.surface}>
@@ -327,7 +381,9 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
 
             {/* Viewfinder Window */}
             <div className={styles.scannerContainer}>
-              <div id={SCANNER_ELEMENT_ID} className={styles.readerBox} />
+              <div id={SCANNER_ELEMENT_ID} className={styles.readerBox}>
+                {isIOS && <video ref={videoRef} autoPlay muted playsInline />}
+              </div>
 
               {!errorMessage && !isLoading && (
                 <div className={styles.overlayGuide}>
@@ -360,14 +416,16 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
             {/* Quick Camera Controls */}
             {!errorMessage && (
               <div className={styles.controlsRow}>
-                <Button
-                  size="small"
-                  appearance="subtle"
-                  icon={isTorchOn ? <FlashlightOffRegular /> : <FlashlightRegular />}
-                  onClick={toggleTorch}
-                >
-                  {t.barcode.flashlight} {isTorchOn ? 'ON' : 'OFF'}
-                </Button>
+                {!isIOS && (
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    icon={isTorchOn ? <FlashlightOffRegular /> : <FlashlightRegular />}
+                    onClick={toggleTorch}
+                  >
+                    {t.barcode.flashlight} {isTorchOn ? 'ON' : 'OFF'}
+                  </Button>
+                )}
 
                 <Button
                   size="small"

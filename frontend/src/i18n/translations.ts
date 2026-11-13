@@ -315,6 +315,15 @@ export interface Translations {
     priceExceedsMax: string;
     stockLabel: string;
     stockExceedsMax: string;
+    photoLabel: string;
+    photoChoose: string;
+    photoReplace: string;
+    photoRemove: string;
+    photoDeviceOnly: string;
+    photoUnsupported: string;
+    photoTooLarge: string;
+    photoUnreadable: string;
+    photoStorageFull: string;
     profitPreview: string;
     marginPreview: string;
     noProductsFound: string;

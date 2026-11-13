@@ -19,6 +19,7 @@ describe('POSPage', () => {
     _resetUpdateSWFunctionForTest();
     useCartStore.getState().clearCart();
     await db.products.clear();
+    await db.productPhotos.clear();
     await db.sales.clear();
     await db.saleItems.clear();
     await db.utangLedger.clear();
@@ -71,6 +72,17 @@ describe('POSPage', () => {
       expect(screen.getByText('Lucky Me Pancit Canton Kalamansi')).toBeInTheDocument();
       expect(screen.getByText('₱16.00')).toBeInTheDocument();
     });
+  });
+
+  it('shows a device-local product photo on the product card', async () => {
+    await db.productPhotos.put({
+      tenantId: 't-1',
+      productId: 'p-1',
+      blob: new Blob(['photo'], { type: 'image/jpeg' })
+    });
+    renderPOS();
+
+    expect(await screen.findByRole('img', { name: /Lucky Me Pancit Canton Kalamansi.*Larawan ng produkto/i })).toBeInTheDocument();
   });
 
   it('adds product to cart when product card is clicked', async () => {

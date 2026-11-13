@@ -471,6 +471,7 @@ async function provisionTenantSession({
 
     const tables = [
       db.products,
+      db.productPhotos,
       db.customers,
       db.sales,
       db.saleItems,
@@ -485,6 +486,9 @@ async function provisionTenantSession({
 
     await db.transaction('rw', tables, async () => {
       await db.products.where('tenantId').equals(tenantId).modify({ tenantId: canonicalTenantId });
+      const photos = await db.productPhotos.where('tenantId').equals(tenantId).toArray();
+      await db.productPhotos.bulkPut(photos.map((photo) => ({ ...photo, tenantId: canonicalTenantId })));
+      await db.productPhotos.where('tenantId').equals(tenantId).delete();
       await db.customers.where('tenantId').equals(tenantId).modify({ tenantId: canonicalTenantId });
       await db.sales.where('tenantId').equals(tenantId).modify({ tenantId: canonicalTenantId });
       await db.saleItems.where('tenantId').equals(tenantId).modify({ tenantId: canonicalTenantId });

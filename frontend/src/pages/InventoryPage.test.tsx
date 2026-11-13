@@ -17,6 +17,7 @@ describe('InventoryPage', () => {
     useSubscriptionStore.setState({ tier: 'Libre', isUpgradeModalOpen: false });
     usePwaStore.getState().setHasUnsavedWork(false);
     await db.products.clear();
+    await db.productPhotos.clear();
     await db.syncQueue.clear();
 
     await db.products.bulkAdd([
@@ -380,6 +381,11 @@ describe('InventoryPage', () => {
   });
 
   it('deletes a product via confirmation dialog', async () => {
+    await db.productPhotos.put({
+      tenantId: 't-1',
+      productId: 'inv-1',
+      blob: new Blob(['photo'], { type: 'image/jpeg' })
+    });
     renderInventory();
 
     await waitFor(() => {
@@ -405,6 +411,7 @@ describe('InventoryPage', () => {
     await waitFor(async () => {
       const prods = await db.products.toArray();
       expect(prods.find(p => p.id === 'inv-1')).toBeUndefined();
+      expect(await db.productPhotos.get(['t-1', 'inv-1'])).toBeUndefined();
     });
   });
 
@@ -419,6 +426,101 @@ describe('InventoryPage', () => {
     expect(screen.getByRole('button', { name: /Magdagdag ng Produkto|Add Product/i })).toHaveAttribute('aria-label');
     expect(screen.getByRole('button', { name: /Mag-import ng CSV|Import CSV/i })).toHaveAttribute('aria-label');
     expect(screen.getByRole('button', { name: /Buksan ang Scanner|Open Scanner/i })).toHaveAttribute('aria-label');
+  });
+
+  it('removes a local photo without enqueueing a product update', async () => {
+    await db.productPhotos.put({
+      tenantId: 't-1',
+      productId: 'inv-1',
+      blob: new Blob(['photo'], { type: 'image/jpeg' })
+    });
+    renderInventory();
+
+    expect((await screen.findAllByRole('img', { name: /Lucky Me Pancit Canton Kalamansi.*Larawan ng produkto/i })).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getAllByRole('button', { name: /Baguhin ang Produkto|Edit Product/i })[0]);
+    fireEvent.click(await screen.findByRole('button', { name: /Alisin ang larawan|Remove photo/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^I-save$|^Save$/i }));
+
+    await waitFor(async () => {
+      expect(await db.productPhotos.get(['t-1', 'inv-1'])).toBeUndefined();
+      expect(await db.syncQueue.count()).toBe(0);
+    });
+  });
+
+  it('adds a processed photo locally without enqueueing a product update', async () => {
+    renderInventory();
+    await screen.findAllByText('Lucky Me Pancit Canton Kalamansi');
+    fireEvent.click(screen.getAllByRole('button', { name: /Baguhin ang Produkto|Edit Product/i })[0]);
+
+    const originalCreateElement = document.createElement.bind(document);
+    const canvas = {
+      width: 0,
+      height: 0,
+      getContext: () => ({ fillStyle: '', fillRect: vi.fn(), drawImage: vi.fn() }),
+      toBlob: (callback: BlobCallback) => callback(new Blob(['processed'], { type: 'image/jpeg' }))
+    } as unknown as HTMLCanvasElement;
+    const createElementSpy = vi.spyOn(document, 'createElement').mockImplementation((tagName: string) =>
+      tagName === 'canvas' ? canvas : originalCreateElement(tagName)
+    );
+    const OriginalImage = globalThis.Image;
+    class TestImage {
+      naturalWidth = 1200;
+      naturalHeight = 600;
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      set src(_value: string) { queueMicrotask(() => this.onload?.()); }
+    }
+    vi.stubGlobal('Image', TestImage);
+
+    try {
+      fireEvent.change(screen.getByLabelText(/Pumili ng larawan|Choose photo/i), {
+        target: { files: [new File(['image'], 'product.png', { type: 'image/png' })] }
+      });
+      expect(await screen.findByRole('img', { name: 'Lucky Me Pancit Canton Kalamansi' })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /^I-save$|^Save$/i }));
+
+      await waitFor(async () => {
+        expect(await db.productPhotos.get(['t-1', 'inv-1'])).toBeDefined();
+        expect(await db.syncQueue.count()).toBe(0);
+      });
+    } finally {
+      createElementSpy.mockRestore();
+      vi.stubGlobal('Image', OriginalImage);
+    }
+  });
+
+  it('keeps the existing photo when a replacement file is unsupported', async () => {
+    await db.productPhotos.put({
+      tenantId: 't-1',
+      productId: 'inv-1',
+      blob: new Blob(['original'], { type: 'image/jpeg' })
+    });
+    renderInventory();
+
+    await screen.findAllByRole('img', { name: /Lucky Me Pancit Canton Kalamansi.*Larawan ng produkto/i });
+    fireEvent.click(screen.getAllByRole('button', { name: /Baguhin ang Produkto|Edit Product/i })[0]);
+    fireEvent.change(screen.getByLabelText(/Pumili ng larawan|Choose photo/i), {
+      target: { files: [new File(['gif'], 'product.gif', { type: 'image/gif' })] }
+    });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/JPEG, PNG, o WebP|JPEG, PNG, or WebP/i);
+    expect(await db.productPhotos.get(['t-1', 'inv-1'])).toBeDefined();
+  });
+
+  it('discards a staged photo removal when editing is cancelled', async () => {
+    await db.productPhotos.put({
+      tenantId: 't-1',
+      productId: 'inv-1',
+      blob: new Blob(['photo'], { type: 'image/jpeg' })
+    });
+    renderInventory();
+
+    await screen.findAllByRole('img', { name: /Lucky Me Pancit Canton Kalamansi.*Larawan ng produkto/i });
+    fireEvent.click(screen.getAllByRole('button', { name: /Baguhin ang Produkto|Edit Product/i })[0]);
+    fireEvent.click(await screen.findByRole('button', { name: /Alisin ang larawan|Remove photo/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Kanselahin|Cancel/i }));
+
+    expect(await db.productPhotos.get(['t-1', 'inv-1'])).toBeDefined();
   });
 
   it('does not display invalid margin percentage when cost is negative', async () => {
