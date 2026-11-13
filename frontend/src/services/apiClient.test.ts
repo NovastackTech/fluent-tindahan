@@ -19,6 +19,7 @@ describe('apiClient', () => {
     resetTenantProvisionCache();
     await db.tenants.clear();
     await db.products.clear();
+    await db.productPhotos.clear();
     await db.gcashBalanceEntries.clear();
     await db.syncQueue.clear();
     useGCashFeeStore.setState({ feesByTenant: {} });
@@ -213,6 +214,11 @@ describe('apiClient', () => {
       stockQty: 1,
       updatedAt: new Date().toISOString()
     });
+    await db.productPhotos.put({
+      tenantId: localTenantId,
+      productId: 'local-product',
+      blob: new Blob(['photo'], { type: 'image/jpeg' })
+    });
     await db.gcashBalanceEntries.put({
       id: 'local-balance-opening',
       tenantId: localTenantId,
@@ -241,6 +247,8 @@ describe('apiClient', () => {
     expect(useAuthStore.getState().serverConfirmedTenantId).toBe(serverTenantId);
     expect(useAuthStore.getState().serverConfirmedUserId).toBe(userId);
     expect((await db.products.get('local-product'))?.tenantId).toBe(serverTenantId);
+    expect(await db.productPhotos.get([localTenantId, 'local-product'])).toBeUndefined();
+    expect((await db.productPhotos.get([serverTenantId, 'local-product']))?.productId).toBe('local-product');
     expect((await db.gcashBalanceEntries.get('local-balance-opening'))?.tenantId).toBe(serverTenantId);
     expect((await db.syncQueue.get('local-sync'))?.payload.tenantId).toBe(serverTenantId);
     expect(await db.tenants.get(localTenantId)).toBeUndefined();
