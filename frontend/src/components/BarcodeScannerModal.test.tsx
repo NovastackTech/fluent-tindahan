@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { FluentProvider } from '@fluentui/react-components';
+import { Html5Qrcode } from 'html5-qrcode';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { sariSariLightTheme } from '../theme/theme';
 
@@ -8,7 +9,8 @@ const mockStart = vi.fn();
 const mockStop = vi.fn().mockResolvedValue(undefined);
 const mockClear = vi.fn();
 const mockApplyVideoConstraints = vi.fn().mockResolvedValue(undefined);
-
+const mockZxingStop = vi.fn();
+const mockDecodeFromConstraints = vi.fn().mockResolvedValue({ stop: mockZxingStop });
 vi.mock('html5-qrcode', () => ({
   Html5Qrcode: vi.fn().mockImplementation(function () {
     return {
@@ -28,10 +30,28 @@ vi.mock('html5-qrcode', () => ({
     QR_CODE: 6
   }
 }));
+vi.mock('@zxing/browser', () => ({
+  BarcodeFormat: {
+    EAN_13: 0,
+    EAN_8: 1,
+    UPC_A: 2,
+    UPC_E: 3,
+    CODE_128: 4,
+    CODE_39: 5,
+    QR_CODE: 6
+  },
+  BrowserMultiFormatReader: vi.fn().mockImplementation(function () {
+    return { decodeFromConstraints: mockDecodeFromConstraints };
+  })
+}));
 
 describe('BarcodeScannerModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   const renderModal = (props: {
@@ -106,6 +126,49 @@ describe('BarcodeScannerModal', () => {
       expect(onScan).toHaveBeenCalledWith('4800016644026');
       expect(onClose).toHaveBeenCalled();
     }, { timeout: 1500 });
+  });
+
+  it('configures the decoder with retail barcode formats', async () => {
+    mockStart.mockResolvedValue(null);
+    renderModal();
+
+    await waitFor(() => expect(Html5Qrcode).toHaveBeenCalled());
+
+    expect(Html5Qrcode).toHaveBeenCalledWith(
+      'fluent-tindahan-barcode-reader',
+      expect.objectContaining({ formatsToSupport: expect.arrayContaining([0, 2, 4]) })
+    );
+    expect(mockStart.mock.calls[0][1]).not.toHaveProperty('formatsToSupport');
+  });
+
+  it('uses the ZXing camera scanner on iOS', async () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15'
+    );
+    mockDecodeFromConstraints.mockImplementation(async (_constraints, _video, onResult) => {
+      onResult({ getText: () => '4800016644026' });
+      return { stop: mockZxingStop };
+    });
+
+    const { onScan, onClose, rerender } = renderModal();
+
+    await waitFor(() => {
+      expect(mockDecodeFromConstraints).toHaveBeenCalledWith(
+        expect.objectContaining({ video: expect.objectContaining({ facingMode: 'environment' }) }),
+        expect.any(HTMLVideoElement),
+        expect.any(Function)
+      );
+      expect(onScan).toHaveBeenCalledWith('4800016644026');
+      expect(onClose).toHaveBeenCalled();
+    }, { timeout: 1500 });
+    expect(Html5Qrcode).not.toHaveBeenCalled();
+
+    rerender(
+      <FluentProvider theme={sariSariLightTheme}>
+        <BarcodeScannerModal isOpen={false} onClose={onClose} onScan={onScan} />
+      </FluentProvider>
+    );
+    await waitFor(() => expect(mockZxingStop).toHaveBeenCalled());
   });
 
   it('displays camera permission error when start fails with NotAllowedError', async () => {
