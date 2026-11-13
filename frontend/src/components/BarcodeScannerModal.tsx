@@ -180,13 +180,13 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         return;
       }
 
-      const qrCode = new Html5Qrcode(SCANNER_ELEMENT_ID);
-      html5QrCodeRef.current = qrCode;
-
-      const config = {
-        fps: 20,
-        qrbox: { width: 250, height: 150 },
-        aspectRatio: 1.333,
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+        || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      const qrCode = new Html5Qrcode(SCANNER_ELEMENT_ID, {
+        verbose: false,
+        experimentalFeatures: {
+          useBarCodeDetectorIfSupported: !isIOS
+        },
         formatsToSupport: [
           Html5QrcodeSupportedFormats.EAN_13,
           Html5QrcodeSupportedFormats.EAN_8,
@@ -196,11 +196,16 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
           Html5QrcodeSupportedFormats.CODE_39,
           Html5QrcodeSupportedFormats.QR_CODE
         ]
-      };
+      });
+      html5QrCodeRef.current = qrCode;
 
       await qrCode.start(
         { facingMode: facingMode },
-        config,
+        {
+          fps: 20,
+          qrbox: { width: 250, height: 150 },
+          aspectRatio: 1.333
+        },
         (decodedText) => {
           // Detected!
           handleBarcodeDetected(decodedText);

@@ -1706,6 +1706,13 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                 {t.common.save}
               </Button>
             </DialogActions>
+
+            {/* Keep the scanner nested so Fluent UI does not run two competing modal focus traps. */}
+            <BarcodeScannerModal
+              isOpen={isModalScannerOpen}
+              onClose={() => setIsModalScannerOpen(false)}
+              onScan={handleModalBarcodeScan}
+            />
           </DialogBody>
         </DialogSurface>
       </Dialog>
@@ -1758,13 +1765,6 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
         isOpen={isSearchScannerOpen}
         onClose={() => setIsSearchScannerOpen(false)}
         onScan={handleSearchBarcodeScan}
-      />
-
-      {/* Camera Barcode Scanner for Add/Edit Modal */}
-      <BarcodeScannerModal
-        isOpen={isModalScannerOpen}
-        onClose={() => setIsModalScannerOpen(false)}
-        onScan={handleModalBarcodeScan}
       />
 
       {/* Quick Register Product Dialog for Unrecognized Barcode */}
