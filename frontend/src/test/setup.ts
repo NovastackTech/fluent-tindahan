@@ -145,6 +145,17 @@ class MockResizeObserver {
 (window as any).ResizeObserver = MockResizeObserver;
 (globalThis as any).ResizeObserver = MockResizeObserver;
 
+// jsdom does not implement blob URLs used by local product-photo previews.
+let objectUrlSequence = 0;
+Object.defineProperty(URL, 'createObjectURL', {
+  configurable: true,
+  value: vi.fn(() => `blob:test-${++objectUrlSequence}`)
+});
+Object.defineProperty(URL, 'revokeObjectURL', {
+  configurable: true,
+  value: vi.fn()
+});
+
 // Mock @react-oauth/google to prevent external script injection in jsdom
 vi.mock('@react-oauth/google', () => ({
   GoogleOAuthProvider: ({ children }: { children: React.ReactNode }) => children,

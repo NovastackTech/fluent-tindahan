@@ -12,6 +12,12 @@ export interface ProductRecord {
   updatedAt: string; // ISO string
 }
 
+export interface ProductPhotoRecord {
+  tenantId: string;
+  productId: string;
+  blob: Blob;
+}
+
 export interface CustomerRecord {
   id: string; // UUID
   tenantId: string;
@@ -144,6 +150,7 @@ export function isGCashTxnUnresolved(txn: Pick<GCashTxnRecord, 'needsAttention' 
 
 export class FluentTindahanDatabase extends Dexie {
   products!: Table<ProductRecord, string>;
+  productPhotos!: Table<ProductPhotoRecord, [string, string]>;
   customers!: Table<CustomerRecord, string>;
   sales!: Table<SaleRecord, string>;
   saleItems!: Table<SaleItemRecord, string>;
@@ -215,6 +222,9 @@ export class FluentTindahanDatabase extends Dexie {
     });
     this.version(7).stores({
       gcashBalanceEntries: 'id, tenantId, kind, date, [tenantId+kind], [tenantId+date]'
+    });
+    this.version(8).stores({
+      productPhotos: '[tenantId+productId], tenantId, productId'
     });
   }
 }
