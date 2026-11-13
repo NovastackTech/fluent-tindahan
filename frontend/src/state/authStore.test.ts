@@ -391,6 +391,11 @@ describe('authStore', () => {
       status: 'Pending',
       retryCount: 0
     });
+    await db.productPhotos.put({
+      tenantId: 'tenant-id',
+      productId: 'device-only-product',
+      blob: new Blob(['photo'], { type: 'image/jpeg' })
+    });
 
     const gentleResult = await useAuthStore.getState().logout(false);
     expect(gentleResult.success).toBe(false);
@@ -406,6 +411,7 @@ describe('authStore', () => {
     expect(localStorage.getItem('fluent_tindahan_auth_token_v1')).toBeNull();
     expect(localStorage.getItem('fluent_tindahan_firebase_token_v1')).toBeNull();
     expect(await db.syncQueue.count()).toBe(0);
+    expect(await db.productPhotos.count()).toBe(0);
   });
 
   it('guards against login when unsynced items exist on new tenant unless forceWipe is true', async () => {

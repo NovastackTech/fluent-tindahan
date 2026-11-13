@@ -5,6 +5,7 @@ import { db, FluentTindahanDatabase } from './db';
 describe('FluentTindahanDatabase', () => {
   beforeEach(async () => {
     await db.products.clear();
+    await db.productPhotos.clear();
     await db.customers.clear();
     await db.sales.clear();
     await db.saleItems.clear();
@@ -17,6 +18,7 @@ describe('FluentTindahanDatabase', () => {
 
   it('initializes all tables properly', () => {
     expect(db.products).toBeDefined();
+    expect(db.productPhotos).toBeDefined();
     expect(db.customers).toBeDefined();
     expect(db.sales).toBeDefined();
     expect(db.saleItems).toBeDefined();
@@ -104,6 +106,20 @@ describe('FluentTindahanDatabase', () => {
     await db.products.delete('test-p1');
     retrieved = await db.products.get('test-p1');
     expect(retrieved).toBeUndefined();
+  });
+
+  it('stores product photos separately with tenant isolation', async () => {
+    const firstPhoto = new Blob(['first'], { type: 'image/jpeg' });
+    const secondPhoto = new Blob(['second'], { type: 'image/jpeg' });
+
+    await db.productPhotos.bulkPut([
+      { tenantId: 'tenant-a', productId: 'shared-product', blob: firstPhoto },
+      { tenantId: 'tenant-b', productId: 'shared-product', blob: secondPhoto }
+    ]);
+
+    expect(await db.productPhotos.where('tenantId').equals('tenant-a').count()).toBe(1);
+    expect((await db.productPhotos.get(['tenant-a', 'shared-product']))?.productId).toBe('shared-product');
+    expect((await db.productPhotos.get(['tenant-b', 'shared-product']))?.productId).toBe('shared-product');
   });
 
   it('performs CRUD operations on customers and utang ledger', async () => {

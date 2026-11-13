@@ -32,11 +32,12 @@ import {
   ArrowUploadRegular,
   CheckmarkCircleRegular,
   DismissRegular,
-  BarcodeScannerRegular
+  BarcodeScannerRegular,
+  ImageAddRegular
 } from '@fluentui/react-icons';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type ProductRecord } from '../db/db';
-import { enqueueSync } from '../sync/syncEngine';
+import { addSyncRecord, enqueueSync, kickSync } from '../sync/syncEngine';
 import { useAuthStore } from '../state/authStore';
 import { useTranslation } from '../state/languageStore';
 import { BarcodeScannerModal } from '../components/BarcodeScannerModal';
@@ -52,6 +53,8 @@ import {
 } from '../db/catalog';
 import type { NavTab } from '../components/Navigation';
 import { formatPeso, formatMarginPercent } from '../utils/currency';
+import { ProductPhotoError, resizeProductPhoto } from '../utils/productPhoto';
+import { useProductPhotoUrls } from '../hooks/useProductPhotoUrls';
 
 interface InventoryPageProps {
   onNavigate?: (tab: NavTab) => void;
@@ -337,6 +340,61 @@ const useStyles = makeStyles({
     fontSize: '13px',
     marginBottom: '4px'
   },
+  photoEditor: {
+    gridColumn: '1 / -1',
+    display: 'flex',
+    gap: tokens.spacingHorizontalM,
+    alignItems: 'center',
+    ...shorthands.padding(tokens.spacingVerticalM, tokens.spacingHorizontalM),
+    ...shorthands.border('1px', 'solid', tokens.colorNeutralStroke2),
+    ...shorthands.borderRadius(tokens.borderRadiusMedium),
+    backgroundColor: tokens.colorNeutralBackground2,
+    '@media (max-width: 479px)': {
+      alignItems: 'stretch',
+      flexDirection: 'column'
+    }
+  },
+  photoPreview: {
+    width: '96px',
+    height: '96px',
+    flexShrink: 0,
+    objectFit: 'cover',
+    ...shorthands.borderRadius(tokens.borderRadiusMedium),
+    ...shorthands.border('1px', 'solid', tokens.colorNeutralStroke2)
+  },
+  photoPlaceholder: {
+    width: '96px',
+    height: '96px',
+    flexShrink: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: tokens.colorNeutralForeground3,
+    backgroundColor: tokens.colorNeutralBackground1,
+    ...shorthands.border('1px', 'dashed', tokens.colorNeutralStroke1),
+    ...shorthands.borderRadius(tokens.borderRadiusMedium)
+  },
+  photoActions: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: tokens.spacingVerticalXS,
+    minWidth: 0
+  },
+  productIdentity: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: tokens.spacingHorizontalS,
+    minWidth: 0
+  },
+  productThumbnail: {
+    width: '44px',
+    height: '44px',
+    flexShrink: 0,
+    objectFit: 'cover',
+    ...shorthands.borderRadius(tokens.borderRadiusMedium),
+    ...shorthands.border('1px', 'solid', tokens.colorNeutralStroke2)
+  },
   mobileCardsContainer: {
     display: 'none',
     '@media (max-width: 767px)': {
@@ -375,6 +433,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
     [tenantId]
   );
   const products = productsResult || EMPTY_PRODUCTS;
+  const productPhotoUrls = useProductPhotoUrls(tenantId);
 
   // Filtering states
   const [searchQuery, setSearchQuery] = useState('');
@@ -397,6 +456,12 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
   const [formPriceError, setFormPriceError] = useState('');
   const [formStock, setFormStock] = useState<number | ''>('');
   const [formStockError, setFormStockError] = useState('');
+  const [formPhoto, setFormPhoto] = useState<Blob | null | undefined>(undefined);
+  const [formPhotoPreviewUrl, setFormPhotoPreviewUrl] = useState<string | null>(null);
+  const [formPhotoError, setFormPhotoError] = useState('');
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const photoPreviewUrlRef = useRef<string | null>(null);
+  const photoRequestRef = useRef(0);
 
   // Delete dialog state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -425,6 +490,71 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
     setHasUnsavedWork(isModalOpen || isQuickRegOpen);
     return () => setHasUnsavedWork(false);
   }, [isModalOpen, isQuickRegOpen, setHasUnsavedWork]);
+
+  React.useEffect(() => () => {
+    if (photoPreviewUrlRef.current) URL.revokeObjectURL(photoPreviewUrlRef.current);
+  }, []);
+
+  const clearPhotoDraft = useCallback(() => {
+    photoRequestRef.current += 1;
+    if (photoPreviewUrlRef.current) {
+      URL.revokeObjectURL(photoPreviewUrlRef.current);
+      photoPreviewUrlRef.current = null;
+    }
+    setFormPhoto(undefined);
+    setFormPhotoPreviewUrl(null);
+    setFormPhotoError('');
+    if (photoInputRef.current) photoInputRef.current.value = '';
+  }, []);
+
+  const closeProductModal = useCallback(() => {
+    clearPhotoDraft();
+    setIsModalOpen(false);
+    setFormNameError('');
+    setFormCostError('');
+    setFormPriceError('');
+    setFormStockError('');
+    setModalGeneralError(null);
+  }, [clearPhotoDraft]);
+
+  const handlePhotoSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    const requestId = ++photoRequestRef.current;
+    setFormPhotoError('');
+    try {
+      const blob = await resizeProductPhoto(file);
+      if (requestId !== photoRequestRef.current) return;
+      if (photoPreviewUrlRef.current) URL.revokeObjectURL(photoPreviewUrlRef.current);
+      const previewUrl = URL.createObjectURL(blob);
+      photoPreviewUrlRef.current = previewUrl;
+      setFormPhoto(blob);
+      setFormPhotoPreviewUrl(previewUrl);
+    } catch (error) {
+      if (requestId !== photoRequestRef.current) return;
+      const code = error instanceof ProductPhotoError ? error.code : 'unreadable';
+      setFormPhotoError(
+        code === 'unsupported'
+          ? t.inventory.photoUnsupported
+          : code === 'too-large'
+          ? t.inventory.photoTooLarge
+          : t.inventory.photoUnreadable
+      );
+    }
+  };
+
+  const handleRemovePhoto = () => {
+    photoRequestRef.current += 1;
+    if (photoPreviewUrlRef.current) {
+      URL.revokeObjectURL(photoPreviewUrlRef.current);
+      photoPreviewUrlRef.current = null;
+    }
+    setFormPhoto(null);
+    setFormPhotoPreviewUrl(null);
+    setFormPhotoError('');
+  };
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -675,6 +805,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
       return;
     }
     setLimitBanner(null);
+    clearPhotoDraft();
     setModalGeneralError(null);
     setModalMode('add');
     setEditingProduct(null);
@@ -698,6 +829,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
 
   // Open Edit Product Modal
   const openEditModal = (product: ProductRecord) => {
+    clearPhotoDraft();
     setModalMode('edit');
     setEditingProduct(product);
     setFormName(product.name);
@@ -827,8 +959,14 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
           updatedAt: nowIso
         };
 
-        await db.products.add(newProduct);
-        await enqueueSync('Product', 'Insert', newProduct);
+        await db.transaction('rw', [db.products, db.productPhotos, db.syncQueue], async () => {
+          await db.products.add(newProduct);
+          if (formPhoto instanceof Blob) {
+            await db.productPhotos.put({ tenantId, productId: newProduct.id, blob: formPhoto });
+          }
+          await addSyncRecord('Product', 'Insert', newProduct);
+        });
+        void kickSync();
         showToast(`${t.inventory.saveSuccess} (${newProduct.name})`);
       } else if (editingProduct) {
         const updatedProduct: ProductRecord = {
@@ -842,14 +980,35 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
           updatedAt: nowIso
         };
 
-        await db.products.put(updatedProduct);
-        await enqueueSync('Product', 'Update', updatedProduct);
+        const productChanged =
+          updatedProduct.name !== editingProduct.name ||
+          updatedProduct.category !== editingProduct.category ||
+          updatedProduct.barcode !== editingProduct.barcode ||
+          updatedProduct.cost !== editingProduct.cost ||
+          updatedProduct.price !== editingProduct.price ||
+          updatedProduct.stockQty !== editingProduct.stockQty;
+
+        await db.transaction('rw', [db.products, db.productPhotos, db.syncQueue], async () => {
+          if (productChanged) {
+            await db.products.put(updatedProduct);
+            await addSyncRecord('Product', 'Update', updatedProduct);
+          }
+          if (formPhoto instanceof Blob) {
+            await db.productPhotos.put({ tenantId, productId: editingProduct.id, blob: formPhoto });
+          } else if (formPhoto === null) {
+            await db.productPhotos.delete([tenantId, editingProduct.id]);
+          }
+        });
+        if (productChanged) void kickSync();
         showToast(`${t.inventory.saveSuccess} (${updatedProduct.name})`);
       }
 
-      setIsModalOpen(false);
+      closeProductModal();
     } catch (err) {
       console.error('Failed to save product:', err);
+      if (err instanceof Error && err.name === 'QuotaExceededError') {
+        setModalGeneralError(t.inventory.photoStorageFull);
+      }
     } finally {
       isSavingProductRef.current = false;
     }
@@ -865,8 +1024,12 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
   const handleConfirmDelete = async () => {
     if (!productToDelete) return;
     try {
-      await db.products.delete(productToDelete.id);
-      await enqueueSync('Product', 'Delete', { id: productToDelete.id, tenantId });
+      await db.transaction('rw', [db.products, db.productPhotos, db.syncQueue], async () => {
+        await db.products.delete(productToDelete.id);
+        await db.productPhotos.delete([tenantId, productToDelete.id]);
+        await addSyncRecord('Product', 'Delete', { id: productToDelete.id, tenantId });
+      });
+      void kickSync();
       showToast(`${t.inventory.deleteSuccess} (${productToDelete.name})`);
       setDeleteDialogOpen(false);
       setProductToDelete(null);
@@ -885,6 +1048,8 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
   const isLiveMarginValid = isCostValid && isPriceValid;
   const liveProfit = isLiveMarginValid ? Math.max(0, rawPrice - rawCost) : 0;
   const liveMarginPct = isLiveMarginValid ? ((rawPrice - rawCost) / rawPrice) * 100 : null;
+  const savedPhotoUrl = editingProduct ? productPhotoUrls.get(editingProduct.id) : undefined;
+  const activePhotoUrl = formPhoto === undefined ? savedPhotoUrl : formPhotoPreviewUrl || undefined;
 
   return (
     <div className={styles.container}>
@@ -1172,14 +1337,21 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                     <tr key={p.id} className={styles.tr}>
                       {/* Product Name & Barcode */}
                       <td className={`${styles.td} ${styles.productNameCell}`}>
-                        <Text weight="semibold" size={300} className={styles.productNameText} title={p.name}>
-                          {p.name}
-                        </Text>
-                        {p.barcode && (
-                          <Text size={100} style={{ color: tokens.colorNeutralForeground4 }}>
-                            🏷️ {p.barcode}
-                          </Text>
-                        )}
+                        <div className={styles.productIdentity}>
+                          {productPhotoUrls.get(p.id) && (
+                            <img className={styles.productThumbnail} src={productPhotoUrls.get(p.id)} alt={`${p.name} — ${t.inventory.photoLabel}`} />
+                          )}
+                          <div style={{ minWidth: 0 }}>
+                            <Text weight="semibold" size={300} className={styles.productNameText} title={p.name}>
+                              {p.name}
+                            </Text>
+                            {p.barcode && (
+                              <Text size={100} style={{ color: tokens.colorNeutralForeground4 }}>
+                                🏷️ {p.barcode}
+                              </Text>
+                            )}
+                          </div>
+                        </div>
                       </td>
 
                       {/* Category */}
@@ -1328,25 +1500,30 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
             return (
               <Card key={p.id} className={styles.mobileCard}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <Text weight="bold" size={400} className={styles.productNameText} title={p.name}>
-                      {p.name}
-                    </Text>
-                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '4px' }}>
-                      <Badge
-                        appearance="tint"
-                        color="informative"
-                        size="small"
-                        className={styles.categoryBadge}
-                        title={p.category || 'General'}
-                      >
-                        {p.category || 'General'}
-                      </Badge>
-                      {p.barcode && (
-                        <Text size={100} style={{ color: tokens.colorNeutralForeground4 }}>
-                          {p.barcode}
-                        </Text>
-                      )}
+                  <div className={styles.productIdentity} style={{ flex: 1 }}>
+                    {productPhotoUrls.get(p.id) && (
+                      <img className={styles.productThumbnail} src={productPhotoUrls.get(p.id)} alt={`${p.name} — ${t.inventory.photoLabel}`} />
+                    )}
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <Text weight="bold" size={400} className={styles.productNameText} title={p.name}>
+                        {p.name}
+                      </Text>
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '4px' }}>
+                        <Badge
+                          appearance="tint"
+                          color="informative"
+                          size="small"
+                          className={styles.categoryBadge}
+                          title={p.category || 'General'}
+                        >
+                          {p.category || 'General'}
+                        </Badge>
+                        {p.barcode && (
+                          <Text size={100} style={{ color: tokens.colorNeutralForeground4 }}>
+                            {p.barcode}
+                          </Text>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -1461,13 +1638,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
       <Dialog
         open={isModalOpen}
         onOpenChange={(_, data) => {
-          setIsModalOpen(data.open);
-          if (!data.open) {
-            setFormNameError('');
-            setFormCostError('');
-            setFormPriceError('');
-            setModalGeneralError(null);
-          }
+          if (!data.open) closeProductModal();
         }}
       >
         <DialogSurface style={{ maxWidth: '520px', width: '92%' }}>
@@ -1654,6 +1825,53 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
                     </Text>
                   )}
                 </div>
+
+                <div className={styles.photoEditor}>
+                  {activePhotoUrl ? (
+                    <img
+                      className={styles.photoPreview}
+                      src={activePhotoUrl}
+                      alt={`${formName || t.inventory.photoLabel}`}
+                    />
+                  ) : (
+                    <div className={styles.photoPlaceholder} aria-hidden="true">
+                      <ImageAddRegular fontSize={32} />
+                    </div>
+                  )}
+                  <div className={styles.photoActions}>
+                    <Text weight="semibold" size={200}>{t.inventory.photoLabel}</Text>
+                    <input
+                      ref={photoInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={handlePhotoSelected}
+                      aria-label={t.inventory.photoChoose}
+                      style={{ position: 'absolute', width: '1px', height: '1px', overflow: 'hidden', clip: 'rect(0 0 0 0)' }}
+                    />
+                    <div style={{ display: 'flex', gap: tokens.spacingHorizontalXS, flexWrap: 'wrap' }}>
+                      <Button
+                        appearance="secondary"
+                        icon={<ImageAddRegular />}
+                        onClick={() => photoInputRef.current?.click()}
+                      >
+                        {activePhotoUrl ? t.inventory.photoReplace : t.inventory.photoChoose}
+                      </Button>
+                      {activePhotoUrl && (
+                        <Button appearance="subtle" onClick={handleRemovePhoto}>
+                          {t.inventory.photoRemove}
+                        </Button>
+                      )}
+                    </div>
+                    <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>
+                      {t.inventory.photoDeviceOnly}
+                    </Text>
+                    {formPhotoError && (
+                      <Text role="alert" size={200} style={{ color: tokens.colorPaletteRedForeground1 }}>
+                        {formPhotoError}
+                      </Text>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* Live Margin & Profit Preview Box */}
@@ -1699,7 +1917,7 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ onNavigate }) => {
               </div>
             </DialogContent>
             <DialogActions style={{ marginTop: tokens.spacingVerticalL }}>
-              <Button appearance="secondary" onClick={() => setIsModalOpen(false)}>
+              <Button appearance="secondary" onClick={closeProductModal}>
                 {t.common.cancel}
               </Button>
               <Button appearance="primary" onClick={handleSaveProduct}>

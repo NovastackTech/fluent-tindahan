@@ -183,6 +183,7 @@ const initialOnboarded = localStorage.getItem(STORAGE_KEY_ONBOARDED) === 'true'
 export async function clearAllLocalDexieTables(): Promise<void> {
   const tables = [
     db.products,
+    db.productPhotos,
     db.customers,
     db.sales,
     db.saleItems,
